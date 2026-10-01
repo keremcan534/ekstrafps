@@ -248,7 +248,8 @@ export class Weapon {
     if (input.reloadPressed && this.startReload()) return;
 
     const mode = this.fireMode;
-    const wantsFire = mode === 'auto' ? input.fireHeld : this.semiBuffer > 0;
+    // A click shorter than a frame still fires one round in auto.
+    const wantsFire = mode === 'auto' ? input.fireHeld || input.firePressed : this.semiBuffer > 0;
     if (!wantsFire || input.blocked || this.cooldown > 0) return;
 
     if (!this.canFireRound) {

@@ -189,6 +189,8 @@ export class Game {
     if (s.weapon && s.weapon > 0 && s.weapon < this.weapons.weapons.length) this.weapons.requestSwitch(s.weapon);
 
     this.input.onKey = (code) => this.onKey(code);
+    this.input.onLockFailed = () =>
+      this.hud.toast('Mouse lock unavailable here: free-mouse mode (move mouse to look, click to fire). For best control open http://localhost:5173 in Chrome/Edge.', 6);
     window.addEventListener('resize', () => this.onResize());
 
     // Compile all shaders up front so the first shot never hitches.
@@ -215,7 +217,7 @@ export class Game {
   }
 
   get isPaused(): boolean {
-    return !this.mobile && !this.input.pointerLocked && !this.noLock;
+    return !this.mobile && !this.input.mouseActive && !this.noLock;
   }
 
   private onKey(code: string): void {
@@ -344,10 +346,11 @@ export class Game {
     const input = this.input;
     input.mouseSensitivity = playerConfig.mouseSensitivity;
     input.beginFrame();
-    if (this.isPaused) {
+    if (this.isPaused || (this.input.lockFailed && this.tuning.visible)) {
       // Mouse released (Esc / tuning panel): freeze the player, keep the world simulating.
       input.moveX = input.moveY = 0;
       input.fireHeld = input.firePressed = false;
+      input.lookYaw = input.lookPitch = 0;
     }
 
     // --- Look: ADS sensitivity scaling, touch aim assist, recoil absorption ---

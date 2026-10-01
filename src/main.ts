@@ -63,6 +63,6 @@ window.addEventListener('keydown', (e) => {
 
 // Desktop: show the overlay again when the mouse is released (Esc), unless tuning.
 document.addEventListener('pointerlockchange', () => {
-  if (!game.isPaused) overlay.classList.add('hidden');
+  if (!game.isPaused || game.input.lockFailed) overlay.classList.add('hidden');
   else if (!game.tuning?.visible) overlay.classList.remove('hidden');
 });

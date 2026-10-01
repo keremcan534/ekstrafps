@@ -33,6 +33,13 @@ export class Input {
   mouseSensitivity = 0.0022;
 
   pointerLocked = false;
+  /**
+   * The browser refused pointer lock (embedded browsers, some security settings).
+   * The lab then runs in "free mouse" mode: plain mouse movement looks around,
+   * clicks still fire/aim. Never leaves the player with dead controls.
+   */
+  lockFailed = false;
+  onLockFailed: (() => void) | null = null;
   private keys = new Set<string>();
   private touchMoveX = 0;
   private touchMoveY = 0;
@@ -50,8 +57,10 @@ export class Input {
     window.addEventListener('mousemove', this.handleMouseMove);
     window.addEventListener('wheel', this.handleWheel, { passive: true });
     canvas.addEventListener('contextmenu', (e) => e.preventDefault());
+    document.addEventListener('pointerlockerror', () => this.markLockFailed());
     document.addEventListener('pointerlockchange', () => {
       this.pointerLocked = document.pointerLockElement === this.canvas;
+      if (this.pointerLocked) this.lockFailed = false;
       if (!this.pointerLocked) {
         this.fireHeld = false;
         this.adsHeld = false;
@@ -59,11 +68,30 @@ export class Input {
     });
   }
 
+  /** Mouse input is live: either locked, or running in free-mouse fallback. */
+  get mouseActive(): boolean {
+    return this.pointerLocked || this.lockFailed;
+  }
+
   requestPointerLock(): void {
-    if (document.pointerLockElement !== this.canvas) {
+    if (document.pointerLockElement === this.canvas) return;
+    if (typeof this.canvas.requestPointerLock !== 'function') return this.markLockFailed();
+    try {
       const p = this.canvas.requestPointerLock() as unknown as Promise<void> | undefined;
-      p?.catch?.(() => {});
+      p?.catch?.(() => this.markLockFailed());
+    } catch {
+      this.markLockFailed();
     }
+    // Some browsers neither lock nor report an error: fall back if nothing happened.
+    setTimeout(() => {
+      if (!this.pointerLocked && document.pointerLockElement !== this.canvas) this.markLockFailed();
+    }, 600);
+  }
+
+  private markLockFailed(): void {
+    if (this.lockFailed || this.pointerLocked) return;
+    this.lockFailed = true;
+    this.onLockFailed?.();
   }
 
   // --- Touch API (called by TouchControls) ---
@@ -155,7 +183,7 @@ export class Input {
   };
 
   private handleMouseDown = (e: MouseEvent): void => {
-    if (!this.pointerLocked) {
+    if (!this.mouseActive) {
       this.requestPointerLock();
       return;
     }
@@ -169,7 +197,7 @@ export class Input {
   };
 
   private handleMouseMove = (e: MouseEvent): void => {
-    if (!this.pointerLocked) return;
+    if (!this.mouseActive) return;
     // Ignore absurd spikes some browsers emit when pointer lock engages.
     if (Math.abs(e.movementX) > 400 || Math.abs(e.movementY) > 400) return;
     this.lookYaw -= e.movementX * this.mouseSensitivity;
@@ -177,7 +205,7 @@ export class Input {
   };
 
   private handleWheel = (e: WheelEvent): void => {
-    if (!this.pointerLocked) return;
+    if (!this.mouseActive) return;
     this.cyclePressed = e.deltaY > 0 ? 1 : -1;
   };
 }
