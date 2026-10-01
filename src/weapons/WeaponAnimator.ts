@@ -8,6 +8,8 @@ import type { WeaponRig } from './WeaponModels';
  * bolt, shells, left hand). Driven entirely by Weapon state + normalized time,
  * so it can never desync from the gameplay state machine.
  *
+ * Rifle reload keyframes are built from each rig's anchors (where its magazine
+ * and charging handle are), so every long gun shares one animation.
  * Output: moves rig parts directly and writes a whole-weapon pose offset.
  */
 
@@ -48,21 +50,38 @@ interface MagReloadAnim {
   bolt?: Key1[];
 }
 
-// Timings line up with RELOAD_TIMELINES in Weapon.ts.
-const RIFLE_TACTICAL: MagReloadAnim = {
-  blend: [[0, 0], [0.14, 1], [0.8, 1], [1, 0]],
-  mag: [[0, 0, 0, 0], [0.2, 0, 0, 0], [0.24, 0, -0.04, 0.01], [0.34, -0.05, -0.35, 0.1], [0.44, -0.05, -0.35, 0.1], [0.55, 0, -0.05, 0.01], [0.6, 0, 0, 0]],
-  magRot: [[0, 0], [0.22, 0], [0.34, 0.5], [0.44, 0.5], [0.55, 0.05], [0.6, 0]],
-  hand: [[0, 0, 0, 0], [0.14, 0.005, -0.08, 0.26], [0.22, 0.005, -0.07, 0.26], [0.34, -0.05, -0.4, 0.36], [0.44, -0.05, -0.4, 0.36], [0.55, 0.005, -0.12, 0.26], [0.6, 0.005, -0.09, 0.26], [0.66, 0.005, -0.11, 0.26], [0.82, 0, 0, 0]],
-};
+type V = [number, number, number];
+const add = (a: V, b: V): V => [a[0] + b[0], a[1] + b[1], a[2] + b[2]];
+const at = (t: number, v: V): Key3 => [t, v[0], v[1], v[2]];
 
-const RIFLE_EMPTY: MagReloadAnim = {
-  blend: [[0, 0], [0.12, 1], [0.56, 1], [0.64, 0.55], [0.84, 0.55], [1, 0]],
-  mag: [[0, 0, 0, 0], [0.15, 0, 0, 0], [0.19, 0, -0.04, 0.01], [0.28, -0.05, -0.35, 0.1], [0.36, -0.05, -0.35, 0.1], [0.44, 0, -0.05, 0.01], [0.48, 0, 0, 0]],
-  magRot: [[0, 0], [0.17, 0], [0.28, 0.5], [0.36, 0.5], [0.44, 0.05], [0.48, 0]],
-  hand: [[0, 0, 0, 0], [0.11, 0.005, -0.08, 0.26], [0.17, 0.005, -0.07, 0.26], [0.28, -0.05, -0.4, 0.36], [0.36, -0.05, -0.4, 0.36], [0.44, 0.005, -0.12, 0.26], [0.48, 0.005, -0.09, 0.26], [0.6, 0.045, 0.07, 0.39], [0.66, 0.045, 0.07, 0.39], [0.7, 0.045, 0.07, 0.46], [0.75, 0.045, 0.07, 0.46], [0.78, 0.045, 0.09, 0.42], [0.92, 0, 0, 0]],
-  bolt: [[0, 0], [0.66, 0], [0.7, 0.07], [0.76, 0.07], [0.785, 0]],
-};
+/**
+ * Rifle reloads from rig anchors (offsets from the left hand's rest position):
+ *   M = hand on the magazine, D = magazine pulled down out of view, B = charging handle.
+ * Timings line up with RELOAD_TIMELINES in Weapon.ts.
+ */
+function rifleAnims(M: V, B: V, boltTravel: number): { tactical: MagReloadAnim; empty: MagReloadAnim } {
+  const Z: V = [0, 0, 0];
+  const D = add(M, [-0.05, -0.32, 0.1]);
+  const magDown: V = [-0.05, -0.33, 0.1];
+  return {
+    tactical: {
+      blend: [[0, 0], [0.14, 1], [0.8, 1], [1, 0]],
+      mag: [[0, 0, 0, 0], [0.2, 0, 0, 0], [0.24, 0, -0.04, 0.01], at(0.34, magDown), at(0.44, magDown), [0.55, 0, -0.05, 0.01], [0.6, 0, 0, 0]],
+      magRot: [[0, 0], [0.22, 0], [0.34, 0.5], [0.44, 0.5], [0.55, 0.05], [0.6, 0]],
+      hand: [at(0, Z), at(0.14, M), at(0.22, add(M, [0, 0.01, 0])), at(0.34, D), at(0.44, D), at(0.55, add(M, [0, -0.03, 0])), at(0.6, M), at(0.66, add(M, [0, -0.02, 0])), at(0.82, Z)],
+    },
+    empty: {
+      blend: [[0, 0], [0.12, 1], [0.56, 1], [0.64, 0.55], [0.84, 0.55], [1, 0]],
+      mag: [[0, 0, 0, 0], [0.15, 0, 0, 0], [0.19, 0, -0.04, 0.01], at(0.28, magDown), at(0.36, magDown), [0.44, 0, -0.05, 0.01], [0.48, 0, 0, 0]],
+      magRot: [[0, 0], [0.17, 0], [0.28, 0.5], [0.36, 0.5], [0.44, 0.05], [0.48, 0]],
+      hand: [
+        at(0, Z), at(0.11, M), at(0.17, add(M, [0, 0.01, 0])), at(0.28, D), at(0.36, D), at(0.44, add(M, [0, -0.03, 0])), at(0.48, M),
+        at(0.6, B), at(0.66, B), at(0.7, add(B, [0, 0, boltTravel])), at(0.75, add(B, [0, 0, boltTravel])), at(0.78, add(B, [0, 0.02, 0.03])), at(0.92, Z),
+      ],
+      bolt: [[0, 0], [0.66, 0], [0.7, boltTravel], [0.76, boltTravel], [0.785, 0]],
+    },
+  };
+}
 
 const PISTOL_TACTICAL: MagReloadAnim = {
   blend: [[0, 0], [0.14, 1], [0.78, 1], [1, 0]],
@@ -87,15 +106,15 @@ const RELOAD_POSE = {
 } as const;
 
 // Shotgun loading-port path, in pump-local coordinates (the left hand is parented to the pump).
-const PORT: [number, number, number] = [0.0, -0.05, 0.31];
-const SHELL_AWAY: [number, number, number] = [-0.1, -0.24, 0.42];
+const PORT: V = [0.0, -0.05, 0.31];
+const SHELL_AWAY: V = [-0.1, -0.24, 0.42];
 const SHELL_INSERT_KEYS: Key3[] = [
-  [0, ...PORT],
-  [0.28, ...SHELL_AWAY],
-  [0.42, ...SHELL_AWAY],
+  at(0, PORT),
+  at(0.28, SHELL_AWAY),
+  at(0.42, SHELL_AWAY),
   [0.78, PORT[0], PORT[1] - 0.025, PORT[2] + 0.04],
   [0.94, PORT[0], PORT[1] - 0.01, PORT[2] - 0.02],
-  [1, ...PORT],
+  at(1, PORT),
 ];
 
 export interface PoseOffset {
@@ -109,12 +128,21 @@ export class WeaponAnimator {
   private boltRest = new THREE.Vector3();
   private pumpRest = new THREE.Vector3();
   private rig: WeaponRig | null = null;
+  private rifle: { tactical: MagReloadAnim; empty: MagReloadAnim } | null = null;
 
   setRig(rig: WeaponRig): void {
     this.rig = rig;
     if (rig.mag) this.magRest.copy(rig.mag.position);
     if (rig.bolt) this.boltRest.copy(rig.bolt.position);
     if (rig.pump) this.pumpRest.copy(rig.pump.position);
+    if (rig.mag && rig.bolt) {
+      const h = rig.leftHandRest;
+      const m = rig.mag.position;
+      const b = rig.bolt.position;
+      const M: V = [m.x - h.x, m.y - 0.07 - h.y, m.z - 0.01 - h.z];
+      const B: V = [b.x + 0.01 - h.x, b.y + 0.03 - h.y, b.z - h.z];
+      this.rifle = rifleAnims(M, B, 0.07);
+    }
   }
 
   /** Writes reload/cycle pose into `out` and moves rig parts. */
@@ -130,11 +158,11 @@ export class WeaponAnimator {
     }
     if (rig.heldShell) rig.heldShell.visible = false;
 
-    const model = weapon.data.model;
+    const set = weapon.data.animSet;
     const reloading = weapon.state === 'reloading';
 
     // --- Fire cycling ---
-    if (rig.bolt && model === 'pistol') {
+    if (rig.bolt && set === 'pistol') {
       const s = weapon.timeSinceShot;
       const cycle = s < 0.016 ? s / 0.016 : Math.max(0, 1 - (s - 0.016) / 0.06);
       let z = 0.045 * smoothstep(cycle);
@@ -160,11 +188,10 @@ export class WeaponAnimator {
     if (!reloading) return;
 
     // --- Reloads ---
-    const pose = RELOAD_POSE[model];
+    const pose = RELOAD_POSE[set];
     if (weapon.data.reload.kind === 'magazine') {
       const t = weapon.stateProgress;
-      const anim =
-        model === 'rifle' ? (weapon.reloadEmpty ? RIFLE_EMPTY : RIFLE_TACTICAL) : weapon.reloadEmpty ? PISTOL_EMPTY : PISTOL_TACTICAL;
+      const anim = set === 'rifle' ? (weapon.reloadEmpty ? this.rifle!.empty : this.rifle!.tactical) : weapon.reloadEmpty ? PISTOL_EMPTY : PISTOL_TACTICAL;
       const b = kf(t, anim.blend);
       out.rot.set(pose.rot[0] * b, pose.rot[1] * b, pose.rot[2] * b);
       out.pos.set(pose.pos[0] * b, pose.pos[1] * b, pose.pos[2] * b);
@@ -190,9 +217,8 @@ export class WeaponAnimator {
       kf3(phaseT, SHELL_INSERT_KEYS, hand);
       if (rig.heldShell) rig.heldShell.visible = phaseT > 0.3 && phaseT < 0.95;
     } else {
-      const endT = phaseT;
-      blend = 1 - smoothstep(endT * 1.3);
-      hand.lerpVectors(this.tmp.set(...PORT), rig.leftHandRest, smoothstep(endT * 2));
+      blend = 1 - smoothstep(phaseT * 1.3);
+      hand.lerpVectors(this.tmp.set(...PORT), rig.leftHandRest, smoothstep(phaseT * 2));
       if (weapon.reloadEmpty && rig.pump) {
         const s = weapon.shellPhaseTime;
         const pumpZ = 0.09 * kf(s, [[0, 0], [0.12, 0], [0.26, 1], [0.32, 1], [0.46, 0]]);

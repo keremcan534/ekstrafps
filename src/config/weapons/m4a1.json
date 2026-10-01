@@ -1,0 +1,85 @@
+{
+  "id": "m4a1",
+  "name": "M4A1",
+  "short": "M4A1",
+  "model": "m4a1",
+  "animSet": "rifle",
+  "category": "rifle",
+  "ammo": "556_m855",
+  "fireModes": [
+    "auto",
+    "semi"
+  ],
+  "fireRate": 800,
+  "magazineSize": 30,
+  "closedBolt": true,
+  "barrelLength": 0.368,
+  "handling": {
+    "weight": 3.0,
+    "length": 0.84,
+    "ergonomics": 65
+  },
+  "accuracy": {
+    "moa": 1.6
+  },
+  "recoil": {
+    "vertical": 0.8,
+    "horizontal": 0.34,
+    "horizontalBias": 0.1,
+    "back": 0.022,
+    "shoulder": 190,
+    "damping": 0.6,
+    "cameraTransfer": 0.32,
+    "cameraKeep": 0.18,
+    "cameraRecovery": 4.5,
+    "dispersion": 0.06,
+    "punch": 0.25,
+    "roll": 1.0
+  },
+  "aim": {
+    "hipConvergence": 15,
+    "zeroDistance": 100
+  },
+  "sight": {
+    "type": "reddot",
+    "adsFov": 66,
+    "sightDistance": 0.3
+  },
+  "viewmodel": {
+    "hipPosition": [
+      0.15,
+      -0.195,
+      -0.42
+    ]
+  },
+  "reload": {
+    "kind": "magazine",
+    "time": 1.85,
+    "emptyTime": 2.35,
+    "shellStart": 0,
+    "shellInsert": 0,
+    "shellEnd": 0
+  },
+  "equipTime": 0.42,
+  "holsterTime": 0.21,
+  "sprintToFireTime": 0.12,
+  "fx": {
+    "tracerEvery": 4,
+    "muzzleFlashScale": 1.0,
+    "smoke": 0.5,
+    "shellEjectDelay": 0.02,
+    "shellEjectSpeed": 3.2
+  },
+  "audio": {
+    "fire": "ar.fire",
+    "dry": "dry_fire",
+    "equip": "equip.rifle",
+    "reloadStart": "reload.rifle.start",
+    "magOut": "reload.rifle.magout",
+    "magIn": "reload.rifle.magin",
+    "boltBack": "reload.rifle.boltback",
+    "boltForward": "reload.rifle.boltforward",
+    "shellInsert": "",
+    "pump": ""
+  }
+}

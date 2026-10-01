@@ -1,22 +1,24 @@
 import * as THREE from 'three';
-import { clamp, moveTowards } from '../core/math';
+import { DEG, clamp } from '../core/math';
 import type { Input } from '../core/Input';
 import { Haptics } from '../core/Haptics';
 import { feel } from '../config/Feel';
 import type { AudioSystem } from '../audio/AudioSystem';
 import type { ImpactSystem } from '../fx/ImpactSystem';
 import type { Shells } from '../fx/Shells';
-import type { HUD } from '../ui/HUD';
+import type { HUD, HitKind } from '../ui/HUD';
 import type { PlayerCamera } from '../player/PlayerCamera';
 import type { PlayerController } from '../player/PlayerController';
+import type { Physics } from '../core/Physics';
+import type { DebugDraw } from '../fx/DebugDraw';
+import { Laser } from '../fx/Laser';
 import { Weapon, type WeaponListener } from './Weapon';
 import type { WeaponData } from './WeaponData';
 import { RecoilSystem } from './RecoilSystem';
 import { Viewmodel } from './Viewmodel';
-import { Hitscan, type ShotResult } from './Hitscan';
-import type { Physics } from '../core/Physics';
-import type { DebugDraw } from '../fx/DebugDraw';
-import { Laser } from '../fx/Laser';
+import { ProjectileSystem, type ProjectileHitReport } from './Ballistics';
+import { computeHandling, type Handling } from './Handling';
+import { dragFactor, dropAt, getAmmo, muzzleVelocity, type AmmoData } from './AmmoData';
 
 export interface WeaponControllerDeps {
   physics: Physics;
@@ -35,88 +37,121 @@ interface PendingShell {
   active: boolean;
 }
 
-const HAPTIC_MS: Record<WeaponData['model'], number> = { rifle: 7, pistol: 16, shotgun: 32 };
+const HAPTIC_MS: Record<WeaponData['category'], number> = { rifle: 8, smg: 6, pistol: 16, shotgun: 32 };
+const ZERO_STEPS = [25, 50, 100, 150, 200, 300];
 
 /**
- * Owns the player's weapons and wires one shot through every feedback layer:
- * muzzle hitscan → recoil (aim) → camera punch → weapon kick → flash/smoke/shell/tracer
- * → audio → hit markers. Also handles switching, ADS blending and sprint rules.
+ * Owns the player's weapons and runs the physical gun-handling loop:
  *
- * Per frame (order matters):
- *   updateState()  switching, ADS / sprint rules
- *   updatePose()   after the camera: aim the physical weapon, compute the muzzle ray
- *   updateFire()   weapon logic; shots leave the real muzzle along the bore
+ *   updateState()  switching, ADS intent, arm stamina, sprint rules
+ *   updatePose()   after the camera: wall probes, aim the physical weapon, muzzle ray
+ *   updateFire()   mechanism; projectiles leave the REAL muzzle along the bore,
+ *                  recoil impulses go into the weapon and (partly) the view
  */
 export class WeaponController implements WeaponListener {
   readonly weapons: Weapon[];
   readonly recoil = new RecoilSystem();
   readonly viewmodel: Viewmodel;
-  readonly hitscan: Hitscan;
+  readonly projectiles: ProjectileSystem;
+  readonly laser = new Laser();
   current: Weapon;
   currentIndex = 0;
-  adsAmount = 0;
+  handling!: Handling;
+  ammo!: AmmoData;
+
+  /** Arm stamina 0..1 (drains while aiming heavy weapons). */
+  stamina = 1;
+  /** +1 right shoulder, -1 left. */
+  shoulder = 1;
+  wallTarget = 0;
 
   // Debug stats
-  currentSpread = 0;
   lastHitDistance = -1;
   lastDamage = '-';
   lastTargetHealth = '-';
-  /** Angle between the camera aim ray and the bore (deg). */
+  lastMuzzleVelocity = 0;
   aimErrorDeg = 0;
-  readonly laser = new Laser();
-  /** Live muzzle ray, refreshed every frame in updatePose(). */
   readonly muzzleWorld = new THREE.Vector3();
   readonly muzzleDir = new THREE.Vector3();
+
+  private pendingIndex = -1;
+  private adsWanted = false;
+  private sprintRecover = 0;
+  private shotId = 0;
+  private frameHitRank = 0;
+  private frameHitPoint = new THREE.Vector3();
+  private frameDamage = 0;
+  private worldFlash: THREE.PointLight;
+  private worldFlashLife = 0;
+  private pendingShells: PendingShell[] = Array.from({ length: 8 }, () => ({ time: 0, active: false }));
+  private aim = new THREE.Vector3();
+  private aimPoint = new THREE.Vector3();
+  private origin = new THREE.Vector3();
+  private pelletDir = new THREE.Vector3();
+  private right = new THREE.Vector3();
+  private up = new THREE.Vector3();
+  private laserFrom = new THREE.Vector3();
+  private laserDir = new THREE.Vector3();
+  private rayEnd = new THREE.Vector3();
+  private tmpV = new THREE.Vector3();
+  private probeFrom = new THREE.Vector3();
+  private toMuzzle = new THREE.Vector3();
+  private eject = new THREE.Vector3();
+  private vel = new THREE.Vector3();
+  private q = new THREE.Quaternion();
+  private q2 = new THREE.Quaternion();
+  private e = new THREE.Euler();
+
+  constructor(defs: WeaponData[], aspect: number, private deps: WeaponControllerDeps) {
+    this.weapons = defs.map((d) => new Weapon(d, this));
+    this.viewmodel = new Viewmodel(aspect, defs);
+    this.projectiles = new ProjectileSystem(deps.physics, deps.impacts, deps.impacts.sparks, deps.debugDraw);
+    this.projectiles.onHit = (r) => this.onProjectileHit(r);
+    this.worldFlash = new THREE.PointLight(0xffaa55, 0, 9, 2);
+    deps.worldScene.add(this.worldFlash, this.laser.group);
+    this.current = this.weapons[0];
+    this.activate(0);
+  }
+
+  get adsAmount(): number {
+    return this.viewmodel.adsAmount;
+  }
+
   /** Camera aim (intent) direction this frame. */
   get cameraAimDir(): THREE.Vector3 {
     return this.aim;
   }
 
-  private pendingIndex = -1;
-  private lastIndex = 1;
-  private worldFlash: THREE.PointLight;
-  private worldFlashLife = 0;
-  private pendingShells: PendingShell[] = Array.from({ length: 8 }, () => ({ time: 0, active: false }));
-  private aimPoint = new THREE.Vector3();
-  private laserFrom = new THREE.Vector3();
-  private laserDir = new THREE.Vector3();
-  private rayEnd = new THREE.Vector3();
-  private tmpV = new THREE.Vector3();
-  private toMuzzle = new THREE.Vector3();
-  private eject = new THREE.Vector3();
-  private aim = new THREE.Vector3();
-  private origin = new THREE.Vector3();
-  private vel = new THREE.Vector3();
-  private q = new THREE.Quaternion();
-  private e = new THREE.Euler();
-  private q2 = new THREE.Quaternion();
-
-  constructor(defs: WeaponData[], aspect: number, private deps: WeaponControllerDeps) {
-    this.weapons = defs.map((d) => new Weapon(d, this));
-    this.viewmodel = new Viewmodel(aspect, defs);
-    this.hitscan = new Hitscan(deps.physics, deps.impacts);
-    this.worldFlash = new THREE.PointLight(0xffaa55, 0, 9, 2);
-    deps.worldScene.add(this.worldFlash, this.laser.group);
-    this.hitscan.onPellet = (from, to) => deps.debugDraw.persistent(from, to, 0xff8a2a, 2.5);
-    this.current = this.weapons[0];
-    this.activate(0);
+  get wallState(): string {
+    const c = this.viewmodel.wallCompression;
+    return c < 0.02 ? 'clear' : c < 0.35 ? 'compressing' : c < 0.75 ? 'high ready' : 'blocked';
   }
 
   private activate(index: number): void {
     this.currentIndex = index;
     this.current = this.weapons[index];
-    this.current.equip();
     this.recoil.setWeapon(this.current.data);
-    this.viewmodel.setWeapon(this.current);
+    this.ammo = getAmmo(this.current.data.ammo);
+    this.handling = computeHandling(this.current.data, this.ammo);
+    this.current.raiseScale = this.handling.raiseScale;
+    this.viewmodel.setWeapon(this.current, this.handling);
+    this.current.equip();
     this.viewmodel.onMechanical('equip');
     for (const s of this.pendingShells) s.active = false;
+  }
+
+  /** Recompute derived handling (after tuning edits). */
+  refreshHandling(): void {
+    this.ammo = getAmmo(this.current.data.ammo);
+    this.handling = computeHandling(this.current.data, this.ammo);
+    this.current.raiseScale = this.handling.raiseScale;
+    this.viewmodel.refresh(this.handling);
   }
 
   requestSwitch(index: number): void {
     if (index < 0 || index >= this.weapons.length) return;
     if (index === this.currentIndex && this.pendingIndex < 0) return;
     if (index === this.currentIndex) {
-      // Changed mind mid-holster: bring the same gun back up.
       this.pendingIndex = -1;
       this.current.equip();
       return;
@@ -125,63 +160,139 @@ export class WeaponController implements WeaponListener {
     if (this.current.state !== 'holstering' && this.current.state !== 'holstered') this.current.holster();
   }
 
+  cycleFireMode(): void {
+    const w = this.current;
+    if (w.data.fireModes.length < 2) {
+      this.deps.hud.toast(`${w.data.short}: ${w.fireMode.toUpperCase()} only`);
+      return;
+    }
+    const mode = w.cycleFireMode();
+    this.deps.audio.play('ui.firemode');
+    this.deps.hud.toast(`${w.data.short}: ${mode.toUpperCase()}`);
+  }
+
+  toggleShoulder(): void {
+    this.shoulder = -this.shoulder;
+    this.deps.hud.toast(this.shoulder > 0 ? 'Right shoulder' : 'Left shoulder');
+  }
+
+  adjustZero(dir: number): void {
+    const a = this.current.data.aim;
+    let i = ZERO_STEPS.findIndex((z) => z >= a.zeroDistance);
+    if (i < 0) i = ZERO_STEPS.length - 1;
+    i = clamp(i + dir, 0, ZERO_STEPS.length - 1);
+    a.zeroDistance = ZERO_STEPS[i];
+    this.deps.audio.play('ui.firemode');
+    this.deps.hud.toast(`Zero: ${a.zeroDistance} m`);
+  }
+
+  /** Check weapon: fire mode, approximate magazine, chamber. */
+  inspect(): void {
+    const w = this.current;
+    const frac = w.ammo / w.data.magazineSize;
+    const mag = frac >= 0.95 ? 'full' : frac > 0.66 ? 'nearly full' : frac > 0.4 ? 'about half' : frac > 0.1 ? 'low' : frac > 0 ? 'almost empty' : 'empty';
+    const chamber = w.data.closedBolt ? (w.chambered ? 'round chambered' : 'chamber EMPTY') : 'open bolt';
+    this.deps.hud.toast(`${w.data.name} · ${w.fireMode.toUpperCase()} · mag ${mag} · ${chamber} · ${this.ammo.name}`, 2.5);
+  }
+
   updateState(dt: number, input: Input): void {
     const { player } = this.deps;
 
     // --- Switching ---
     if (input.slotPressed >= 0) this.requestSwitch(input.slotPressed);
-    if (input.cyclePressed === -2) this.requestSwitch(this.lastIndex);
-    else if (input.cyclePressed !== 0) {
+    if (input.cyclePressed !== 0) {
       const n = this.weapons.length;
       this.requestSwitch((this.currentIndex + input.cyclePressed + n) % n);
     }
     if (this.pendingIndex >= 0 && this.current.state === 'holstered') {
-      this.lastIndex = this.currentIndex;
       const next = this.pendingIndex;
       this.pendingIndex = -1;
-      this.adsAmount = 0;
       this.activate(next);
     }
 
     const w = this.current;
+    const vm = this.viewmodel;
 
-    // --- Sprint / ADS rules ---
+    // --- ADS intent: needs a ready gun, room in front of it, and no shoulder swap ---
+    const canAds =
+      (w.state === 'ready' || (w.state === 'equipping' && w.stateProgress > 0.6) || (w.state === 'reloading' && w.data.reload.kind === 'shell')) &&
+      vm.wallCompression < 0.5 &&
+      !vm.switchingShoulder;
+    this.adsWanted = input.adsHeld && canAds;
     const wantsFire = input.fireHeld || input.firePressed;
-    const canAds = w.state === 'ready' || (w.state === 'equipping' && w.stateProgress > 0.6);
-    const adsTarget = input.adsHeld && canAds ? 1 : 0;
     // Firing or aiming always wins over sprinting.
-    player.sprintBlocked = adsTarget > 0 || (wantsFire && w.state === 'ready');
-    this.adsAmount = moveTowards(this.adsAmount, adsTarget, w.data.ads.speed * dt);
+    player.sprintBlocked = this.adsWanted || (wantsFire && w.state === 'ready');
     player.adsAmount = this.adsAmount;
+
+    // --- Arm stamina: holding a weapon up on target is tiring ---
+    if (!feel.armStamina) this.stamina = 1;
+    else if (this.adsAmount > 0.5) this.stamina = Math.max(0, this.stamina - this.handling.staminaDrain * dt * (player.crouching ? 0.75 : 1));
+    else this.stamina = Math.min(1, this.stamina + this.handling.staminaRecover * dt);
+
+    this.sprintRecover = player.sprinting ? w.data.sprintToFireTime : this.sprintRecover - dt;
   }
 
-  /**
-   * Aim the physical weapon. Must run after the camera has its final transform.
-   * The weapon points at the camera's aim ray at the convergence distance (hip)
-   * or zero distance (ADS); inertia, bob, recoil etc. then move it off that line.
-   */
+  /** Aim the physical weapon. Must run after the camera has its final transform. */
   updatePose(dt: number, lookYaw: number, lookPitch: number): void {
     const { player, camera, physics, debugDraw } = this.deps;
     const d = this.current.data;
     const cam = camera.camera;
+    const vm = this.viewmodel;
 
     camera.getAimDirection(player, this.aim);
-    const dist = d.aim.hipConvergence + (d.aim.zeroDistance - d.aim.hipConvergence) * this.adsAmount;
+
+    // --- Wall / obstacle probes from the shoulder along the aim ---
+    const reach = vm.restReach(this.adsAmount) + 0.04;
+    const range = 0.55 * d.handling.length + 0.1;
+    let nearest = Infinity;
+    for (let i = 0; i < 3; i++) {
+      const ox = (d.viewmodel.hipPosition[0] * 0.6 + (i === 2 ? 0.05 : 0)) * this.shoulder;
+      const oy = d.viewmodel.hipPosition[1] * 0.6 + (i === 1 ? 0.05 : 0);
+      this.probeFrom.set(ox, oy, 0);
+      cam.localToWorld(this.probeFrom);
+      const hit = physics.raycast(this.probeFrom, this.aim, reach + 0.2);
+      const dist = hit ? hit.distance : Infinity;
+      nearest = Math.min(nearest, dist);
+      if (debugDraw.enabled) {
+        const c = clamp((reach - dist) / range, 0, 1);
+        this.rayEnd.copy(this.probeFrom).addScaledVector(this.aim, Math.min(dist, reach));
+        debugDraw.line(this.probeFrom, this.rayEnd, c <= 0 ? 0x44ff88 : c < 0.75 ? 0xffa030 : 0xff3030);
+      }
+    }
+    this.wallTarget = clamp((reach - nearest) / range, 0, 1);
+
+    // --- Aim solution: camera ray at convergence (hip) / zero (ADS), plus drop compensation ---
+    const ads = this.adsAmount;
+    const dist = d.aim.hipConvergence + (d.aim.zeroDistance - d.aim.hipConvergence) * ads;
+    const v0 = muzzleVelocity(this.ammo, d.barrelLength);
+    const dropAngle = Math.atan2(dropAt(dist, v0, dragFactor(this.ammo)), dist);
     this.aimPoint.copy(camera.eye).addScaledVector(this.aim, dist);
     cam.worldToLocal(this.aimPoint);
-    this.viewmodel.update(dt, { player, lookYaw, lookPitch, adsAmount: this.adsAmount, aimPoint: this.aimPoint, mainCamera: cam });
 
-    const rig = this.viewmodel.activeRig!;
-    this.viewmodel.toWorld(rig.muzzle, cam, this.muzzleWorld);
-    this.viewmodel.forwardWorld(rig.muzzle, cam, this.muzzleDir);
-    this.aimErrorDeg = Math.acos(Math.min(1, this.muzzleDir.dot(this.aim))) * (180 / Math.PI);
+    vm.update(dt, {
+      player,
+      lookYaw,
+      lookPitch,
+      adsTarget: this.adsWanted ? 1 : 0,
+      aimPoint: this.aimPoint,
+      dropAngle,
+      mainCamera: cam,
+      stamina: this.stamina,
+      wallTarget: this.wallTarget,
+      shoulder: this.shoulder,
+    });
+
+    const rig = vm.activeRig!;
+    vm.toWorld(rig.muzzle, cam, this.muzzleWorld);
+    vm.forwardWorld(rig.muzzle, cam, this.muzzleDir);
+    this.aimErrorDeg = Math.acos(Math.min(1, this.muzzleDir.dot(this.aim))) / DEG;
 
     // Test laser: parallel to the bore, from the emitter under the barrel.
     if (this.laser.enabled) {
-      this.viewmodel.toWorld(rig.laser, cam, this.laserFrom);
-      this.viewmodel.forwardWorld(rig.laser, cam, this.laserDir);
-      const hit = physics.raycast(this.laserFrom, this.laserDir, 200);
-      this.rayEnd.copy(this.laserFrom).addScaledVector(this.laserDir, hit ? hit.distance : 200);
+      vm.toWorld(rig.laser, cam, this.laserFrom);
+      vm.forwardWorld(rig.laser, cam, this.laserDir);
+      const hit = physics.raycast(this.laserFrom, this.laserDir, 250);
+      this.rayEnd.copy(this.laserFrom).addScaledVector(this.laserDir, hit ? hit.distance : 250);
       this.laser.update(this.laserFrom, this.rayEnd, !!hit);
     } else {
       this.laser.update(this.laserFrom, this.laserFrom, false);
@@ -193,7 +304,7 @@ export class WeaponController implements WeaponListener {
       this.rayEnd.copy(camera.eye).addScaledVector(this.aim, ch ? ch.distance : 300);
       debugDraw.line(this.tmpV.copy(camera.eye).addScaledVector(this.aim, 0.5), this.rayEnd, 0x2ad4ff);
       debugDraw.cross(this.rayEnd, 0.08, 0x2ad4ff);
-      // Weapon aim ray (bore line): yellow
+      // Weapon aim ray (straight bore line): yellow
       const wh = physics.raycast(this.muzzleWorld, this.muzzleDir, 300);
       this.rayEnd.copy(this.muzzleWorld).addScaledVector(this.muzzleDir, wh ? wh.distance : 300);
       debugDraw.line(this.muzzleWorld, this.rayEnd, 0xffe14a);
@@ -206,23 +317,21 @@ export class WeaponController implements WeaponListener {
   }
 
   updateFire(dt: number, input: Input): void {
-    const { player, camera } = this.deps;
-    const w = this.current;
+    const { camera, player } = this.deps;
+    const vm = this.viewmodel;
 
-    // --- Weapon logic (may call onShot) ---
+    this.frameHitRank = 0;
+    this.frameDamage = 0;
     this.current.update(dt, {
       fireHeld: input.fireHeld,
       firePressed: input.firePressed,
       reloadPressed: input.reloadPressed,
-      sprinting: player.sprinting,
+      blocked: this.sprintRecover > 0 || vm.wallCompression > 0.75 || vm.switchingShoulder,
     });
-    if (w.state === 'reloading' && input.adsHeld && w.data.reload.kind === 'magazine') {
-      // ADS is dropped during magazine reloads (prevents pose conflicts).
-      this.adsAmount = moveTowards(this.adsAmount, 0, w.data.ads.speed * dt * 2);
-    }
 
-    this.currentSpread = this.computeSpread();
-    this.recoil.update(dt, camera);
+    this.projectiles.update(dt);
+    this.flushHits();
+    this.recoil.update(dt, camera, player);
 
     // --- Delayed shell ejection (pump / bolt timing) ---
     for (const s of this.pendingShells) {
@@ -243,23 +352,13 @@ export class WeaponController implements WeaponListener {
     }
   }
 
-  computeSpread(): number {
-    const d = this.current.data;
-    const p = this.deps.player;
-    const ads = this.adsAmount;
-    const base = d.spread.hip + (d.spread.ads - d.spread.hip) * ads;
-    const moving = d.spread.moving * clamp(p.speedRatio, 0, 1.3) * (1 - 0.6 * ads);
-    const air = p.grounded ? 0 : d.spread.air * (1 - 0.4 * ads);
-    const crouch = p.crouching ? d.spread.crouchMultiplier : 1;
-    return (base + this.current.bloom * (1 - 0.5 * ads) + moving + air) * crouch;
-  }
-
   // ---------------- WeaponListener ----------------
 
   onShot(weapon: Weapon): void {
-    const { camera, audio, impacts, hud, physics } = this.deps;
+    const { camera, audio, impacts, physics, player } = this.deps;
     const d = weapon.data;
-    const ads = this.adsAmount;
+    const ammo = this.ammo;
+    const vm = this.viewmodel;
 
     // Shots leave the real muzzle along the bore. If the muzzle pokes through
     // geometry (eye -> muzzle blocked), the shot starts at the obstruction instead.
@@ -269,48 +368,83 @@ export class WeaponController implements WeaponListener {
     const blocked = reach > 1e-4 ? physics.raycast(camera.eye, this.toMuzzle.divideScalar(reach), reach) : null;
     if (blocked) this.origin.copy(blocked.point).addScaledVector(this.toMuzzle, -0.02);
 
-    const spread = this.computeSpread();
-    const result = this.hitscan.fire(d, this.origin, this.muzzleDir, spread, this.muzzleWorld, weapon.totalShots);
+    // Basis around the bore for dispersion.
+    this.right.set(0, 1, 0).cross(this.muzzleDir);
+    if (this.right.lengthSq() < 1e-6) this.right.set(1, 0, 0);
+    this.right.normalize();
+    this.up.crossVectors(this.muzzleDir, this.right).normalize();
 
-    // Recoil layers (independent): aim displacement, camera punch, viewmodel kick.
-    this.recoil.onShot(d, weapon.shotIndex, ads);
-    this.recoil.applyCameraKick(d, camera, ads);
-    this.viewmodel.onShot(d, ads);
+    // Mechanical dispersion (MOA cone) plus a little extra while the gun is still
+    // moving from previous shots. No hip-fire bloom: aim comes from the weapon itself.
+    const rd = vm.recoilDeg;
+    const recoilEnergy = Math.min(1, Math.hypot(rd.x, rd.y) / Math.max(0.5, d.recoil.vertical * 2));
+    const coneRad = (this.handling.dispersionDeg * 0.5 + d.recoil.dispersion * recoilEnergy) * DEG;
+    const v0 = muzzleVelocity(ammo, d.barrelLength);
+    this.lastMuzzleVelocity = v0;
+    const pellets = Math.max(1, ammo.pellets);
+    const pelletRad = Math.tan(ammo.pelletSpread * DEG);
+    const patternRot = Math.random() * Math.PI * 2;
+    this.shotId++;
+    const tracer = ammo.tracer || (d.fx.tracerEvery > 0 && weapon.totalShots % d.fx.tracerEvery === 0);
+    for (let i = 0; i < pellets; i++) {
+      // Gaussian-ish radius: most rounds land near the centre of the group.
+      const a = Math.random() * Math.PI * 2;
+      const r = Math.min(1, Math.sqrt(-2 * Math.log(Math.max(1e-6, Math.random()))) * 0.45) * Math.tan(coneRad);
+      let ox = Math.cos(a) * r;
+      let oy = Math.sin(a) * r;
+      if (pellets > 1) {
+        const ring = i === 0 ? 0 : i % 2 === 0 ? 1 : 0.55;
+        const pa = patternRot + (i / (pellets - 1)) * Math.PI * 2;
+        ox += (Math.cos(pa) * ring + (Math.random() - 0.5) * 0.3) * pelletRad;
+        oy += (Math.sin(pa) * ring + (Math.random() - 0.5) * 0.3) * pelletRad;
+      }
+      this.pelletDir.copy(this.muzzleDir).addScaledVector(this.right, ox).addScaledVector(this.up, oy).normalize();
+      this.projectiles.fire(this.origin, this.pelletDir, v0 * (0.985 + Math.random() * 0.03), ammo, this.shotId, tracer && i === 0, i < 3);
+    }
+
+    // Recoil: an impulse into the weapon; part of it reaches the view.
+    const kick = vm.kick(d, ammo, player.crouching);
+    this.recoil.onShot(d, kick, camera, this.adsAmount);
 
     audio.play(d.audio.fire);
-    Haptics.pulse(HAPTIC_MS[d.model]);
-    if (feel.muzzleFlash) {
+    Haptics.pulse(HAPTIC_MS[d.category]);
+    if (feel.muzzleFlash && d.fx.muzzleFlashScale > 0.3) {
       this.worldFlash.position.copy(this.muzzleWorld);
       this.worldFlashLife = 0.06 * d.fx.muzzleFlashScale;
     }
     impacts.muzzleSmoke(this.muzzleWorld, this.muzzleDir, d.fx.smoke);
 
-    // Shell ejection (shotgun ejects on the pump stroke)
     const slot = this.pendingShells.find((s) => !s.active);
     if (slot && feel.shells) {
       slot.active = true;
       slot.time = d.fx.shellEjectDelay;
     }
-
-    this.handleResult(result, hud);
   }
 
-  private handleResult(result: ShotResult, hud: HUD): void {
-    const { audio } = this.deps;
-    if (result.distance >= 0) this.lastHitDistance = result.distance;
-    if (result.kind === 'miss') return;
-    hud.showHit(result.kind);
-    hud.damageNumber(result.point, result.damage, result.kind);
-    this.lastDamage = `${result.damage.toFixed(0)}${result.kind === 'crit' ? ' (crit)' : result.kind === 'kill' ? ' (kill)' : ''}`;
-    this.lastTargetHealth = result.targetHealth >= 0 ? `${result.targetHealth.toFixed(0)} / ${result.targetMaxHealth}` : '-';
-    if (result.kind === 'kill') {
+  private onProjectileHit(r: ProjectileHitReport): void {
+    this.lastHitDistance = r.distance;
+    if (r.kind === 'world') return;
+    this.frameDamage += r.damage;
+    const rank = r.kind === 'kill' ? 3 : r.kind === 'crit' ? 2 : 1;
+    if (rank >= this.frameHitRank) {
+      this.frameHitRank = rank;
+      this.frameHitPoint.copy(r.point);
+    }
+    this.lastTargetHealth = r.targetHealth >= 0 ? `${r.targetHealth.toFixed(0)} / ${r.targetMaxHealth}` : '-';
+  }
+
+  /** One hit marker + sound per frame, even when nine pellets land together. */
+  private flushHits(): void {
+    if (this.frameHitRank === 0) return;
+    const { hud, audio } = this.deps;
+    const kind: HitKind = this.frameHitRank === 3 ? 'kill' : this.frameHitRank === 2 ? 'crit' : 'hit';
+    hud.showHit(kind);
+    hud.damageNumber(this.frameHitPoint, this.frameDamage, kind);
+    this.lastDamage = `${this.frameDamage.toFixed(0)}${kind === 'crit' ? ' (crit)' : kind === 'kill' ? ' (kill)' : ''}`;
+    if (kind === 'kill') {
       audio.play('ui.kill');
       Haptics.pulse(40);
-    } else if (result.kind === 'crit') {
-      audio.play('ui.crit');
-    } else {
-      audio.play('ui.hit');
-    }
+    } else audio.play(kind === 'crit' ? 'ui.crit' : 'ui.hit');
   }
 
   onDryFire(): void {
@@ -331,8 +465,8 @@ export class WeaponController implements WeaponListener {
     this.viewmodel.toWorld(rig.ejectPort, camera.camera, this.eject);
     const d = this.current.data;
     const speed = d.fx.shellEjectSpeed;
-    // Right, up and slightly back in camera space.
-    this.vel.set(speed * (0.9 + Math.random() * 0.3), speed * (0.55 + Math.random() * 0.3), speed * 0.15).applyQuaternion(camera.camera.quaternion);
+    // Out to the ejection side, up and slightly back, in camera space.
+    this.vel.set(speed * (0.9 + Math.random() * 0.3) * this.shoulder, speed * (0.55 + Math.random() * 0.3), speed * 0.15).applyQuaternion(camera.camera.quaternion);
     this.vel.add(player.velocity);
     this.e.set(Math.random() * 0.4, Math.PI / 2 + Math.random() * 0.4, 0);
     this.q.copy(camera.camera.quaternion).multiply(this.q2.setFromEuler(this.e));

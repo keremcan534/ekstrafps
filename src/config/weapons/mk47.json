@@ -1,0 +1,85 @@
+{
+  "id": "mk47",
+  "name": "MK47 Mutant",
+  "short": "MK47",
+  "model": "mk47",
+  "animSet": "rifle",
+  "category": "rifle",
+  "ammo": "762x39_ps",
+  "fireModes": [
+    "auto",
+    "semi"
+  ],
+  "fireRate": 650,
+  "magazineSize": 30,
+  "closedBolt": true,
+  "barrelLength": 0.406,
+  "handling": {
+    "weight": 3.3,
+    "length": 0.85,
+    "ergonomics": 58
+  },
+  "accuracy": {
+    "moa": 2.2
+  },
+  "recoil": {
+    "vertical": 1.1,
+    "horizontal": 0.41,
+    "horizontalBias": 0.2,
+    "back": 0.026,
+    "shoulder": 175,
+    "damping": 0.6,
+    "cameraTransfer": 0.33,
+    "cameraKeep": 0.2,
+    "cameraRecovery": 4.0,
+    "dispersion": 0.08,
+    "punch": 0.3,
+    "roll": 1.2
+  },
+  "aim": {
+    "hipConvergence": 15,
+    "zeroDistance": 100
+  },
+  "sight": {
+    "type": "reddot",
+    "adsFov": 66,
+    "sightDistance": 0.3
+  },
+  "viewmodel": {
+    "hipPosition": [
+      0.15,
+      -0.2,
+      -0.42
+    ]
+  },
+  "reload": {
+    "kind": "magazine",
+    "time": 2.0,
+    "emptyTime": 2.6,
+    "shellStart": 0,
+    "shellInsert": 0,
+    "shellEnd": 0
+  },
+  "equipTime": 0.45,
+  "holsterTime": 0.23,
+  "sprintToFireTime": 0.12,
+  "fx": {
+    "tracerEvery": 4,
+    "muzzleFlashScale": 1.1,
+    "smoke": 0.6,
+    "shellEjectDelay": 0.02,
+    "shellEjectSpeed": 3.2
+  },
+  "audio": {
+    "fire": "mk47.fire",
+    "dry": "dry_fire",
+    "equip": "equip.rifle",
+    "reloadStart": "reload.rifle.start",
+    "magOut": "reload.rifle.magout",
+    "magIn": "reload.rifle.magin",
+    "boltBack": "reload.rifle.boltback",
+    "boltForward": "reload.rifle.boltforward",
+    "shellInsert": "",
+    "pump": ""
+  }
+}

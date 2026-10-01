@@ -107,6 +107,42 @@ export const RECIPES: Record<string, Recipe> = {
     burst(c, { t: 0.07, dur: 0.5, attack: 0.02, freq: 900, freqEnd: 300, type: 'lowpass', gain: 0.22 });
   } },
 
+  // ---------- 7.62x39 (AK family): deeper, harsher ----------
+  ak_shot: { dur: 0.36, render: (c) => {
+    burst(c, { dur: 0.2, freq: r(2400, 2900), freqEnd: 520, type: 'bandpass', q: 0.6, gain: 1.9 });
+    burst(c, { dur: 0.04, freq: 2100, type: 'highpass', gain: 1.0 });
+  } },
+  ak_punch: { dur: 0.3, render: (c) => {
+    tone(c, { dur: 0.16, f0: r(118, 128), f1: 40, sweep: 0.11, gain: 1.25 });
+    burst(c, { dur: 0.06, freq: 280, type: 'lowpass', gain: 0.6 });
+  } },
+  ak_mech: { dur: 0.14, render: (c) => {
+    burst(c, { dur: 0.018, freq: r(3200, 3800), q: 5, gain: 1.2 });
+    metal(c, 0.03, r(1700, 1900), 0.05, 0.25);
+  } },
+  ak_tail: { dur: 1.2, render: (c) => {
+    burst(c, { dur: 0.85, attack: 0.012, freq: 560, freqEnd: 190, type: 'lowpass', q: 0.5, gain: 0.6, curve: 0.8 });
+    burst(c, { t: 0.08, dur: 0.55, attack: 0.02, freq: 850, freqEnd: 260, type: 'lowpass', gain: 0.25 });
+  } },
+
+  // ---------- 9x39 suppressed ----------
+  val_thump: { dur: 0.25, render: (c) => {
+    burst(c, { dur: 0.09, freq: r(700, 900), freqEnd: 250, type: 'lowpass', q: 0.7, gain: 1.4 });
+    tone(c, { dur: 0.08, f0: 160, f1: 70, gain: 0.7 });
+  } },
+  val_mech: { dur: 0.12, render: (c) => {
+    burst(c, { dur: 0.016, freq: r(3600, 4300), q: 6, gain: 1.1 });
+    burst(c, { t: 0.03, dur: 0.014, freq: r(2600, 3000), q: 5, gain: 0.8 });
+    metal(c, 0.03, 2200, 0.04, 0.15);
+  } },
+  val_tail: { dur: 0.6, render: (c) => burst(c, { dur: 0.4, attack: 0.01, freq: 400, freqEnd: 160, type: 'lowpass', gain: 0.4 }) },
+
+  // ---------- 7.62x25 SMG: snappy ----------
+  ppsh_shot: { dur: 0.25, render: (c) => {
+    burst(c, { dur: 0.11, freq: r(3800, 4400), freqEnd: 900, type: 'bandpass', q: 0.8, gain: 1.4 });
+    burst(c, { dur: 0.025, freq: 3000, type: 'highpass', gain: 0.8 });
+  } },
+
   // ---------- Heavy pistol ----------
   pistol_shot: { dur: 0.4, render: (c) => {
     burst(c, { dur: 0.24, freq: r(2000, 2400), freqEnd: 500, type: 'bandpass', q: 0.6, gain: 1.9 });
@@ -178,6 +214,15 @@ export const RECIPES: Record<string, Recipe> = {
   dry_fire: { dur: 0.08, render: (c) => {
     burst(c, { dur: 0.008, freq: 5200, q: 8, gain: 0.8 });
     burst(c, { t: 0.01, dur: 0.012, freq: 2200, q: 4, gain: 0.4 });
+  } },
+
+  firemode_click: { dur: 0.08, render: (c) => {
+    burst(c, { dur: 0.01, freq: 4200, q: 8, gain: 0.8 });
+    burst(c, { t: 0.025, dur: 0.008, freq: 3000, q: 6, gain: 0.5 });
+  } },
+  ricochet: { dur: 0.5, render: (c) => {
+    tone(c, { dur: 0.35, f0: r(3200, 4200), f1: r(900, 1400), sweep: 0.3, type: 'sine', gain: 0.35 });
+    burst(c, { dur: 0.02, freq: 4000, type: 'highpass', gain: 0.5 });
   } },
 
   // ---------- Impacts ----------

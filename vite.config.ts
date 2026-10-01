@@ -27,7 +27,7 @@ function tuningSavePlugin(): Plugin {
         req.on('end', () => {
           try {
             const { file, data } = JSON.parse(body) as { file: string; data: unknown };
-            if (!/^[a-z_]+(\/[a-z_]+)?$/.test(file)) throw new Error('bad file name');
+            if (!/^[a-z0-9_]+(\/[a-z0-9_]+)?$/.test(file)) throw new Error('bad file name');
             const target = path.join(configDir, `${file}.json`);
             if (!fs.existsSync(target)) throw new Error(`unknown config ${file}`);
             fs.writeFileSync(target, JSON.stringify(data, null, 2) + '\n');

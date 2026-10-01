@@ -1,21 +1,56 @@
 {
   "id": "heavy_pistol",
   "name": "HX-50 Heavy Pistol",
+  "short": "PISTOL",
   "model": "pistol",
-  "fireMode": "semi",
-  "mode": "hitscan",
-  "ammoType": "pistol",
-  "damage": 52,
+  "animSet": "pistol",
+  "category": "pistol",
+  "ammo": "50ae_heavy",
+  "fireModes": [
+    "semi"
+  ],
   "fireRate": 360,
   "magazineSize": 9,
-  "pellets": 1,
-  "range": 150,
-  "falloffStart": 22,
-  "falloffEnd": 55,
-  "falloffMinMultiplier": 0.7,
-  "critMultiplier": 2.2,
-  "impactForce": 12,
-  "hitReaction": 2.4,
+  "closedBolt": true,
+  "barrelLength": 0.152,
+  "handling": {
+    "weight": 1.4,
+    "length": 0.24,
+    "ergonomics": 85
+  },
+  "accuracy": {
+    "moa": 4.5
+  },
+  "recoil": {
+    "vertical": 4.5,
+    "horizontal": 1.0,
+    "horizontalBias": -0.3,
+    "back": 0.05,
+    "shoulder": 120,
+    "damping": 0.5,
+    "cameraTransfer": 0.5,
+    "cameraKeep": 0.15,
+    "cameraRecovery": 4.0,
+    "dispersion": 0.15,
+    "punch": 0.9,
+    "roll": 3
+  },
+  "aim": {
+    "hipConvergence": 10,
+    "zeroDistance": 25
+  },
+  "sight": {
+    "type": "iron",
+    "adsFov": 76,
+    "sightDistance": 0.34
+  },
+  "viewmodel": {
+    "hipPosition": [
+      0.13,
+      -0.15,
+      -0.36
+    ]
+  },
   "reload": {
     "kind": "magazine",
     "time": 1.4,
@@ -27,79 +62,6 @@
   "equipTime": 0.3,
   "holsterTime": 0.16,
   "sprintToFireTime": 0.08,
-  "spread": {
-    "hip": 0.9,
-    "ads": 0.04,
-    "moving": 1.1,
-    "air": 3,
-    "crouchMultiplier": 0.8,
-    "bloomPerShot": 1.2,
-    "bloomMax": 3.2,
-    "bloomRecovery": 6.5
-  },
-  "recoil": {
-    "vertical": 2.1,
-    "horizontal": 0.45,
-    "horizontalBias": -0.12,
-    "patternAmplitude": 0,
-    "patternFrequency": 0,
-    "firstShotMultiplier": 1,
-    "buildUpPerShot": 0.12,
-    "buildUpMax": 0.45,
-    "snappiness": 26,
-    "recoverySpeed": 4.2,
-    "recoveryDelay": 0.12,
-    "adsMultiplier": 0.8
-  },
-  "cameraRecoil": {
-    "pitch": 1.9,
-    "yaw": 0.4,
-    "roll": 1.8,
-    "stiffness": 160,
-    "damping": 14,
-    "fovPunch": 1.3,
-    "shake": 0.1
-  },
-  "visualRecoil": {
-    "kickBack": 0.06,
-    "kickUp": 6.0,
-    "kickSide": 2,
-    "kickRoll": 4,
-    "kickRaise": 0.018,
-    "rotStiffness": 170,
-    "rotDamping": 13,
-    "posStiffness": 230,
-    "posDamping": 18,
-    "adsMultiplier": 0.55
-  },
-  "ads": {
-    "fov": 76,
-    "speed": 10,
-    "swayMultiplier": 0.3,
-    "bobMultiplier": 0.22,
-    "sightDistance": 0.34
-  },
-  "aim": {
-    "hipConvergence": 12,
-    "zeroDistance": 50
-  },
-  "sway": {
-    "amount": 0.7,
-    "max": 5,
-    "stiffness": 95,
-    "damping": 11
-  },
-  "bob": {
-    "amount": 1.15,
-    "sprintAmount": 1.7
-  },
-  "viewmodel": {
-    "hipPosition": [
-      0.13,
-      -0.15,
-      -0.36
-    ]
-  },
   "fx": {
     "tracerEvery": 0,
     "muzzleFlashScale": 1.25,

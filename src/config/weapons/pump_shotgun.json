@@ -1,21 +1,56 @@
 {
   "id": "pump_shotgun",
   "name": "BRK-12 Pump Shotgun",
+  "short": "SHOTGUN",
   "model": "shotgun",
-  "fireMode": "pump",
-  "mode": "hitscan",
-  "ammoType": "shell",
-  "damage": 15,
+  "animSet": "shotgun",
+  "category": "shotgun",
+  "ammo": "12g_buck",
+  "fireModes": [
+    "pump"
+  ],
   "fireRate": 72,
   "magazineSize": 6,
-  "pellets": 10,
-  "range": 60,
-  "falloffStart": 7,
-  "falloffEnd": 24,
-  "falloffMinMultiplier": 0.25,
-  "critMultiplier": 1.5,
-  "impactForce": 9,
-  "hitReaction": 0.9,
+  "closedBolt": true,
+  "barrelLength": 0.47,
+  "handling": {
+    "weight": 3.4,
+    "length": 1.0,
+    "ergonomics": 45
+  },
+  "accuracy": {
+    "moa": 3
+  },
+  "recoil": {
+    "vertical": 6.0,
+    "horizontal": 1.2,
+    "horizontalBias": 0.2,
+    "back": 0.08,
+    "shoulder": 110,
+    "damping": 0.5,
+    "cameraTransfer": 0.5,
+    "cameraKeep": 0.2,
+    "cameraRecovery": 3.5,
+    "dispersion": 0.2,
+    "punch": 1.2,
+    "roll": 3
+  },
+  "aim": {
+    "hipConvergence": 10,
+    "zeroDistance": 25
+  },
+  "sight": {
+    "type": "iron",
+    "adsFov": 78,
+    "sightDistance": 0.17
+  },
+  "viewmodel": {
+    "hipPosition": [
+      0.16,
+      -0.19,
+      -0.42
+    ]
+  },
   "reload": {
     "kind": "shell",
     "time": 0,
@@ -27,81 +62,8 @@
   "equipTime": 0.5,
   "holsterTime": 0.24,
   "sprintToFireTime": 0.14,
-  "spread": {
-    "hip": 5.2,
-    "ads": 3.8,
-    "moving": 0.8,
-    "air": 1.5,
-    "crouchMultiplier": 0.9,
-    "bloomPerShot": 0,
-    "bloomMax": 0,
-    "bloomRecovery": 10
-  },
-  "recoil": {
-    "vertical": 4.6,
-    "horizontal": 1.1,
-    "horizontalBias": 0.2,
-    "patternAmplitude": 0,
-    "patternFrequency": 0,
-    "firstShotMultiplier": 1,
-    "buildUpPerShot": 0,
-    "buildUpMax": 0,
-    "snappiness": 22,
-    "recoverySpeed": 4.8,
-    "recoveryDelay": 0.14,
-    "adsMultiplier": 0.85
-  },
-  "cameraRecoil": {
-    "pitch": 3.8,
-    "yaw": 0.8,
-    "roll": 3.2,
-    "stiffness": 130,
-    "damping": 12,
-    "fovPunch": 3,
-    "shake": 0.3
-  },
-  "visualRecoil": {
-    "kickBack": 0.12,
-    "kickUp": 8.0,
-    "kickSide": 3,
-    "kickRoll": 6,
-    "kickRaise": 0.03,
-    "rotStiffness": 140,
-    "rotDamping": 12,
-    "posStiffness": 170,
-    "posDamping": 14,
-    "adsMultiplier": 0.6
-  },
-  "ads": {
-    "fov": 80,
-    "speed": 7.5,
-    "swayMultiplier": 0.35,
-    "bobMultiplier": 0.25,
-    "sightDistance": 0.17
-  },
-  "aim": {
-    "hipConvergence": 10,
-    "zeroDistance": 50
-  },
-  "sway": {
-    "amount": 1.2,
-    "max": 4,
-    "stiffness": 80,
-    "damping": 11
-  },
-  "bob": {
-    "amount": 1,
-    "sprintAmount": 1.5
-  },
-  "viewmodel": {
-    "hipPosition": [
-      0.16,
-      -0.19,
-      -0.42
-    ]
-  },
   "fx": {
-    "tracerEvery": 4,
+    "tracerEvery": 0,
     "muzzleFlashScale": 1.7,
     "smoke": 1,
     "shellEjectDelay": 0.36,

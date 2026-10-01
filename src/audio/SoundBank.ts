@@ -37,6 +37,56 @@ export const SOUND_BANK: Record<string, SoundEvent> = {
     pitchVariance: 0.035,
     maxVoices: 16,
   },
+  'ak.fire': {
+    layers: [
+      { synth: 'ak_mech', gain: 0.4 },
+      { synth: 'ak_shot', gain: 0.85 },
+      { synth: 'ak_punch', gain: 0.95 },
+      { synth: 'ak_tail', gain: 0.55 },
+    ],
+    pitchVariance: 0.03,
+    maxVoices: 16,
+  },
+  'mk47.fire': {
+    layers: [
+      { synth: 'ar_mech', gain: 0.35 },
+      { synth: 'ak_shot', gain: 0.8 },
+      { synth: 'ak_punch', gain: 0.9 },
+      { synth: 'ar_tail', gain: 0.5 },
+    ],
+    pitchVariance: 0.03,
+    maxVoices: 16,
+  },
+  'rd704.fire': {
+    layers: [
+      { synth: 'ak_mech', gain: 0.4 },
+      { synth: 'ak_shot', gain: 0.9 },
+      { synth: 'ak_punch', gain: 1.05 },
+      { synth: 'ak_tail', gain: 0.6 },
+    ],
+    pitchVariance: 0.025,
+    maxVoices: 16,
+  },
+  'val.fire': {
+    // Integrally suppressed subsonic: no supersonic crack, the action is the loudest part.
+    layers: [
+      { synth: 'val_mech', gain: 0.6 },
+      { synth: 'val_thump', gain: 0.75 },
+      { synth: 'val_tail', gain: 0.25 },
+    ],
+    pitchVariance: 0.04,
+    maxVoices: 16,
+  },
+  'ppsh.fire': {
+    layers: [
+      { synth: 'ar_mech', gain: 0.3 },
+      { synth: 'ppsh_shot', gain: 0.7 },
+      { synth: 'ar_punch', gain: 0.6 },
+      { synth: 'ar_tail', gain: 0.4 },
+    ],
+    pitchVariance: 0.04,
+    maxVoices: 20,
+  },
   'pistol.fire': {
     layers: [
       { synth: 'pistol_mech', gain: 0.45 },
@@ -84,6 +134,8 @@ export const SOUND_BANK: Record<string, SoundEvent> = {
   'shell.brass': { layers: [{ synth: 'shell_brass', gain: 0.12 }], pitchVariance: 0.15, maxVoices: 4 },
   'shell.plastic': { layers: [{ synth: 'shell_plastic', gain: 0.2 }], pitchVariance: 0.15, maxVoices: 3 },
 
+  'ui.firemode': { layers: [{ synth: 'firemode_click', gain: 0.5 }], bus: 'ui' },
+  'impact.ricochet': { layers: [{ synth: 'ricochet', gain: 0.35 }], pitchVariance: 0.2, maxVoices: 4 },
   'ui.hit': { layers: [{ synth: 'hit_tick', gain: 0.35 }], pitchVariance: 0.04, maxVoices: 3, bus: 'ui' },
   'ui.crit': { layers: [{ synth: 'hit_crit', gain: 0.4 }], pitchVariance: 0.03, maxVoices: 3, bus: 'ui' },
   'ui.kill': { layers: [{ synth: 'kill', gain: 0.55 }], maxVoices: 2, bus: 'ui' },

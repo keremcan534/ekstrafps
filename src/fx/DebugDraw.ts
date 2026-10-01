@@ -74,7 +74,7 @@ export class DebugDraw {
   /** Line that stays visible and fades (bullet trajectories). */
   persistent(a: THREE.Vector3, b: THREE.Vector3, color: number, life: number): void {
     if (!this.enabled) return;
-    if (this.persistentLines.length > 120) this.persistentLines.shift();
+    if (this.persistentLines.length > 400) this.persistentLines.shift();
     this.persistentLines.push({ a: a.clone(), b: b.clone(), color: new THREE.Color(color), life, maxLife: life });
   }
 

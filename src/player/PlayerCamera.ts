@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { Spring, Spring3 } from '../core/Spring';
 import { DEG, damp, clamp, hfovToVfov } from '../core/math';
 import { playerConfig as cfg } from './PlayerConfig';
-import type { PlayerController } from './PlayerController';
+import { LEAN_ANGLE, type PlayerController } from './PlayerController';
 
 /**
  * Composes the final render camera from independent layers:
@@ -72,11 +72,20 @@ export class PlayerCamera {
     const bobX = Math.cos(player.bobPhase) * bobScale * 0.35;
     const right = Math.cos(player.yaw);
     const rightZ = -Math.sin(player.yaw);
+    // Lean: the head swings around the hips, so it moves sideways AND a little down.
+    const leanA = player.lean * LEAN_ANGLE;
+    const leanR = player.eyeHeight - player.leanPivotHeight;
+    const leanX = Math.sin(leanA) * leanR;
+    const leanY = (Math.cos(leanA) - 1) * leanR;
     this.camera.position.set(
-      this.eye.x + right * bobX,
-      this.eye.y + bobY + this.landingDip.value,
-      this.eye.z + rightZ * bobX,
+      this.eye.x + right * (bobX + leanX),
+      this.eye.y + bobY + this.landingDip.value + leanY,
+      this.eye.z + rightZ * (bobX + leanX),
     );
+    // Bullets and aim use the leaned eye too.
+    this.eye.x += right * leanX;
+    this.eye.y += leanY;
+    this.eye.z += rightZ * leanX;
 
     // --- Shake (smooth pseudo-noise) ---
     this.trauma = Math.max(0, this.trauma - dt * 1.8);
@@ -96,7 +105,7 @@ export class PlayerCamera {
     this.euler.set(
       player.pitch + this.aimPitch + this.punch.value.x + this.landingPitch.value + shakePitch,
       player.yaw + this.aimYaw + this.punch.value.y + shakeYaw,
-      this.punch.value.z + this.roll + shakeRoll,
+      this.punch.value.z + this.roll + shakeRoll - leanA * 0.9,
     );
     this.camera.quaternion.setFromEuler(this.euler);
 

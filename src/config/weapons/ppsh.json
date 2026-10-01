@@ -1,0 +1,85 @@
+{
+  "id": "ppsh",
+  "name": "PPSh-41",
+  "short": "PPSH",
+  "model": "ppsh",
+  "animSet": "rifle",
+  "category": "smg",
+  "ammo": "762x25_pst",
+  "fireModes": [
+    "auto",
+    "semi"
+  ],
+  "fireRate": 1000,
+  "magazineSize": 71,
+  "closedBolt": false,
+  "barrelLength": 0.269,
+  "handling": {
+    "weight": 4.0,
+    "length": 0.843,
+    "ergonomics": 48
+  },
+  "accuracy": {
+    "moa": 6.0
+  },
+  "recoil": {
+    "vertical": 0.5,
+    "horizontal": 0.45,
+    "horizontalBias": 0.15,
+    "back": 0.015,
+    "shoulder": 170,
+    "damping": 0.55,
+    "cameraTransfer": 0.32,
+    "cameraKeep": 0.2,
+    "cameraRecovery": 4.0,
+    "dispersion": 0.1,
+    "punch": 0.15,
+    "roll": 0.8
+  },
+  "aim": {
+    "hipConvergence": 10,
+    "zeroDistance": 50
+  },
+  "sight": {
+    "type": "iron",
+    "adsFov": 72,
+    "sightDistance": 0.33
+  },
+  "viewmodel": {
+    "hipPosition": [
+      0.15,
+      -0.2,
+      -0.38
+    ]
+  },
+  "reload": {
+    "kind": "magazine",
+    "time": 2.8,
+    "emptyTime": 3.2,
+    "shellStart": 0,
+    "shellInsert": 0,
+    "shellEnd": 0
+  },
+  "equipTime": 0.5,
+  "holsterTime": 0.25,
+  "sprintToFireTime": 0.12,
+  "fx": {
+    "tracerEvery": 0,
+    "muzzleFlashScale": 0.9,
+    "smoke": 0.5,
+    "shellEjectDelay": 0.02,
+    "shellEjectSpeed": 3.2
+  },
+  "audio": {
+    "fire": "ppsh.fire",
+    "dry": "dry_fire",
+    "equip": "equip.rifle",
+    "reloadStart": "reload.rifle.start",
+    "magOut": "reload.rifle.magout",
+    "magIn": "reload.rifle.magin",
+    "boltBack": "reload.rifle.boltback",
+    "boltForward": "reload.rifle.boltforward",
+    "shellInsert": "",
+    "pump": ""
+  }
+}

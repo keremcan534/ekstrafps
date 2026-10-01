@@ -1,0 +1,85 @@
+{
+  "id": "rd704",
+  "name": "RD-704",
+  "short": "RD704",
+  "model": "rd704",
+  "animSet": "rifle",
+  "category": "rifle",
+  "ammo": "762x39_ps",
+  "fireModes": [
+    "auto",
+    "semi"
+  ],
+  "fireRate": 600,
+  "magazineSize": 30,
+  "closedBolt": true,
+  "barrelLength": 0.415,
+  "handling": {
+    "weight": 4.1,
+    "length": 0.95,
+    "ergonomics": 35
+  },
+  "accuracy": {
+    "moa": 2.6
+  },
+  "recoil": {
+    "vertical": 1.35,
+    "horizontal": 0.45,
+    "horizontalBias": 0.25,
+    "back": 0.03,
+    "shoulder": 175,
+    "damping": 0.6,
+    "cameraTransfer": 0.35,
+    "cameraKeep": 0.2,
+    "cameraRecovery": 3.8,
+    "dispersion": 0.08,
+    "punch": 0.35,
+    "roll": 1.3
+  },
+  "aim": {
+    "hipConvergence": 15,
+    "zeroDistance": 100
+  },
+  "sight": {
+    "type": "reddot",
+    "adsFov": 66,
+    "sightDistance": 0.3
+  },
+  "viewmodel": {
+    "hipPosition": [
+      0.15,
+      -0.2,
+      -0.43
+    ]
+  },
+  "reload": {
+    "kind": "magazine",
+    "time": 2.3,
+    "emptyTime": 2.9,
+    "shellStart": 0,
+    "shellInsert": 0,
+    "shellEnd": 0
+  },
+  "equipTime": 0.55,
+  "holsterTime": 0.28,
+  "sprintToFireTime": 0.12,
+  "fx": {
+    "tracerEvery": 4,
+    "muzzleFlashScale": 1.2,
+    "smoke": 0.7,
+    "shellEjectDelay": 0.02,
+    "shellEjectSpeed": 3.2
+  },
+  "audio": {
+    "fire": "rd704.fire",
+    "dry": "dry_fire",
+    "equip": "equip.rifle",
+    "reloadStart": "reload.rifle.start",
+    "magOut": "reload.rifle.magout",
+    "magIn": "reload.rifle.magin",
+    "boltBack": "reload.rifle.boltback",
+    "boltForward": "reload.rifle.boltforward",
+    "shellInsert": "",
+    "pump": ""
+  }
+}

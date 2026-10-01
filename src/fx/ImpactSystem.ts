@@ -75,31 +75,12 @@ export class ImpactSystem {
     }
   }
 
-  tracer(from: THREE.Vector3, to: THREE.Vector3): void {
-    if (!feel.tracers) return;
-    const d = this.tmp.subVectors(to, from);
-    const dist = d.length();
-    if (dist < 4) return;
-    d.divideScalar(dist);
-    const speed = 380;
-    const p = this.sp;
-    const start = 1.5;
-    p.x = from.x + d.x * start;
-    p.y = from.y + d.y * start;
-    p.z = from.z + d.z * start;
-    p.vx = d.x * speed;
-    p.vy = d.y * speed;
-    p.vz = d.z * speed;
-    p.life = (dist - start) / speed;
-    p.size = p.sizeEnd = 0.022;
-    p.stretch = 0.0075;
-    p.r = 1;
-    p.g = 0.78;
-    p.b = 0.45;
-    p.alpha = 0.9;
-    p.gravity = 0;
-    p.drag = 0;
-    this.sparks.spawn(p);
+  /** Bullet skipping off a hard surface: bright streak of sparks + whine. */
+  ricochet(point: THREE.Vector3, normal: THREE.Vector3, dir: THREE.Vector3): void {
+    this.refl.copy(dir).addScaledVector(normal, -2 * dir.dot(normal)).normalize();
+    this.burstSparks(point, 7, 12, 1.0, 0.9, 0.6, 0.25);
+    this.flash(point, normal, 0.1, 1, 0.85, 0.6);
+    this.audio.play('impact.ricochet', { position: point });
   }
 
   muzzleSmoke(pos: THREE.Vector3, forward: THREE.Vector3, amount: number): void {

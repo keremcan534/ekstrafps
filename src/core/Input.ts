@@ -18,6 +18,9 @@ export class Input {
   lookPitch = 0;
   /** True when the look delta this frame came from touch (aim assist only applies to touch). */
   lookFromTouch = false;
+  /** -1 lean left .. 1 lean right (Q / E held, or touch lean buttons). */
+  leanAxis = 0;
+  touchLean = 0;
 
   // Edges
   firePressed = false;
@@ -97,6 +100,8 @@ export class Input {
     this.moveY = y;
     this.sprintHeld = this.keys.has('ShiftLeft') || this.keys.has('ShiftRight') || this.touchSprint;
     this.crouchHeld = this.keys.has('KeyC') || this.touchCrouch;
+    this.leanAxis = (this.keys.has('KeyE') ? 1 : 0) - (this.keys.has('KeyQ') ? 1 : 0) + this.touchLean;
+    this.leanAxis = Math.max(-1, Math.min(1, this.leanAxis));
   }
 
   touchSprint = false;
@@ -136,18 +141,11 @@ export class Input {
       case 'KeyR':
         this.reloadPressed = true;
         break;
-      case 'Digit1':
-        this.slotPressed = 0;
-        break;
-      case 'Digit2':
-        this.slotPressed = 1;
-        break;
-      case 'Digit3':
-        this.slotPressed = 2;
-        break;
-      case 'KeyQ':
-        this.cyclePressed = -2; // quick swap to last weapon
-        break;
+      default:
+        if (e.code.startsWith('Digit')) {
+          const n = Number(e.code.slice(5));
+          if (n >= 1 && n <= 9) this.slotPressed = n - 1;
+        }
     }
     this.onKey?.(e.code);
   };

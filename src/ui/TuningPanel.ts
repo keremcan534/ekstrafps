@@ -1,11 +1,14 @@
 import GUI from 'lil-gui';
 import type { WeaponData } from '../weapons/WeaponData';
-import { WEAPON_DEFAULTS, WEAPON_FILES } from '../weapons/WeaponData';
+import { WEAPON_DEFAULTS, weaponFile } from '../weapons/WeaponData';
+import { AMMO_DEFAULTS, ammoTable } from '../weapons/AmmoData';
 import { playerConfig, playerConfigDefaults } from '../player/PlayerConfig';
 import { feel, feelDefaults } from '../config/Feel';
 
 export interface TuningHooks {
   getWeapon(): WeaponData;
+  getAmmoId(): string;
+  /** Re-derive handling after any weapon/ammo edit. */
   onWeaponTuned(): void;
   onFeelChanged(): void;
   refillAmmo(): void;
@@ -25,13 +28,15 @@ export class TuningPanel {
   private status: { message: string };
 
   constructor(private hooks: TuningHooks) {
-    this.gui = new GUI({ title: 'Weapon Lab tuning', width: 320 });
+    this.gui = new GUI({ title: 'Weapon Lab tuning', width: 330 });
     this.gui.domElement.classList.add('tuning');
     this.status = { message: 'Tab / ⚙ toggles' };
+    const refresh = () => this.gui.controllersRecursive().forEach((c) => c.updateDisplay());
 
     const actions = this.gui.addFolder('Save / reset');
     const a = {
-      saveWeapon: () => this.save(WEAPON_FILES[hooks.getWeapon().id], hooks.getWeapon()),
+      saveWeapon: () => this.save(weaponFile(hooks.getWeapon().id), hooks.getWeapon()),
+      saveAmmo: () => this.save('ammo', ammoTable),
       savePlayer: () => this.save('player', playerConfig),
       saveFeel: () => this.save('feel', feel),
       copyWeapon: () => this.copy(hooks.getWeapon()),
@@ -40,34 +45,45 @@ export class TuningPanel {
         const def = WEAPON_DEFAULTS.find((d) => d.id === w.id);
         if (def) deepAssign(w, structuredClone(def));
         hooks.onWeaponTuned();
-        this.gui.controllersRecursive().forEach((c) => c.updateDisplay());
+        refresh();
+      },
+      resetAmmo: () => {
+        const id = hooks.getAmmoId();
+        deepAssign(ammoTable[id], structuredClone(AMMO_DEFAULTS[id]));
+        hooks.onWeaponTuned();
+        refresh();
       },
       resetPlayer: () => {
         deepAssign(playerConfig, structuredClone(playerConfigDefaults));
-        this.gui.controllersRecursive().forEach((c) => c.updateDisplay());
+        refresh();
       },
       resetFeel: () => {
         deepAssign(feel, structuredClone(feelDefaults));
         hooks.onFeelChanged();
-        this.gui.controllersRecursive().forEach((c) => c.updateDisplay());
+        hooks.onWeaponTuned();
+        refresh();
       },
       refill: () => hooks.refillAmmo(),
     };
     actions.add(a, 'saveWeapon').name('💾 Save weapon to source');
+    actions.add(a, 'saveAmmo').name('💾 Save ammo to source');
     actions.add(a, 'savePlayer').name('💾 Save player to source');
     actions.add(a, 'saveFeel').name('💾 Save feel to source');
     actions.add(a, 'copyWeapon').name('Copy weapon JSON');
     actions.add(a, 'resetWeapon').name('Reset weapon');
+    actions.add(a, 'resetAmmo').name('Reset ammo');
     actions.add(a, 'resetPlayer').name('Reset player');
     actions.add(a, 'resetFeel').name('Reset feel');
     actions.add(a, 'refill').name('Refill ammo');
     actions.add(this.status, 'message').name('Status').disable().listen();
 
+    const tuned = () => hooks.onWeaponTuned();
     const feelF = this.gui.addFolder('Global feel').close();
-    const onFeel = () => hooks.onFeelChanged();
-    feelF.add(feel, 'recoilScale', 0, 3, 0.05).name('Recoil scale (aim)');
-    feelF.add(feel, 'cameraRecoilScale', 0, 3, 0.05).name('Camera recoil scale');
-    feelF.add(feel, 'visualRecoilScale', 0, 3, 0.05).name('Visual recoil scale');
+    feelF.add(feel, 'recoilScale', 0, 3, 0.05).name('Weapon recoil scale');
+    feelF.add(feel, 'cameraRecoilScale', 0, 3, 0.05).name('View recoil scale');
+    feelF.add(feel, 'inertiaScale', 0, 3, 0.05).name('Inertia scale').onChange(tuned);
+    feelF.add(feel, 'swayScale', 0, 3, 0.05).name('Sway scale').onChange(tuned);
+    feelF.add(feel, 'armStamina').name('Arm stamina');
     feelF.add(feel, 'impactForceScale', 0, 5, 0.1).name('Impact force scale');
     feelF.add(feel, 'hitReactionScale', 0, 3, 0.05).name('Robot reaction scale');
     feelF.add(feel, 'hitmarkerScale', 0.5, 2, 0.05).name('Hitmarker scale');
@@ -76,8 +92,10 @@ export class TuningPanel {
     feelF.add(feel, 'shells');
     feelF.add(feel, 'decals');
     feelF.add(feel, 'damageNumbers').name('Damage numbers (N)').listen();
+    feelF.add(feel, 'debugCrosshair').name('Debug crosshair (J)').listen();
+    feelF.add(feel, 'infiniteAmmo').name('Infinite ammo (I)').listen();
     feelF.add(feel, 'haptics').name('Haptics (Android)');
-    feelF.add(feel, 'masterVolume', 0, 1, 0.01).onChange(onFeel);
+    feelF.add(feel, 'masterVolume', 0, 1, 0.01).onChange(() => hooks.onFeelChanged());
     feelF.add(feel, 'robotRespawnTime', 0.5, 15, 0.5);
 
     const p = this.gui.addFolder('Player movement').close();
@@ -128,103 +146,83 @@ export class TuningPanel {
     return this.visible;
   }
 
-  /** Rebuild the weapon folder when the equipped weapon changes. */
+  /** Rebuild the weapon + ammo folders when the equipped weapon changes. */
   syncWeapon(): void {
     const w = this.hooks.getWeapon();
     if (w.id === this.currentWeaponId) return;
     this.currentWeaponId = w.id;
     this.weaponFolder?.destroy();
     const f = (this.weaponFolder = this.gui.addFolder(`Weapon: ${w.name}`));
-    // Keep the weapon folder right under the actions.
     this.gui.$children.insertBefore(f.domElement, this.gui.$children.children[1] ?? null);
     const tuned = () => this.hooks.onWeaponTuned();
 
-    const core = f.addFolder('Damage & fire');
-    core.add(w, 'damage', 1, 300, 1);
-    core.add(w, 'fireRate', 30, 1500, 5).name('Fire rate (rpm)');
-    core.add(w, 'fireMode', ['auto', 'semi', 'pump']);
-    core.add(w, 'magazineSize', 1, 100, 1);
-    core.add(w, 'pellets', 1, 20, 1);
-    core.add(w, 'range', 5, 400, 1);
-    core.add(w, 'critMultiplier', 1, 5, 0.05);
-    core.add(w, 'impactForce', 0, 40, 0.5).name('Impact force');
-    core.add(w, 'hitReaction', 0, 6, 0.1).name('Robot reaction');
-    core.add(w, 'equipTime', 0.05, 2, 0.01);
-    core.add(w.reload, 'time', 0.2, 5, 0.05).name('Reload time');
-    core.add(w.reload, 'emptyTime', 0.2, 5, 0.05).name('Empty reload time');
+    const h = f.addFolder('Handling (weight / length / ergonomics)');
+    h.add(w.handling, 'weight', 0.5, 8, 0.05).name('Weight (kg)').onChange(tuned);
+    h.add(w.handling, 'length', 0.15, 1.4, 0.01).name('Length (m)').onChange(tuned);
+    h.add(w.handling, 'ergonomics', 0, 100, 1).name('Ergonomics').onChange(tuned);
 
-    const sp = f.addFolder('Spread').close();
-    sp.add(w.spread, 'hip', 0, 15, 0.05).name('Hipfire spread');
-    sp.add(w.spread, 'ads', 0, 10, 0.01).name('ADS spread');
-    sp.add(w.spread, 'moving', 0, 10, 0.05).name('Moving spread');
-    sp.add(w.spread, 'air', 0, 15, 0.1);
-    sp.add(w.spread, 'bloomPerShot', 0, 3, 0.01);
-    sp.add(w.spread, 'bloomMax', 0, 10, 0.05);
-    sp.add(w.spread, 'bloomRecovery', 0, 40, 0.5);
+    const m = f.addFolder('Mechanism & accuracy').close();
+    m.add(w, 'fireRate', 30, 1500, 5).name('Fire rate (rpm)');
+    m.add(w, 'magazineSize', 1, 100, 1);
+    m.add(w, 'barrelLength', 0.08, 0.8, 0.005).name('Barrel (m)').onChange(tuned);
+    m.add(w.accuracy, 'moa', 0, 15, 0.1).name('Mechanical MOA').onChange(tuned);
+    m.add(w, 'ammo', Object.keys(ammoTable)).name('Ammo').onChange(() => {
+      tuned();
+      this.currentWeaponId = '';
+      this.syncWeapon();
+    });
+    m.add(w.reload, 'time', 0.2, 5, 0.05).name('Reload time');
+    m.add(w.reload, 'emptyTime', 0.2, 5, 0.05).name('Empty reload time');
+    m.add(w, 'equipTime', 0.05, 2, 0.01);
 
-    const rc = f.addFolder('Recoil (aim)');
-    rc.add(w.recoil, 'vertical', 0, 8, 0.01).name('Vertical recoil');
-    rc.add(w.recoil, 'horizontal', 0, 4, 0.01).name('Horizontal recoil');
-    rc.add(w.recoil, 'horizontalBias', -2, 2, 0.01);
-    rc.add(w.recoil, 'patternAmplitude', 0, 2, 0.01);
-    rc.add(w.recoil, 'patternFrequency', 0, 2, 0.01);
-    rc.add(w.recoil, 'firstShotMultiplier', 0, 2, 0.01);
-    rc.add(w.recoil, 'buildUpPerShot', 0, 0.5, 0.005);
-    rc.add(w.recoil, 'buildUpMax', 0, 3, 0.05);
-    rc.add(w.recoil, 'snappiness', 1, 80, 1);
-    rc.add(w.recoil, 'recoverySpeed', 0, 30, 0.1).name('Recoil recovery');
-    rc.add(w.recoil, 'recoveryDelay', 0, 0.5, 0.01);
-    rc.add(w.recoil, 'adsMultiplier', 0, 1.5, 0.01);
+    const rc = f.addFolder('Recoil (procedural)');
+    rc.add(w.recoil, 'vertical', 0, 12, 0.05).name('Muzzle climb (deg)');
+    rc.add(w.recoil, 'horizontal', 0, 5, 0.05).name('Horizontal random');
+    rc.add(w.recoil, 'horizontalBias', -3, 3, 0.05).name('Horizontal bias');
+    rc.add(w.recoil, 'back', 0, 0.15, 0.001).name('Translation kick (m)');
+    rc.add(w.recoil, 'shoulder', 30, 500, 5).name('Shoulder absorption');
+    rc.add(w.recoil, 'damping', 0.2, 1.2, 0.01).name('Recoil damping');
+    rc.add(w.recoil, 'cameraTransfer', 0, 1, 0.01).name('View transfer');
+    rc.add(w.recoil, 'cameraKeep', 0, 1, 0.01).name('View kept (player corrects)');
+    rc.add(w.recoil, 'cameraRecovery', 0, 15, 0.1).name('View recovery speed');
+    rc.add(w.recoil, 'dispersion', 0, 1, 0.01).name('Recoil dispersion (deg)');
+    rc.add(w.recoil, 'punch', 0, 3, 0.05).name('Camera punch (visual)');
+    rc.add(w.recoil, 'roll', 0, 8, 0.1).name('Roll kick');
 
-    const cr = f.addFolder('Camera recoil').close();
-    cr.add(w.cameraRecoil, 'pitch', 0, 10, 0.05);
-    cr.add(w.cameraRecoil, 'yaw', 0, 5, 0.05);
-    cr.add(w.cameraRecoil, 'roll', 0, 10, 0.05);
-    cr.add(w.cameraRecoil, 'stiffness', 20, 600, 5);
-    cr.add(w.cameraRecoil, 'damping', 1, 60, 0.5);
-    cr.add(w.cameraRecoil, 'fovPunch', 0, 8, 0.05);
-    cr.add(w.cameraRecoil, 'shake', 0, 1, 0.005).name('Camera shake');
-
-    const vr = f.addFolder('Visual recoil').close();
-    vr.add(w.visualRecoil, 'kickBack', 0, 0.3, 0.001);
-    vr.add(w.visualRecoil, 'kickUp', 0, 40, 0.1);
-    vr.add(w.visualRecoil, 'kickSide', 0, 10, 0.1);
-    vr.add(w.visualRecoil, 'kickRoll', 0, 20, 0.1);
-    vr.add(w.visualRecoil, 'kickRaise', 0, 0.1, 0.001);
-    vr.add(w.visualRecoil, 'rotStiffness', 20, 600, 5);
-    vr.add(w.visualRecoil, 'rotDamping', 1, 60, 0.5);
-    vr.add(w.visualRecoil, 'posStiffness', 20, 600, 5);
-    vr.add(w.visualRecoil, 'posDamping', 1, 60, 0.5);
-    vr.add(w.visualRecoil, 'adsMultiplier', 0, 1.5, 0.01);
-
-    const ads = f.addFolder('ADS / sway / bob').close();
-    ads.add(w.ads, 'fov', 20, 110, 0.5).name('ADS FOV (horizontal)');
-    ads.add(w.ads, 'speed', 1, 30, 0.1).name('ADS speed');
-    ads.add(w.ads, 'swayMultiplier', 0, 1.5, 0.01);
-    ads.add(w.ads, 'bobMultiplier', 0, 1.5, 0.01);
-    ads.add(w.ads, 'sightDistance', 0.05, 0.6, 0.005).onChange(tuned);
-    ads.add(w.sway, 'amount', 0, 4, 0.05).name('Inertia (lag x18ms)');
-    ads.add(w.sway, 'max', 0, 15, 0.1).name('Inertia max lag (deg)');
-    ads.add(w.sway, 'stiffness', 10, 400, 1).name('Inertia stiffness');
-    ads.add(w.sway, 'damping', 1, 40, 0.5).name('Inertia damping');
-    ads.add(w.bob, 'amount', 0, 4, 0.05).name('Weapon bob');
-    ads.add(w.bob, 'sprintAmount', 0, 5, 0.05).name('Sprint bob');
+    const ads = f.addFolder('Aim / sights').close();
     ads.add(w.aim, 'hipConvergence', 2, 100, 0.5).name('Point-fire convergence (m)');
-    ads.add(w.aim, 'zeroDistance', 10, 300, 5).name('ADS zero (m)');
+    ads.add(w.aim, 'zeroDistance', 10, 300, 5).name('Zero (m)  [ / ]').listen();
+    ads.add(w.sight, 'adsFov', 20, 110, 0.5).name('ADS FOV (horizontal)');
+    ads.add(w.sight, 'sightDistance', 0.05, 0.6, 0.005).name('Eye to sight (m)').onChange(tuned);
     const hip = { x: w.viewmodel.hipPosition[0], y: w.viewmodel.hipPosition[1], z: w.viewmodel.hipPosition[2] };
     const setHip = () => {
       w.viewmodel.hipPosition = [hip.x, hip.y, hip.z];
       tuned();
     };
-    ads.add(hip, 'x', -0.4, 0.4, 0.001).name('Hip pos X').onChange(setHip);
-    ads.add(hip, 'y', -0.4, 0.2, 0.001).name('Hip pos Y').onChange(setHip);
-    ads.add(hip, 'z', -0.8, 0, 0.001).name('Hip pos Z').onChange(setHip);
+    ads.add(hip, 'x', -0.4, 0.4, 0.001).name('Shoulder pos X').onChange(setHip);
+    ads.add(hip, 'y', -0.4, 0.2, 0.001).name('Shoulder pos Y').onChange(setHip);
+    ads.add(hip, 'z', -0.8, 0, 0.001).name('Shoulder pos Z').onChange(setHip);
 
     const fx = f.addFolder('FX').close();
-    fx.add(w.fx, 'tracerEvery', 0, 10, 1);
+    fx.add(w.fx, 'tracerEvery', 0, 10, 1).name('Visual tracer every N');
     fx.add(w.fx, 'muzzleFlashScale', 0, 3, 0.05);
     fx.add(w.fx, 'smoke', 0, 2, 0.05);
     fx.add(w.fx, 'shellEjectSpeed', 0, 8, 0.1);
+
+    const am = ammoTable[w.ammo];
+    const af = f.addFolder(`Ammo: ${am.name}`).close();
+    af.add(am, 'muzzleVelocity', 100, 1200, 5).name('Muzzle velocity (m/s)').onChange(tuned);
+    af.add(am, 'projectileMass', 1, 30, 0.1).name('Projectile mass (g)');
+    af.add(am, 'damage', 1, 200, 1);
+    af.add(am, 'penetration', 0, 80, 1).name('Penetration (hook)');
+    af.add(am, 'ballisticCoefficient', 0.02, 0.8, 0.01).name('Ballistic coeff.').onChange(tuned);
+    af.add(am, 'ricochetChance', 0, 1, 0.01);
+    af.add(am, 'tracer');
+    af.add(am, 'accuracyModifier', 0.2, 3, 0.05).onChange(tuned);
+    af.add(am, 'recoilModifier', 0.2, 3, 0.05);
+    af.add(am, 'pellets', 1, 20, 1);
+    af.add(am, 'pelletSpread', 0, 10, 0.1).name('Pellet spread (deg)');
+    af.add(am, 'impactBoost', 0, 10, 0.1).name('Physics impact boost');
   }
 
   private async save(file: string, data: unknown): Promise<void> {
@@ -248,7 +246,7 @@ export class TuningPanel {
       this.status.message = 'Weapon JSON copied';
     } catch {
       console.log(text);
-      this.status.message = 'Clipboard blocked – JSON logged to console';
+      this.status.message = 'Clipboard blocked: JSON logged to console';
     }
   }
 }

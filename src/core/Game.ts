@@ -3,6 +3,7 @@ import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment
 import { Physics } from './Physics';
 import { Input } from './Input';
 import { DEG, hfovToVfov, isTouchDevice } from './math';
+import { HELP_TEXT, STATIONS, loadSettings, saveSettings, stationPosition } from './LabTools';
 import { playerConfig } from '../player/PlayerConfig';
 import { PlayerController } from '../player/PlayerController';
 import { PlayerCamera } from '../player/PlayerCamera';
@@ -27,13 +28,14 @@ const MAX_STEPS = 6;
  * Bootstraps every system and runs the frame loop.
  *
  * Per frame: input → look (+aim assist, recoil absorption) → fixed-step
- * movement & physics (120 Hz) → weapons (fire) → camera → viewmodel → fx → UI → render.
- * The viewmodel is drawn in a second pass over a cleared depth buffer.
+ * movement & physics (120 Hz) → camera → physical weapon pose → fire from the
+ * muzzle → projectiles → fx → UI → render (world, weapon, debug overlay).
  */
 export class Game {
   readonly renderer: THREE.WebGLRenderer;
   readonly scene = new THREE.Scene();
   readonly mobile: boolean;
+  readonly debugDraw = new DebugDraw();
   physics!: Physics;
   input!: Input;
   player!: PlayerController;
@@ -48,7 +50,8 @@ export class Game {
   debug!: DebugHUD;
   tuning!: TuningPanel;
   touch: TouchControls | null = null;
-  readonly debugDraw = new DebugDraw();
+  /** Lab slow motion (Z). */
+  timeScale = 1;
 
   private accumulator = 0;
   private lastTime = 0;
@@ -58,6 +61,8 @@ export class Game {
   /** ?nolock: run without pointer lock (automated testing / screenshots). */
   private noLock = new URLSearchParams(location.search).has('nolock');
   private quality: { pixelRatio: number; shadows: boolean };
+  private stationIndex = 0;
+  private helpEl!: HTMLPreElement;
   private tmp = new THREE.Vector3();
   private tmp2 = new THREE.Vector3();
   private right = new THREE.Vector3();
@@ -84,7 +89,7 @@ export class Game {
     this.input = new Input(this.renderer.domElement);
 
     this.scene.background = new THREE.Color(0x15171a);
-    this.scene.fog = new THREE.Fog(0x15171a, 70, 160);
+    this.scene.fog = new THREE.Fog(0x15171a, 90, 200);
     const pmrem = new THREE.PMREMGenerator(this.renderer);
     const env = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
     this.scene.environment = env;
@@ -135,6 +140,10 @@ export class Game {
     this.container.appendChild(ui);
     this.hud = new HUD(ui);
     this.debug = new DebugHUD(ui);
+    this.helpEl = document.createElement('pre');
+    this.helpEl.className = 'help';
+    this.helpEl.textContent = HELP_TEXT;
+    ui.appendChild(this.helpEl);
 
     this.weapons = new WeaponController(createWeaponDefs(), window.innerWidth / window.innerHeight, {
       physics: this.physics,
@@ -152,7 +161,8 @@ export class Game {
 
     this.tuning = new TuningPanel({
       getWeapon: () => this.weapons.current.data,
-      onWeaponTuned: () => this.weapons.viewmodel.refreshWeaponTuning(),
+      getAmmoId: () => this.weapons.current.data.ammo,
+      onWeaponTuned: () => this.weapons.refreshHandling(),
       onFeelChanged: () => this.audio.setVolume(feel.masterVolume),
       refillAmmo: () => this.weapons.refillAll(),
       setQuality: (pr, shadows) => this.setQuality(pr, shadows),
@@ -161,14 +171,22 @@ export class Game {
     this.tuning.syncWeapon();
 
     if (this.mobile) {
-      this.touch = new TouchControls(ui, this.input, {
+      this.touch = new TouchControls(ui, this.input, this.weapons.weapons.map((w) => w.data.short), {
         onTune: () => this.tuning.toggle(),
         onDebug: () => this.debug.toggle(),
         onRays: () => this.toggleRays(),
         onLaser: () => this.toggleLaser(),
+        onFireMode: () => this.weapons.cycleFireMode(),
       });
-      this.debug.toggle(); // start hidden on phones: screen space is precious
     }
+
+    // Restore lab conveniences from the last session.
+    const s = loadSettings();
+    this.debugDraw.enabled = !!s.rays;
+    this.weapons.laser.enabled = !!s.laser;
+    this.debug.setVisible(s.debugHud ?? !this.mobile);
+    this.helpEl.classList.toggle('show', s.help ?? true);
+    if (s.weapon && s.weapon > 0 && s.weapon < this.weapons.weapons.length) this.weapons.requestSwitch(s.weapon);
 
     this.input.onKey = (code) => this.onKey(code);
     window.addEventListener('resize', () => this.onResize());
@@ -180,7 +198,7 @@ export class Game {
     (window as unknown as { __lab: Game }).__lab = this;
   }
 
-  /** Called from the start overlay click/tap (a user gesture). */
+  /** Called from the start overlay click/tap/Enter (a user gesture). */
   start(): void {
     this.audio.unlock();
     if (!this.mobile) this.input.requestPointerLock();
@@ -201,6 +219,7 @@ export class Game {
   }
 
   private onKey(code: string): void {
+    const w = this.weapons;
     switch (code) {
       case 'KeyH':
         this.debug.toggle();
@@ -210,26 +229,86 @@ export class Game {
         if (this.tuning.toggle()) document.exitPointerLock();
         else this.input.requestPointerLock();
         break;
+      case 'F1':
+      case 'Slash':
+        this.helpEl.classList.toggle('show');
+        break;
       case 'KeyN':
         feel.damageNumbers = !feel.damageNumbers;
+        this.hud.toast(`Damage numbers ${feel.damageNumbers ? 'on' : 'off'}`);
         break;
       case 'KeyG':
-        this.toggleRays();
+        this.hud.toast(`Aim rays ${this.toggleRays() ? 'on' : 'off'}`);
         break;
       case 'KeyL':
-        this.toggleLaser();
+        this.hud.toast(`Laser ${this.toggleLaser() ? 'on' : 'off'}`);
+        break;
+      case 'KeyJ':
+        feel.debugCrosshair = !feel.debugCrosshair;
+        this.hud.toast(`Debug crosshair ${feel.debugCrosshair ? 'on' : 'off'}`);
+        break;
+      case 'KeyB':
+        w.cycleFireMode();
+        break;
+      case 'KeyV':
+        w.toggleShoulder();
+        break;
+      case 'KeyT':
+        w.inspect();
+        break;
+      case 'BracketLeft':
+        w.adjustZero(-1);
+        break;
+      case 'BracketRight':
+        w.adjustZero(1);
+        break;
+      case 'KeyZ':
+        this.timeScale = this.timeScale === 1 ? 0.25 : 1;
+        this.hud.toast(this.timeScale === 1 ? 'Normal speed' : 'Slow motion x0.25');
+        break;
+      case 'KeyI':
+        feel.infiniteAmmo = !feel.infiniteAmmo;
+        if (feel.infiniteAmmo) w.refillAll();
+        this.hud.toast(`Infinite ammo ${feel.infiniteAmmo ? 'on' : 'off'}`);
+        break;
+      case 'KeyK':
+        for (const r of this.robots) r.forceRespawn();
+        this.hud.toast('Robots reset');
+        break;
+      case 'KeyM':
+        this.gotoStation(this.stationIndex + 1);
         break;
     }
+    this.persist();
   }
 
-  /** Debug aim rays: camera ray, bore ray, muzzle vector, bullet paths. */
+  gotoStation(i: number): void {
+    this.stationIndex = ((i % STATIONS.length) + STATIONS.length) % STATIONS.length;
+    const st = STATIONS[this.stationIndex];
+    this.player.teleport(stationPosition(this.stationIndex), st.yaw);
+    this.hud.toast(`Station: ${st.name}`);
+  }
+
+  private persist(): void {
+    saveSettings({
+      rays: this.debugDraw.enabled,
+      laser: this.weapons.laser.enabled,
+      debugHud: this.debug.visible,
+      weapon: this.weapons.currentIndex,
+      help: this.helpEl.classList.contains('show'),
+    });
+  }
+
+  /** Debug aim rays: camera ray, bore ray, muzzle vector, wall probes, bullet paths. */
   toggleRays(): boolean {
     this.debugDraw.enabled = !this.debugDraw.enabled;
+    this.persist();
     return this.debugDraw.enabled;
   }
 
   toggleLaser(): boolean {
     this.weapons.laser.enabled = !this.weapons.laser.enabled;
+    this.persist();
     return this.weapons.laser.enabled;
   }
 
@@ -257,7 +336,8 @@ export class Game {
     const rawDt = (now - this.lastTime) / 1000;
     this.lastTime = now;
     // Clamp: never negative (clock hiccups) and never huge (tab switch, breakpoints).
-    const dt = Math.min(Math.max(rawDt, 0), 0.1);
+    const realDt = Math.min(Math.max(rawDt, 0), 0.1);
+    const dt = realDt * this.timeScale;
     this.fps += (1 / Math.max(rawDt, 1e-4) - this.fps) * 0.05;
     this.frameMs += (rawDt * 1000 - this.frameMs) * 0.05;
 
@@ -295,12 +375,13 @@ export class Game {
     const alpha = Math.min(1, Math.max(0, this.accumulator / FIXED_DT));
     this.physics.syncObjects();
 
-    // --- Weapons & camera: camera first, then aim the physical weapon, then fire from its muzzle ---
-    this.player.getEyePosition(alpha, this.camera.eye);
+    // --- Camera first, then aim the physical weapon, then fire from its muzzle ---
+    const w = this.weapons.current;
     this.weapons.updateState(dt, input);
-    this.camera.update(dt, alpha, this.player, this.weapons.adsAmount, this.weapons.current.data.ads.fov);
+    this.camera.update(dt, alpha, this.player, this.weapons.adsAmount, w.data.sight.adsFov);
     this.camera.camera.updateMatrixWorld();
-    this.weapons.updatePose(dt, yaw, pitch);
+    // Look deltas are per real frame; in slow motion the weapon sees the same turn rate.
+    this.weapons.updatePose(dt, yaw * this.timeScale, pitch * this.timeScale);
     this.weapons.updateFire(dt, input);
 
     // --- World ---
@@ -312,57 +393,71 @@ export class Game {
     this.audio.setListener(this.camera.camera.position, this.right);
 
     // --- UI ---
-    const w = this.weapons.current;
-    const reload =
-      w.state === 'reloading'
-        ? w.data.reload.kind === 'magazine'
-          ? w.stateProgress
-          : w.ammo / w.data.magazineSize
-        : -1;
-    this.hud.updateAmmo(w.data.name, w.ammo, w.data.magazineSize, reload);
-    this.hud.updateCrosshair(this.weapons.currentSpread, this.camera.currentFov, this.weapons.adsAmount, w.state !== 'ready' || this.player.sprinting);
-    this.hud.update(dt, this.camera.camera);
+    const cw = this.weapons.current;
+    const reload = cw.state === 'reloading' ? (cw.data.reload.kind === 'magazine' ? cw.stateProgress : cw.ammo / cw.data.magazineSize) : -1;
+    this.hud.updateAmmo(cw.data.name, cw.ammo, cw.chambered && cw.data.closedBolt, cw.data.magazineSize, `${cw.fireMode.toUpperCase()} · ${this.weapons.ammo.caliber}`, reload);
+    this.hud.updateCrosshair(this.weapons.handling.dispersionDeg * 0.5, this.camera.currentFov, this.weapons.adsAmount, cw.state !== 'ready' || this.player.sprinting);
+    this.hud.update(realDt, this.camera.camera);
     this.tuning.syncWeapon();
     this.touch?.sync(input.adsHeld, this.weapons.currentIndex);
 
-    // --- Render: world, then viewmodel on top ---
+    // --- Render: world, then the weapon on top, then debug lines over everything ---
     this.renderer.info.reset();
     this.renderer.clear();
     this.renderer.render(this.scene, this.camera.camera);
     this.renderer.clearDepth();
     this.renderer.render(this.weapons.viewmodel.scene, this.weapons.viewmodel.camera);
-    this.debugDraw.flush(dt);
+    this.debugDraw.flush(realDt);
     if (this.debugDraw.enabled) this.renderer.render(this.debugDraw.scene, this.camera.camera);
 
-    this.debug.update(dt, {
-      fps: this.fps,
-      frameMs: this.frameMs,
-      weapon: w.data.name,
-      state: w.state + (w.state === 'reloading' && w.reloadEmpty ? ' (empty)' : ''),
-      ammo: `${w.ammo} / ${w.data.magazineSize}`,
-      rpm: w.data.fireRate,
-      spread: this.weapons.currentSpread,
-      recoilHeat: this.weapons.recoil.heat,
-      speed: this.player.horizontalSpeed,
-      grounded: this.player.grounded,
-      ads: this.weapons.adsAmount,
-      hitDistance: this.weapons.lastHitDistance,
-      lastDamage: this.weapons.lastDamage,
-      targetHealth: this.weapons.lastTargetHealth,
-      drawCalls: this.renderer.info.render.calls,
-      triangles: this.renderer.info.render.triangles,
-      particles: this.impacts.sparks.alive + this.impacts.dust.alive,
-      aimError: this.weapons.aimErrorDeg,
-      inertia: this.weapons.viewmodel.inertiaDeg,
-      cameraDir: this.weapons.cameraAimDir,
-      muzzleDir: this.weapons.muzzleDir,
-    });
+    if (this.debug.visible) {
+      const h = cw.data.handling;
+      const p = this.player;
+      this.debug.update(realDt, {
+        fps: this.fps,
+        frameMs: this.frameMs,
+        weapon: cw.data.name,
+        state: cw.state + (cw.state === 'reloading' && cw.reloadEmpty ? ' (empty)' : ''),
+        ammo: `${cw.ammo}${cw.data.closedBolt && cw.chambered ? '+1' : ''} / ${cw.data.magazineSize}`,
+        fireMode: cw.fireMode,
+        ammoType: this.weapons.ammo.name,
+        rpm: cw.data.fireRate,
+        weight: h.weight,
+        length: h.length,
+        ergonomics: h.ergonomics,
+        moment: this.weapons.handling.moment,
+        stamina: this.weapons.stamina,
+        adsTime: this.weapons.viewmodel.adsTimeNow,
+        ads: this.weapons.adsAmount,
+        cameraDir: this.weapons.cameraAimDir,
+        muzzleDir: this.weapons.muzzleDir,
+        aimError: this.weapons.aimErrorDeg,
+        recoil: this.weapons.viewmodel.recoilDeg,
+        inertia: this.weapons.viewmodel.inertiaDeg,
+        sway: this.weapons.viewmodel.swayDeg,
+        speed: p.horizontalSpeed,
+        grounded: p.grounded,
+        stance: `${p.crouching ? 'crouch' : 'stand'}${Math.abs(p.lean) > 0.05 ? ` lean ${p.lean > 0 ? 'R' : 'L'} ${(Math.abs(p.lean) * 100).toFixed(0)}%` : ''}${this.weapons.shoulder < 0 ? ' L-shoulder' : ''}`,
+        moa: cw.data.accuracy.moa * this.weapons.ammo.accuracyModifier,
+        muzzleVelocity: this.weapons.lastMuzzleVelocity,
+        impactSpeed: this.weapons.projectiles.lastImpactSpeed,
+        zero: cw.data.aim.zeroDistance,
+        wall: this.weapons.wallState,
+        hitDistance: this.weapons.lastHitDistance,
+        lastDamage: this.weapons.lastDamage,
+        targetHealth: this.weapons.lastTargetHealth,
+        drawCalls: this.renderer.info.render.calls,
+        particles: this.impacts.sparks.alive + this.impacts.dust.alive,
+        projectiles: this.weapons.projectiles.active,
+        timeScale: this.timeScale,
+      });
+    }
 
     input.endFrame();
   }
 
   /**
-   * Touch aim assist: slows look speed when the crosshair is over a robot
+   * Touch aim assist: slows look speed when the camera is over a robot
    * ("friction"). Mouse input is never assisted.
    */
   private applyAimAssist(yaw: number, pitch: number): [number, number] {

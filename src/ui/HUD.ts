@@ -29,6 +29,10 @@ export class HUD {
   private reloadBar: HTMLDivElement;
   private reloadFill: HTMLDivElement;
   private killsEl: HTMLDivElement;
+  private modeEl: HTMLDivElement;
+  private toastEl: HTMLDivElement;
+  private toastTime = 0;
+  private lastMode = '';
   private numbers: DamageNumber[] = [];
   private tmp = new THREE.Vector3();
   private kills = 0;
@@ -47,6 +51,7 @@ export class HUD {
 
     const ammo = div('ammo', this.root);
     this.weaponEl = div('ammo-weapon', ammo);
+    this.modeEl = div('ammo-mode', ammo);
     const row = div('ammo-row', ammo);
     this.ammoEl = div('ammo-count', row);
     this.magEl = document.createElement('span');
@@ -56,6 +61,7 @@ export class HUD {
     this.reloadFill = div('reload-fill', this.reloadBar);
     this.killsEl = div('kills', this.root);
     this.killsEl.textContent = '';
+    this.toastEl = div('toast', this.root);
 
     for (let i = 0; i < 24; i++) {
       const el = div('dmg-num', this.root);
@@ -67,8 +73,23 @@ export class HUD {
     this.root.style.display = v ? '' : 'none';
   }
 
-  /** Crosshair gap reflects the real spread cone; it fades out while aiming down sights. */
+  /** Short message (fire mode, zero, inspect, lab actions). */
+  toast(text: string, seconds = 1.4): void {
+    this.toastEl.textContent = text;
+    this.toastEl.classList.add('show');
+    this.toastTime = seconds;
+  }
+
+  /**
+   * Debug-only camera crosshair (point fire needs none: shots go where the gun points).
+   * The gap shows mechanical dispersion.
+   */
   updateCrosshair(spreadDeg: number, fovDeg: number, adsAmount: number, blocked: boolean): void {
+    if (!feel.debugCrosshair) {
+      this.crosshair.style.display = 'none';
+      return;
+    }
+    this.crosshair.style.display = '';
     const h = window.innerHeight;
     const px = (Math.tan(spreadDeg * DEG) / Math.tan((fovDeg * DEG) / 2)) * (h / 2);
     const gap = Math.max(4, px);
@@ -112,16 +133,21 @@ export class HUD {
     n.el.style.display = 'block';
   }
 
-  updateAmmo(weaponName: string, ammo: number, mag: number, reloadProgress: number): void {
+  updateAmmo(weaponName: string, ammo: number, chambered: boolean, mag: number, mode: string, reloadProgress: number): void {
     if (weaponName !== this.lastWeapon) {
       this.weaponEl.textContent = weaponName;
       this.lastWeapon = weaponName;
     }
-    if (ammo !== this.lastAmmo || mag !== this.lastMag) {
+    if (mode !== this.lastMode) {
+      this.modeEl.textContent = mode;
+      this.lastMode = mode;
+    }
+    const shown = ammo * 2 + (chambered ? 1 : 0);
+    if (shown !== this.lastAmmo || mag !== this.lastMag) {
       this.ammoEl.textContent = String(ammo);
-      this.magEl.textContent = ` / ${mag}`;
+      this.magEl.textContent = `${chambered ? '+1' : ''} / ${mag}`;
+      this.lastAmmo = shown;
       this.ammoEl.classList.toggle('low', ammo <= Math.ceil(mag * 0.25));
-      this.lastAmmo = ammo;
       this.lastMag = mag;
     }
     if (reloadProgress >= 0) {
@@ -133,6 +159,10 @@ export class HUD {
   }
 
   update(dt: number, camera: THREE.Camera): void {
+    if (this.toastTime > 0) {
+      this.toastTime -= dt;
+      if (this.toastTime <= 0) this.toastEl.classList.remove('show');
+    }
     const w = window.innerWidth;
     const h = window.innerHeight;
     for (const n of this.numbers) {

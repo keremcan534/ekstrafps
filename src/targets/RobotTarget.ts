@@ -83,7 +83,7 @@ export class RobotTarget {
     private opts: RobotOptions,
     private events: RobotEvents,
   ) {
-    this.health = new Damageable(opts.health ?? 180);
+    this.health = new Damageable(opts.health ?? 200);
     this.base.copy(opts.position);
     this.currentPos.copy(opts.position);
     this.root.position.copy(opts.position);
@@ -251,6 +251,11 @@ export class RobotTarget {
     this.respawnTimer = feel.robotRespawnTime;
     this.chestPoint.getWorldPosition(this.tmp);
     this.events.onDeath(this, this.tmp);
+  }
+
+  /** Lab tool: bring the robot back immediately (alive or not). */
+  forceRespawn(): void {
+    this.respawn();
   }
 
   private respawn(): void {

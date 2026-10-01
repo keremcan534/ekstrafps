@@ -7,7 +7,8 @@
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "typecheck": "tsc --noEmit",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "lab": "vite --open"
   },
   "dependencies": {
     "@dimforge/rapier3d-compat": "^0.21.0",

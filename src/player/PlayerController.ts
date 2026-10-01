@@ -4,6 +4,9 @@ import type { Input } from '../core/Input';
 import { clamp, damp, moveTowards, DEG } from '../core/math';
 import { playerConfig as cfg } from './PlayerConfig';
 
+/** Full lean angle (radians) around the hips. */
+export const LEAN_ANGLE = 16 * DEG;
+
 /** Start a few cm above the floor; gravity settles the capsule onto the controller skin. */
 const SPAWN_LIFT = 0.05;
 
@@ -32,6 +35,10 @@ export class PlayerController {
   /** Horizontal speed / walkSpeed (0..~1.5). */
   speedRatio = 0;
   airTime = 0;
+  /** Lean -1 (left) .. 1 (right), smoothed and limited by walls. Supports variable lean. */
+  lean = 0;
+  /** How far a full lean can go before hitting something (0..1). */
+  leanRoom = 1;
 
   /** Set by the weapon each frame: ADS or firing blocks sprint. */
   sprintBlocked = false;
@@ -122,11 +129,18 @@ export class PlayerController {
     const inputMag = Math.min(1, this.wish.length());
     if (inputMag > 0.001) this.wish.divideScalar(Math.max(1, this.wish.length()));
 
+    // --- Lean: upper body tilts around the hips; walls limit it ---
+    const leanWanted = input.leanAxis;
+    if (leanWanted !== 0) this.leanRoom = this.measureLeanRoom(Math.sign(leanWanted));
+    const leanTarget = this.sprinting ? 0 : leanWanted * (leanWanted !== 0 ? this.leanRoom : 1);
+    this.lean += (leanTarget - this.lean) * damp(9, dt);
+
     this.sprinting =
-      input.sprintHeld && input.moveY > 0.3 && !this.crouching && !this.sprintBlocked && (this.grounded || this.sprinting);
+      input.sprintHeld && input.moveY > 0.3 && !this.crouching && !this.sprintBlocked && Math.abs(this.lean) < 0.3 && (this.grounded || this.sprinting);
 
     let maxSpeed = this.crouching ? cfg.crouchSpeed : this.sprinting ? cfg.sprintSpeed : cfg.walkSpeed;
     maxSpeed *= 1 + (cfg.adsSpeedMultiplier - 1) * this.adsAmount;
+    maxSpeed *= 1 - 0.3 * Math.abs(this.lean);
     const wishVx = this.wish.x * maxSpeed;
     const wishVz = this.wish.z * maxSpeed;
 
@@ -254,6 +268,25 @@ export class PlayerController {
 
   get horizontalSpeed(): number {
     return Math.hypot(this.velocity.x, this.velocity.z);
+  }
+
+  /** Height of the lean pivot (hips) above the feet. */
+  get leanPivotHeight(): number {
+    return 0.95 - 0.35 * this.crouchAmount;
+  }
+
+  /** Fraction of a full lean that fits before the head would hit a wall. */
+  private measureLeanRoom(side: number): number {
+    const r = this.eyeHeight - this.leanPivotHeight;
+    const reach = Math.sin(LEAN_ANGLE) * r + 0.18;
+    const rx = Math.cos(this.yaw) * side;
+    const rz = -Math.sin(this.yaw) * side;
+    this.upRay.origin = { x: this.feet.x, y: this.feet.y + this.eyeHeight - 0.05, z: this.feet.z };
+    this.upRay.dir = { x: rx, y: 0, z: rz };
+    const hit = this.physics.world.castRay(this.upRay, reach, true, undefined, GROUPS.playerQuery, this.collider);
+    this.upRay.dir = { x: 0, y: 1, z: 0 };
+    if (!hit) return 1;
+    return clamp((hit.timeOfImpact - 0.18) / (reach - 0.18), 0, 1);
   }
 
   private onlyFloorContacts(): boolean {

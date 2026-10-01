@@ -8,6 +8,7 @@ export interface TouchActions {
   onRays(): boolean;
   /** Toggle the test laser; returns the new state. */
   onLaser(): boolean;
+  onFireMode(): void;
 }
 
 const DEADZONE = 0.12;
@@ -32,7 +33,7 @@ export class TouchControls {
   private crouchBtn!: HTMLDivElement;
   private slotBtns: HTMLDivElement[] = [];
 
-  constructor(parent: HTMLElement, private input: Input, actions: TouchActions) {
+  constructor(parent: HTMLElement, private input: Input, weaponNames: string[], actions: TouchActions) {
     this.root = el('touch-root', parent);
     const zone = el('touch-zone', this.root);
     zone.addEventListener('pointerdown', this.onZoneDown);
@@ -57,8 +58,11 @@ export class TouchControls {
       this.crouchBtn.classList.toggle('on', input.touchCrouch);
     });
     this.button('btn btn-reload', 'R', () => (input.reloadPressed = true));
+    this.button('btn btn-mode', 'MODE', actions.onFireMode);
+    this.holdButton('btn btn-lean-l', 'LEAN', (down) => (input.touchLean = down ? -1 : 0));
+    this.holdButton('btn btn-lean-r', 'LEAN', (down) => (input.touchLean = down ? 1 : 0));
     const slots = el('slots', this.root);
-    ['AR', 'PISTOL', 'SHOTGUN'].forEach((name, i) => {
+    weaponNames.forEach((name, i) => {
       this.slotBtns.push(this.button('btn btn-slot', name, () => (input.slotPressed = i), slots));
     });
     this.button('btn btn-small btn-tune', '⚙', actions.onTune);
@@ -91,6 +95,25 @@ export class TouchControls {
     b.addEventListener('pointercancel', up);
     b.addEventListener('pointerleave', up);
     return b;
+  }
+
+  /** Button that reports press and release (lean). */
+  private holdButton(cls: string, label: string, onChange: (down: boolean) => void): void {
+    const b = el(cls, this.root);
+    b.textContent = label;
+    b.addEventListener('pointerdown', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      capture(b, e.pointerId);
+      b.classList.add('pressed');
+      onChange(true);
+    });
+    const up = () => {
+      b.classList.remove('pressed');
+      onChange(false);
+    };
+    b.addEventListener('pointerup', up);
+    b.addEventListener('pointercancel', up);
   }
 
   private fireButton(cls: string, label: string): void {
