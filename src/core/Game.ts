@@ -282,7 +282,9 @@ export class Game {
     // --- Fixed-step simulation ---
     this.accumulator += dt;
     let steps = 0;
-    while (this.accumulator >= FIXED_DT && steps < MAX_STEPS) {
+    // Small tolerance: at 60 fps two 120 Hz steps fit exactly; float error must not
+    // turn that into an alternating 1-step / 3-step pattern (visible micro-stutter).
+    while (this.accumulator >= FIXED_DT - 1e-6 && steps < MAX_STEPS) {
       this.player.fixedUpdate(FIXED_DT, input);
       for (const r of this.robots) r.fixedUpdate(FIXED_DT);
       this.physics.step();
@@ -290,7 +292,7 @@ export class Game {
       steps++;
     }
     if (steps === MAX_STEPS) this.accumulator = 0;
-    const alpha = this.accumulator / FIXED_DT;
+    const alpha = Math.min(1, Math.max(0, this.accumulator / FIXED_DT));
     this.physics.syncObjects();
 
     // --- Weapons & camera: camera first, then aim the physical weapon, then fire from its muzzle ---

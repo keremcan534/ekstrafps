@@ -4,6 +4,9 @@ import type { Input } from '../core/Input';
 import { clamp, damp, moveTowards, DEG } from '../core/math';
 import { playerConfig as cfg } from './PlayerConfig';
 
+/** Start a few cm above the floor; gravity settles the capsule onto the controller skin. */
+const SPAWN_LIFT = 0.05;
+
 /**
  * Kinematic first-person character. Arcade feel: snappy acceleration,
  * coyote time, jump buffering, momentum-preserving air control.
@@ -47,15 +50,17 @@ export class PlayerController {
   private wish = new THREE.Vector3();
   private tmp = new THREE.Vector3();
   private upRay = new RAPIER.Ray({ x: 0, y: 0, z: 0 }, { x: 0, y: 1, z: 0 });
+  private collision = new RAPIER.CharacterCollision();
 
   constructor(private physics: Physics, spawn: THREE.Vector3, spawnYaw = 0) {
     const world = physics.world;
     this.feet.copy(spawn);
-    this.prevFeet.copy(spawn);
+    this.feet.y += SPAWN_LIFT;
+    this.prevFeet.copy(this.feet);
     this.yaw = spawnYaw;
 
     this.body = world.createRigidBody(
-      RAPIER.RigidBodyDesc.kinematicPositionBased().setTranslation(spawn.x, spawn.y + this.height / 2, spawn.z),
+      RAPIER.RigidBodyDesc.kinematicPositionBased().setTranslation(this.feet.x, this.feet.y + this.height / 2, this.feet.z),
     );
     this.collider = world.createCollider(
       RAPIER.ColliderDesc.capsule(this.height / 2 - cfg.radius, cfg.radius).setCollisionGroups(GROUPS.player),
@@ -70,6 +75,8 @@ export class PlayerController {
     this.controller.setApplyImpulsesToDynamicBodies(true);
     this.controller.setCharacterMass(cfg.pushImpulse * 40);
     this.controller.setSlideEnabled(true);
+    // Resolve tiny ground penetrations quickly instead of stalling on them.
+    this.controller.setNormalNudgeFactor(0.002);
   }
 
   get colliderHandle(): number {
@@ -169,20 +176,41 @@ export class PlayerController {
     // --- Collide & slide ---
     const desired = this.tmp.copy(v).multiplyScalar(dt);
     this.controller.computeColliderMovement(this.collider, desired, RAPIER.QueryFilterFlags.EXCLUDE_SENSORS, GROUPS.playerQuery);
-    const move = this.controller.computedMovement();
+    let move = this.controller.computedMovement();
+    // Rapier sometimes reports the floor itself as a blocking contact when the capsule
+    // dips a millimetre into its skin, cancelling a whole step of movement (a visible
+    // hitch). If ONLY floor contacts blocked us, retry with a tiny lift.
+    const wantH = Math.hypot(desired.x, desired.z);
+    if (wantH > 1e-4 && Math.hypot(move.x, move.z) < wantH * 0.5 && this.onlyFloorContacts()) {
+      desired.y = Math.max(desired.y, 0) + 0.004;
+      this.controller.computeColliderMovement(this.collider, desired, RAPIER.QueryFilterFlags.EXCLUDE_SENSORS, GROUPS.playerQuery);
+      move = this.controller.computedMovement();
+    }
     const wasGrounded = this.grounded;
     const fallSpeed = -v.y;
     this.grounded = this.controller.computedGrounded() && v.y <= 0.01;
 
-    // Blocked horizontally (walls): kill the blocked component of velocity.
-    const desiredH = Math.hypot(desired.x, desired.z);
-    const movedH = Math.hypot(move.x, move.z);
-    if (desiredH > 1e-5 && movedH < desiredH - 1e-4) {
-      v.x = move.x / dt;
-      v.z = move.z / dt;
+    // Velocity response comes ONLY from real obstacles: remove the velocity component
+    // pointing into walls (slide along them) and stop upward motion at ceilings.
+    // Floor contacts never touch horizontal velocity, otherwise grazing the ground
+    // makes the character hitch while walking.
+    for (let i = 0, n = this.controller.numComputedCollisions(); i < n; i++) {
+      const c = this.controller.computedCollision(i, this.collision);
+      if (!c) continue;
+      const nx = c.normal1.x;
+      const ny = c.normal1.y;
+      const nz = c.normal1.z;
+      if (Math.abs(ny) < 0.7) {
+        const hl = Math.hypot(nx, nz) || 1;
+        const into = (v.x * nx + v.z * nz) / hl;
+        if (into < 0) {
+          v.x -= (nx / hl) * into;
+          v.z -= (nz / hl) * into;
+        }
+      } else if (ny < -0.7 && v.y > 0) {
+        v.y = 0;
+      }
     }
-    // Ceiling bonk.
-    if (desired.y > 0 && move.y < desired.y * 0.5) v.y = Math.min(v.y, 0);
 
     if (this.grounded) {
       v.y = -0.5; // keep a little downward pressure so ground detection stays stable
@@ -208,11 +236,13 @@ export class PlayerController {
 
   teleport(pos: THREE.Vector3, yaw: number): void {
     this.feet.copy(pos);
+    this.feet.y += SPAWN_LIFT;
     this.prevFeet.copy(pos);
     this.velocity.set(0, 0, 0);
     this.yaw = yaw;
     this.pitch = 0;
-    this.body.setTranslation({ x: pos.x, y: pos.y + this.height / 2, z: pos.z }, true);
+    this.prevFeet.copy(this.feet);
+    this.body.setTranslation({ x: this.feet.x, y: this.feet.y + this.height / 2, z: this.feet.z }, true);
   }
 
   /** Interpolated eye position for rendering. */
@@ -224,6 +254,16 @@ export class PlayerController {
 
   get horizontalSpeed(): number {
     return Math.hypot(this.velocity.x, this.velocity.z);
+  }
+
+  private onlyFloorContacts(): boolean {
+    const n = this.controller.numComputedCollisions();
+    if (n === 0) return false;
+    for (let i = 0; i < n; i++) {
+      const c = this.controller.computedCollision(i, this.collision);
+      if (c && c.normal1.y < 0.7) return false;
+    }
+    return true;
   }
 
   private canStand(): boolean {
