@@ -36,6 +36,14 @@ export const bump = (t: number, a: number, b: number): number => {
 export const hfovToVfov = (hfovDeg: number): number =>
   (2 * Math.atan(Math.tan((hfovDeg * DEG) / 2) / (16 / 9))) / DEG;
 
-export const isTouchDevice = (): boolean =>
-  typeof window !== 'undefined' && ('ontouchstart' in window || navigator.maxTouchPoints > 0) &&
-  matchMedia('(pointer: coarse)').matches;
+/**
+ * Phone/tablet detection. Touchscreen laptops also report touch support, so a
+ * device with ANY fine pointer (mouse/trackpad) is treated as a PC; `?mouse`
+ * forces PC mode, `?touch` forces touch mode (handled by the caller).
+ */
+export const isTouchDevice = (): boolean => {
+  if (typeof window === 'undefined') return false;
+  if (new URLSearchParams(location.search).has('mouse')) return false;
+  const hasTouch = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+  return hasTouch && matchMedia('(pointer: coarse)').matches && !matchMedia('(any-pointer: fine)').matches;
+};
