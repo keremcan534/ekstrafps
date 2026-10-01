@@ -1,0 +1,16 @@
+{
+  "recoilScale": 1,
+  "cameraRecoilScale": 1,
+  "visualRecoilScale": 1,
+  "impactForceScale": 1,
+  "hitReactionScale": 1,
+  "muzzleFlash": true,
+  "tracers": true,
+  "shells": true,
+  "decals": true,
+  "damageNumbers": false,
+  "hitmarkerScale": 1,
+  "haptics": true,
+  "masterVolume": 0.8,
+  "robotRespawnTime": 4
+}

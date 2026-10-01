@@ -1,0 +1,357 @@
+import * as THREE from 'three';
+import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
+import { Physics } from './Physics';
+import { Input } from './Input';
+import { DEG, hfovToVfov, isTouchDevice } from './math';
+import { playerConfig } from '../player/PlayerConfig';
+import { PlayerController } from '../player/PlayerController';
+import { PlayerCamera } from '../player/PlayerCamera';
+import { Arena } from '../world/Arena';
+import { RobotTarget } from '../targets/RobotTarget';
+import { AudioSystem } from '../audio/AudioSystem';
+import { ImpactSystem } from '../fx/ImpactSystem';
+import { Shells } from '../fx/Shells';
+import { WeaponController } from '../weapons/WeaponController';
+import { createWeaponDefs } from '../weapons/WeaponData';
+import { HUD } from '../ui/HUD';
+import { DebugHUD } from '../ui/DebugHUD';
+import { TuningPanel } from '../ui/TuningPanel';
+import { TouchControls } from '../ui/TouchControls';
+import { feel } from '../config/Feel';
+
+const FIXED_DT = 1 / 120;
+const MAX_STEPS = 6;
+
+/**
+ * Bootstraps every system and runs the frame loop.
+ *
+ * Per frame: input → look (+aim assist, recoil absorption) → fixed-step
+ * movement & physics (120 Hz) → weapons (fire) → camera → viewmodel → fx → UI → render.
+ * The viewmodel is drawn in a second pass over a cleared depth buffer.
+ */
+export class Game {
+  readonly renderer: THREE.WebGLRenderer;
+  readonly scene = new THREE.Scene();
+  readonly mobile: boolean;
+  physics!: Physics;
+  input!: Input;
+  player!: PlayerController;
+  camera!: PlayerCamera;
+  arena!: Arena;
+  robots: RobotTarget[] = [];
+  audio!: AudioSystem;
+  impacts!: ImpactSystem;
+  shells!: Shells;
+  weapons!: WeaponController;
+  hud!: HUD;
+  debug!: DebugHUD;
+  tuning!: TuningPanel;
+  touch: TouchControls | null = null;
+
+  private accumulator = 0;
+  private lastTime = 0;
+  private fps = 60;
+  private frameMs = 16;
+  private started = false;
+  /** ?nolock: run without pointer lock (automated testing / screenshots). */
+  private noLock = new URLSearchParams(location.search).has('nolock');
+  private quality: { pixelRatio: number; shadows: boolean };
+  private tmp = new THREE.Vector3();
+  private tmp2 = new THREE.Vector3();
+  private right = new THREE.Vector3();
+  private aimDir = new THREE.Vector3();
+
+  constructor(private container: HTMLElement) {
+    this.mobile = isTouchDevice() || new URLSearchParams(location.search).has('touch');
+    this.quality = { pixelRatio: Math.min(window.devicePixelRatio, this.mobile ? 1.5 : 2), shadows: true };
+    this.renderer = new THREE.WebGLRenderer({ antialias: !this.mobile, powerPreference: 'high-performance' });
+    this.renderer.setPixelRatio(this.quality.pixelRatio);
+    this.renderer.setSize(window.innerWidth, window.innerHeight);
+    this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    this.renderer.toneMappingExposure = 1.05;
+    this.renderer.shadowMap.enabled = true;
+    this.renderer.shadowMap.type = this.mobile ? THREE.PCFShadowMap : THREE.PCFSoftShadowMap;
+    this.renderer.autoClear = false;
+    this.renderer.info.autoReset = false;
+    container.appendChild(this.renderer.domElement);
+  }
+
+  async init(onProgress: (msg: string) => void): Promise<void> {
+    onProgress('Starting physics…');
+    this.physics = await Physics.create(FIXED_DT);
+    this.input = new Input(this.renderer.domElement);
+
+    this.scene.background = new THREE.Color(0x15171a);
+    this.scene.fog = new THREE.Fog(0x15171a, 70, 160);
+    const pmrem = new THREE.PMREMGenerator(this.renderer);
+    const env = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+    this.scene.environment = env;
+    this.scene.environmentIntensity = 0.35;
+
+    onProgress('Building arena…');
+    this.arena = new Arena(this.physics, this.mobile);
+    this.scene.add(this.arena.group);
+
+    onProgress('Rendering placeholder audio…');
+    this.audio = new AudioSystem();
+    await this.audio.init();
+
+    this.impacts = new ImpactSystem(this.audio, this.mobile);
+    this.scene.add(this.impacts.group);
+    this.shells = new Shells(this.physics, this.mobile ? 16 : 30);
+    this.scene.add(this.shells.group);
+    this.shells.onClink = (type, pos) => this.audio.play(type === 'shotgun' ? 'shell.plastic' : 'shell.brass', { position: pos });
+
+    for (const opts of this.arena.robotSpawns) {
+      this.robots.push(
+        new RobotTarget(this.physics, this.scene, opts, {
+          onDeath: (_r, at) => {
+            this.audio.play('robot.death', { position: at });
+            this.impacts.robotDeath(at);
+            const dist = at.distanceTo(this.camera.eye);
+            this.camera.addShake(Math.max(0, 0.25 - dist * 0.01));
+          },
+          onRespawn: (r) => this.audio.play('robot.boot', { position: r.root.position }),
+        }),
+      );
+    }
+
+    this.player = new PlayerController(this.physics, this.arena.spawn, 0);
+    this.camera = new PlayerCamera(window.innerWidth / window.innerHeight);
+    this.player.onLand = (speed) => {
+      this.camera.landingImpact(speed);
+      this.weapons.viewmodel.onLand(speed);
+      this.audio.play('player.land', { volume: Math.min(1, speed / 12) });
+    };
+    this.player.onJump = () => {
+      this.weapons.viewmodel.onJump();
+      this.audio.play('player.jump');
+    };
+
+    const ui = document.createElement('div');
+    ui.className = 'ui-layer';
+    this.container.appendChild(ui);
+    this.hud = new HUD(ui);
+    this.debug = new DebugHUD(ui);
+
+    this.weapons = new WeaponController(createWeaponDefs(), window.innerWidth / window.innerHeight, {
+      physics: this.physics,
+      player: this.player,
+      camera: this.camera,
+      audio: this.audio,
+      impacts: this.impacts,
+      shells: this.shells,
+      hud: this.hud,
+      worldScene: this.scene,
+    });
+    this.weapons.viewmodel.scene.environment = env;
+    this.weapons.viewmodel.scene.environmentIntensity = 0.6;
+
+    this.tuning = new TuningPanel({
+      getWeapon: () => this.weapons.current.data,
+      onWeaponTuned: () => this.weapons.viewmodel.refreshWeaponTuning(),
+      onFeelChanged: () => this.audio.setVolume(feel.masterVolume),
+      refillAmmo: () => this.weapons.refillAll(),
+      setQuality: (pr, shadows) => this.setQuality(pr, shadows),
+      quality: this.quality,
+    });
+    this.tuning.syncWeapon();
+
+    if (this.mobile) {
+      this.touch = new TouchControls(ui, this.input, {
+        onTune: () => this.tuning.toggle(),
+        onDebug: () => this.debug.toggle(),
+      });
+      this.debug.toggle(); // start hidden on phones: screen space is precious
+    }
+
+    this.input.onKey = (code) => this.onKey(code);
+    window.addEventListener('resize', () => this.onResize());
+
+    // Compile all shaders up front so the first shot never hitches.
+    onProgress('Compiling shaders…');
+    this.renderer.compile(this.scene, this.camera.camera);
+    this.renderer.compile(this.weapons.viewmodel.scene, this.weapons.viewmodel.camera);
+    (window as unknown as { __lab: Game }).__lab = this;
+  }
+
+  /** Called from the start overlay click/tap (a user gesture). */
+  start(): void {
+    this.audio.unlock();
+    if (!this.mobile) this.input.requestPointerLock();
+    else {
+      const el = document.documentElement;
+      el.requestFullscreen?.().catch(() => {});
+      (screen.orientation as unknown as { lock?: (o: string) => Promise<void> }).lock?.('landscape').catch(() => {});
+    }
+    if (!this.started) {
+      this.started = true;
+      this.lastTime = performance.now();
+      this.renderer.setAnimationLoop((t) => this.frame(t));
+    }
+  }
+
+  get isPaused(): boolean {
+    return !this.mobile && !this.input.pointerLocked && !this.noLock;
+  }
+
+  private onKey(code: string): void {
+    switch (code) {
+      case 'KeyH':
+        this.debug.toggle();
+        break;
+      case 'Tab':
+      case 'KeyP':
+        if (this.tuning.toggle()) document.exitPointerLock();
+        else this.input.requestPointerLock();
+        break;
+      case 'KeyN':
+        feel.damageNumbers = !feel.damageNumbers;
+        break;
+    }
+  }
+
+  private setQuality(pixelRatio: number, shadows: boolean): void {
+    this.renderer.setPixelRatio(pixelRatio);
+    this.renderer.setSize(window.innerWidth, window.innerHeight);
+    this.renderer.shadowMap.enabled = shadows;
+    this.arena.sun.castShadow = shadows;
+    this.scene.traverse((o) => {
+      const m = (o as THREE.Mesh).material as THREE.Material | undefined;
+      if (m) m.needsUpdate = true;
+    });
+  }
+
+  private onResize(): void {
+    const w = window.innerWidth;
+    const h = window.innerHeight;
+    this.renderer.setSize(w, h);
+    this.camera.camera.aspect = w / h;
+    this.camera.camera.updateProjectionMatrix();
+    this.weapons.viewmodel.setAspect(w / h);
+  }
+
+  private frame(now: number): void {
+    const rawDt = (now - this.lastTime) / 1000;
+    this.lastTime = now;
+    // Clamp: never negative (clock hiccups) and never huge (tab switch, breakpoints).
+    const dt = Math.min(Math.max(rawDt, 0), 0.1);
+    this.fps += (1 / Math.max(rawDt, 1e-4) - this.fps) * 0.05;
+    this.frameMs += (rawDt * 1000 - this.frameMs) * 0.05;
+
+    const input = this.input;
+    input.mouseSensitivity = playerConfig.mouseSensitivity;
+    input.beginFrame();
+    if (this.isPaused) {
+      // Mouse released (Esc / tuning panel): freeze the player, keep the world simulating.
+      input.moveX = input.moveY = 0;
+      input.fireHeld = input.firePressed = false;
+    }
+
+    // --- Look: ADS sensitivity scaling, touch aim assist, recoil absorption ---
+    const fovScale = Math.tan((this.camera.currentFov * DEG) / 2) / Math.tan((hfovToVfov(playerConfig.baseFov) * DEG) / 2);
+    let yaw = input.lookYaw * fovScale;
+    let pitch = input.lookPitch * fovScale;
+    if (input.lookFromTouch) [yaw, pitch] = this.applyAimAssist(yaw, pitch);
+    [yaw, pitch] = this.weapons.recoil.absorb(yaw, pitch);
+    this.player.updateLook(yaw, pitch);
+    this.player.bufferInput(input);
+
+    // --- Fixed-step simulation ---
+    this.accumulator += dt;
+    let steps = 0;
+    while (this.accumulator >= FIXED_DT && steps < MAX_STEPS) {
+      this.player.fixedUpdate(FIXED_DT, input);
+      for (const r of this.robots) r.fixedUpdate(FIXED_DT);
+      this.physics.step();
+      this.accumulator -= FIXED_DT;
+      steps++;
+    }
+    if (steps === MAX_STEPS) this.accumulator = 0;
+    const alpha = this.accumulator / FIXED_DT;
+    this.physics.syncObjects();
+
+    // --- Weapons, camera, viewmodel ---
+    this.player.getEyePosition(alpha, this.camera.eye);
+    this.weapons.update(dt, input);
+    this.camera.update(dt, alpha, this.player, this.weapons.adsAmount, this.weapons.current.data.ads.fov);
+    this.camera.camera.updateMatrixWorld();
+    this.weapons.updateViewmodel(dt, yaw, pitch);
+
+    // --- World ---
+    this.arena.update();
+    for (const r of this.robots) r.update(dt);
+    this.shells.update(dt);
+    this.impacts.update(dt);
+    this.right.set(1, 0, 0).applyQuaternion(this.camera.camera.quaternion);
+    this.audio.setListener(this.camera.camera.position, this.right);
+
+    // --- UI ---
+    const w = this.weapons.current;
+    const reload =
+      w.state === 'reloading'
+        ? w.data.reload.kind === 'magazine'
+          ? w.stateProgress
+          : w.ammo / w.data.magazineSize
+        : -1;
+    this.hud.updateAmmo(w.data.name, w.ammo, w.data.magazineSize, reload);
+    this.hud.updateCrosshair(this.weapons.currentSpread, this.camera.currentFov, this.weapons.adsAmount, w.state !== 'ready' || this.player.sprinting);
+    this.hud.update(dt, this.camera.camera);
+    this.tuning.syncWeapon();
+    this.touch?.sync(input.adsHeld, this.weapons.currentIndex);
+
+    // --- Render: world, then viewmodel on top ---
+    this.renderer.info.reset();
+    this.renderer.clear();
+    this.renderer.render(this.scene, this.camera.camera);
+    this.renderer.clearDepth();
+    this.renderer.render(this.weapons.viewmodel.scene, this.weapons.viewmodel.camera);
+
+    this.debug.update(dt, {
+      fps: this.fps,
+      frameMs: this.frameMs,
+      weapon: w.data.name,
+      state: w.state + (w.state === 'reloading' && w.reloadEmpty ? ' (empty)' : ''),
+      ammo: `${w.ammo} / ${w.data.magazineSize}`,
+      rpm: w.data.fireRate,
+      spread: this.weapons.currentSpread,
+      recoilHeat: this.weapons.recoil.heat,
+      speed: this.player.horizontalSpeed,
+      grounded: this.player.grounded,
+      ads: this.weapons.adsAmount,
+      hitDistance: this.weapons.lastHitDistance,
+      lastDamage: this.weapons.lastDamage,
+      targetHealth: this.weapons.lastTargetHealth,
+      drawCalls: this.renderer.info.render.calls,
+      triangles: this.renderer.info.render.triangles,
+      particles: this.impacts.sparks.alive + this.impacts.dust.alive,
+    });
+
+    input.endFrame();
+  }
+
+  /**
+   * Touch aim assist: slows look speed when the crosshair is over a robot
+   * ("friction"). Mouse input is never assisted.
+   */
+  private applyAimAssist(yaw: number, pitch: number): [number, number] {
+    const strength = playerConfig.touchAimAssist;
+    if (strength <= 0) return [yaw, pitch];
+    this.camera.getAimDirection(this.player, this.aimDir);
+    const eye = this.camera.eye;
+    let best = 0;
+    for (const r of this.robots) {
+      if (!r.alive) continue;
+      r.chestPoint.getWorldPosition(this.tmp);
+      const toTarget = this.tmp2.subVectors(this.tmp, eye);
+      const dist = toTarget.length();
+      if (dist > 60) continue;
+      toTarget.divideScalar(dist);
+      const angle = Math.acos(Math.min(1, toTarget.dot(this.aimDir)));
+      const radius = Math.max(2.5 * DEG, Math.atan(0.7 / dist));
+      if (angle < radius) best = Math.max(best, 1 - angle / radius);
+    }
+    const friction = 1 - best * strength * 0.6;
+    return [yaw * friction, pitch * friction];
+  }
+}
