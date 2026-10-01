@@ -125,6 +125,15 @@ export interface WeaponData {
     sightDistance: number;
   };
 
+  /** Where the physical weapon points (shots leave the muzzle, not the camera). */
+  aim: {
+    /** Point-fire: the shouldered weapon is pointed at the camera ray this far out (m). */
+    hipConvergence: number;
+    /** ADS: the bore crosses the sight line at this distance (m). */
+    zeroDistance: number;
+  };
+
+  /** Weapon inertia / sway (follow spring that trails the camera). */
   sway: {
     amount: number;
     max: number;
@@ -138,7 +147,7 @@ export interface WeaponData {
   };
 
   viewmodel: {
-    fov: number;
+    /** Shouldered (point-fire) position relative to the eye. */
     hipPosition: [number, number, number];
   };
 
@@ -175,6 +184,16 @@ export const WEAPON_DEFAULTS: readonly WeaponData[] = [
 
 /** Live, mutable copies the game and tuning panel share. */
 export const createWeaponDefs = (): WeaponData[] => WEAPON_DEFAULTS.map((w) => structuredClone(w));
+
+// "Save to source" rewrites the JSON while the lab is running. Accept those
+// updates without reloading the page: the live (already tuned) values stay
+// in memory, and the next page load picks up the file.
+if (import.meta.hot) {
+  import.meta.hot.accept(
+    ['../config/weapons/assault_rifle.json', '../config/weapons/heavy_pistol.json', '../config/weapons/pump_shotgun.json'],
+    () => {},
+  );
+}
 
 /** JSON file names relative to src/config (used by "Save to source"). */
 export const WEAPON_FILES: Record<string, string> = {

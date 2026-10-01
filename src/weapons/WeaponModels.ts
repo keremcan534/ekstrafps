@@ -23,6 +23,8 @@ export interface WeaponRig {
   leftHandRest: THREE.Vector3;
   /** Shell held in hand during shotgun reloads. */
   heldShell: THREE.Object3D | null;
+  /** Test laser emitter; the beam runs parallel to the bore. */
+  laser: THREE.Object3D;
   shellType: 'rifle' | 'pistol' | 'shotgun';
 }
 
@@ -164,9 +166,11 @@ function buildRifle(): WeaponRig {
 
   hand(root, [0.0, -0.06, 0.035], [0.1, -0.25, 0.38], [0.05, 0.085, 0.085]);
   const leftHand = hand(root, [-0.005, -0.03, -0.42], [-0.22, -0.26, -0.1], [0.055, 0.05, 0.1]);
+  box(root, mat.polymer, [0.024, 0.022, 0.06], [0.035, 0.012, -0.47]);
 
   return {
     root,
+    laser: point(root, [0.035, 0.012, -0.502]),
     muzzle: point(root, [0, 0.022, -0.755]),
     ejectPort: point(root, [0.03, 0.035, -0.06]),
     sight,
@@ -216,9 +220,11 @@ function buildPistol(): WeaponRig {
 
   hand(root, [0.0, -0.06, 0.025], [0.08, -0.24, 0.36], [0.05, 0.09, 0.08]);
   const leftHand = hand(root, [-0.025, -0.075, 0.015], [-0.18, -0.25, 0.32], [0.05, 0.075, 0.08]);
+  box(root, mat.polymer, [0.026, 0.02, 0.05], [0, -0.022, -0.13]);
 
   return {
     root,
+    laser: point(root, [0, -0.022, -0.156]),
     muzzle: point(root, [0, 0.03, -0.205]),
     ejectPort: point(root, [0.02, 0.045, -0.05]),
     sight: point(root, [0, 0.06, 0.02]),
@@ -265,9 +271,11 @@ function buildShotgun(): WeaponRig {
   heldShell.position.set(0.0, 0.03, 0.0);
   heldShell.visible = false;
   leftHand.add(heldShell);
+  box(root, mat.polymer, [0.024, 0.022, 0.05], [0, -0.012, -0.6]);
 
   return {
     root,
+    laser: point(root, [0, -0.012, -0.626]),
     muzzle: point(root, [0, 0.042, -0.7]),
     ejectPort: point(root, [0.028, 0.035, -0.05]),
     sight: point(root, [0, 0.064, 0.0]),

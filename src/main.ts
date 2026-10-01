@@ -11,11 +11,11 @@ overlay.innerHTML = `
     <div class="controls desktop-only">
       <div><b>WASD</b> move · <b>Mouse</b> look · <b>Space</b> jump · <b>Shift</b> sprint · <b>C</b> crouch</div>
       <div><b>LMB</b> fire · <b>RMB</b> aim · <b>R</b> reload · <b>1 2 3</b> / wheel / <b>Q</b> switch</div>
-      <div><b>Tab</b> tuning panel · <b>H</b> debug HUD · <b>N</b> damage numbers · <b>Esc</b> release mouse</div>
+      <div><b>Tab</b> tuning · <b>H</b> debug HUD · <b>G</b> aim rays · <b>L</b> laser · <b>N</b> damage numbers · <b>Esc</b> release mouse</div>
     </div>
     <div class="controls touch-only">
       <div>Left side: move (push to top = sprint) · Right side: look</div>
-      <div>FIRE buttons also aim while held · ADS toggles · ⚙ tuning · DBG debug</div>
+      <div>FIRE buttons also aim while held · ADS toggles · ⚙ tuning · DBG debug · RAY aim rays · LSR laser</div>
     </div>
     <button class="start" disabled>Loading…</button>
   </div>`;

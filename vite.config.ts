@@ -48,10 +48,6 @@ export default defineConfig({
   server: {
     host: true, // expose on LAN so phones on the same Wi-Fi can open the lab
     port: 5173,
-    watch: {
-      // Saving tuning from the panel must not hot-reload the running lab.
-      ignored: ['**/src/config/**'],
-    },
   },
   build: {
     target: 'es2022',

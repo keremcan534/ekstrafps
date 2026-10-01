@@ -2,6 +2,8 @@
  * Toggleable debug readout (H key / DBG button). Updates at 10 Hz so the
  * text itself never costs frame time.
  */
+import type * as THREE from 'three';
+
 export interface DebugStats {
   fps: number;
   frameMs: number;
@@ -20,6 +22,10 @@ export interface DebugStats {
   drawCalls: number;
   triangles: number;
   particles: number;
+  aimError: number;
+  inertia: THREE.Vector2;
+  cameraDir: THREE.Vector3;
+  muzzleDir: THREE.Vector3;
 }
 
 export class DebugHUD {
@@ -57,6 +63,12 @@ export class DebugHUD {
       `Last dmg   ${s.lastDamage}\n` +
       `Target HP  ${s.targetHealth}\n` +
       `Draws      ${s.drawCalls}  tris ${(s.triangles / 1000).toFixed(0)}k\n` +
-      `Particles  ${s.particles}`;
+      `Particles  ${s.particles}\n` +
+      `Cam dir    ${fmt(s.cameraDir)}\n` +
+      `Bore dir   ${fmt(s.muzzleDir)}\n` +
+      `Aim error  ${s.aimError.toFixed(2)}° (camera vs bore)\n` +
+      `Inertia    p ${s.inertia.x.toFixed(2)}° y ${s.inertia.y.toFixed(2)}°`;
   }
 }
+
+const fmt = (v: THREE.Vector3): string => `${v.x.toFixed(3)} ${v.y.toFixed(3)} ${v.z.toFixed(3)}`;

@@ -203,13 +203,14 @@ export class TuningPanel {
     ads.add(w.ads, 'swayMultiplier', 0, 1.5, 0.01);
     ads.add(w.ads, 'bobMultiplier', 0, 1.5, 0.01);
     ads.add(w.ads, 'sightDistance', 0.05, 0.6, 0.005).onChange(tuned);
-    ads.add(w.sway, 'amount', 0, 4, 0.05).name('Weapon sway');
-    ads.add(w.sway, 'max', 0, 15, 0.1).name('Sway max (deg)');
-    ads.add(w.sway, 'stiffness', 10, 400, 1).name('Sway stiffness');
-    ads.add(w.sway, 'damping', 1, 40, 0.5).name('Sway damping');
+    ads.add(w.sway, 'amount', 0, 4, 0.05).name('Inertia (lag x18ms)');
+    ads.add(w.sway, 'max', 0, 15, 0.1).name('Inertia max lag (deg)');
+    ads.add(w.sway, 'stiffness', 10, 400, 1).name('Inertia stiffness');
+    ads.add(w.sway, 'damping', 1, 40, 0.5).name('Inertia damping');
     ads.add(w.bob, 'amount', 0, 4, 0.05).name('Weapon bob');
     ads.add(w.bob, 'sprintAmount', 0, 5, 0.05).name('Sprint bob');
-    ads.add(w.viewmodel, 'fov', 30, 90, 0.5).name('Viewmodel FOV');
+    ads.add(w.aim, 'hipConvergence', 2, 100, 0.5).name('Point-fire convergence (m)');
+    ads.add(w.aim, 'zeroDistance', 10, 300, 5).name('ADS zero (m)');
     const hip = { x: w.viewmodel.hipPosition[0], y: w.viewmodel.hipPosition[1], z: w.viewmodel.hipPosition[2] };
     const setHip = () => {
       w.viewmodel.hipPosition = [hip.x, hip.y, hip.z];

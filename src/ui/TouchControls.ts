@@ -4,6 +4,10 @@ import { playerConfig } from '../player/PlayerConfig';
 export interface TouchActions {
   onTune(): void;
   onDebug(): void;
+  /** Toggle debug aim rays; returns the new state. */
+  onRays(): boolean;
+  /** Toggle the test laser; returns the new state. */
+  onLaser(): boolean;
 }
 
 const DEADZONE = 0.12;
@@ -59,6 +63,8 @@ export class TouchControls {
     });
     this.button('btn btn-small btn-tune', '⚙', actions.onTune);
     this.button('btn btn-small btn-debug', 'DBG', actions.onDebug);
+    const rays = this.button('btn btn-small btn-rays', 'RAY', () => rays.classList.toggle('on', actions.onRays()));
+    const laser = this.button('btn btn-small btn-laser', 'LSR', () => laser.classList.toggle('on', actions.onLaser()));
   }
 
   setVisible(v: boolean): void {

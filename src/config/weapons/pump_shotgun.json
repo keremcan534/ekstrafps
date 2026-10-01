@@ -62,7 +62,7 @@
   },
   "visualRecoil": {
     "kickBack": 0.12,
-    "kickUp": 16,
+    "kickUp": 8.0,
     "kickSide": 3,
     "kickRoll": 6,
     "kickRaise": 0.03,
@@ -79,8 +79,12 @@
     "bobMultiplier": 0.25,
     "sightDistance": 0.17
   },
+  "aim": {
+    "hipConvergence": 10,
+    "zeroDistance": 50
+  },
   "sway": {
-    "amount": 0.85,
+    "amount": 1.2,
     "max": 4,
     "stiffness": 80,
     "damping": 11
@@ -90,8 +94,11 @@
     "sprintAmount": 1.5
   },
   "viewmodel": {
-    "fov": 56,
-    "hipPosition": [0.16, -0.19, -0.42]
+    "hipPosition": [
+      0.16,
+      -0.19,
+      -0.42
+    ]
   },
   "fx": {
     "tracerEvery": 4,

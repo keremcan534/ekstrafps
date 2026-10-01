@@ -11,6 +11,7 @@ import { RobotTarget } from '../targets/RobotTarget';
 import { AudioSystem } from '../audio/AudioSystem';
 import { ImpactSystem } from '../fx/ImpactSystem';
 import { Shells } from '../fx/Shells';
+import { DebugDraw } from '../fx/DebugDraw';
 import { WeaponController } from '../weapons/WeaponController';
 import { createWeaponDefs } from '../weapons/WeaponData';
 import { HUD } from '../ui/HUD';
@@ -47,6 +48,7 @@ export class Game {
   debug!: DebugHUD;
   tuning!: TuningPanel;
   touch: TouchControls | null = null;
+  readonly debugDraw = new DebugDraw();
 
   private accumulator = 0;
   private lastTime = 0;
@@ -143,6 +145,7 @@ export class Game {
       shells: this.shells,
       hud: this.hud,
       worldScene: this.scene,
+      debugDraw: this.debugDraw,
     });
     this.weapons.viewmodel.scene.environment = env;
     this.weapons.viewmodel.scene.environmentIntensity = 0.6;
@@ -161,6 +164,8 @@ export class Game {
       this.touch = new TouchControls(ui, this.input, {
         onTune: () => this.tuning.toggle(),
         onDebug: () => this.debug.toggle(),
+        onRays: () => this.toggleRays(),
+        onLaser: () => this.toggleLaser(),
       });
       this.debug.toggle(); // start hidden on phones: screen space is precious
     }
@@ -208,7 +213,24 @@ export class Game {
       case 'KeyN':
         feel.damageNumbers = !feel.damageNumbers;
         break;
+      case 'KeyG':
+        this.toggleRays();
+        break;
+      case 'KeyL':
+        this.toggleLaser();
+        break;
     }
+  }
+
+  /** Debug aim rays: camera ray, bore ray, muzzle vector, bullet paths. */
+  toggleRays(): boolean {
+    this.debugDraw.enabled = !this.debugDraw.enabled;
+    return this.debugDraw.enabled;
+  }
+
+  toggleLaser(): boolean {
+    this.weapons.laser.enabled = !this.weapons.laser.enabled;
+    return this.weapons.laser.enabled;
   }
 
   private setQuality(pixelRatio: number, shadows: boolean): void {
@@ -271,12 +293,13 @@ export class Game {
     const alpha = this.accumulator / FIXED_DT;
     this.physics.syncObjects();
 
-    // --- Weapons, camera, viewmodel ---
+    // --- Weapons & camera: camera first, then aim the physical weapon, then fire from its muzzle ---
     this.player.getEyePosition(alpha, this.camera.eye);
-    this.weapons.update(dt, input);
+    this.weapons.updateState(dt, input);
     this.camera.update(dt, alpha, this.player, this.weapons.adsAmount, this.weapons.current.data.ads.fov);
     this.camera.camera.updateMatrixWorld();
-    this.weapons.updateViewmodel(dt, yaw, pitch);
+    this.weapons.updatePose(dt, yaw, pitch);
+    this.weapons.updateFire(dt, input);
 
     // --- World ---
     this.arena.update();
@@ -306,6 +329,8 @@ export class Game {
     this.renderer.render(this.scene, this.camera.camera);
     this.renderer.clearDepth();
     this.renderer.render(this.weapons.viewmodel.scene, this.weapons.viewmodel.camera);
+    this.debugDraw.flush(dt);
+    if (this.debugDraw.enabled) this.renderer.render(this.debugDraw.scene, this.camera.camera);
 
     this.debug.update(dt, {
       fps: this.fps,
@@ -325,6 +350,10 @@ export class Game {
       drawCalls: this.renderer.info.render.calls,
       triangles: this.renderer.info.render.triangles,
       particles: this.impacts.sparks.alive + this.impacts.dust.alive,
+      aimError: this.weapons.aimErrorDeg,
+      inertia: this.weapons.viewmodel.inertiaDeg,
+      cameraDir: this.weapons.cameraAimDir,
+      muzzleDir: this.weapons.muzzleDir,
     });
 
     input.endFrame();

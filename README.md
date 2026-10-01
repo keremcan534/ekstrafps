@@ -28,6 +28,8 @@ npm run dev
 | 1 2 3, wheel, Q | switch weapon (Q = last weapon) |
 | Tab (or P) | live tuning panel |
 | H | debug HUD |
+| G | debug aim rays (camera ray, bore ray, muzzle vector, bullet paths) |
+| L | test laser (parallel to the bore) |
 | N | damage numbers |
 
 On touch devices:
@@ -35,7 +37,7 @@ On touch devices:
 - **Right side:** drag to look.
 - **FIRE** buttons, one on each side. The right one also works as a look pad while you hold it.
 - **ADS** toggle, **JUMP**, **CROUCH** toggle and **R** (reload).
-- Weapon slot buttons, plus ⚙ for tuning and DBG for the debug HUD.
+- Weapon slot buttons, plus ⚙ for tuning, DBG for the debug HUD, RAY for aim rays and LSR for the laser.
 
 ## Where tuning lives
 
@@ -48,6 +50,18 @@ All feel values are data in `src/config/` and can be edited live in the tuning p
 | `feel.json` | global multipliers and toggles |
 
 The panel's **Save to source** button writes the current values back into these JSON files. This only works while the dev server is running.
+
+## Weapon model (tactical rebuild, pass 1)
+
+The camera and the weapon are separate bodies:
+
+- The **camera** turns instantly with the mouse or touch input.
+- The **weapon** is held in camera space and aimed at the camera ray:
+  - at hip (point fire), it points at the ray at `aim.hipConvergence` metres;
+  - in ADS, the sight sits on the eye and the bore crosses the sight line at `aim.zeroDistance`.
+- The weapon trails camera rotation through an **inertia** spring. `sway.amount` sets the lag time and `sway.stiffness`/`damping` set how it settles.
+- Every shot leaves the **real muzzle along the bore**, so inertia, bob and weapon kick move where bullets go.
+- The weapon renders with the same FOV as the world camera, so the muzzle you see is the muzzle that fires.
 
 ## Architecture (src/)
 

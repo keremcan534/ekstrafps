@@ -45,6 +45,8 @@ export class Hitscan {
   private hitResult: HitResult = { damage: 0, crit: false, killed: false, health: -1, maxHealth: 0 };
   private result: ShotResult = { kind: 'miss', damage: 0, distance: -1, targetHealth: -1, targetMaxHealth: 0, point: new THREE.Vector3() };
   private impulse = new THREE.Vector3();
+  /** Debug hook: called with each pellet's start and end point. */
+  onPellet: ((from: THREE.Vector3, to: THREE.Vector3) => void) | null = null;
 
   constructor(private physics: Physics, private fx: ImpactSink) {}
 
@@ -96,10 +98,13 @@ export class Hitscan {
       const hit = this.physics.raycast(origin, this.dir, data.range);
       const tracerShot = tracerFrom && data.fx.tracerEvery > 0 && (shotNumber * pellets + i) % data.fx.tracerEvery === 0;
       if (!hit) {
-        if (tracerShot) this.fx.tracer(tracerFrom!, this.end.copy(origin).addScaledVector(this.dir, Math.min(data.range, 120)));
+        this.end.copy(origin).addScaledVector(this.dir, Math.min(data.range, 120));
+        if (tracerShot) this.fx.tracer(tracerFrom!, this.end);
+        this.onPellet?.(origin, this.end);
         continue;
       }
       if (tracerShot) this.fx.tracer(tracerFrom!, hit.point);
+      this.onPellet?.(origin, hit.point);
       if (r.distance < 0) r.distance = hit.distance;
 
       const pelletRank = this.applyHit(data, hit, pellets, impactsWithSound < 3);

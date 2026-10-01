@@ -121,6 +121,8 @@ canvas { display: block; touch-action: none; }
 .btn-small { width: 38px; height: 38px; border-radius: 8px; top: 10px; font-size: 12px; }
 .btn-tune { left: calc(10px + env(safe-area-inset-left)); }
 .btn-debug { left: calc(56px + env(safe-area-inset-left)); font-size: 9px; }
+.btn-rays { left: calc(102px + env(safe-area-inset-left)); font-size: 9px; }
+.btn-laser { left: calc(148px + env(safe-area-inset-left)); font-size: 9px; }
 .is-touch .ammo { right: auto; left: 50%; transform: translateX(-50%); bottom: 10px; text-align: center; }
 .is-touch .ammo-count { font-size: 30px; }
 .is-touch .reload-bar { margin: 0 auto; }

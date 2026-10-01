@@ -18,17 +18,26 @@ const SPRINT_POSE = {
 
 export interface ViewmodelInput {
   player: PlayerController;
+  /** Look rotation applied this frame (radians); drives weapon inertia. */
   lookYaw: number;
   lookPitch: number;
   adsAmount: number;
+  /** Where the weapon should point, in camera space (camera aim ray at convergence distance). */
+  aimPoint: THREE.Vector3;
+  /** Main camera: the viewmodel renders with the same FOV so its space IS camera space. */
+  mainCamera: THREE.PerspectiveCamera;
 }
 
 /**
- * First-person weapon presentation. Rendered in its own scene + camera
- * (fixed FOV, never clips into walls). The final pose is a sum of independent,
- * individually tunable layers:
- *   hip/ADS position · sway (look lag) · bob · sprint pose · equip/holster
- *   · procedural reload/cycle pose · visual recoil springs · landing/jump.
+ * The physical weapon, expressed in camera space. Rendered in its own pass with
+ * the SAME FOV as the main camera, so camera space maps 1:1 to the world: the
+ * muzzle you see is the muzzle bullets leave from.
+ *
+ * Camera and weapon are separate bodies:
+ *   - the camera turns instantly with the mouse
+ *   - the weapon is aimed at the camera's aim point (point-fire convergence /
+ *     ADS zero) and trails camera rotation through an inertia spring
+ * Final pose = alignment + inertia + bob + sprint + equip + reload + recoil + jolts.
  */
 export class Viewmodel {
   readonly scene = new THREE.Scene();
@@ -45,8 +54,8 @@ export class Viewmodel {
   // Springs
   private recoilPos = new Spring3(300, 24);
   private recoilRot = new Spring3(260, 20);
-  private swayRot = new Spring3(100, 12);
-  private swayPos = new Spring3(100, 12);
+  /** Weapon inertia: angular offset (x = pitch, y = yaw) from the aim solution. */
+  private inertia = new Spring3(100, 12);
   private landSpring = new Spring(160, 13);
   private joltRot = new Spring3(220, 16);
 
@@ -57,6 +66,13 @@ export class Viewmodel {
   private hipPos = new THREE.Vector3();
   private tmp = new THREE.Vector3();
   private euler = new THREE.Euler(0, 0, 0, 'YXZ');
+  private q = new THREE.Quaternion();
+  private v = new THREE.Vector3();
+  private v2 = new THREE.Vector3();
+  /** Smoothed camera turn rate (rad/s): x = pitch, y = yaw. */
+  private lookRate = new THREE.Vector2();
+  /** Debug: current inertia offset in degrees (pitch, yaw). */
+  readonly inertiaDeg = new THREE.Vector2();
 
   constructor(aspect: number, weapons: WeaponData[]) {
     this.camera = new THREE.PerspectiveCamera(56, aspect, 0.01, 10);
@@ -162,27 +178,39 @@ export class Viewmodel {
     const pos = this.tmp.lerpVectors(this.hipPos, this.adsPos, adsEase);
     pos.y -= Math.sin(adsEase * Math.PI) * 0.012;
 
-    // --- Sway: weapon lags behind look motion ---
+    // --- Aim alignment: point the bore at the camera's aim point ---
+    // (hip: point-fire convergence, ADS: zero distance). Computed from where the
+    // muzzle would be with no rotation, so the bore line passes through the point.
+    const muzzleRest = this.v.copy(pos).add(rig.muzzle.position);
+    const toAim = this.v2.copy(input.aimPoint).sub(muzzleRest);
+    const alignYaw = Math.atan2(-toAim.x, -toAim.z);
+    const alignPitch = Math.atan2(toAim.y, Math.hypot(toAim.x, toAim.z));
+
+    // --- Inertia: the weapon trails the camera by (turn rate x inertia time), then
+    // the follow spring settles it with a slight overshoot when the turn stops.
+    // Lag size (inertia time) and settle feel (spring) are tuned independently,
+    // so a gun can feel heavy without the controls feeling laggy.
     const invDt = 1 / Math.max(dt, 1 / 240);
-    const swayMul = d.sway.amount * (1 + (d.ads.swayMultiplier - 1) * ads);
-    const maxSway = d.sway.max * DEG;
-    const yawVel = clamp(input.lookYaw * invDt, -12, 12);
-    const pitchVel = clamp(input.lookPitch * invDt, -12, 12);
+    const rate = this.lookRate;
+    const rk = damp(25, dt); // light low-pass: mouse/touch deltas are noisy
+    rate.x += (input.lookPitch * invDt - rate.x) * rk;
+    rate.y += (input.lookYaw * invDt - rate.y) * rk;
+    const inertiaTime = 0.018 * d.sway.amount * (1 + (d.ads.swayMultiplier - 1) * ads);
+    const maxLag = d.sway.max * DEG;
+    const lag = this.inertia;
+    lag.stiffness = d.sway.stiffness;
+    lag.damping = d.sway.damping;
     const lateral = (p.velocity.x * Math.cos(p.yaw) - p.velocity.z * Math.sin(p.yaw)) / 6;
-    this.swayRot.stiffness = this.swayPos.stiffness = d.sway.stiffness;
-    this.swayRot.damping = this.swayPos.damping = d.sway.damping;
-    this.swayRot.target.set(
-      clamp(-pitchVel * 0.035 * swayMul, -maxSway, maxSway),
-      clamp(-yawVel * 0.035 * swayMul, -maxSway, maxSway),
-      clamp(-yawVel * 0.02 * swayMul, -maxSway, maxSway) - lateral * 2.5 * DEG * (1 - ads * 0.8),
+    lag.target.set(
+      clamp(-rate.x * inertiaTime, -maxLag, maxLag),
+      clamp(-rate.y * inertiaTime, -maxLag, maxLag),
+      -lateral * 2.5 * DEG * (1 - ads * 0.8),
     );
-    this.swayPos.target.set(
-      clamp(-yawVel * 0.0022 * swayMul, -0.012, 0.012) - lateral * 0.006 * (1 - ads),
-      clamp(-pitchVel * 0.0018 * swayMul, -0.01, 0.01),
-      0,
-    );
-    const swayR = this.swayRot.update(dt);
-    const swayP = this.swayPos.update(dt);
+    const swayR = lag.update(dt);
+    this.inertiaDeg.set(swayR.x / DEG, swayR.y / DEG);
+    // Swinging a weapon also cants it and shifts it a few millimetres.
+    const swayP = this.v.set(swayR.y * 0.06 - lateral * 0.006 * (1 - ads), swayR.x * 0.05, 0);
+    const swayRoll = swayR.y * 0.6 + swayR.z;
 
     // --- Bob ---
     const sprinting = p.sprinting && weapon.state !== 'reloading';
@@ -228,32 +256,33 @@ export class Viewmodel {
     this.pivot.position.copy(pos);
 
     this.euler.set(
-      swayR.x + idlePitch + sp.rot[0] * sb + this.pose.rot.x + rr.x + jr.x - 0.9 * equipDown,
-      swayR.y + bobYaw + sp.rot[1] * sb + this.pose.rot.y + rr.y + jr.y + 0.15 * equipDown,
-      swayR.z + bobRoll + sp.rot[2] * sb + this.pose.rot.z + rr.z + jr.z + 0.35 * equipDown,
+      alignPitch + swayR.x + idlePitch + sp.rot[0] * sb + this.pose.rot.x + rr.x + jr.x - 0.9 * equipDown,
+      alignYaw + swayR.y + bobYaw + sp.rot[1] * sb + this.pose.rot.y + rr.y + jr.y + 0.15 * equipDown,
+      swayRoll + bobRoll + sp.rot[2] * sb + this.pose.rot.z + rr.z + jr.z + 0.35 * equipDown,
     );
     this.pivot.quaternion.setFromEuler(this.euler);
 
-    // Viewmodel FOV narrows a touch when aiming.
-    const vmFov = d.viewmodel.fov - 6 * adsEase;
-    if (Math.abs(this.camera.fov - vmFov) > 0.01) {
-      this.camera.fov = vmFov;
+    // Same projection as the world camera: viewmodel space == camera space.
+    const mc = input.mainCamera;
+    if (this.camera.fov !== mc.fov || this.camera.aspect !== mc.aspect) {
+      this.camera.fov = mc.fov;
+      this.camera.aspect = mc.aspect;
       this.camera.updateProjectionMatrix();
     }
     this.flash.update(dt);
     this.pivot.updateMatrixWorld(true);
   }
 
-  /**
-   * Convert a point on the viewmodel (muzzle, eject port) into world space,
-   * compensating for the different viewmodel FOV so effects line up on screen.
-   */
+  /** World position of a point on the weapon (muzzle, eject port, laser). */
   toWorld(local: THREE.Object3D, mainCamera: THREE.PerspectiveCamera, out: THREE.Vector3): THREE.Vector3 {
     local.getWorldPosition(out);
-    const k = Math.tan((mainCamera.fov * DEG) / 2) / Math.tan((this.camera.fov * DEG) / 2);
-    out.x *= k;
-    out.y *= k;
-    return mainCamera.localToWorld(out);
+    return out.applyMatrix4(mainCamera.matrixWorld);
+  }
+
+  /** World-space forward (bore direction, -Z of the weapon) of a weapon part. */
+  forwardWorld(local: THREE.Object3D, mainCamera: THREE.PerspectiveCamera, out: THREE.Vector3): THREE.Vector3 {
+    local.getWorldQuaternion(this.q);
+    return out.set(0, 0, -1).applyQuaternion(this.q).transformDirection(mainCamera.matrixWorld);
   }
 
   get activeRig(): WeaponRig | null {
