@@ -10,7 +10,7 @@ overlay.innerHTML = `
     <p class="status">Loading…</p>
     <div class="controls desktop-only">
       <div><b>WASD</b> move · <b>Mouse</b> look · <b>Space</b> jump · <b>Shift</b> sprint · <b>C</b> crouch · <b>Q/E</b> lean</div>
-      <div><b>LMB</b> fire · <b>RMB</b> aim · <b>R</b> reload · <b>B</b> fire mode · <b>V</b> shoulder · <b>T</b> inspect · <b>1-8</b> weapons</div>
+      <div><b>LMB</b> fire · <b>RMB</b> aim · <b>R</b> reload · <b>B</b> fire mode · <b>V</b> shoulder · <b>T</b> inspect · <b>1-0</b> weapons</div>
       <div><b>G</b> aim rays · <b>L</b> laser · <b>Z</b> slow-mo · <b>I</b> inf. ammo · <b>K</b> reset robots · <b>M</b> test stations</div>
       <div><b>Tab</b> tuning · <b>H</b> debug HUD · <b>F1</b> help · <b>Esc</b> release mouse</div>
     </div>

@@ -51,7 +51,9 @@ export class RecoilSystem {
     // Small visual-only punch: the gun moving dominates, the view barely flinches.
     const s = Math.sqrt(camera.punch.stiffness) * 1.9 * DEG * feel.cameraRecoilScale * (1 - 0.4 * adsAmount);
     camera.addPunch(r.punch * s, r.punch * 0.3 * s * (Math.random() * 2 - 1), r.punch * 0.8 * s * (Math.random() < 0.5 ? -1 : 1));
-    camera.addShake(Math.min(0.25, kick.vertical * 0.01) * feel.cameraRecoilScale);
+    camera.addShake(Math.min(0.35, kick.vertical * 0.012 + r.punch * 0.06) * feel.cameraRecoilScale);
+    // Brief FOV kick sells the blast of big cartridges without moving the aim.
+    camera.addFovPunch(r.punch * 25 * (1 - 0.5 * adsAmount) * feel.cameraRecoilScale);
   }
 
   /**

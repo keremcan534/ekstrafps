@@ -12,6 +12,7 @@ import type { PlayerController } from '../player/PlayerController';
 import type { Physics } from '../core/Physics';
 import type { DebugDraw } from '../fx/DebugDraw';
 import { Laser } from '../fx/Laser';
+import { Trails } from '../fx/Trails';
 import { Weapon, type WeaponListener } from './Weapon';
 import type { WeaponData } from './WeaponData';
 import { RecoilSystem } from './RecoilSystem';
@@ -54,6 +55,7 @@ export class WeaponController implements WeaponListener {
   readonly viewmodel: Viewmodel;
   readonly projectiles: ProjectileSystem;
   readonly laser = new Laser();
+  readonly trails = new Trails();
   current: Weapon;
   currentIndex = 0;
   handling!: Handling;
@@ -105,10 +107,10 @@ export class WeaponController implements WeaponListener {
   constructor(defs: WeaponData[], aspect: number, private deps: WeaponControllerDeps) {
     this.weapons = defs.map((d) => new Weapon(d, this));
     this.viewmodel = new Viewmodel(aspect, defs);
-    this.projectiles = new ProjectileSystem(deps.physics, deps.impacts, deps.impacts.sparks, deps.debugDraw);
+    this.projectiles = new ProjectileSystem(deps.physics, deps.impacts, deps.impacts.sparks, deps.debugDraw, this.trails);
     this.projectiles.onHit = (r) => this.onProjectileHit(r);
     this.worldFlash = new THREE.PointLight(0xffaa55, 0, 9, 2);
-    deps.worldScene.add(this.worldFlash, this.laser.group);
+    deps.worldScene.add(this.worldFlash, this.laser.group, this.trails.mesh);
     this.current = this.weapons[0];
     this.activate(0);
   }
@@ -330,6 +332,7 @@ export class WeaponController implements WeaponListener {
     });
 
     this.projectiles.update(dt);
+    this.trails.update(dt);
     this.flushHits();
     this.recoil.update(dt, camera, player);
 
@@ -407,12 +410,13 @@ export class WeaponController implements WeaponListener {
     this.recoil.onShot(d, kick, camera, this.adsAmount);
 
     audio.play(d.audio.fire);
-    Haptics.pulse(HAPTIC_MS[d.category]);
+    Haptics.pulse(d.animSet === 'bolt' ? 35 : HAPTIC_MS[d.category]);
     if (feel.muzzleFlash && d.fx.muzzleFlashScale > 0.3) {
       this.worldFlash.position.copy(this.muzzleWorld);
       this.worldFlashLife = 0.06 * d.fx.muzzleFlashScale;
     }
     impacts.muzzleSmoke(this.muzzleWorld, this.muzzleDir, d.fx.smoke);
+    if (feel.muzzleFlash) impacts.muzzleBlast(this.muzzleWorld, this.muzzleDir, d.fx.muzzleFlashScale * 0.6);
 
     const slot = this.pendingShells.find((s) => !s.active);
     if (slot && feel.shells) {

@@ -34,7 +34,7 @@ On the start screen, click anywhere or press Enter. Esc releases the mouse.
 | LMB / RMB | fire (point fire, no crosshair) / aim down sights |
 | R / B / T | reload / fire mode / inspect (magazine, chamber) |
 | [ / ] | zero distance |
-| 1-8, mouse wheel | AK-47, MK47, AS VAL, M4A1, RD-704, PPSh-41, pistol, shotgun |
+| 1-9, 0, mouse wheel | AK-47, MK47, AS VAL, M4A1, RD-704, PPSh-41, Mosin, Kar98k, pistol, shotgun |
 | **Lab** | |
 | G | aim rays: camera ray, bore ray, muzzle vector, wall probes, bullet trajectories |
 | L | test laser (parallel to the bore) |
@@ -101,7 +101,7 @@ core/      Game loop (120 Hz fixed sim), Input, Physics (Rapier), Spring, Noise,
 player/    PlayerController (kinematic character + lean), PlayerCamera (layered camera)
 weapons/   WeaponData, AmmoData, Handling, Weapon (mechanism), WeaponController (handling loop),
            Viewmodel (physical weapon pose), RecoilSystem (view recoil), Ballistics (projectiles),
-           WeaponAnimator (procedural reloads), WeaponModels (8 procedural guns)
+           WeaponAnimator (procedural reloads, bolt cycling), WeaponModels (10 procedural guns, textured)
 fx/        Particles, ImpactSystem, Decals, Shells, MuzzleFlash, Laser, DebugDraw, Textures
 targets/   Damageable, RobotTarget
 world/     Arena, PhysicsProps, MeshBuilder

@@ -89,6 +89,7 @@ export class TuningPanel {
     feelF.add(feel, 'hitmarkerScale', 0.5, 2, 0.05).name('Hitmarker scale');
     feelF.add(feel, 'muzzleFlash');
     feelF.add(feel, 'tracers');
+    feelF.add(feel, 'bulletTrails').name('Bullet trails (air)');
     feelF.add(feel, 'shells');
     feelF.add(feel, 'decals');
     feelF.add(feel, 'damageNumbers').name('Damage numbers (N)').listen();

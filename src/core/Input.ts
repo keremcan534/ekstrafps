@@ -173,6 +173,7 @@ export class Input {
         if (e.code.startsWith('Digit')) {
           const n = Number(e.code.slice(5));
           if (n >= 1 && n <= 9) this.slotPressed = n - 1;
+          else if (n === 0) this.slotPressed = 9;
         }
     }
     this.onKey?.(e.code);

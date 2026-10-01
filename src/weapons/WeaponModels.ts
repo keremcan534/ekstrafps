@@ -1,5 +1,7 @@
 import * as THREE from 'three';
+import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
 import type { ModelKey } from './WeaponData';
+import { metalRoughness, metalTexture, polymerTexture, woodTexture } from '../fx/Textures';
 
 /**
  * Placeholder procedural weapon models with the moving parts the procedural
@@ -23,7 +25,10 @@ export interface WeaponRig {
   leftHand: THREE.Object3D;
   /** Rest position of the left hand (local to its parent). */
   leftHandRest: THREE.Vector3;
-  /** Shell held in hand during shotgun reloads. */
+  /** Right (trigger) hand: works the bolt on bolt actions. */
+  rightHand: THREE.Object3D;
+  rightHandRest: THREE.Vector3;
+  /** Round/shell held in hand during single-round reloads. */
   heldShell: THREE.Object3D | null;
   /** Test laser emitter; the beam runs parallel to the bore. */
   laser: THREE.Object3D;
@@ -33,21 +38,31 @@ export interface WeaponRig {
 }
 
 const std = (color: number, metalness: number, roughness: number) => new THREE.MeshStandardMaterial({ color, metalness, roughness });
+/** Worn metal: speckle + brushing + scratches, scratches are shinier. */
+const metal = (color: number, metalness: number, roughness: number) =>
+  new THREE.MeshStandardMaterial({ color, metalness, roughness, map: metalTexture(), roughnessMap: metalRoughness() });
+/** Wood with grain along the stock. */
+const wood = (color: number, roughness = 0.55) => new THREE.MeshStandardMaterial({ color, metalness: 0, roughness, map: woodTexture() });
+/** Stippled polymer / painted finish. */
+const poly = (color: number, roughness: number, metalness = 0.1) =>
+  new THREE.MeshStandardMaterial({ color, metalness, roughness, map: polymerTexture() });
 
 const mat = {
-  gunmetal: std(0x2b2e33, 0.85, 0.38),
-  blued: std(0x1f2226, 0.9, 0.32),
-  steel: std(0x6d737b, 0.9, 0.28),
-  polymer: std(0x1a1b1e, 0.1, 0.72),
-  black: std(0x141517, 0.2, 0.6),
-  tan: std(0x8a7556, 0.05, 0.8),
+  gunmetal: metal(0x3a3e45, 0.85, 0.42),
+  blued: metal(0x262a30, 0.9, 0.36),
+  steel: metal(0x8a9099, 0.9, 0.3),
+  polymer: poly(0x222327, 0.72),
+  black: poly(0x1a1b1e, 0.6, 0.2),
+  tan: poly(0x9a8462, 0.8, 0.05),
   accent: std(0xff7a1a, 0.2, 0.5),
-  wood: std(0x6a3f22, 0.0, 0.6),
-  woodDark: std(0x4a2b17, 0.0, 0.65),
-  bakelite: std(0x5a2416, 0.05, 0.55),
-  glove: std(0x2a2f2a, 0.0, 0.9),
-  gloveKnuckle: std(0x3d4440, 0.1, 0.7),
-  sleeve: std(0x3a3f47, 0.0, 0.95),
+  wood: wood(0x9a5a2e),
+  woodDark: wood(0x6a3c20, 0.6),
+  woodMosin: wood(0xc0602a, 0.42),
+  woodKar: wood(0x5c3520, 0.5),
+  bakelite: poly(0x6a2a18, 0.45, 0.05),
+  glove: poly(0x2e342e, 0.9, 0),
+  gloveKnuckle: poly(0x434b46, 0.7, 0.1),
+  sleeve: poly(0x3e444d, 0.95, 0),
   brass: std(0xc9a046, 0.95, 0.3),
   shellRed: std(0xa11d1d, 0.1, 0.6),
   dot: new THREE.MeshBasicMaterial({ color: 0xff3030, toneMapped: false }),
@@ -57,12 +72,42 @@ const mat = {
 };
 
 type V3 = [number, number, number];
-const boxGeo = new THREE.BoxGeometry(1, 1, 1);
-const cylGeo = new THREE.CylinderGeometry(1, 1, 1, 14);
+const cylGeo = new THREE.CylinderGeometry(1, 1, 1, 18);
+
+/**
+ * Rounded boxes (no sharp CG edges) with UVs projected in metres, so textures
+ * keep the same scale on every part. Cached per size.
+ */
+const boxCache = new Map<string, THREE.BufferGeometry>();
+function roundedBox(w: number, h: number, d: number): THREE.BufferGeometry {
+  const key = `${w.toFixed(4)}|${h.toFixed(4)}|${d.toFixed(4)}`;
+  let g = boxCache.get(key);
+  if (!g) {
+    const radius = Math.min(Math.min(w, h, d) * 0.22, 0.008);
+    g = new RoundedBoxGeometry(w, h, d, 2, radius);
+    const pos = g.getAttribute('position');
+    const nor = g.getAttribute('normal');
+    const uv = g.getAttribute('uv');
+    const k = 6; // 1 texture repeat ≈ 16 cm
+    for (let i = 0; i < pos.count; i++) {
+      const nx = Math.abs(nor.getX(i));
+      const ny = Math.abs(nor.getY(i));
+      const nz = Math.abs(nor.getZ(i));
+      const x = pos.getX(i) * k;
+      const y = pos.getY(i) * k;
+      const z = pos.getZ(i) * k;
+      if (ny >= nx && ny >= nz) uv.setXY(i, z, x);
+      else if (nx >= nz) uv.setXY(i, z, y);
+      else uv.setXY(i, x, y);
+    }
+    uv.needsUpdate = true;
+    boxCache.set(key, g);
+  }
+  return g;
+}
 
 function box(parent: THREE.Object3D, material: THREE.Material, size: V3, pos: V3, rot: V3 = [0, 0, 0]): THREE.Mesh {
-  const m = new THREE.Mesh(boxGeo, material);
-  m.scale.set(...size);
+  const m = new THREE.Mesh(roundedBox(...size), material);
   m.position.set(...pos);
   m.rotation.set(...rot);
   parent.add(m);
@@ -162,9 +207,101 @@ function curvedMag(parent: THREE.Object3D, material: THREE.Material, segs: numbe
 
 function rig(
   root: THREE.Group,
-  parts: Omit<WeaponRig, 'root' | 'leftHandRest' | 'butt'> & { butt: V3 },
+  parts: Omit<WeaponRig, 'root' | 'leftHandRest' | 'rightHandRest' | 'butt'> & { butt: V3 },
 ): WeaponRig {
-  return { ...parts, root, leftHandRest: parts.leftHand.position.clone(), butt: new THREE.Vector3(...parts.butt) };
+  return {
+    ...parts,
+    root,
+    leftHandRest: parts.leftHand.position.clone(),
+    rightHandRest: parts.rightHand.position.clone(),
+    butt: new THREE.Vector3(...parts.butt),
+  };
+}
+
+/** A single cartridge for loading by hand (child of the hand). */
+function heldRound(hand: THREE.Object3D): THREE.Group {
+  const g = group(hand, [0, 0.045, -0.01]);
+  tube(g, mat.brass, 0.0065, 0.055, [0, 0, 0]);
+  tube(g, mat.blued, 0.0045, 0.022, [0, 0, -0.037]);
+  g.visible = false;
+  return g;
+}
+
+// ------------------------------------------------------------------ bolt actions
+
+/** Mosin-Nagant M91/30: long orange shellac stock, round receiver, straight bolt. 1.23 m. */
+function buildMosin(): WeaponRig {
+  const R = new THREE.Group();
+  const W = mat.woodMosin;
+  box(R, W, [0.046, 0.11, 0.3], [0, -0.045, 0.21], [-0.1, 0, 0]);
+  box(R, mat.blued, [0.048, 0.115, 0.012], [0, -0.063, 0.362], [-0.1, 0, 0]);
+  box(R, W, [0.04, 0.056, 0.14], [0, -0.014, 0.02]);
+  box(R, W, [0.052, 0.056, 0.62], [0, 0.0, -0.33]);
+  box(R, W, [0.04, 0.022, 0.38], [0, 0.04, -0.43]);
+  for (const z of [-0.29, -0.6]) box(R, mat.blued, [0.056, 0.07, 0.014], [0, 0.012, z]);
+  tube(R, mat.blued, 0.017, 0.2, [0, 0.03, -0.07]);
+  box(R, mat.blued, [0.04, 0.05, 0.1], [0, -0.03, -0.065]);
+  box(R, mat.blued, [0.008, 0.03, 0.06], [0, -0.062, 0.0]);
+  tube(R, mat.blued, 0.012, 0.26, [0, 0.03, -0.75]);
+  box(R, mat.blued, [0.03, 0.014, 0.08], [0, 0.052, -0.19]);
+  const sight = ironRear(R, -0.22, 0.068);
+  box(R, mat.blued, [0.016, 0.012, 0.02], [0, 0.047, -0.862]);
+  ironFront(R, -0.862, 0.068, 0.053);
+  // Bolt pivots on the bore axis: handle sticks out right, lifts (rot z) and slides back (+z).
+  const bolt = group(R, [0, 0.03, 0.035]);
+  tube(bolt, mat.steel, 0.0095, 0.12, [0, 0, -0.05]);
+  box(bolt, mat.steel, [0.062, 0.009, 0.009], [0.031, -0.003, 0], [0, 0, -0.12]);
+  const knob = new THREE.Mesh(new THREE.SphereGeometry(0.011, 14, 10), mat.steel);
+  knob.position.set(0.063, -0.008, 0);
+  bolt.add(knob);
+  bolt.userData.knob = knob.position.clone();
+  box(R, mat.polymer, [0.022, 0.022, 0.05], [0.034, 0.0, -0.46]);
+  const rightHand = hand(R, [0, -0.04, 0.03], [0.1, -0.26, 0.38], [0.05, 0.085, 0.085]);
+  const leftHand = hand(R, [-0.005, -0.042, -0.38], [-0.22, -0.27, -0.06], [0.056, 0.05, 0.1]);
+  return rig(R, {
+    muzzle: point(R, [0, 0.03, -0.88]),
+    ejectPort: point(R, [0.02, 0.05, -0.05]),
+    laser: point(R, [0.034, 0.0, -0.486]),
+    sight, mag: null, bolt, pump: null, leftHand, rightHand, heldShell: heldRound(rightHand), shellType: 'rifle',
+    butt: [0, -0.065, 0.37],
+  });
+}
+
+/** Kar98k: dark walnut, semi pistol grip, turned-down bolt. 1.11 m. */
+function buildKar98(): WeaponRig {
+  const R = new THREE.Group();
+  const W = mat.woodKar;
+  box(R, W, [0.046, 0.105, 0.28], [0, -0.042, 0.2], [-0.1, 0, 0]);
+  box(R, mat.blued, [0.048, 0.11, 0.012], [0, -0.06, 0.34], [-0.1, 0, 0]);
+  box(R, W, [0.042, 0.07, 0.1], [0, -0.032, 0.03], [0.35, 0, 0]);
+  box(R, W, [0.05, 0.055, 0.52], [0, 0.0, -0.28]);
+  box(R, W, [0.038, 0.02, 0.3], [0, 0.038, -0.39]);
+  for (const z of [-0.3, -0.52]) box(R, mat.blued, [0.054, 0.068, 0.014], [0, 0.01, z]);
+  tube(R, mat.blued, 0.017, 0.2, [0, 0.03, -0.07]);
+  box(R, mat.blued, [0.04, 0.03, 0.09], [0, -0.035, -0.07]);
+  box(R, mat.blued, [0.008, 0.03, 0.06], [0, -0.064, 0.0]);
+  tube(R, mat.blued, 0.012, 0.23, [0, 0.03, -0.655]);
+  box(R, mat.blued, [0.028, 0.014, 0.06], [0, 0.052, -0.19]);
+  const sight = ironRear(R, -0.215, 0.07);
+  box(R, mat.blued, [0.02, 0.016, 0.03], [0, 0.046, -0.75]);
+  ironFront(R, -0.755, 0.07, 0.054);
+  const bolt = group(R, [0, 0.03, 0.035]);
+  tube(bolt, mat.steel, 0.0095, 0.12, [0, 0, -0.05]);
+  box(bolt, mat.steel, [0.05, 0.009, 0.009], [0.024, -0.014, 0.006], [0, 0, -0.7]);
+  const knob = new THREE.Mesh(new THREE.SphereGeometry(0.011, 14, 10), mat.steel);
+  knob.position.set(0.046, -0.032, 0.012);
+  bolt.add(knob);
+  bolt.userData.knob = knob.position.clone();
+  box(R, mat.polymer, [0.022, 0.022, 0.05], [0.034, 0.0, -0.42]);
+  const rightHand = hand(R, [0, -0.05, 0.035], [0.1, -0.26, 0.38], [0.05, 0.085, 0.085]);
+  const leftHand = hand(R, [-0.005, -0.042, -0.34], [-0.22, -0.27, -0.04], [0.056, 0.05, 0.1]);
+  return rig(R, {
+    muzzle: point(R, [0, 0.03, -0.775]),
+    ejectPort: point(R, [0.02, 0.05, -0.05]),
+    laser: point(R, [0.034, 0.0, -0.446]),
+    sight, mag: null, bolt, pump: null, leftHand, rightHand, heldShell: heldRound(rightHand), shellType: 'rifle',
+    butt: [0, -0.062, 0.345],
+  });
 }
 
 // ------------------------------------------------------------------ rifles
@@ -193,13 +330,13 @@ function buildAK47(): WeaponRig {
   const bolt = group(R, [0.032, 0.04, -0.1]);
   box(bolt, mat.steel, [0.022, 0.012, 0.03], [0.008, 0, 0]);
   box(R, mat.polymer, [0.022, 0.022, 0.05], [0.038, 0.012, -0.34]);
-  hand(R, [0, -0.06, 0.035], [0.1, -0.25, 0.36], [0.05, 0.085, 0.085]);
+  const rightHand = hand(R, [0, -0.06, 0.035], [0.1, -0.25, 0.36], [0.05, 0.085, 0.085]);
   const leftHand = hand(R, [-0.005, -0.022, -0.31], [-0.22, -0.26, -0.02], [0.055, 0.05, 0.1]);
   return rig(R, {
     muzzle: point(R, [0, 0.03, -0.55]),
     ejectPort: point(R, [0.03, 0.04, -0.06]),
     laser: point(R, [0.038, 0.012, -0.366]),
-    sight, mag, bolt, pump: null, leftHand, heldShell: null, shellType: 'rifle',
+    sight, mag, bolt, pump: null, leftHand, rightHand, heldShell: null, shellType: 'rifle',
     butt: [0, -0.024, 0.32],
   });
 }
@@ -227,13 +364,13 @@ function buildM4A1(): WeaponRig {
   const bolt = group(R, [0, 0.072, 0.05]);
   box(bolt, mat.steel, [0.035, 0.01, 0.02], [0, 0, 0]);
   box(R, mat.polymer, [0.022, 0.022, 0.05], [0.036, 0.05, -0.36]);
-  hand(R, [0, -0.058, 0.03], [0.1, -0.25, 0.36], [0.05, 0.085, 0.085]);
+  const rightHand = hand(R, [0, -0.058, 0.03], [0.1, -0.25, 0.36], [0.05, 0.085, 0.085]);
   const leftHand = hand(R, [-0.005, 0.005, -0.33], [-0.22, -0.24, -0.04], [0.055, 0.05, 0.1]);
   return rig(R, {
     muzzle: point(R, [0, 0.05, -0.53]),
     ejectPort: point(R, [0.028, 0.055, -0.06]),
     laser: point(R, [0.036, 0.05, -0.386]),
-    sight, mag, bolt, pump: null, leftHand, heldShell: null, shellType: 'rifle',
+    sight, mag, bolt, pump: null, leftHand, rightHand, heldShell: null, shellType: 'rifle',
     butt: [0, 0.03, 0.31],
   });
 }
@@ -257,13 +394,13 @@ function buildMK47(): WeaponRig {
   const bolt = group(R, [0, 0.073, 0.05]);
   box(bolt, mat.steel, [0.035, 0.01, 0.02], [0, 0, 0]);
   box(R, mat.polymer, [0.022, 0.022, 0.05], [0.038, 0.05, -0.36]);
-  hand(R, [0, -0.058, 0.03], [0.1, -0.25, 0.36], [0.05, 0.085, 0.085]);
+  const rightHand = hand(R, [0, -0.058, 0.03], [0.1, -0.25, 0.36], [0.05, 0.085, 0.085]);
   const leftHand = hand(R, [-0.005, 0.005, -0.32], [-0.22, -0.24, -0.04], [0.055, 0.05, 0.1]);
   return rig(R, {
     muzzle: point(R, [0, 0.05, -0.543]),
     ejectPort: point(R, [0.029, 0.056, -0.06]),
     laser: point(R, [0.038, 0.05, -0.386]),
-    sight, mag, bolt, pump: null, leftHand, heldShell: null, shellType: 'rifle',
+    sight, mag, bolt, pump: null, leftHand, rightHand, heldShell: null, shellType: 'rifle',
     butt: [0, 0.028, 0.31],
   });
 }
@@ -290,13 +427,13 @@ function buildASVAL(): WeaponRig {
   const bolt = group(R, [0.03, 0.032, -0.04]);
   box(bolt, mat.steel, [0.02, 0.012, 0.025], [0.006, 0, 0]);
   box(R, mat.polymer, [0.022, 0.022, 0.05], [0.034, 0.0, -0.3]);
-  hand(R, [0, -0.062, 0.035], [0.1, -0.25, 0.36], [0.05, 0.085, 0.085]);
+  const rightHand = hand(R, [0, -0.062, 0.035], [0.1, -0.25, 0.36], [0.05, 0.085, 0.085]);
   const leftHand = hand(R, [-0.005, -0.032, -0.27], [-0.22, -0.26, 0.0], [0.055, 0.05, 0.1]);
   return rig(R, {
     muzzle: point(R, [0, 0.03, -0.577]),
     ejectPort: point(R, [0.027, 0.035, -0.05]),
     laser: point(R, [0.034, 0.0, -0.326]),
-    sight, mag, bolt, pump: null, leftHand, heldShell: null, shellType: 'rifle',
+    sight, mag, bolt, pump: null, leftHand, rightHand, heldShell: null, shellType: 'rifle',
     butt: [0, 0.008, 0.3],
   });
 }
@@ -327,13 +464,13 @@ function buildPPSh(): WeaponRig {
   const bolt = group(R, [0.028, 0.048, -0.12]);
   box(bolt, mat.steel, [0.016, 0.01, 0.02], [0.004, 0, 0]);
   box(R, mat.polymer, [0.022, 0.022, 0.05], [0.03, 0.04, -0.3]);
-  hand(R, [0, -0.04, 0.03], [0.1, -0.25, 0.36], [0.05, 0.08, 0.085]);
+  const rightHand = hand(R, [0, -0.04, 0.03], [0.1, -0.25, 0.36], [0.05, 0.08, 0.085]);
   const leftHand = hand(R, [-0.005, -0.012, -0.24], [-0.22, -0.26, 0.02], [0.055, 0.05, 0.1]);
   return rig(R, {
     muzzle: point(R, [0, 0.045, -0.51]),
     ejectPort: point(R, [0.02, 0.068, -0.11]),
     laser: point(R, [0.03, 0.04, -0.326]),
-    sight, mag, bolt, pump: null, leftHand, heldShell: null, shellType: 'pistol',
+    sight, mag, bolt, pump: null, leftHand, rightHand, heldShell: null, shellType: 'pistol',
     butt: [0, -0.05, 0.33],
   });
 }
@@ -359,13 +496,13 @@ function buildRD704(): WeaponRig {
   const bolt = group(R, [0.032, 0.04, -0.1]);
   box(bolt, mat.steel, [0.022, 0.012, 0.03], [0.008, 0, 0]);
   box(R, mat.polymer, [0.022, 0.022, 0.05], [0.04, 0.045, -0.42]);
-  hand(R, [0, -0.06, 0.035], [0.1, -0.25, 0.36], [0.05, 0.085, 0.085]);
+  const rightHand = hand(R, [0, -0.06, 0.035], [0.1, -0.25, 0.36], [0.05, 0.085, 0.085]);
   const leftHand = hand(R, [-0.005, 0.0, -0.4], [-0.22, -0.24, -0.08], [0.056, 0.052, 0.1]);
   return rig(R, {
     muzzle: point(R, [0, 0.035, -0.625]),
     ejectPort: point(R, [0.03, 0.04, -0.06]),
     laser: point(R, [0.04, 0.045, -0.446]),
-    sight, mag, bolt, pump: null, leftHand, heldShell: null, shellType: 'rifle',
+    sight, mag, bolt, pump: null, leftHand, rightHand, heldShell: null, shellType: 'rifle',
     butt: [0, 0.015, 0.33],
   });
 }
@@ -397,7 +534,7 @@ function buildPistol(): WeaponRig {
   const mag = group(R, [0, -0.03, 0.0]);
   box(mag, mat.gunmetal, [0.026, 0.09, 0.04], [0, -0.035, 0.008], [0.3, 0, 0]);
   box(mag, mat.polymer, [0.03, 0.012, 0.05], [0, -0.084, 0.024], [0.3, 0, 0]);
-  hand(R, [0, -0.06, 0.025], [0.08, -0.24, 0.36], [0.05, 0.09, 0.08]);
+  const rightHand = hand(R, [0, -0.06, 0.025], [0.08, -0.24, 0.36], [0.05, 0.09, 0.08]);
   const leftHand = hand(R, [-0.025, -0.075, 0.015], [-0.18, -0.25, 0.32], [0.05, 0.075, 0.08]);
   box(R, mat.polymer, [0.026, 0.02, 0.05], [0, -0.022, -0.13]);
   return rig(R, {
@@ -405,7 +542,7 @@ function buildPistol(): WeaponRig {
     ejectPort: point(R, [0.02, 0.045, -0.05]),
     laser: point(R, [0, -0.022, -0.156]),
     sight: point(R, [0, 0.06, 0.02]),
-    mag, bolt: slide, pump: null, leftHand, heldShell: null, shellType: 'pistol',
+    mag, bolt: slide, pump: null, leftHand, rightHand, heldShell: null, shellType: 'pistol',
     // Pistols have no stock: recoil pivots around the wrists.
     butt: [0, -0.06, 0.06],
   });
@@ -429,7 +566,7 @@ function buildShotgun(): WeaponRig {
   box(pump, mat.wood, [0.052, 0.046, 0.17], [0, 0, 0]);
   for (let i = 0; i < 5; i++) box(pump, mat.polymer, [0.054, 0.048, 0.006], [0, 0, -0.06 + i * 0.03]);
   const leftHand = hand(pump, [-0.006, -0.028, -0.01], [-0.22, -0.26, 0.24], [0.056, 0.05, 0.1]);
-  hand(R, [0, -0.058, 0.05], [0.1, -0.25, 0.4], [0.05, 0.09, 0.085]);
+  const rightHand = hand(R, [0, -0.058, 0.05], [0.1, -0.25, 0.4], [0.05, 0.09, 0.085]);
   const heldShell = group(leftHand, [0, 0.03, 0]);
   tube(heldShell, mat.shellRed, 0.0095, 0.055, [0, 0, 0]);
   tube(heldShell, mat.brass, 0.01, 0.014, [0, 0, 0.032]);
@@ -440,7 +577,7 @@ function buildShotgun(): WeaponRig {
     ejectPort: point(R, [0.028, 0.035, -0.05]),
     laser: point(R, [0, -0.012, -0.626]),
     sight: point(R, [0, 0.064, 0.0]),
-    mag: null, bolt: null, pump, leftHand, heldShell, shellType: 'shotgun',
+    mag: null, bolt: null, pump, leftHand, rightHand, heldShell, shellType: 'shotgun',
     butt: [0, -0.02, 0.345],
   });
 }
@@ -452,6 +589,8 @@ const BUILDERS: Record<ModelKey, () => WeaponRig> = {
   m4a1: buildM4A1,
   rd704: buildRD704,
   ppsh: buildPPSh,
+  mosin: buildMosin,
+  kar98: buildKar98,
   pistol: buildPistol,
   shotgun: buildShotgun,
 };

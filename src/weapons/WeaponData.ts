@@ -4,12 +4,14 @@ import asval from '../config/weapons/asval.json';
 import m4a1 from '../config/weapons/m4a1.json';
 import rd704 from '../config/weapons/rd704.json';
 import ppsh from '../config/weapons/ppsh.json';
+import mosin from '../config/weapons/mosin.json';
+import kar98 from '../config/weapons/kar98.json';
 import heavyPistol from '../config/weapons/heavy_pistol.json';
 import pumpShotgun from '../config/weapons/pump_shotgun.json';
 
-export type ModelKey = 'ak47' | 'mk47' | 'asval' | 'm4a1' | 'rd704' | 'ppsh' | 'pistol' | 'shotgun';
-export type AnimSet = 'rifle' | 'pistol' | 'shotgun';
-export type FireMode = 'auto' | 'semi' | 'pump';
+export type ModelKey = 'ak47' | 'mk47' | 'asval' | 'm4a1' | 'rd704' | 'ppsh' | 'mosin' | 'kar98' | 'pistol' | 'shotgun';
+export type AnimSet = 'rifle' | 'pistol' | 'shotgun' | 'bolt';
+export type FireMode = 'auto' | 'semi' | 'pump' | 'bolt';
 
 /**
  * Data-driven weapon definition. A weapon LAUNCHES ammunition: it defines the
@@ -33,6 +35,8 @@ export interface WeaponData {
   fireModes: FireMode[];
   /** Rounds per minute (semi/pump: fastest possible cycle). */
   fireRate: number;
+  /** Bolt actions: seconds to work the bolt after each shot (0 for everything else). */
+  boltCycleTime: number;
   magazineSize: number;
   /** Closed bolt: one extra round can sit in the chamber. Open bolt (PPSh) fires straight from the magazine. */
   closedBolt: boolean;
@@ -142,7 +146,7 @@ export interface WeaponData {
   };
 }
 
-export const WEAPON_DEFAULTS: readonly WeaponData[] = [ak47, mk47, asval, m4a1, rd704, ppsh, heavyPistol, pumpShotgun] as WeaponData[];
+export const WEAPON_DEFAULTS: readonly WeaponData[] = [ak47, mk47, asval, m4a1, rd704, ppsh, mosin, kar98, heavyPistol, pumpShotgun] as WeaponData[];
 
 /** Live, mutable copies the game and tuning panel share. */
 export const createWeaponDefs = (): WeaponData[] => WEAPON_DEFAULTS.map((w) => structuredClone(w));
@@ -159,6 +163,8 @@ if (import.meta.hot) {
       '../config/weapons/m4a1.json',
       '../config/weapons/rd704.json',
       '../config/weapons/ppsh.json',
+      '../config/weapons/mosin.json',
+      '../config/weapons/kar98.json',
       '../config/weapons/heavy_pistol.json',
       '../config/weapons/pump_shotgun.json',
     ],

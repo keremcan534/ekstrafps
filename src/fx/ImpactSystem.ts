@@ -42,6 +42,13 @@ export class ImpactSystem {
     this.refl.copy(dir).addScaledVector(normal, -2 * dir.dot(normal)).normalize();
     this.buildTangents(normal);
     const n = Math.max(0.35, intensity);
+    if (intensity > 1.6) {
+      // Full-power rifle rounds: bigger burst, chunkier debris and a deep hit sound.
+      this.burstChips(point, normal, Math.round(4 * intensity), 0.25, 0.24, 0.23);
+      this.burstDust(point, normal, Math.round(2 * intensity), 0.45, 0.43, 0.4);
+      this.flash(point, normal, 0.12 * intensity, 1, 0.8, 0.55);
+      if (playSound) this.audio.play('impact.heavy', { position: point, volume: Math.min(1, intensity / 2.2) });
+    }
 
     switch (surface) {
       case 'concrete':
@@ -81,6 +88,48 @@ export class ImpactSystem {
     this.burstSparks(point, 7, 12, 1.0, 0.9, 0.6, 0.25);
     this.flash(point, normal, 0.1, 1, 0.85, 0.6);
     this.audio.play('impact.ricochet', { position: point });
+  }
+
+  /** World-space muzzle blast: burning powder sparks + a brief bright core. */
+  muzzleBlast(pos: THREE.Vector3, forward: THREE.Vector3, scale: number): void {
+    if (scale <= 0.3) return;
+    const p = this.sp;
+    const n = Math.round(3 + 5 * scale);
+    for (let i = 0; i < n; i++) {
+      const s = rand(6, 22) * Math.min(1.5, scale);
+      p.x = pos.x + forward.x * 0.04;
+      p.y = pos.y + forward.y * 0.04;
+      p.z = pos.z + forward.z * 0.04;
+      p.vx = (forward.x + rand(-0.25, 0.25)) * s;
+      p.vy = (forward.y + rand(-0.2, 0.3)) * s;
+      p.vz = (forward.z + rand(-0.25, 0.25)) * s;
+      p.life = rand(0.04, 0.14);
+      p.size = rand(0.006, 0.012);
+      p.sizeEnd = 0.003;
+      p.stretch = 0.01;
+      p.r = 1;
+      p.g = rand(0.65, 0.85);
+      p.b = 0.35;
+      p.alpha = 1;
+      p.gravity = 4;
+      p.drag = 4;
+      this.sparks.spawn(p);
+    }
+    p.x = pos.x + forward.x * 0.12 * scale;
+    p.y = pos.y + forward.y * 0.12 * scale;
+    p.z = pos.z + forward.z * 0.12 * scale;
+    p.vx = p.vy = p.vz = 0;
+    p.life = 0.045;
+    p.size = 0.22 * scale;
+    p.sizeEnd = 0.1 * scale;
+    p.stretch = 0;
+    p.r = 1;
+    p.g = 0.78;
+    p.b = 0.45;
+    p.alpha = 0.85;
+    p.gravity = 0;
+    p.drag = 0;
+    this.sparks.spawn(p);
   }
 
   muzzleSmoke(pos: THREE.Vector3, forward: THREE.Vector3, amount: number): void {

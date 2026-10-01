@@ -16,7 +16,7 @@ WASD move · Shift sprint · Space jump · C crouch
 Q / E  lean (hold) · V  swap shoulder
 LMB fire · RMB aim · R reload · B fire mode
 T  inspect weapon (mag / chamber)
-[ / ]  zero distance · 1-8 / wheel  weapons
+[ / ]  zero distance · 1-9, 0 / wheel  weapons
 ── lab ──
 G  aim rays + probes + bullet paths
 L  laser · J  debug crosshair · N  dmg numbers

@@ -5,6 +5,7 @@ import { dragFactor, type AmmoData } from './AmmoData';
 import type { ParticleSystem, ParticleSpawn } from '../fx/Particles';
 import { spawnParams } from '../fx/Particles';
 import type { DebugDraw } from '../fx/DebugDraw';
+import type { Trails } from '../fx/Trails';
 
 const GRAVITY = 9.81;
 const MAX_STEP = 1 / 240;
@@ -58,6 +59,7 @@ export class ProjectileSystem {
   private seg = new THREE.Vector3();
   private impulse = new THREE.Vector3();
   private frameStart = new THREE.Vector3();
+  private trailStart = new THREE.Vector3();
   private tracerSpawn: ParticleSpawn = spawnParams();
   private hit: BulletHit = {
     point: new THREE.Vector3(),
@@ -84,6 +86,7 @@ export class ProjectileSystem {
     private fx: ImpactSink,
     private tracers: ParticleSystem,
     private debug: DebugDraw,
+    private trails: Trails,
   ) {
     for (let i = 0; i < CAPACITY; i++) {
       this.pool.push({
@@ -122,6 +125,7 @@ export class ProjectileSystem {
       let remaining = dt;
       const k = dragFactor(p.ammo);
       this.frameStart.copy(p.pos);
+      this.trailStart.copy(p.pos);
       while (remaining > 1e-6 && p.alive) {
         const h = Math.min(remaining, MAX_STEP);
         remaining -= h;
@@ -136,6 +140,7 @@ export class ProjectileSystem {
         const hit = this.physics.raycast(p.pos, this.dir, len);
         if (hit) {
           this.traceDebug(p, hit.point);
+          this.trail(p, hit.point);
           p.travelled += hit.distance;
           this.processHit(p, hit.point, hit.normal, hit.receiver);
         } else {
@@ -143,10 +148,13 @@ export class ProjectileSystem {
           p.travelled += len;
         }
       }
-      if (p.alive) this.traceDebug(p, p.pos);
+      if (p.alive) {
+        this.traceDebug(p, p.pos);
+        this.trail(p, p.pos);
+      }
       p.age += dt;
       if (p.alive && (p.age > MAX_LIFE || p.vel.length() < MIN_SPEED || p.pos.y < -20)) p.alive = false;
-      if (p.alive && p.tracer) this.drawTracer(p, dt);
+      if (p.alive && (p.tracer || feel.bulletTrails)) this.drawTracer(p, dt);
     }
   }
 
@@ -158,6 +166,14 @@ export class ProjectileSystem {
     this.frameStart.copy(end);
   }
 
+  /** Visible air trail along the real flight path (shows drop and ricochets). */
+  private trail(p: Projectile, end: THREE.Vector3): void {
+    if (!feel.bulletTrails && !p.tracer) return;
+    if (p.tracer) this.trails.add(this.trailStart, end, 1, 0.55, 0.22, 0.7);
+    else this.trails.add(this.trailStart, end, 0.42, 0.38, 0.3, 0.45);
+    this.trailStart.copy(end);
+  }
+
   private drawTracer(p: Projectile, dt: number): void {
     const t = this.tracerSpawn;
     t.x = p.pos.x;
@@ -167,12 +183,13 @@ export class ProjectileSystem {
     t.vy = p.vel.y;
     t.vz = p.vel.z;
     t.life = Math.max(dt, 1 / 60) * 1.05;
-    t.size = t.sizeEnd = 0.022;
-    t.stretch = 0.0065;
+    // Real tracers burn bright orange; ordinary rounds show as a faint brass-white streak.
+    t.size = t.sizeEnd = p.tracer ? 0.022 : 0.012;
+    t.stretch = p.tracer ? 0.0065 : 0.0045;
     t.r = 1;
-    t.g = 0.62;
-    t.b = 0.3;
-    t.alpha = 0.95;
+    t.g = p.tracer ? 0.62 : 0.9;
+    t.b = p.tracer ? 0.3 : 0.7;
+    t.alpha = p.tracer ? 0.95 : 0.55;
     t.gravity = 0;
     t.drag = 0;
     this.tracers.spawn(t);
@@ -223,7 +240,10 @@ export class ProjectileSystem {
     recv?.onBulletHit?.(h, res);
 
     const isStatic = !body && (recv?.allowDecals ?? true);
-    this.fx.impact(surface, point, normal, this.dir, p.pellets > 1 ? 0.55 : 1, isStatic, p.soundBudget);
+    // Effect size follows the round's remaining kinetic energy (≈1500 J = a 5.56 at range).
+    const energy = 0.5 * (p.ammo.projectileMass / 1000) * speed * speed;
+    const intensity = Math.min(2.6, Math.max(0.4, energy / 1500));
+    this.fx.impact(surface, point, normal, this.dir, intensity, isStatic, p.soundBudget);
 
     const r = this.report;
     r.shotId = p.shotId;

@@ -1,0 +1,85 @@
+{
+  "id": "kar98",
+  "name": "Kar98k",
+  "short": "KAR98",
+  "model": "kar98",
+  "animSet": "bolt",
+  "category": "rifle",
+  "ammo": "792x57_ss",
+  "fireModes": [
+    "bolt"
+  ],
+  "fireRate": 66,
+  "boltCycleTime": 0.85,
+  "magazineSize": 5,
+  "closedBolt": true,
+  "barrelLength": 0.6,
+  "handling": {
+    "weight": 3.9,
+    "length": 1.11,
+    "ergonomics": 36
+  },
+  "accuracy": {
+    "moa": 2.0
+  },
+  "recoil": {
+    "vertical": 3.6,
+    "horizontal": 0.5,
+    "horizontalBias": 0.1,
+    "back": 0.027,
+    "shoulder": 125,
+    "damping": 0.5,
+    "cameraTransfer": 0.5,
+    "cameraKeep": 0.15,
+    "cameraRecovery": 3.0,
+    "dispersion": 0.04,
+    "punch": 1.45,
+    "roll": 2.4
+  },
+  "aim": {
+    "hipConvergence": 15,
+    "zeroDistance": 100
+  },
+  "sight": {
+    "type": "iron",
+    "adsFov": 64,
+    "sightDistance": 0.4
+  },
+  "viewmodel": {
+    "hipPosition": [
+      0.15,
+      -0.19,
+      -0.42
+    ]
+  },
+  "reload": {
+    "kind": "shell",
+    "time": 0,
+    "emptyTime": 0,
+    "shellStart": 0.45,
+    "shellInsert": 0.42,
+    "shellEnd": 0.45
+  },
+  "equipTime": 0.6,
+  "holsterTime": 0.3,
+  "sprintToFireTime": 0.18,
+  "fx": {
+    "tracerEvery": 0,
+    "muzzleFlashScale": 2.2,
+    "smoke": 1.4,
+    "shellEjectDelay": 0.38,
+    "shellEjectSpeed": 2.4
+  },
+  "audio": {
+    "fire": "kar98.fire",
+    "dry": "dry_fire",
+    "equip": "equip.rifle",
+    "reloadStart": "reload.bolt.start",
+    "magOut": "",
+    "magIn": "",
+    "boltBack": "bolt.open",
+    "boltForward": "bolt.close",
+    "shellInsert": "reload.bolt.round",
+    "pump": ""
+  }
+}

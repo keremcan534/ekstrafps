@@ -112,5 +112,43 @@
     "pellets": 9,
     "pelletSpread": 2.3,
     "impactBoost": 6.0
+  },
+  "762x54r_lps": {
+    "name": "7.62x54R LPS",
+    "caliber": "7.62x54R",
+    "projectileMass": 9.6,
+    "muzzleVelocity": 865,
+    "referenceBarrel": 0.73,
+    "velocityPerBarrelMeter": 0.5,
+    "damage": 120,
+    "penetration": 45,
+    "ballisticCoefficient": 0.4,
+    "ricochetChance": 0.2,
+    "fragmentationChance": 0.05,
+    "tracer": false,
+    "accuracyModifier": 1.0,
+    "recoilModifier": 1.0,
+    "pellets": 1,
+    "pelletSpread": 0,
+    "impactBoost": 2.0
+  },
+  "792x57_ss": {
+    "name": "7.92x57 Mauser SS",
+    "caliber": "7.92x57 Mauser",
+    "projectileMass": 12.8,
+    "muzzleVelocity": 760,
+    "referenceBarrel": 0.6,
+    "velocityPerBarrelMeter": 0.5,
+    "damage": 130,
+    "penetration": 48,
+    "ballisticCoefficient": 0.45,
+    "ricochetChance": 0.2,
+    "fragmentationChance": 0.05,
+    "tracer": false,
+    "accuracyModifier": 1.0,
+    "recoilModifier": 1.0,
+    "pellets": 1,
+    "pelletSpread": 0,
+    "impactBoost": 2.2
   }
 }

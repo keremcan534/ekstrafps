@@ -34,7 +34,7 @@ interface TimelineEvent {
  * same timings, so the magazine visually leaves/enters exactly when the sound plays
  * and ammo is committed.
  */
-export const RELOAD_TIMELINES: Record<Exclude<AnimSet, 'shotgun'>, { tactical: TimelineEvent[]; empty: TimelineEvent[] }> = {
+export const RELOAD_TIMELINES: Record<Exclude<AnimSet, 'shotgun' | 'bolt'>, { tactical: TimelineEvent[]; empty: TimelineEvent[] }> = {
   rifle: {
     tactical: [
       { t: 0.0, sound: 'reloadStart' },
@@ -119,6 +119,8 @@ export class Weapon {
   private eventIndex = 0;
   private autoReloadTimer = -1;
   private pumpSoundPending = false;
+  private boltBackPending = false;
+  private boltForwardPending = false;
   private stopShellReload = false;
   private chamberPumpPlayed = false;
 
@@ -134,8 +136,26 @@ export class Weapon {
     return this.data.fireModes[this.fireModeIndex % this.data.fireModes.length];
   }
 
+  /** Manual action (pump / bolt) that must be cycled after every shot. */
+  get manual(): boolean {
+    const m = this.fireMode;
+    return m === 'pump' || m === 'bolt';
+  }
+
+  /** Seconds the manual action takes after a shot (pump stroke / bolt cycle). */
+  get cycleDuration(): number {
+    if (this.fireMode === 'bolt') return Math.max(0.3, this.data.boltCycleTime);
+    if (this.fireMode === 'pump') return 0.62;
+    return 0;
+  }
+
+  /** True while the bolt/pump is being worked. */
+  get cycling(): boolean {
+    return this.manual && this.pumpTime < this.cycleDuration;
+  }
+
   get fireInterval(): number {
-    return 60 / Math.max(1, this.data.fireRate);
+    return Math.max(60 / Math.max(1, this.data.fireRate), this.cycleDuration);
   }
 
   /** Total rounds that can be fired without reloading. */
@@ -169,7 +189,7 @@ export class Weapon {
     const r = this.data.reload;
     if (this.shellPhase === 'start') return r.shellStart;
     if (this.shellPhase === 'insert') return r.shellInsert;
-    return r.shellEnd + (this.reloadEmpty ? 0.3 : 0);
+    return r.shellEnd + (this.reloadEmpty && this.fireMode === 'pump' ? 0.3 : 0);
   }
 
   /** Pistol slide locks back on an empty gun. */
@@ -214,8 +234,18 @@ export class Weapon {
       this.pumpSoundPending = false;
       this.listener.onSound(this, 'pump');
     }
-    // The pump stroke chambers the next shell.
-    if (this.fireMode === 'pump' && !this.chambered && this.pumpTime >= PUMP_CHAMBER_TIME && this.pumpTime < 1 && this.ammo > 0) {
+    const cyc = this.cycleDuration;
+    if (this.boltBackPending && this.pumpTime >= cyc * 0.3) {
+      this.boltBackPending = false;
+      this.listener.onSound(this, 'boltBack');
+    }
+    if (this.boltForwardPending && this.pumpTime >= cyc * 0.62) {
+      this.boltForwardPending = false;
+      this.listener.onSound(this, 'boltForward');
+    }
+    // The pump stroke / bolt stroke chambers the next round.
+    const chamberAt = this.fireMode === 'bolt' ? cyc * 0.62 : PUMP_CHAMBER_TIME;
+    if (this.manual && !this.chambered && this.pumpTime >= chamberAt && this.pumpTime < chamberAt + 0.6 && this.ammo > 0) {
       this.ammo--;
       this.chambered = true;
     }
@@ -256,7 +286,7 @@ export class Weapon {
       if (input.firePressed) {
         this.listener.onDryFire(this);
         this.listener.onSound(this, 'dry');
-        if (this.ammo > 0 && this.data.closedBolt && mode !== 'pump') {
+        if (this.ammo > 0 && this.data.closedBolt && !this.manual) {
           // Rounds in the mag but nothing chambered: rack it (immediate action).
           this.ammo--;
           this.chambered = true;
@@ -291,25 +321,26 @@ export class Weapon {
       this.ammo--;
     } else {
       this.chambered = false;
-      if (this.fireMode !== 'pump' && this.ammo > 0) {
+      if (!this.manual && this.ammo > 0) {
         this.ammo--;
         this.chambered = true;
       }
     }
     if (feel.infiniteAmmo) this.ammo = this.data.magazineSize;
 
-    if (this.fireMode === 'pump') {
+    if (this.manual) {
       this.pumpTime = 0;
-      this.pumpSoundPending = true;
+      if (this.fireMode === 'pump') this.pumpSoundPending = true;
+      else this.boltBackPending = this.boltForwardPending = true;
     }
     this.listener.onShot(this);
-    if (this.roundsAvailable === 0) this.autoReloadTimer = AUTO_RELOAD_DELAY + (this.fireMode === 'pump' ? 0.5 : 0);
+    if (this.roundsAvailable === 0) this.autoReloadTimer = AUTO_RELOAD_DELAY + this.cycleDuration * 0.8;
   }
 
   /** Returns true if a reload actually started. */
   startReload(): boolean {
     if (this.state !== 'ready' || this.ammo >= this.data.magazineSize) return false;
-    if (this.fireMode === 'pump' && this.pumpTime < 0.6) return false; // finish pumping first
+    if (this.cycling) return false; // finish working the action first
     this.autoReloadTimer = -1;
     this.reloadEmpty = this.data.closedBolt ? !this.chambered : this.ammo === 0;
     this.setState('reloading');
@@ -322,6 +353,7 @@ export class Weapon {
       this.shellPhase = 'start';
       this.shellPhaseTime = 0;
       this.listener.onSound(this, 'reloadStart');
+      if (this.fireMode === 'bolt') this.listener.onSound(this, 'boltBack'); // open the bolt to load
     }
     return true;
   }
@@ -364,12 +396,17 @@ export class Weapon {
         else this.enterShellPhase('insert');
       }
     } else {
-      if (this.reloadEmpty && !this.chamberPumpPlayed && this.shellPhaseTime >= 0.12) {
+      if (this.fireMode === 'bolt' && !this.chamberPumpPlayed && this.shellPhaseTime >= 0.15) {
+        // Close the bolt: chambers a round if the chamber is empty.
+        this.chamberPumpPlayed = true;
+        this.listener.onSound(this, 'boltForward');
+        this.chamberFromMagazine();
+      } else if (this.fireMode === 'pump' && this.reloadEmpty && !this.chamberPumpPlayed && this.shellPhaseTime >= 0.12) {
         this.chamberPumpPlayed = true;
         this.listener.onSound(this, 'pump');
         this.chamberFromMagazine();
       }
-      const endTime = this.shellPhaseDuration * (this.stopShellReload && !this.reloadEmpty ? 0.55 : 1);
+      const endTime = this.shellPhaseDuration * (this.stopShellReload && !this.reloadEmpty && this.fireMode === 'pump' ? 0.55 : 1);
       if (this.shellPhaseTime >= endTime) {
         this.setState('ready');
         // The fire press that interrupted the reload shoots as soon as the gun is up.

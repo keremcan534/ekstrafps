@@ -17,6 +17,7 @@ const SPRINT_POSE = {
   rifle: { rot: [-0.32, 0.6, 0.4], pos: [-0.04, -0.05, 0.05] },
   pistol: { rot: [0.45, 0.25, 0.2], pos: [-0.03, -0.035, 0.07] },
   shotgun: { rot: [-0.3, 0.55, 0.42], pos: [-0.04, -0.05, 0.05] },
+  bolt: { rot: [-0.3, 0.55, 0.42], pos: [-0.04, -0.05, 0.05] },
 } as const;
 
 export interface ViewmodelInput {
@@ -388,6 +389,8 @@ export class Viewmodel {
     // --- Recoil + jolts ---
     const rp = this.recoilPos.update(dt);
     const rr = this.recoilRot.update(dt);
+    rr.x = clamp(rr.x, -6 * DEG, 14 * DEG);
+    rr.y = clamp(rr.y, -6 * DEG, 6 * DEG);
     const jr = this.jolt.update(dt);
     this.recoilDeg.set(rr.x / DEG, -rr.y / DEG);
 
@@ -407,14 +410,18 @@ export class Viewmodel {
       iner.y * 0.6 + iner.z + bobRoll + (sp.rot[2] * sb + this.pose.rot.z) * sideSign + jr.z + 0.35 * equipDown * sideSign + raise * 0.25 * sideV,
     );
     this.pivot.quaternion.setFromEuler(this.euler);
-    this.recoilPivot.position.set(rig.butt.x + rp.x, rig.butt.y + rp.y, rig.butt.z + rp.z);
+    // The shoulder stops the gun: rearward travel is capped (less when aimed, where the
+    // sights are already at the eye), so recoil can never shove the weapon into the camera.
+    const maxBack = 0.03 - 0.018 * ads;
+    const backZ = rp.z > 0 ? maxBack * Math.tanh(rp.z / maxBack) : Math.max(rp.z, -0.02);
+    this.recoilPivot.position.set(rig.butt.x + clamp(rp.x, -0.01, 0.01), rig.butt.y + clamp(rp.y, -0.015, 0.015), rig.butt.z + backZ);
     this.recoilPivot.rotation.set(rr.x, rr.y, rr.z);
 
     // Same projection as the world camera: viewmodel space == camera space.
     // When aimed, the cheek sits on the stock: clip the stock section right at the eye
     // instead of letting its top face fill the lower screen.
     const mc = input.mainCamera;
-    const near = 0.01 + 0.07 * ads;
+    const near = 0.01 + 0.045 * ads;
     if (this.camera.fov !== mc.fov || this.camera.aspect !== mc.aspect || Math.abs(this.camera.near - near) > 1e-4) {
       this.camera.fov = mc.fov;
       this.camera.aspect = mc.aspect;

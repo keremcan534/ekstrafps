@@ -86,15 +86,83 @@ function metal(ctx: Ctx, t: number, base: number, dur: number, gain: number, rat
   });
 }
 
-export type Recipe = { dur: number; render: (ctx: Ctx) => void };
+export type Recipe = {
+  dur: number;
+  /** Node-graph synthesis (rendered offline). */
+  render?: (ctx: Ctx) => void;
+  /** Direct sample synthesis, for waveforms nodes can't express (supersonic N-wave). */
+  samples?: (sampleRate: number) => Float32Array;
+  /** Saturation amount applied after rendering (tanh drive). Harsh, loud, Tarkov-ish. */
+  drive?: number;
+};
+
+/** Supersonic crack: an N-wave (~0.6 ms) followed by a bright, fast-decaying hiss. */
+function crackSamples(sr: number, nMs: number, tailMs: number): Float32Array {
+  const len = Math.ceil(sr * 0.09);
+  const out = new Float32Array(len);
+  const n = Math.max(4, Math.round((sr * nMs) / 1000));
+  for (let i = 0; i < n; i++) out[i] = 1 - (2 * i) / n;
+  const tail = (sr * tailMs) / 1000;
+  let prev = 0;
+  for (let i = n; i < len; i++) {
+    const x = (Math.random() * 2 - 1) * Math.exp(-(i - n) / tail) * 0.55;
+    out[i] = x - 0.82 * prev; // crude high-pass: keeps the crack bright
+    prev = x;
+  }
+  return out;
+}
 
 export const RECIPES: Record<string, Recipe> = {
+  // ---------- Supersonic cracks & heavy rifle bodies ----------
+  crack: { dur: 0.09, samples: (sr) => crackSamples(sr, 0.55, 5), drive: 1.5 },
+  crack_heavy: { dur: 0.09, samples: (sr) => crackSamples(sr, 0.75, 7), drive: 1.8 },
+  rifle_body: { dur: 0.45, drive: 3.2, render: (c) => {
+    burst(c, { dur: 0.22, freq: r(3200, 3800), freqEnd: 380, type: 'lowpass', q: 0.9, gain: 2.2 });
+    burst(c, { dur: 0.03, freq: 1800, type: 'highpass', gain: 1.4 });
+    tone(c, { dur: 0.1, f0: 190, f1: 70, gain: 0.9 });
+  } },
+  rifle_boom: { dur: 0.6, drive: 2.6, render: (c) => {
+    tone(c, { dur: 0.42, f0: r(64, 72), f1: 30, sweep: 0.3, gain: 1.8 });
+    burst(c, { dur: 0.22, freq: 180, type: 'lowpass', gain: 1.6 });
+  } },
+  kar_body: { dur: 0.45, drive: 3.0, render: (c) => {
+    burst(c, { dur: 0.25, freq: r(2600, 3100), freqEnd: 320, type: 'lowpass', q: 1.0, gain: 2.3 });
+    burst(c, { dur: 0.03, freq: 1600, type: 'highpass', gain: 1.3 });
+    tone(c, { dur: 0.12, f0: 160, f1: 60, gain: 1.0 });
+  } },
+  bolt_up: { dur: 0.12, render: (c) => {
+    burst(c, { dur: 0.012, freq: 3400, q: 7, gain: 0.9 });
+    metal(c, 0.004, r(1500, 1700), 0.06, 0.25);
+  } },
+  bolt_slide_back: { dur: 0.25, render: (c) => {
+    burst(c, { dur: 0.1, attack: 0.01, freq: 2200, freqEnd: 1400, q: 2.2, gain: 0.8 });
+    burst(c, { t: 0.1, dur: 0.02, freq: 3000, q: 5, gain: 0.9 });
+    metal(c, 0.1, 1200, 0.08, 0.25);
+  } },
+  bolt_slide_fwd: { dur: 0.3, render: (c) => {
+    burst(c, { dur: 0.08, attack: 0.008, freq: 1700, freqEnd: 2500, q: 2.2, gain: 0.8 });
+    burst(c, { t: 0.085, dur: 0.03, freq: 2100, q: 3, gain: 1.2 });
+    metal(c, 0.085, r(1300, 1450), 0.14, 0.35);
+    tone(c, { t: 0.085, dur: 0.05, f0: 150, f1: 80, gain: 0.5 });
+    burst(c, { t: 0.16, dur: 0.012, freq: 3600, q: 7, gain: 0.8 });
+  } },
+  round_insert: { dur: 0.15, render: (c) => {
+    burst(c, { dur: 0.03, freq: 1500, freqEnd: 900, q: 2, gain: 0.6 });
+    burst(c, { t: 0.03, dur: 0.01, freq: 3600, q: 7, gain: 0.7 });
+    metal(c, 0.03, 2300, 0.05, 0.12);
+  } },
+  impact_heavy: { dur: 0.5, drive: 2.0, render: (c) => {
+    tone(c, { dur: 0.18, f0: 110, f1: 42, gain: 1.2 });
+    burst(c, { dur: 0.12, freq: 900, freqEnd: 200, type: 'lowpass', gain: 1.4 });
+    metal(c, 0.0, r(380, 460), 0.3, 0.35, [1, 2.3, 3.9]);
+  } },
+
   // ---------- Assault rifle ----------
-  ar_shot: { dur: 0.3, render: (c) => {
+  ar_shot: { dur: 0.3, drive: 2.6, render: (c) => {
     burst(c, { dur: 0.16, freq: r(3200, 3800), freqEnd: 700, type: 'bandpass', q: 0.7, gain: 1.6 });
     burst(c, { dur: 0.035, freq: 2600, type: 'highpass', gain: 0.9 });
   } },
-  ar_punch: { dur: 0.25, render: (c) => {
+  ar_punch: { drive: 2.2, dur: 0.25, render: (c) => {
     tone(c, { dur: 0.13, f0: r(135, 150), f1: 45, sweep: 0.09, gain: 1.1 });
     tone(c, { dur: 0.012, f0: 900, f1: 200, type: 'square', gain: 0.25 });
   } },
@@ -108,11 +176,11 @@ export const RECIPES: Record<string, Recipe> = {
   } },
 
   // ---------- 7.62x39 (AK family): deeper, harsher ----------
-  ak_shot: { dur: 0.36, render: (c) => {
+  ak_shot: { drive: 2.6, dur: 0.36, render: (c) => {
     burst(c, { dur: 0.2, freq: r(2400, 2900), freqEnd: 520, type: 'bandpass', q: 0.6, gain: 1.9 });
     burst(c, { dur: 0.04, freq: 2100, type: 'highpass', gain: 1.0 });
   } },
-  ak_punch: { dur: 0.3, render: (c) => {
+  ak_punch: { drive: 2.2, dur: 0.3, render: (c) => {
     tone(c, { dur: 0.16, f0: r(118, 128), f1: 40, sweep: 0.11, gain: 1.25 });
     burst(c, { dur: 0.06, freq: 280, type: 'lowpass', gain: 0.6 });
   } },
@@ -138,17 +206,17 @@ export const RECIPES: Record<string, Recipe> = {
   val_tail: { dur: 0.6, render: (c) => burst(c, { dur: 0.4, attack: 0.01, freq: 400, freqEnd: 160, type: 'lowpass', gain: 0.4 }) },
 
   // ---------- 7.62x25 SMG: snappy ----------
-  ppsh_shot: { dur: 0.25, render: (c) => {
+  ppsh_shot: { drive: 2.6, dur: 0.25, render: (c) => {
     burst(c, { dur: 0.11, freq: r(3800, 4400), freqEnd: 900, type: 'bandpass', q: 0.8, gain: 1.4 });
     burst(c, { dur: 0.025, freq: 3000, type: 'highpass', gain: 0.8 });
   } },
 
   // ---------- Heavy pistol ----------
-  pistol_shot: { dur: 0.4, render: (c) => {
+  pistol_shot: { drive: 2.6, dur: 0.4, render: (c) => {
     burst(c, { dur: 0.24, freq: r(2000, 2400), freqEnd: 500, type: 'bandpass', q: 0.6, gain: 1.9 });
     burst(c, { dur: 0.045, freq: 2200, type: 'highpass', gain: 1.1 });
   } },
-  pistol_punch: { dur: 0.35, render: (c) => {
+  pistol_punch: { drive: 2.2, dur: 0.35, render: (c) => {
     tone(c, { dur: 0.22, f0: r(110, 120), f1: 36, sweep: 0.14, gain: 1.4 });
     burst(c, { dur: 0.08, freq: 260, type: 'lowpass', gain: 0.8 });
   } },
@@ -162,11 +230,11 @@ export const RECIPES: Record<string, Recipe> = {
   } },
 
   // ---------- Pump shotgun ----------
-  shotgun_shot: { dur: 0.55, render: (c) => {
+  shotgun_shot: { drive: 2.6, dur: 0.55, render: (c) => {
     burst(c, { dur: 0.36, freq: r(4200, 5000), freqEnd: 380, type: 'lowpass', q: 0.8, gain: 2.0 });
     burst(c, { dur: 0.05, freq: 1800, type: 'highpass', gain: 1.0 });
   } },
-  shotgun_punch: { dur: 0.5, render: (c) => {
+  shotgun_punch: { drive: 2.2, dur: 0.5, render: (c) => {
     tone(c, { dur: 0.32, f0: r(92, 100), f1: 30, sweep: 0.2, gain: 1.6 });
     burst(c, { dur: 0.14, freq: 220, type: 'lowpass', gain: 1.2 });
   } },

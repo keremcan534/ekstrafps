@@ -142,3 +142,161 @@ export function labelTexture(text: string, color = '#ffb020', bg = 'rgba(15,16,1
     ctx.fillText(text, s / 2, s / 2 + 4);
   });
 }
+
+// ---------------------------------------------------------------- weapon surfaces
+
+function weaponCanvas(key: string, draw: (ctx: CanvasRenderingContext2D, s: number) => void, srgb = true): THREE.Texture {
+  return cached(key, () => {
+    const t = canvasTexture(256, draw, srgb);
+    t.wrapS = t.wrapT = THREE.RepeatWrapping;
+    return t;
+  });
+}
+
+const rnd = (a: number, b: number) => a + Math.random() * (b - a);
+
+/** Worn metal: speckle, fine brushing and light edge scratches. Neutral, tinted by material colour. */
+export const metalTexture = (): THREE.Texture =>
+  weaponCanvas('wpn_metal', (ctx, s) => {
+    ctx.fillStyle = '#d6d6d6';
+    ctx.fillRect(0, 0, s, s);
+    for (let i = 0; i < 2600; i++) {
+      const v = rnd(150, 255) | 0;
+      ctx.fillStyle = `rgba(${v},${v},${v},0.25)`;
+      ctx.fillRect(Math.random() * s, Math.random() * s, 1, 1);
+    }
+    for (let i = 0; i < 70; i++) {
+      ctx.strokeStyle = `rgba(255,255,255,${rnd(0.05, 0.12)})`;
+      const y = Math.random() * s;
+      ctx.beginPath();
+      ctx.moveTo(0, y);
+      ctx.lineTo(s, y + rnd(-3, 3));
+      ctx.stroke();
+    }
+    for (let i = 0; i < 26; i++) {
+      ctx.strokeStyle = `rgba(255,255,255,${rnd(0.25, 0.5)})`;
+      ctx.lineWidth = rnd(0.5, 1.2);
+      const x = Math.random() * s;
+      const y = Math.random() * s;
+      ctx.beginPath();
+      ctx.moveTo(x, y);
+      ctx.lineTo(x + rnd(-25, 25), y + rnd(-8, 8));
+      ctx.stroke();
+    }
+  });
+
+/** Roughness for metal: polished scratches are smoother than the matte finish. */
+export const metalRoughness = (): THREE.Texture =>
+  weaponCanvas(
+    'wpn_metal_rough',
+    (ctx, s) => {
+      ctx.fillStyle = '#9a9a9a';
+      ctx.fillRect(0, 0, s, s);
+      for (let i = 0; i < 1800; i++) {
+        const v = rnd(110, 190) | 0;
+        ctx.fillStyle = `rgb(${v},${v},${v})`;
+        ctx.fillRect(Math.random() * s, Math.random() * s, 2, 2);
+      }
+      for (let i = 0; i < 40; i++) {
+        ctx.strokeStyle = 'rgba(40,40,40,0.6)';
+        const x = Math.random() * s;
+        const y = Math.random() * s;
+        ctx.beginPath();
+        ctx.moveTo(x, y);
+        ctx.lineTo(x + rnd(-30, 30), y + rnd(-6, 6));
+        ctx.stroke();
+      }
+    },
+    false,
+  );
+
+/** Wood grain running along U (the long axis of stocks). Tinted per wood type. */
+export const woodTexture = (): THREE.Texture =>
+  weaponCanvas('wpn_wood', (ctx, s) => {
+    ctx.fillStyle = '#e9d2b4';
+    ctx.fillRect(0, 0, s, s);
+    for (let i = 0; i < 90; i++) {
+      const y0 = Math.random() * s;
+      const amp = rnd(1, 6);
+      const freq = rnd(0.01, 0.04);
+      const ph = Math.random() * 10;
+      ctx.strokeStyle = `rgba(${rnd(90, 140) | 0},${rnd(50, 80) | 0},${rnd(20, 40) | 0},${rnd(0.12, 0.35)})`;
+      ctx.lineWidth = rnd(0.6, 2.5);
+      ctx.beginPath();
+      for (let x = 0; x <= s; x += 4) {
+        const y = y0 + Math.sin(x * freq + ph) * amp;
+        if (x === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      }
+      ctx.stroke();
+    }
+    // a couple of knots
+    for (let i = 0; i < 2; i++) {
+      const g = ctx.createRadialGradient(0, 0, 0, 0, 0, 10);
+      g.addColorStop(0, 'rgba(70,35,15,0.5)');
+      g.addColorStop(1, 'rgba(70,35,15,0)');
+      ctx.save();
+      ctx.translate(Math.random() * s, Math.random() * s);
+      ctx.scale(2.5, 1);
+      ctx.fillStyle = g;
+      ctx.fillRect(-12, -12, 24, 24);
+      ctx.restore();
+    }
+  });
+
+/** Polymer stipple. */
+export const polymerTexture = (): THREE.Texture =>
+  weaponCanvas('wpn_polymer', (ctx, s) => {
+    ctx.fillStyle = '#d0d0d0';
+    ctx.fillRect(0, 0, s, s);
+    for (let i = 0; i < 6000; i++) {
+      const v = rnd(150, 255) | 0;
+      ctx.fillStyle = `rgba(${v},${v},${v},0.35)`;
+      ctx.fillRect(Math.random() * s, Math.random() * s, 1.5, 1.5);
+    }
+  });
+
+/** Muzzle flash star with a random spike pattern (several variants are generated). */
+export const flashVariant = (i: number): THREE.Texture =>
+  cached(`flash_v${i}`, () =>
+    canvasTexture(128, (ctx, s) => {
+      const c = s / 2;
+      ctx.translate(c, c);
+      ctx.globalCompositeOperation = 'lighter';
+      const spikes = 5 + ((Math.random() * 5) | 0);
+      for (let k = 0; k < spikes; k++) {
+        const a = (k / spikes) * Math.PI * 2 + rnd(-0.25, 0.25);
+        const len = c * rnd(0.55, 1.0);
+        const w = rnd(4, 9);
+        const g = ctx.createLinearGradient(0, 0, Math.cos(a) * len, Math.sin(a) * len);
+        g.addColorStop(0, 'rgba(255,250,225,0.95)');
+        g.addColorStop(0.35, 'rgba(255,190,90,0.7)');
+        g.addColorStop(1, 'rgba(255,90,10,0)');
+        ctx.fillStyle = g;
+        ctx.beginPath();
+        ctx.moveTo(Math.cos(a + Math.PI / 2) * w, Math.sin(a + Math.PI / 2) * w);
+        ctx.lineTo(Math.cos(a) * len, Math.sin(a) * len);
+        ctx.lineTo(Math.cos(a - Math.PI / 2) * w, Math.sin(a - Math.PI / 2) * w);
+        ctx.fill();
+      }
+      const core = ctx.createRadialGradient(0, 0, 0, 0, 0, c * 0.45);
+      core.addColorStop(0, 'rgba(255,255,245,1)');
+      core.addColorStop(0.4, 'rgba(255,215,140,0.85)');
+      core.addColorStop(1, 'rgba(255,120,30,0)');
+      ctx.fillStyle = core;
+      ctx.fillRect(-c, -c, s, s);
+    }),
+  );
+
+/** Soft round glow (muzzle bloom). */
+export const glowTexture = (): THREE.Texture =>
+  cached('glow', () =>
+    canvasTexture(64, (ctx, s) => {
+      const g = ctx.createRadialGradient(s / 2, s / 2, 0, s / 2, s / 2, s / 2);
+      g.addColorStop(0, 'rgba(255,230,180,1)');
+      g.addColorStop(0.3, 'rgba(255,170,80,0.45)');
+      g.addColorStop(1, 'rgba(255,120,40,0)');
+      ctx.fillStyle = g;
+      ctx.fillRect(0, 0, s, s);
+    }),
+  );

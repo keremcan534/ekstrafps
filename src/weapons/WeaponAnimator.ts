@@ -101,6 +101,7 @@ const PISTOL_EMPTY: MagReloadAnim = {
 /** Whole-weapon reload poses (rotation x/y/z rad, position x/y/z m). */
 const RELOAD_POSE = {
   rifle: { rot: [0.14, 0.12, 0.48], pos: [-0.035, 0.03, 0.03] },
+  bolt: { rot: [0.12, 0.1, 0.38], pos: [-0.025, 0.03, 0.02] },
   pistol: { rot: [0.3, 0.1, 0.32], pos: [-0.03, 0.035, 0.04] },
   shotgun: { rot: [0.12, 0.1, -0.55], pos: [-0.03, 0.03, 0.03] },
 } as const;
@@ -122,6 +123,10 @@ export interface PoseOffset {
   rot: THREE.Vector3;
 }
 
+// Bolt-action loading path for the right hand (offsets from its rest position, root space).
+const ROUND_POUCH: V = [0.09, -0.2, 0.06];
+const ROUND_PORT: V = [-0.005, 0.085, -0.14];
+
 export class WeaponAnimator {
   private tmp = new THREE.Vector3();
   private magRest = new THREE.Vector3();
@@ -129,6 +134,8 @@ export class WeaponAnimator {
   private pumpRest = new THREE.Vector3();
   private rig: WeaponRig | null = null;
   private rifle: { tactical: MagReloadAnim; empty: MagReloadAnim } | null = null;
+  private knob = new THREE.Vector3();
+  private grip = new THREE.Vector3();
 
   setRig(rig: WeaponRig): void {
     this.rig = rig;
@@ -145,6 +152,59 @@ export class WeaponAnimator {
     }
   }
 
+  /** lift 0..1 rotates the handle up, slide 0..1 pulls the bolt back. */
+  private setBolt(rig: WeaponRig, lift: number, slide: number): void {
+    rig.bolt!.rotation.z = 1.25 * lift;
+    rig.bolt!.position.set(this.boltRest.x, this.boltRest.y, this.boltRest.z + 0.085 * slide);
+  }
+
+  /** Blend the right hand from the grip onto the bolt knob. */
+  private handOnKnob(rig: WeaponRig, grab: number): void {
+    const k = rig.bolt!.userData.knob as THREE.Vector3 | undefined;
+    if (!k || grab <= 0) return;
+    this.knob.copy(k).applyEuler(rig.bolt!.rotation).add(rig.bolt!.position);
+    this.knob.y -= 0.035;
+    this.knob.z += 0.02;
+    rig.rightHand.position.lerpVectors(rig.rightHandRest, this.knob, grab);
+  }
+
+  /** Bolt open, rounds pushed in one by one, bolt closed. */
+  private boltReload(weapon: Weapon, rig: WeaponRig, out: PoseOffset): void {
+    const phaseT = weapon.shellPhaseTime / Math.max(0.01, weapon.shellPhaseDuration);
+    let open = 1;
+    let blend = 1;
+    let grab = 0;
+    if (weapon.shellPhase === 'start') {
+      open = smoothstep(phaseT * 1.6);
+      blend = smoothstep(phaseT);
+      grab = kf(phaseT, [[0, 0], [0.25, 1], [0.75, 1], [1, 0]]);
+    } else if (weapon.shellPhase === 'insert') {
+      const h = this.grip.copy(rig.rightHandRest);
+      const keys: Key3[] = [
+        at(0, [0, 0, 0]),
+        at(0.3, ROUND_POUCH),
+        at(0.45, ROUND_POUCH),
+        at(0.75, ROUND_PORT),
+        at(0.9, [ROUND_PORT[0], ROUND_PORT[1] - 0.03, ROUND_PORT[2]]),
+        at(1, [0, 0, 0]),
+      ];
+      rig.rightHand.position.copy(h).add(kf3(phaseT, keys, this.tmp));
+      if (rig.heldShell) rig.heldShell.visible = phaseT > 0.35 && phaseT < 0.9;
+    } else {
+      const s = weapon.shellPhaseTime;
+      open = 1 - smoothstep(s / 0.22);
+      blend = 1 - smoothstep(phaseT * 1.2);
+      grab = kf(phaseT, [[0, 1], [0.5, 1], [0.85, 0]]);
+    }
+    const lift = Math.min(1, open * 1.6);
+    const slide = Math.max(0, open * 1.6 - 0.6);
+    this.setBolt(rig, lift, slide);
+    if (weapon.shellPhase !== 'insert') this.handOnKnob(rig, grab);
+    const pose = RELOAD_POSE.bolt;
+    out.rot.set(pose.rot[0] * blend, pose.rot[1] * blend, pose.rot[2] * blend);
+    out.pos.set(pose.pos[0] * blend, pose.pos[1] * blend, pose.pos[2] * blend);
+  }
+
   /** Writes reload/cycle pose into `out` and moves rig parts. */
   update(weapon: Weapon, out: PoseOffset): void {
     const rig = this.rig;
@@ -152,6 +212,7 @@ export class WeaponAnimator {
     out.pos.set(0, 0, 0);
     out.rot.set(0, 0, 0);
     rig.leftHand.position.copy(rig.leftHandRest);
+    rig.rightHand.position.copy(rig.rightHandRest);
     if (rig.mag) {
       rig.mag.position.copy(this.magRest);
       rig.mag.rotation.x = 0;
@@ -170,6 +231,23 @@ export class WeaponAnimator {
       rig.bolt.position.set(this.boltRest.x, this.boltRest.y, this.boltRest.z + z);
     } else if (rig.bolt) {
       rig.bolt.position.copy(this.boltRest);
+      rig.bolt.rotation.z = 0;
+    }
+
+    // --- Bolt action: right hand leaves the grip, lifts, pulls, pushes, locks ---
+    if (set === 'bolt' && rig.bolt && !reloading) {
+      const t = weapon.pumpTime / Math.max(0.01, weapon.cycleDuration);
+      if (t < 1) {
+        const lift = kf(t, [[0, 0], [0.14, 0], [0.26, 1], [0.62, 1], [0.74, 0], [1, 0]]);
+        const slide = kf(t, [[0, 0], [0.26, 0], [0.42, 1], [0.5, 1], [0.64, 0], [1, 0]]);
+        const grab = kf(t, [[0, 0], [0.13, 1], [0.8, 1], [0.95, 0]]);
+        this.setBolt(rig, lift, slide);
+        this.handOnKnob(rig, grab);
+        const cant = kf(t, [[0, 0], [0.15, 1], [0.75, 1], [1, 0]]);
+        out.rot.z += 0.16 * cant;
+        out.rot.x += 0.03 * cant;
+        out.pos.y -= 0.012 * cant;
+      }
     }
 
     if (rig.pump) {
@@ -203,6 +281,11 @@ export class WeaponAnimator {
       if (rig.bolt && anim.bolt) {
         rig.bolt.position.set(this.boltRest.x, this.boltRest.y, this.boltRest.z + kf(t, anim.bolt));
       }
+      return;
+    }
+
+    if (set === 'bolt') {
+      this.boltReload(weapon, rig, out);
       return;
     }
 

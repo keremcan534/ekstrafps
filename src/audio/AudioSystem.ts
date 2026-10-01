@@ -21,6 +21,8 @@ export interface PlayOptions {
 export class AudioSystem {
   readonly ctx: AudioContext;
   private master: GainNode;
+  /** Shared room reverb: concrete hall impulse response, fed by per-event sends. */
+  private reverbIn: GainNode;
   private synthBuffers = new Map<string, AudioBuffer[]>();
   private fileBuffers = new Map<string, AudioBuffer>();
   private voices = new Map<string, number>();
@@ -40,6 +42,48 @@ export class AudioSystem {
     this.master = this.ctx.createGain();
     this.master.gain.value = feel.masterVolume;
     this.master.connect(comp).connect(this.ctx.destination);
+
+    const convolver = this.ctx.createConvolver();
+    convolver.buffer = this.buildRoomImpulse(1.9);
+    this.reverbIn = this.ctx.createGain();
+    const wet = this.ctx.createGain();
+    wet.gain.value = 0.55;
+    this.reverbIn.connect(convolver).connect(wet).connect(this.master);
+  }
+
+  /**
+   * Procedural impulse response of a hard indoor range: a cluster of early wall
+   * reflections, then a dense tail that darkens as it decays.
+   */
+  private buildRoomImpulse(seconds: number): AudioBuffer {
+    const sr = this.ctx.sampleRate;
+    const len = Math.floor(sr * seconds);
+    const buf = this.ctx.createBuffer(2, len, sr);
+    const early = [0.009, 0.014, 0.021, 0.029, 0.038, 0.05, 0.063, 0.081];
+    for (let ch = 0; ch < 2; ch++) {
+      const d = buf.getChannelData(ch);
+      let lp = 0;
+      for (let i = 0; i < len; i++) {
+        const t = i / sr;
+        const n = (Math.random() * 2 - 1) * Math.exp(-t / 0.42);
+        const k = Math.min(0.92, 0.25 + t * 0.9); // darker over time
+        lp = lp * k + n * (1 - k);
+        d[i] = lp * (t < 0.012 ? t / 0.012 : 1) * 1.6;
+      }
+      for (const e of early) {
+        const at = Math.floor((e + (ch ? 0.0023 : 0)) * sr);
+        if (at < len) d[at] += (Math.random() < 0.5 ? -1 : 1) * 0.6 * Math.exp(-e / 0.05);
+      }
+    }
+    return buf;
+  }
+
+  /** tanh saturation + peak safety, applied to "drive" recipes after rendering. */
+  private saturate(buf: AudioBuffer, drive: number): AudioBuffer {
+    const d = buf.getChannelData(0);
+    const norm = Math.tanh(drive);
+    for (let i = 0; i < d.length; i++) d[i] = Math.tanh(d[i] * drive) / norm;
+    return buf;
   }
 
   /** Pre-render all synth recipes and load any sample files. */
@@ -62,9 +106,16 @@ export class AudioSystem {
       const list: AudioBuffer[] = [];
       this.synthBuffers.set(name, list);
       for (let v = 0; v < VARIATIONS; v++) {
+        if (recipe.samples) {
+          const data = recipe.samples(RENDER_RATE);
+          const buf = this.ctx.createBuffer(1, data.length, RENDER_RATE);
+          buf.getChannelData(0).set(data);
+          list.push(recipe.drive ? this.saturate(buf, recipe.drive) : buf);
+          continue;
+        }
         const off = new OfflineAudioContext(1, Math.ceil(recipe.dur * RENDER_RATE), RENDER_RATE);
-        recipe.render(off);
-        jobs.push(off.startRendering().then((buf) => void list.push(buf)));
+        recipe.render!(off);
+        jobs.push(off.startRendering().then((buf) => void list.push(recipe.drive ? this.saturate(buf, recipe.drive) : buf)));
       }
     }
     for (const file of files) {
@@ -121,6 +172,13 @@ export class AudioSystem {
       p.connect(this.master);
       out = p;
     }
+    // Room reverb send (distant sounds are relatively wetter).
+    let send: GainNode | null = null;
+    if (ev.reverb) {
+      send = this.ctx.createGain();
+      send.gain.value = ev.reverb * Math.min(1.5, (opts?.volume ?? 1) * 0.6 + 0.4 + (1 - gain) * 0.5);
+      send.connect(this.reverbIn);
+    }
     for (const layer of ev.layers) {
       const buf = (layer.file && this.fileBuffers.get(layer.file)) || this.pickSynth(layer.synth);
       if (!buf) continue;
@@ -130,6 +188,7 @@ export class AudioSystem {
       const g = this.ctx.createGain();
       g.gain.value = layer.gain * gain;
       src.connect(g).connect(out);
+      if (send && !layer.dry) g.connect(send);
       src.start(now + (layer.delay ?? 0));
       longest = Math.max(longest, (layer.delay ?? 0) + buf.duration / pitch);
     }

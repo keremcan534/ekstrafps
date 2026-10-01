@@ -23,10 +23,10 @@
     "moa": 6.0
   },
   "recoil": {
-    "vertical": 0.5,
-    "horizontal": 0.45,
+    "vertical": 0.45,
+    "horizontal": 0.405,
     "horizontalBias": 0.15,
-    "back": 0.015,
+    "back": 0.0135,
     "shoulder": 170,
     "damping": 0.55,
     "cameraTransfer": 0.32,
@@ -81,5 +81,6 @@
     "boltForward": "reload.rifle.boltforward",
     "shellInsert": "",
     "pump": ""
-  }
+  },
+  "boltCycleTime": 0
 }

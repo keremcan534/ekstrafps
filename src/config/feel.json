@@ -8,6 +8,7 @@
   "hitReactionScale": 1,
   "muzzleFlash": true,
   "tracers": true,
+  "bulletTrails": true,
   "shells": true,
   "decals": true,
   "damageNumbers": false,
