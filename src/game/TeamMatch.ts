@@ -84,6 +84,12 @@ export class TeamMatch {
       respawnPoint: () => this.respawnPoint(),
       onKill: (victim, info) => this.feedKill(victim.team, victim.personality.name, info),
       intel: (team) => this.intel(team),
+      onBossDown: (info) => {
+        const t = info.hit.team;
+        this.d.svHud.showBanner('COMMANDER DOWN', 'clear');
+        this.d.status.radio(`The Warden is down${t ? ` (${NAME[t] ?? t})` : ''}. +1000 to whoever dropped him.`);
+        if (t && t !== 'bd' && t !== 'robots') this.d.survival.award(t, 1000, info.hit.owner);
+      },
       onRaiderSpotsPlayer: () => {
         // The sting: once per encounter, not every time someone re-acquires you.
         if (this.time - this.lastSting < 25) return;
@@ -214,7 +220,7 @@ export class TeamMatch {
       this.d.shake?.(blast);
       if (this.raiders[i]) this.raiders[i].redeploy(at);
       else {
-        const def: TeamDef = { id: 'bd', name: 'Black Division', color: COLOR.bd, palette: 'bd', style: 'hunter', start: at, economy: false };
+        const def: TeamDef = { id: 'bd', name: 'Black Division', color: COLOR.bd, palette: 'bd', style: 'hunter', start: at, economy: false, boss: i === 0 };
         this.raiders.push(new AITeam(def, this.ctx, 4));
       }
     });

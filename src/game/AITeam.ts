@@ -21,6 +21,8 @@ export interface TeamDef {
   start: THREE.Vector3;
   /** Earns/spends points (false for raiders). */
   economy: boolean;
+  /** Raiders: the first operator is the Black Division commander. */
+  boss?: boolean;
 }
 
 export interface TeamContext {
@@ -38,6 +40,8 @@ export interface TeamContext {
   intel?(team: string): Intel[];
   /** A Black Division raider has eyes on the player. */
   onRaiderSpotsPlayer?(): void;
+  /** The Black Division commander went down (bonus, banner). */
+  onBossDown?(info: DamageInfo): void;
 }
 
 /** Each downed member gets the nearest standing teammate (one rescuer each). */
@@ -121,10 +125,18 @@ export class AITeam {
 
   private addAgent(at: THREE.Vector3, points = 500): TeamAgent {
     const loner = this.def.style === 'reckless' ? 0.45 : this.def.style === 'balanced' ? 0.15 : 0.03;
-    const agent = new TeamAgent(this.ctx.deps, this.def.id, agentIndex++ % 16, randomPersonality(loner), this.def.palette, {
+    const isBoss = !!this.def.boss && this.agents.length === 0;
+    const personality = randomPersonality(loner);
+    if (isBoss) {
+      personality.name = 'The Warden';
+      personality.role = 'assault';
+      personality.aggression = 0.8;
+    }
+    const agent = new TeamAgent(this.ctx.deps, this.def.id, agentIndex++ % 16, personality, isBoss ? 'bdboss' : this.def.palette, {
       onHit: (a, info, killed) => {
         this.ctx.survival.onSoldierHit(this.def.id, info, killed);
         if (killed) this.ctx.onKill?.(a, info);
+        if (killed && isBoss) this.ctx.onBossDown?.(info);
         this.underFire(a, info);
       },
     });
@@ -138,6 +150,10 @@ export class AITeam {
     const at2 = this.ctx.deps.nav.nearestWalkable(at.x, at.z, new THREE.Vector3(), 4) ?? at;
     agent.spawn(at2, Math.random() * Math.PI * 2);
     if (this.def.economy) agent.arm(SIDEARM);
+    if (isBoss) {
+      agent.arm('rd704');
+      agent.soldier.skill = 1.3;
+    }
     this.agents.push(agent);
     return agent;
   }

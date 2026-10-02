@@ -27,10 +27,13 @@ export interface SoldierMaterials {
   fur: THREE.MeshStandardMaterial;
   glove: THREE.MeshStandardMaterial;
   pants: THREE.MeshStandardMaterial;
+  /** Gas-mask eye lenses (dark glass with a faint green sheen). */
+  lens: THREE.MeshStandardMaterial;
+  rubber: THREE.MeshStandardMaterial;
 }
 
 /** Black Division (all black, green NVG) or Vanta Security (navy, white helmet, cyan NVG). */
-export type SoldierPalette = 'bd' | 'vanta' | 'bravo' | 'charlie' | 'delta';
+export type SoldierPalette = 'bd' | 'bdboss' | 'vanta' | 'bravo' | 'charlie' | 'delta';
 
 const shared = new Map<SoldierPalette, SoldierMaterials>();
 
@@ -40,6 +43,8 @@ export function soldierMaterials(palette: SoldierPalette = 'bd'): SoldierMateria
   // fabric, gear, plate, helmet, NVG glow, strobe colour per faction.
   const P: Record<SoldierPalette, number[]> = {
     bd: [0x121315, 0x1a1c1e, 0x17191b, 0x1c1e20, 0x2bff7a, 0xff1a10],
+    // The commander: charcoal parka over heavy plates.
+    bdboss: [0x1f2022, 0x151618, 0x101112, 0x191a1c, 0x2bff7a, 0xff1a10],
     // Vanta field kit: light grey jacket, dark carrier and webbing (the hood/mask/fur come from K below).
     vanta: [0x868c93, 0x2b2e32, 0x222528, 0x8f949b, 0x40d0ff, 0x3aa0ff],
     bravo: [0x8a7458, 0x6e5c44, 0x5d4e3a, 0xa38a68, 0xffa040, 0xffa040],
@@ -62,7 +67,13 @@ export function soldierMaterials(palette: SoldierPalette = 'bd'): SoldierMateria
     fur: new THREE.MeshStandardMaterial({ color: 0x6a5843, roughness: 1, metalness: 0 }),
     glove: new THREE.MeshStandardMaterial({ color: palette === 'vanta' ? 0x857560 : cGear, roughness: 0.85, metalness: 0 }),
     pants: new THREE.MeshStandardMaterial({ color: palette === 'vanta' ? 0x33373c : cFab, roughness: 0.95, metalness: 0 }),
+    lens: new THREE.MeshStandardMaterial({ color: 0x050807, emissive: 0x2bff7a, emissiveIntensity: 0.25, roughness: 0.08, metalness: 0.7 }),
+    rubber: new THREE.MeshStandardMaterial({ color: 0x0c0d0e, roughness: 0.75, metalness: 0.05 }),
   };
+  if (palette === 'bdboss') {
+    m.hood.color.setHex(0x26282b);
+    m.fur.color.setHex(0x3a332b);
+  }
   shared.set(palette, m);
   return m;
 }
@@ -120,6 +131,9 @@ export function soldierSkin(health: number, palette: SoldierPalette = 'bd'): Hum
   const m = soldierMaterials(palette);
   // Your team wears a hooded field kit instead of helmet + NVG.
   const hooded = palette === 'vanta';
+  // Black Division: respirators under the NVG; the commander adds a fur-hooded parka and heavier plates.
+  const bd = palette === 'bd' || palette === 'bdboss';
+  const boss = palette === 'bdboss';
   const legs = ([-1, 1] as const).flatMap((side): PartDef[] => [
     {
       name: side === 1 ? 'thighR' : 'thighL', parent: 'pelvis', pos: [0.1 * side, -0.05, 0], side,
@@ -154,6 +168,8 @@ export function soldierSkin(health: number, palette: SoldierPalette = 'bd'): Hum
         if (side === -1) b.add(m.patch, new THREE.PlaneGeometry(0.065, 0.065), [-0.0515, -0.09, 0], [0, -Math.PI / 2, 0]);
         // Friendly IFF band: a thin glowing strip round the arm, readable at range.
         if (hooded) rbox(b, m.tubes, [0.106, 0.022, 0.116], [0, -0.17, 0]);
+        if (boss) rbox(b, m.hood, [0.135, UPPER * 0.95, 0.145], [0, -UPPER / 2, 0]); // parka sleeve
+        if (bd && side === 1) rbox(b, m.lens, [0.004, 0.03, 0.05], [0.052, -0.07, 0]); // IR band
       },
       colliders: [{ half: [0.055, UPPER / 2, 0.06], center: [0, -UPPER / 2, 0], mass: 3, zone: 'arm', surface: 'flesh' }],
     },
@@ -209,6 +225,16 @@ export function soldierSkin(health: number, palette: SoldierPalette = 'bd'): Hum
           b.cylinder(m.boots, 0.005, 0.32, [-0.13, 0.5, -0.19], [0.12, 0, 0], 5);
           rbox(b, m.gear, [0.22, 0.27, 0.07], [0, 0.27, -0.185]);
           rbox(b, m.fabric, [0.14, 0.08, 0.14], [0, 0.47, 0]); // collar
+          if (boss) {
+            // Parka hanging open over the plates: side and back panels, padded shoulders, big fur collar.
+            for (const s of [-1, 1]) rbox(b, m.hood, [0.07, 0.52, 0.3], [0.19 * s, 0.22, -0.01]);
+            rbox(b, m.hood, [0.4, 0.52, 0.07], [0, 0.22, -0.17]);
+            for (const s of [-1, 1]) rbox(b, m.hood, [0.12, 0.08, 0.3], [0.15 * s, 0.45, 0]);
+            for (const [x, y, z, w, d] of [[0, 0.52, -0.13, 0.36, 0.12], [0.16, 0.5, -0.02, 0.1, 0.22], [-0.16, 0.5, -0.02, 0.1, 0.22], [0.1, 0.5, 0.1, 0.09, 0.08], [-0.1, 0.5, 0.1, 0.09, 0.08]] as const) {
+              rbox(b, m.fur, [w, 0.09, d], [x, y, z]);
+            }
+            rbox(b, m.plate, [0.3, 0.1, 0.07], [0, 0.07, 0.15]); // groin plate
+          }
           if (hooded) {
             // Open jacket over the carrier, the hood folded down the back, fur trim round the collar.
             for (const s of [-1, 1]) rbox(b, m.fabric, [0.07, 0.4, 0.05], [0.15 * s, 0.24, 0.12]);
@@ -220,7 +246,7 @@ export function soldierSkin(health: number, palette: SoldierPalette = 'bd'): Hum
         },
         colliders: [
           { half: [0.17, 0.09, 0.12], center: [0, 0.08, 0], mass: 8, zone: 'stomach', surface: 'flesh' },
-          { half: [0.19, 0.16, 0.16], center: [0, 0.31, 0], mass: 22, zone: 'thorax', surface: 'armor', armor: 40 },
+          { half: [0.19, 0.16, 0.16], center: [0, 0.31, 0], mass: 22, zone: 'thorax', surface: 'armor', armor: boss ? 60 : 40 },
         ],
       },
       ...arms,
@@ -240,6 +266,21 @@ export function soldierSkin(health: number, palette: SoldierPalette = 'bd'): Hum
           }
           b.cylinder(m.fabric, 0.055, 0.09, [0, 0.03, 0], [0, 0, 0], 10);
           rbox(b, m.fabric, [0.19, 0.23, 0.21], [0, 0.15, 0.01]); // balaclava
+          if (bd) {
+            // Full-face respirator: rubber facepiece, two round eye lenses, twin side filters, voicemitter.
+            rbox(b, m.rubber, [0.16, 0.15, 0.06], [0, 0.135, 0.1]);
+            for (const s of [-1, 1]) {
+              b.cylinder(m.rubber, 0.03, 0.02, [0.037 * s, 0.168, 0.124], [Math.PI / 2, 0, 0], 14);
+              b.cylinder(m.lens, 0.024, 0.006, [0.037 * s, 0.168, 0.135], [Math.PI / 2, 0, 0], 14);
+              b.cylinder(m.gear, 0.027, 0.055, [0.072 * s, 0.085, 0.12], [Math.PI / 2 - 0.35, 0, -0.55 * s], 12);
+            }
+            b.cylinder(m.gear, 0.02, 0.03, [0, 0.08, 0.142], [Math.PI / 2 - 0.4, 0, 0], 12);
+          }
+          if (boss) {
+            // Fur-rimmed parka hood pulled up behind the helmet.
+            b.add(m.hood, HOOD.clone(), [0, 0.15, -0.045], [0.2, 0, 0], [0.15, 0.17, 0.15]);
+            b.add(m.fur, HOOD_RIM.clone(), [0, 0.16, 0.06], [0.15, 0, 0], [0.14, 0.16, 0.16]);
+          }
           // High-cut helmet, rails, ear pro.
           rbox(b, m.helmet, [0.235, 0.13, 0.255], [0, 0.275, -0.005]);
           rbox(b, m.helmet, [0.245, 0.035, 0.265], [0, 0.22, -0.005]);
@@ -259,7 +300,7 @@ export function soldierSkin(health: number, palette: SoldierPalette = 'bd'): Hum
           ? [{ half: [0.115, 0.14, 0.125], center: [0, 0.16, 0], mass: 4, zone: 'head', surface: 'flesh' }]
           : [
               { half: [0.1, 0.09, 0.11], center: [0, 0.12, 0.01], mass: 3, zone: 'head', surface: 'flesh' },
-              { half: [0.125, 0.065, 0.135], center: [0, 0.265, 0], mass: 2, zone: 'head', surface: 'helmet', armor: 30 },
+              { half: [0.125, 0.065, 0.135], center: [0, 0.265, 0], mass: 2, zone: 'head', surface: 'helmet', armor: boss ? 45 : 30 },
             ],
       },
     ],
