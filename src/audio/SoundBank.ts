@@ -110,7 +110,7 @@ export const SOUND_BANK: Record<string, SoundEvent> = {
     layers: [
       { files: shots('p90', 4), gain: 1.1, range: 'near' },
       { synth: 'ar_punch', gain: 0.55, range: 'near' },
-      { file: 'audio/guns/tail_room.wav', gain: 0.4, tail: true },
+      { file: 'audio/guns/tail_hall.wav', gain: 0.25, tail: true },
       ...distant(0.7),
     ],
     reverb: 0.45,
@@ -119,9 +119,9 @@ export const SOUND_BANK: Record<string, SoundEvent> = {
   },
   'pistol.fire': {
     layers: [
-      { files: shots('pistol', 3), gain: 1.15, range: 'near' },
+      { files: shots('pistol', 3), gain: 1.25, range: 'near' },
       { synth: 'pistol_punch', gain: 0.85, range: 'near' },
-      { file: 'audio/guns/tail_room.wav', gain: 0.45, tail: true },
+      { file: 'audio/guns/tail_hall.wav', gain: 0.22, tail: true },
       ...distant(0.6),
     ],
     reverb: 0.55,
@@ -132,7 +132,7 @@ export const SOUND_BANK: Record<string, SoundEvent> = {
     layers: [
       { files: shots('boom', 2), gain: 1.25, range: 'near' },
       { synth: 'shotgun_punch', gain: 1.25, range: 'near' },
-      { file: 'audio/guns/tail_room.wav', gain: 0.5, tail: true },
+      { file: 'audio/guns/tail_hall.wav', gain: 0.32, tail: true },
       ...distant(1.0),
     ],
     reverb: 0.65,
