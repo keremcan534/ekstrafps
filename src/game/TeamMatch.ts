@@ -66,6 +66,7 @@ export class TeamMatch {
   /** When each AI soldier last fired (minimap: gunfire gives you away). */
   private lastShot = new Map<TeamAgent, number>();
   private time = 0;
+  private lastSting = -99;
   private probe = new THREE.Vector3();
   /** Called when the match ends (release the mouse etc.). */
   onEnd: (() => void) | null = null;
@@ -81,6 +82,12 @@ export class TeamMatch {
       respawnPoint: () => this.respawnPoint(),
       onKill: (victim, info) => this.feedKill(victim.team, victim.personality.name, info),
       intel: (team) => this.intel(team),
+      onRaiderSpotsPlayer: () => {
+        // The sting: once per encounter, not every time someone re-acquires you.
+        if (this.time - this.lastSting < 25) return;
+        this.lastSting = this.time;
+        this.d.audio.play('bd.encounter');
+      },
     };
     const defs: TeamDef[] = [
       { id: 'bravo', name: 'Bravo', color: COLOR.bravo, palette: 'bravo', style: 'disciplined', start: this.startOf('bravo'), economy: true },
@@ -183,6 +190,7 @@ export class TeamMatch {
     setTimeout(() => {
       if (!this.raidActive) return;
       this.d.audio.play('raid.siren');
+      this.d.audio.play('bd.arrival');
       const where = this.deployRaiders(team);
       this.d.svHud.showBanner('BLACK DIVISION INCOMING', 'raid');
       this.d.status.radio(`Black Division breach: ${where}. They kill everyone. Breakers restore power.`);

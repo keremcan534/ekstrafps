@@ -256,7 +256,7 @@ Dead soldiers ragdoll and drop their rifle as a physics object. The squad calls 
 
 ## Sound
 
-Gunshots are layered: a recorded close blast (several variations per weapon), synth low-end punch and mechanical action, a room tail that grows with the size of the room you're in, and a distant report that takes over from ~20 m and darkens past ~70 m. The recorded shots were cut from Pixabay sound effects (Pixabay Content License) by freesound_community, pwlpl, haruudu, sovetsky_rastov72, capaholiczsfx and u_2n07b18i8q; the cuts live in `public/audio/guns`.
+Gunshots are layered: a recorded close blast (several variations per weapon), synth low-end punch and mechanical action, a room tail that grows with the size of the room you're in, and a distant report that takes over from ~20 m and darkens past ~70 m. The recorded shots were cut from Pixabay sound effects (Pixabay Content License) by freesound_community, pwlpl, haruudu, sovetsky_rastov72 and u_2n07b18i8q (the M4/M16 reload recording by freesound_community drives the magazine and charging-handle sounds; the power-cut slam and the Black Division encounter sting are by universfield, the raid arrival impact by black_kumizhi); the cuts live in `public/audio/guns`.
 
 ## Where tuning lives
 

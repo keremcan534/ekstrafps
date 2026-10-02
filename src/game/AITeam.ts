@@ -36,6 +36,8 @@ export interface TeamContext {
   onKill?(victim: TeamAgent, info: DamageInfo): void;
   /** Enemy operators heard recently (gunfire). */
   intel?(team: string): Intel[];
+  /** A Black Division raider has eyes on the player. */
+  onRaiderSpotsPlayer?(): void;
 }
 
 /** Each downed member gets the nearest standing teammate (one rescuer each). */
@@ -127,6 +129,7 @@ export class AITeam {
       },
     });
     agent.squad = this.shared;
+    if (this.def.style === 'hunter') agent.onSpotPlayer = () => this.ctx.onRaiderSpotsPlayer?.();
     agent.armory = (id) => this.ctx.weaponData(id);
     agent.soldier.skill = this.def.style === 'hunter' ? 0.95 : 1.15;
     agent.points = this.def.economy ? points : 0;

@@ -113,6 +113,8 @@ export class TeamAgent {
   onSay: ((a: TeamAgent, text: string) => void) | null = null;
   /** Falling back / kiting right now (HUD, brain). */
   retreating = false;
+  /** Called when this operator first acquires the player as a target. */
+  onSpotPlayer: (() => void) | null = null;
   /** Shared by the squad: the operator everyone shoots first (focus fire). */
   squad: { focus: Combatant | null; focusTime: number } | null = null;
   /** How this operator carries the gun on the move. */
@@ -299,6 +301,7 @@ export class TeamAgent {
       if (best && best !== this.target) {
         s.onAcquire();
         s.visibleTime = 0;
+        if (best.kind === 'player') this.onSpotPlayer?.();
         if (!this.hadTarget && Math.random() < 0.7) this.say(pick(best.kind === 'robot' ? CONTACT_BOT : CONTACT_SQUAD));
       }
       if (!best && lost && Math.random() < 0.4) this.say(pick(CLEAR));

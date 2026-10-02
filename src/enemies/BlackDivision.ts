@@ -205,6 +205,7 @@ export class BlackDivision {
     this.assignRoles();
     this.enterCombat();
     this.say(spotter, spotted ? 'see_enemy' : 'contact');
+    if (spotted) this.deps.audio.play('bd.encounter');
     const lead = this.anchor;
     if (lead) this.say(lead, 'spread_out', 1.6);
     for (const s of this.soldiers) {

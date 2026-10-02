@@ -256,19 +256,17 @@ export const RECIPES: Record<string, Recipe> = {
     burst(c, { dur: 0.012, freq: 3800, q: 6, gain: 0.8 });
     burst(c, { t: 0.02, dur: 0.1, attack: 0.02, freq: 1500, q: 1.5, gain: 0.45 });
   } },
-  mag_in: { dur: 0.25, render: (c) => {
-    burst(c, { dur: 0.05, freq: 1300, q: 3, gain: 1.0 });
-    metal(c, 0.0, r(850, 950), 0.1, 0.3);
-    tone(c, { dur: 0.06, f0: 140, f1: 80, gain: 0.6 });
+  mag_in: { dur: 0.15, render: (c) => {
+    burst(c, { dur: 0.05, freq: 1300, q: 1.5, gain: 1.0 });
+    burst(c, { dur: 0.008, freq: 3500, type: 'highpass', gain: 0.5 });
   } },
   bolt_back: { dur: 0.2, render: (c) => {
     burst(c, { dur: 0.06, freq: 2600, freqEnd: 1800, q: 2.5, gain: 0.8 });
     burst(c, { t: 0.05, dur: 0.012, freq: 4200, q: 6, gain: 0.7 });
   } },
-  bolt_forward: { dur: 0.25, render: (c) => {
-    burst(c, { dur: 0.04, freq: 2100, q: 2, gain: 1.1 });
-    metal(c, 0.0, r(1400, 1600), 0.12, 0.35);
-    tone(c, { dur: 0.05, f0: 160, f1: 90, gain: 0.5 });
+  bolt_forward: { dur: 0.15, render: (c) => {
+    burst(c, { dur: 0.04, freq: 2100, q: 1.2, gain: 1.1 });
+    burst(c, { dur: 0.05, freq: 500, type: 'lowpass', gain: 0.6 });
   } },
   shell_insert: { dur: 0.2, render: (c) => {
     burst(c, { dur: 0.04, freq: 1400, freqEnd: 900, q: 2, gain: 0.7 });
@@ -298,38 +296,44 @@ export const RECIPES: Record<string, Recipe> = {
     burst(c, { dur: 0.07, freq: r(1600, 2200), freqEnd: 500, type: 'lowpass', gain: 0.9 });
     burst(c, { dur: 0.015, freq: 3000, type: 'highpass', gain: 0.5 });
   } },
-  impact_metal: { dur: 0.5, render: (c) => {
-    metal(c, 0, r(1500, 2600), 0.35, 0.4);
-    burst(c, { dur: 0.015, freq: 4000, type: 'highpass', gain: 0.6 });
+  impact_metal: { dur: 0.2, render: (c) => {
+    burst(c, { dur: 0.04, freq: 2400, q: 1.2, gain: 0.7 });
+    burst(c, { dur: 0.012, freq: 4000, type: 'highpass', gain: 0.6 });
+    metal(c, 0, r(1500, 2600), 0.05, 0.12);
   } },
-  impact_robot: { dur: 0.35, render: (c) => {
-    metal(c, 0, r(600, 850), 0.22, 0.45, [1, 2.3, 3.9, 6.1]);
-    burst(c, { dur: 0.05, freq: 500, type: 'lowpass', gain: 0.7 });
-    tone(c, { dur: 0.05, f0: r(2200, 2600), f1: 700, type: 'sawtooth', gain: 0.08 });
+  impact_robot: { dur: 0.2, render: (c) => {
+    burst(c, { dur: 0.05, freq: 900, q: 1.2, gain: 0.8 });
+    burst(c, { dur: 0.06, freq: 450, type: 'lowpass', gain: 0.7 });
+    metal(c, 0, r(600, 850), 0.04, 0.12, [1, 2.3]);
   } },
-  impact_robotweak: { dur: 0.45, render: (c) => {
-    metal(c, 0, r(2300, 2700), 0.25, 0.4);
+  impact_robotweak: { dur: 0.25, render: (c) => {
     burst(c, { dur: 0.08, freq: 1600, freqEnd: 400, type: 'bandpass', gain: 1.0 });
-    tone(c, { dur: 0.12, f0: 3000, f1: 500, type: 'sawtooth', gain: 0.14 });
+    burst(c, { dur: 0.01, freq: 4500, type: 'highpass', gain: 0.4 });
+    metal(c, 0, r(2300, 2700), 0.04, 0.1);
   } },
-  shell_brass: { dur: 0.25, render: (c) => metal(c, 0, r(4200, 5200), 0.12, 0.25, [1, 1.47, 2.09]) },
+  shell_brass: { dur: 0.08, render: (c) => {
+    burst(c, { dur: 0.008, freq: 5200, q: 2, gain: 0.5 });
+    burst(c, { t: 0.03, dur: 0.006, freq: 4200, q: 2, gain: 0.3 });
+  } },
   shell_plastic: { dur: 0.15, render: (c) => burst(c, { dur: 0.04, freq: 900, type: 'lowpass', gain: 0.5 }) },
 
   // ---------- Feedback ----------
-  hit_tick: { dur: 0.08, render: (c) => {
-    tone(c, { dur: 0.03, f0: 1900, gain: 0.45 });
-    burst(c, { dur: 0.006, freq: 5000, type: 'highpass', gain: 0.3 });
+  hit_tick: { dur: 0.06, render: (c) => {
+    // Dull "thwack": short band of noise + a tiny click. No pitch.
+    burst(c, { dur: 0.028, freq: 1400, q: 0.7, gain: 0.7 });
+    burst(c, { dur: 0.004, freq: 6000, type: 'highpass', gain: 0.35 });
   } },
-  hit_crit: { dur: 0.2, render: (c) => {
-    tone(c, { dur: 0.04, f0: 2600, gain: 0.45 });
-    tone(c, { t: 0.035, dur: 0.07, f0: 3500, gain: 0.35 });
-    metal(c, 0.0, 3100, 0.12, 0.08);
+  hit_crit: { dur: 0.12, render: (c) => {
+    // Headshot: a harder, brighter crack with a body thump. Still no pitch.
+    burst(c, { dur: 0.006, freq: 5000, type: 'highpass', gain: 0.8 });
+    burst(c, { dur: 0.05, freq: 2200, q: 0.8, gain: 0.6 });
+    burst(c, { dur: 0.06, freq: 400, type: 'lowpass', gain: 0.6 });
   } },
-  kill: { dur: 0.6, render: (c) => {
-    tone(c, { dur: 0.16, f0: 95, f1: 45, gain: 0.9 });
-    tone(c, { t: 0.02, dur: 0.3, f0: 1320, gain: 0.22 });
-    tone(c, { t: 0.07, dur: 0.35, f0: 1980, gain: 0.18 });
-    burst(c, { dur: 0.08, freq: 1200, freqEnd: 300, gain: 0.5 });
+  kill: { dur: 0.4, render: (c) => {
+    // Kill confirm: a deep thump and a short dry swish (no chime).
+    tone(c, { dur: 0.14, f0: 90, f1: 45, gain: 0.8 });
+    burst(c, { dur: 0.1, freq: 1200, freqEnd: 300, gain: 0.45 });
+    burst(c, { dur: 0.008, freq: 5000, type: 'highpass', gain: 0.3 });
   } },
   robot_death: { dur: 1.2, render: (c) => {
     burst(c, { dur: 0.7, freq: 1600, freqEnd: 150, type: 'lowpass', gain: 1.4, curve: 0.8 });
