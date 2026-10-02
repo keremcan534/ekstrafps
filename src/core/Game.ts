@@ -28,7 +28,11 @@ import { StatusHUD } from '../ui/StatusHUD';
 import { NavGrid } from '../ai/NavGrid';
 import { BlackDivision } from '../enemies/BlackDivision';
 import type { PlayerTarget, SoldierDeps } from '../enemies/Soldier';
-import { Ally } from '../enemies/Ally';
+import { TeamAgent, agentBySoldier, randomPersonality, type Combatant } from '../game/TeamAgent';
+import { SIDEARM, planErrand } from '../game/Errands';
+import { assignRevives } from '../game/AITeam';
+import { TeamMatch } from '../game/TeamMatch';
+import type { RogueRobot } from '../enemies/RogueRobot';
 import { Survival } from '../game/Survival';
 import { SurvivalHUD } from '../ui/SurvivalHUD';
 import { MapOverlay, type MapState } from '../ui/MapOverlay';
@@ -83,7 +87,29 @@ export class Game {
   nav!: NavGrid;
   squads: BlackDivision[] = [];
   survival: Survival | null = null;
-  allies: Ally[] = [];
+  /** Hired contractors (your team). */
+  allies: TeamAgent[] = [];
+  /** Site-9 team race (?mode=teams, the default there). */
+  match: TeamMatch | null = null;
+  /** Match over: the end screen owns the mouse. */
+  ended = false;
+  /** Everyone who fights this frame: you, allies, AI teams, raiders, robots. */
+  private world: Combatant[] = [];
+  private playerC!: Combatant;
+  private robotC = new Map<RogueRobot, Combatant>();
+  private playerRevive = {
+    pos: new THREE.Vector3(),
+    revive: () => this.health.revive(),
+    downed: false,
+  };
+  private giveUpBtn: HTMLButtonElement | null = null;
+  /** Your squad: name, role, money, weapon. */
+  private squadEl: HTMLDivElement | null = null;
+  private squadTimer = 0;
+  private errandTimer = 0;
+  /** The three operators you start with (they come back when you redeploy, or as reinforcements). */
+  private core: TeamAgent[] = [];
+  private coreDeadTime = new Map<TeamAgent, number>();
   private soldierDeps!: SoldierDeps;
   mapOverlay: MapOverlay | null = null;
   private mapState: MapState | null = null;
@@ -299,7 +325,13 @@ export class Game {
       allowDecals: false,
       onBulletHit: (hit, out) => {
         from.copy(hit.point).addScaledVector(hit.direction, -Math.max(2, hit.distance));
+        const wasUp = !this.health.downed && !this.health.dead;
         out.damage = this.hurtPlayer(hit.damage, from);
+        if (this.survival && hit.team && hit.team !== 'alpha' && out.damage > 0) {
+          const dropped = wasUp && (this.health.downed || this.health.dead);
+          this.survival.award(hit.team, dropped ? 150 : 10);
+          if (dropped) this.match?.feedPlayer(hit.team);
+        }
         out.health = this.health.health;
         out.maxHealth = this.health.max;
         out.killed = this.health.dead;
@@ -360,6 +392,17 @@ export class Game {
   /** Site-9: Zombies economy + Left 4 Dead director, map + minimap. */
   private initSurvival(ui: HTMLElement, map: Site9): void {
     const hud = new SurvivalHUD(ui, this.mobile);
+    const teams = new URLSearchParams(location.search).get('mode') !== 'solo';
+    this.playerC = {
+      team: 'alpha',
+      kind: 'player',
+      pos: this.player.feet,
+      aim: this.target.chest,
+      head: this.target.head,
+      alive: true,
+      downed: false,
+      hit: (d, from) => this.hurtPlayer(d, from),
+    };
     this.survival = new Survival({
       map,
       physics: this.physics,
@@ -374,6 +417,17 @@ export class Game {
       mobile: this.mobile,
       hurtPlayer: (d, from) => this.hurtPlayer(d, from),
       hireAlly: (at) => this.hireAlly(at),
+      mode: teams ? 'teams' : 'solo',
+      startZones: teams ? ['hangar', 'barracks', 'power'] : [],
+      focusProvider: teams ? () => this.match?.foci() ?? [] : undefined,
+      onRaid: (team) => this.match?.startRaid(team),
+      onWin: (team) => this.match?.win(team),
+      members: (team) => {
+        if (team === 'alpha') return [this.survival!.playerWallet, ...this.allies.filter((a) => a.alive)];
+        const t = this.match?.teams.find((x) => x.def.id === team);
+        return t ? t.agents.filter((a) => a.alive) : [];
+      },
+      walletOf: (owner) => (owner === this.player ? this.survival!.playerWallet : (agentBySoldier.get(owner) ?? null)),
     });
     this.health.autoRespawn = false;
     const onDeath = this.health.onDeath;
@@ -382,7 +436,69 @@ export class Game {
       this.survival?.onPlayerDeath();
     };
     // Last stand: with a living teammate you go down instead of dying.
-    this.health.canGoDown = () => this.allies.some((a) => a.alive);
+    this.health.canGoDown = () => this.allies.some((a) => a.alive && !a.downed);
+    this.giveUpBtn = document.createElement('button');
+    this.giveUpBtn.className = 'giveup-btn';
+    this.giveUpBtn.textContent = this.mobile ? 'GIVE UP' : 'GIVE UP [X]';
+    this.giveUpBtn.addEventListener('pointerdown', (e) => {
+      e.stopPropagation();
+      this.health.giveUp();
+    });
+    ui.appendChild(this.giveUpBtn);
+    if (teams) {
+      // Team race: no game over. You come back somewhere random after a few seconds.
+      this.health.autoRespawn = true;
+      this.health.respawnDelay = 7;
+      this.health.onRespawn = () => {
+        this.status.setDead(false);
+        this.camera.revive();
+        this.camera.downedTarget = 0;
+        const mate = this.allies.find((a) => a.alive && !a.downed);
+        const at = mate
+          ? (this.nav.nearestWalkable(mate.soldier.pos.x + 1.2, mate.soldier.pos.z + 1.2, new THREE.Vector3(), 3) ?? mate.soldier.pos.clone())
+          : (this.match?.respawnPoint() ?? this.arena.spawn);
+        this.player.teleport(at.clone().setY(at.y + 0.2), Math.random() * Math.PI * 2);
+        this.weapons.refillAll();
+        // The core squad comes back with you (bought guns are lost, money is kept).
+        this.allies = this.allies.filter((a) => a.alive || this.core.includes(a));
+        this.core.forEach((a, i) => {
+          if (a.alive) return;
+          const p = this.nav.nearestWalkable(at.x + (i - 1) * 1.4, at.z - 1.5, new THREE.Vector3(), 4) ?? at;
+          a.spawn(p, this.player.yaw);
+          a.arm(SIDEARM);
+        });
+        this.hud.toast(mate ? 'Redeployed with your squad' : 'Squad wiped: redeployed', 1.8);
+      };
+      this.match = new TeamMatch({
+        ui,
+        scene: this.scene,
+        map,
+        survival: this.survival,
+        soldierDeps: this.soldierDeps,
+        weaponData: (id) => this.weapons.weapons.find((w) => w.data.id === id)?.data,
+        audio: this.audio,
+        status: this.status,
+        hud: this.hud,
+        svHud: hud,
+        eye: this.camera.eye,
+        lookDir: (out) => this.camera.getAimDirection(this.player, out),
+        allies: () => this.allies,
+        playerAlive: () => !this.health.dead,
+        playerPos: this.player.feet,
+      }, () => this.world);
+      this.match.onEnd = () => {
+        this.ended = true;
+        document.exitPointerLock();
+      };
+      // Everyone starts four strong: you and three operators on pistols.
+      for (let i = 0; i < 3; i++) {
+        const at = this.nav.nearestWalkable(this.arena.spawn.x + (i - 1) * 1.6, this.arena.spawn.z + 2.2, new THREE.Vector3(), 4) ?? this.arena.spawn.clone();
+        this.core.push(this.addAlly(at, false));
+      }
+    }
+    this.squadEl = document.createElement('div');
+    this.squadEl.className = 'squad-panel';
+    ui.appendChild(this.squadEl);
     this.health.onDowned = () => {
       this.camera.downedTarget = 1;
       this.audio.play('player.death', { volume: 0.6 });
@@ -408,19 +524,164 @@ export class Game {
     };
   }
 
+  /** Robots as combatants (cached per pooled robot). */
+  private robotCombatant(r: RogueRobot): Combatant {
+    let c = this.robotC.get(r);
+    if (!c) {
+      c = {
+        team: 'robots',
+        kind: 'robot',
+        pos: r.pos,
+        aim: new THREE.Vector3(),
+        head: new THREE.Vector3(),
+        get alive() {
+          return r.alive;
+        },
+        downed: false,
+        hit: () => {},
+      };
+      this.robotC.set(r, c);
+    }
+    c.aim.copy(r.body.part('torso').worldPos).y += 0.3;
+    c.head.copy(r.body.part('head').worldPos);
+    return c;
+  }
+
+  /** Allies, AI teams and raiders all fight over one combatant list. */
+  private updateTeams(dt: number): void {
+    const sv = this.survival!;
+    const w = this.world;
+    w.length = 0;
+    const pc = this.playerC;
+    pc.alive = !this.health.dead;
+    pc.downed = this.health.downed;
+    w.push(pc);
+    for (const a of this.allies) {
+      a.refreshSelf();
+      if (a.alive) w.push(a.self);
+    }
+    this.match?.pushCombatants(w);
+    for (const r of sv.robots) if (r.alive) w.push(this.robotCombatant(r));
+
+    // Downed: the nearest standing ally comes to pick you up; allies pick each other up too.
+    const rv = this.playerRevive;
+    rv.pos.copy(this.player.feet);
+    rv.downed = this.health.downed;
+    for (const a of this.allies) if (a.reviveTarget === rv && !rv.downed) a.reviveTarget = null;
+    let reviver = this.allies.find((a) => a.reviveTarget === rv) ?? null;
+    if (rv.downed && !reviver) {
+      let best = Infinity;
+      for (const a of this.allies) {
+        if (!a.alive || a.downed) continue;
+        const d = a.distTo(this.player.feet);
+        if (d < best) {
+          best = d;
+          reviver = a;
+        }
+      }
+      if (reviver) reviver.reviveTarget = rv;
+    }
+    assignRevives(this.allies);
+    if (this.health.downed) this.status.setDowned(this.health.bleed, reviver ? Math.min(1, reviver.reviveTime / 4) : 0);
+    this.giveUpBtn?.classList.toggle('show', this.health.downed);
+
+    // Between fights your operators shop for themselves: guns, ammo, doors near you.
+    this.errandTimer -= dt;
+    if (this.errandTimer <= 0 && this.arena instanceof Site9) {
+      this.errandTimer = 2;
+      for (const a of this.allies) {
+        if (a.target || a.reviveTarget || this.health.downed) continue;
+        const e = planErrand(a, sv, this.arena, { maxDist: 40, doorsNear: this.player.feet, doorDist: 45, doorKeep: 250 });
+        if (e) a.errand = e;
+      }
+    }
+    const mates = this.allies.map((a) => a.soldier);
+    for (const a of this.allies) a.update(dt, w, mates);
+    // Fallen core operators come back as reinforcements after a minute (behind you, out of the fight).
+    for (const a of this.core) {
+      if (a.alive) {
+        this.coreDeadTime.delete(a);
+        continue;
+      }
+      const t = (this.coreDeadTime.get(a) ?? 0) + dt;
+      this.coreDeadTime.set(a, t);
+      if (t > 60 && !this.health.dead && !this.health.downed) {
+        const back = this.tmp.set(Math.sin(this.player.yaw), 0, Math.cos(this.player.yaw)).multiplyScalar(5).add(this.player.feet);
+        const p = this.nav.nearestWalkable(back.x, back.z, new THREE.Vector3(), 4);
+        if (p) {
+          a.spawn(p, this.player.yaw);
+          a.arm(SIDEARM);
+          this.coreDeadTime.delete(a);
+          this.hud.toast(`${a.personality.name} is back`, 1.6);
+        }
+      }
+    }
+    this.squadTimer -= dt;
+    if (this.squadTimer <= 0) {
+      this.squadTimer = 0.3;
+      this.updateSquadPanel();
+    }
+    // Every gun dry and no money for ammo: you still have your sidearm.
+    const wc = this.weapons;
+    if (wc.owned && !wc.owned.some((i) => wc.weapons[i].ammo > 0 || wc.weapons[i].reserve > 0)) {
+      wc.giveWeapon(SIDEARM);
+      this.hud.toast('Out of ammo: sidearm drawn', 2);
+    }
+    this.match?.update(dt, w);
+
+    // Robots go for every soldier on the map; hazards hurt them all.
+    const bodies = sv.extraTargets;
+    bodies.length = 0;
+    for (const c of w) if (c.kind === 'soldier') bodies.push(c);
+    sv.allyBodies = bodies;
+  }
+
   /** Vanta contractor from the security terminal (max 3 alive). */
   private hireAlly(at: THREE.Vector3): boolean {
-    this.allies = this.allies.filter((a) => a.alive);
-    if (this.allies.length >= 3) {
-      this.hud.toast('Squad full (3 contractors)');
+    this.allies = this.allies.filter((a) => a.alive || this.core.includes(a));
+    const hired = this.allies.filter((a) => !this.core.includes(a) && a.alive).length;
+    if (hired >= 3 || this.allies.filter((a) => a.alive).length >= 5) {
+      this.hud.toast('Squad full');
       return false;
     }
-    const ally = new Ally(this.soldierDeps, this.allies.length);
-    ally.spawn(at, this.player.yaw);
-    this.allies.push(ally);
+    const ally = this.addAlly(at, true);
     this.audio.play('bd.moving', { position: at, pitch: 1.15 });
-    this.hud.toast('Vanta contractor hired');
+    this.hud.toast(`Contractor ${ally.personality.name} hired (${ally.personality.role})`);
     return true;
+  }
+
+  /** A Vanta operator on your team: follows you, fights, revives, shops with their own money. */
+  private addAlly(at: THREE.Vector3, hired: boolean): TeamAgent {
+    const p = randomPersonality(0);
+    const ally = new TeamAgent(this.soldierDeps, 'alpha', 10 + this.allies.length, p, 'vanta', {
+      onHit: (_a, info, killed) => this.survival?.onSoldierHit('alpha', info, killed),
+      onKilled: () => this.audio.play('bd.man_down', { pitch: 1.12 }),
+    });
+    ally.soldier.body.friendly = true;
+    ally.soldier.body.canGoDown = () => !this.health.dead || this.allies.some((a) => a !== ally && a.alive && !a.downed);
+    ally.armory = (id) => this.weapons.weapons.find((w) => w.data.id === id)?.data;
+    ally.points = hired ? 0 : 500;
+    ally.spawn(at, this.player.yaw);
+    // Contractors arrive armed; the starting squad has pistols like you.
+    ally.arm(hired ? (p.role === 'marksman' ? 'mosin' : p.role === 'assault' ? 'ppsh' : 'ak47') : SIDEARM);
+    ally.order = { kind: 'follow', leader: () => (this.health.dead ? null : { pos: this.player.feet, yaw: this.player.yaw + Math.PI, speed: this.player.horizontalSpeed }) };
+    ally.soldier.skill = 1.35;
+    ally.soldier.avoid = this.player.feet;
+    ally.onSay = (a, text) => this.status.radio(text, a.personality.name.toUpperCase(), true);
+    this.allies.push(ally);
+    return ally;
+  }
+
+  /** Squad panel: who's with you, their role, money and gun. */
+  private updateSquadPanel(): void {
+    if (!this.squadEl) return;
+    const short = (id: string) => this.weapons.weapons.find((w) => w.data.id === id)?.data.short ?? id;
+    this.squadEl.innerHTML = this.allies
+      .map((a) => {
+        const st = !a.alive ? 'dead' : a.downed ? 'down' : a.errand ? a.errand.kind : '';
+        return `<div class="sq-row ${a.alive ? '' : 'dead'}"><b>${a.personality.name}</b><i>${a.personality.role}</i><span>${a.alive ? short(a.soldier.weaponId) : '✕'}</span><em>${a.points}</em>${st && a.alive ? `<u>${st === 'down' ? 'DOWN' : st}</u>` : ''}</div>`;
+      })
+      .join('');
   }
 
   /** Called from the start overlay click/tap/Enter (a user gesture). */
@@ -509,6 +770,9 @@ export class Game {
         break;
       case 'KeyF':
         this.survival?.interact();
+        break;
+      case 'KeyX':
+        if (this.health.downed) this.health.giveUp();
         break;
       case 'KeyY':
         for (const s of this.squads) s.spawn();
@@ -637,7 +901,17 @@ export class Game {
     this.weapons.updateFire(dt, input);
 
     // --- World ---
+    this.nav.beginFrame();
     this.arena.update(dt, this.player.feet);
+    if (this.arena instanceof Site9) {
+      const map = this.arena;
+      const s = this.survival;
+      map.updateVisibility(this.player.feet.x, this.player.feet.z, (l) => (s ? s.isLinkOpen(l) : true));
+      // Characters in rooms that aren't drawn don't need drawing either.
+      if (s) for (const r of s.robots) if (r.active) r.body.root.visible = map.isVisibleAt(r.pos.x, r.pos.z);
+      for (const a of this.allies) a.soldier.body.root.visible = map.isVisibleAt(a.soldier.pos.x, a.soldier.pos.z);
+      if (this.match) for (const a of this.match.agents()) a.soldier.body.root.visible = map.isVisibleAt(a.soldier.pos.x, a.soldier.pos.z);
+    }
     for (const r of this.robots) r.update(dt);
     const t = this.target;
     t.feet.copy(this.player.feet);
@@ -648,29 +922,7 @@ export class Game {
     t.crouching = this.player.crouching;
     t.alive = !this.health.dead;
     for (const s of this.squads) s.update(dt, t, feel.enemyAI);
-    if (this.survival) {
-      const mates = this.allies.map((a) => a.soldier);
-      // Downed: the nearest living ally comes to pick you up.
-      let reviver: Ally | null = null;
-      if (this.health.downed) {
-        let best = Infinity;
-        for (const a of this.allies) {
-          if (!a.alive) continue;
-          const d = a.soldier.pos.distanceTo(this.player.feet);
-          if (d < best) {
-            best = d;
-            reviver = a;
-          }
-        }
-        this.status.setDowned(this.health.bleed, reviver ? reviver.reviveTime / 4 : 0);
-      }
-      for (const a of this.allies) {
-        a.reviving = a === reviver;
-        if (a.update(dt, this.player, this.survival.robots, mates)) this.health.revive();
-      }
-      this.survival.extraTargets = this.allies.filter((a) => a.alive).map((a) => a.melee);
-      this.survival.allyBodies = this.survival.extraTargets;
-    }
+    if (this.survival) this.updateTeams(dt);
     this.survival?.update(dt);
     if (this.mapOverlay && this.mapState && this.survival) {
       const ms = this.mapState;
@@ -681,6 +933,7 @@ export class Game {
       for (const r of this.survival.robots) if (r.aggro) ms.robots.push({ x: r.pos.x, z: r.pos.z });
       ms.enemies.length = 0;
       for (const sq of this.squads) for (const s of sq.soldiers) if (s.alive) ms.enemies.push({ x: s.pos.x, z: s.pos.z });
+      if (this.match) for (const t of this.match.raiders) for (const a of t.agents) if (a.alive) ms.enemies.push({ x: a.soldier.pos.x, z: a.soldier.pos.z });
       ms.allies.length = 0;
       for (const a of this.allies) if (a.alive) ms.allies.push({ x: a.soldier.pos.x, z: a.soldier.pos.z });
       this.mapOverlay.update(realDt, ms);
@@ -774,6 +1027,7 @@ export class Game {
     const points: THREE.Vector3[] = [];
     for (const r of this.robots) if (r.alive) points.push(r.chestPoint.getWorldPosition(new THREE.Vector3()));
     for (const sq of this.squads) for (const s of sq.soldiers) if (s.alive) points.push(s.chestPos.clone());
+    for (const c of this.world) if (c.team !== 'alpha' && c.alive && !c.downed) points.push(c.aim);
     for (const p of points) {
       this.tmp.copy(p);
       const toTarget = this.tmp2.subVectors(this.tmp, eye);

@@ -100,7 +100,7 @@ export class LayoutBuilder {
     defs: RoomDef[],
     private links: LinkDef[],
     private styles: Record<string, RoomStyle>,
-    private shared: { ao: THREE.Material; pool: (color: number) => THREE.Material; skyFrame: THREE.Material; skyGlass: THREE.Material; trim: THREE.Material },
+    private shared: { ao: THREE.Material; pool: (color: number) => THREE.Material; skyFrame: THREE.Material; skyGlass: THREE.Material; trim: THREE.Material; merge?: THREE.MeshStandardMaterial },
     private wallReceiver?: HitReceiver,
   ) {
     this.defs = defs;
@@ -170,8 +170,9 @@ export class LayoutBuilder {
       this.buildRoomShell(room);
     }
     for (const room of this.rooms.values()) {
-      room.b.build(room.group);
-      room.ceil.build(room.group, { castShadow: false, receiveShadow: true });
+      // Plain-coloured props of a room fold into one vertex-coloured material (fewer draw calls).
+      room.b.build(room.group, { merge: this.shared.merge });
+      room.ceil.build(room.group, { castShadow: false, receiveShadow: true, merge: this.shared.merge });
       room.clear.build(room.group, { castShadow: false, receiveShadow: false });
       parent.add(room.group);
     }

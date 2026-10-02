@@ -5,7 +5,8 @@ import { Noise1D } from '../core/Noise';
 import { clamp, DEG } from '../core/math';
 import { feel } from '../config/Feel';
 import { Humanoid, defaultPose, type DamageInfo } from '../targets/Humanoid';
-import { buildEnemyRifle, type WeaponRig } from '../weapons/WeaponModels';
+import { buildEnemyRifle, buildWeaponModel, type WeaponRig } from '../weapons/WeaponModels';
+import type { WeaponData } from '../weapons/WeaponData';
 import { getAmmo, type AmmoData } from '../weapons/AmmoData';
 import { MuzzleFlash } from '../fx/MuzzleFlash';
 import type { ProjectileSystem } from '../weapons/Ballistics';
@@ -13,7 +14,7 @@ import type { ImpactSystem } from '../fx/ImpactSystem';
 import type { Shells } from '../fx/Shells';
 import type { AudioSystem } from '../audio/AudioSystem';
 import type { NavGrid } from '../ai/NavGrid';
-import { soldierMaterials, soldierSkin, type SoldierMaterials } from './SoldierSkin';
+import { soldierMaterials, soldierSkin, type SoldierMaterials, type SoldierPalette } from './SoldierSkin';
 
 /** What the AI knows about the player, refreshed by the squad every frame. */
 export interface PlayerTarget {
@@ -36,6 +37,8 @@ export interface SoldierDeps {
   scene: THREE.Object3D;
   /** Phones: no dynamic light per enemy muzzle flash. */
   lowSpec?: boolean;
+  /** Weapon definitions (for soldiers that buy weapons). */
+  weaponData?: (id: string) => WeaponData | undefined;
 }
 
 export type Role = 'anchor' | 'flankL' | 'flankR' | 'push';
@@ -48,14 +51,12 @@ export interface SoldierHooks {
   onKilled(s: Soldier, info: DamageInfo): void;
   say(s: Soldier, line: VoiceLine): void;
   onThud(at: THREE.Vector3, strength: number): void;
+  onDowned?(s: Soldier): void;
 }
 
 export const WALK = 1.45;
 export const JOG = 2.2;
 export const RUN = 3.7;
-const MAG = 30;
-const FIRE_INTERVAL = 60 / 620;
-const RELOAD_TIME = 2.7;
 const HEAD_OFFSET = new THREE.Vector3(0, 0.15, 0.04);
 
 const v3 = () => new THREE.Vector3();
@@ -72,7 +73,7 @@ const v3 = () => new THREE.Vector3();
  */
 export class Soldier {
   readonly body: Humanoid;
-  readonly rig: WeaponRig;
+  rig: WeaponRig;
   readonly index: number;
   state: BrainState = 'patrol';
   role: Role = 'anchor';
@@ -101,7 +102,8 @@ export class Soldier {
 
   // Aim / fire
   private aimNode = new THREE.Group();
-  private rifleRoot: THREE.Group;
+  /** Holds the current weapon model (synced to the dropped-rifle body on death). */
+  private rifleRoot = new THREE.Group();
   private flash: MuzzleFlash;
   private aimYaw = 0;
   private aimPitch = -0.5;
@@ -114,8 +116,26 @@ export class Soldier {
   private burstLeft = 0;
   private nextShot = 0;
   private burstPause = 0;
-  ammo = MAG;
+  // Current weapon (Black Division default: black MK47-pattern carbine).
+  magSize = 30;
+  private fireInterval = 60 / 620;
+  private reloadTime = 2.7;
+  private semi = false;
+  private pellets = 1;
+  private pelletSpread = 0;
+  private fireSound = 'bd.fire';
+  weaponId = 'bd_carbine';
+  ammo = 30;
   reloadTimer = 0;
+  /** Spare rounds (Infinity: issued weapon / sidearm). */
+  reserve = Infinity;
+  private maxReserve = Infinity;
+  /** Mag and reserve both empty. */
+  onDry: (() => void) | null = null;
+  /** Marksmanship multiplier (1 = Black Division standard). */
+  skill = 1;
+  /** A friendly player to keep out of the way of (allies). */
+  avoid: THREE.Vector3 | null = null;
   private flinch = 0;
   private ammoData: AmmoData;
 
@@ -154,20 +174,22 @@ export class Soldier {
     private deps: SoldierDeps,
     index: number,
     private hooks: SoldierHooks,
-    /** 'ally' = Vanta Security on the player's side (blue kit, bullets don't hurt the player's team). */
-    readonly team: 'enemy' | 'ally' = 'enemy',
+    /** Team id: 'bd' (Black Division), 'alpha' (the player's team), 'bravo', 'charlie', 'delta'. */
+    readonly team: string = 'bd',
+    palette: SoldierPalette = team === 'alpha' ? 'vanta' : team === 'bd' ? 'bd' : (team as SoldierPalette),
   ) {
     this.index = index;
-    this.mats = soldierMaterials(team === 'ally' ? 'vanta' : 'bd');
+    this.mats = soldierMaterials(palette);
     this.voicePitch = 0.94 + index * 0.035;
     this.errNoise = new Noise1D(index * 17 + 3);
     this.errNoise2 = new Noise1D(index * 29 + 11);
     this.ammoData = getAmmo('762x39_ps');
     this.flash = new MuzzleFlash(2.6, !deps.lowSpec);
-    this.body = new Humanoid(deps.physics, deps.scene, soldierSkin(team === 'ally' ? 220 : 160, team === 'ally' ? 'vanta' : 'bd'), {
+    this.body = new Humanoid(deps.physics, deps.scene, soldierSkin(team === 'bd' ? 160 : 200, palette), {
       onDamage: (info) => this.onDamaged(info),
       onDeath: (info) => this.onKilled(info),
       onThud: (at, s) => hooks.onThud(at, s),
+      onDowned: () => hooks.onDowned?.(this),
     }, this);
 
     // Rifle in the right shoulder pocket; the aim node pitches/yaws it.
@@ -175,10 +197,9 @@ export class Soldier {
     this.aimNode.position.set(0.11, 0.41, 0.12);
     this.aimNode.rotation.order = 'YXZ';
     torso.add(this.aimNode);
+    this.body.team = team;
     this.rig = buildEnemyRifle();
-    this.rifleRoot = this.rig.root;
-    this.rifleRoot.rotation.y = Math.PI;
-    this.rifleRoot.position.set(this.rig.butt.x, -this.rig.butt.y, this.rig.butt.z);
+    this.mountRig();
     this.aimNode.add(this.rifleRoot);
     this.flash.attachTo(this.rig.muzzle);
     this.reloadHand.position.set(-0.05, 0.2, 0.24);
@@ -188,7 +209,7 @@ export class Soldier {
       RAPIER.RigidBodyDesc.dynamic().setEnabled(false).setCcdEnabled(true).setAngularDamping(0.5),
     );
     deps.physics.world.createCollider(
-      RAPIER.ColliderDesc.cuboid(0.03, 0.06, 0.42).setTranslation(0, 0.03, -0.12).setMass(3.5).setFriction(0.9).setCollisionGroups(GROUPS.debris),
+      RAPIER.ColliderDesc.cuboid(0.03, 0.06, 0.42).setTranslation(0, 0.03, 0.3).setMass(3.5).setFriction(0.9).setCollisionGroups(GROUPS.debris),
       this.rifleBody,
     );
     deps.physics.addSynced(this.rifleBody, this.rifleRoot);
@@ -196,6 +217,42 @@ export class Soldier {
 
   get alive(): boolean {
     return this.body.alive;
+  }
+
+  get downed(): boolean {
+    return this.body.downed;
+  }
+
+  /** Put the current rig in the holder: barrel forward, butt at the holder origin. */
+  private mountRig(): void {
+    this.rig.root.rotation.set(0, Math.PI, 0);
+    this.rig.root.position.set(this.rig.butt.x, -this.rig.butt.y, this.rig.butt.z);
+    this.rifleRoot.add(this.rig.root);
+    this.flash.attachTo(this.rig.muzzle);
+  }
+
+  /** Arm with a real weapon (fire rate, magazine, ammo, sound, model). */
+  setWeapon(data: WeaponData, reserve = Infinity): void {
+    this.reserve = this.maxReserve = reserve;
+    this.rifleRoot.remove(this.rig.root);
+    const rig = buildWeaponModel(data.model);
+    rig.leftHand.visible = false;
+    rig.rightHand.visible = false;
+    rig.root.traverse((o) => ((o as THREE.Mesh).isMesh && ((o as THREE.Mesh).castShadow = true)));
+    this.rig = rig;
+    this.mountRig();
+    this.weaponId = data.id;
+    this.ammoData = getAmmo(data.ammo);
+    this.magSize = data.magazineSize;
+    const manual = data.fireModes.includes('bolt') || data.fireModes.includes('pump');
+    const cycle = data.fireModes.includes('bolt') ? Math.max(0.9, data.boltCycleTime || 1) : data.fireModes.includes('pump') ? 0.75 : 0;
+    this.fireInterval = Math.max(60 / data.fireRate, cycle, data.fireModes.includes('auto') ? 0 : 0.16);
+    this.semi = manual || !data.fireModes.includes('auto');
+    this.reloadTime = data.reload.kind === 'magazine' ? data.reload.time : data.reload.shellStart + data.reload.shellInsert * Math.min(5, data.magazineSize) + data.reload.shellEnd;
+    this.pellets = Math.max(1, this.ammoData.pellets);
+    this.pelletSpread = this.ammoData.pelletSpread;
+    this.fireSound = data.audio.fire;
+    this.ammo = this.magSize;
   }
 
   get headPos(): THREE.Vector3 {
@@ -218,7 +275,7 @@ export class Soldier {
     this.visibleTime = 0;
     this.path = null;
     this.hasGoal = false;
-    this.ammo = MAG;
+    this.ammo = this.magSize;
     this.reloadTimer = 0;
     this.crouch = this.crouchTarget = 0;
     this.aimPitch = -0.5;
@@ -226,8 +283,8 @@ export class Soldier {
     this.rifleBody.setEnabled(false);
     if (this.rifleRoot.parent !== this.aimNode) {
       this.aimNode.add(this.rifleRoot);
-      this.rifleRoot.rotation.set(0, Math.PI, 0);
-      this.rifleRoot.position.set(this.rig.butt.x, -this.rig.butt.y, this.rig.butt.z);
+      this.rifleRoot.position.set(0, 0, 0);
+      this.rifleRoot.quaternion.identity();
     }
     if (this.rig.mag) this.rig.mag.visible = true;
     this.body.root.position.copy(this.pos);
@@ -346,6 +403,24 @@ export class Soldier {
       this.body.update(dt, this.pose);
       return;
     }
+    if (this.body.downed) {
+      // Down: kneeling, slumped, weapon lowered; bleeding out until revived.
+      this.body.tickDowned(dt);
+      const p = this.pose;
+      p.crouch = 1;
+      p.strideAmount = 0;
+      p.spineX = 0.6;
+      p.headX = 0.35;
+      p.spineY = 0;
+      p.gripL = null;
+      p.gripR = this.rig.rightHand;
+      this.vel.set(0, 0, 0);
+      this.aimNode.rotation.set(0.9, -0.4, 0);
+      this.body.root.position.copy(this.pos);
+      this.body.update(dt, p);
+      this.flash.update(dt);
+      return;
+    }
     this.flinch = Math.max(0, this.flinch - dt * 1.4);
     this.move(dt, mates, player, faceTarget);
 
@@ -370,7 +445,7 @@ export class Soldier {
     p.headX = aimMode === 'aim' ? 0.18 : 0.05;
     p.gripR = this.rig.rightHand;
     const reloading = this.reloadTimer > 0;
-    const rk = reloading ? 1 - this.reloadTimer / RELOAD_TIME : 0;
+    const rk = reloading ? 1 - this.reloadTimer / this.reloadTime : 0;
     const handOff = reloading && rk > 0.2 && rk < 0.62;
     p.gripL = handOff ? this.reloadHand : this.rig.mag && reloading && rk > 0.1 && rk < 0.8 ? this.rig.mag : this.rig.leftHand;
     if (this.rig.mag) this.rig.mag.visible = !(reloading && rk > 0.25 && rk < 0.6);
@@ -414,6 +489,15 @@ export class Soldier {
     if (player.alive) {
       const dx = this.pos.x - player.feet.x;
       const dz = this.pos.z - player.feet.z;
+      const d = Math.hypot(dx, dz);
+      if (d < 1.3 && d > 1e-4) {
+        desired.x += (dx / d) * (1.3 - d) * 4;
+        desired.z += (dz / d) * (1.3 - d) * 4;
+      }
+    }
+    if (this.avoid) {
+      const dx = this.pos.x - this.avoid.x;
+      const dz = this.pos.z - this.avoid.z;
       const d = Math.hypot(dx, dz);
       if (d < 1.3 && d > 1e-4) {
         desired.x += (dx / d) * (1.3 - d) * 4;
@@ -478,7 +562,7 @@ export class Soldier {
       if (mode === 'aim') {
         const moving = Math.hypot(this.vel.x, this.vel.z) > 0.6;
         const settle = 1 + 3.5 * Math.exp(-this.visibleTime / 2.0);
-        const sigma = ((1.0 + 0.03 * dist) * settle * (moving ? 1.7 : 1) * (1 + this.flinch * 2) * DEG) / Math.max(0.2, feel.enemyAccuracy);
+        const sigma = ((1.0 + 0.03 * dist) * settle * (moving ? 1.7 : 1) * (1 + this.flinch * 2) * DEG) / Math.max(0.2, feel.enemyAccuracy * this.skill);
         yaw += this.errNoise.sample(this.time * 0.9) * sigma * 1.9;
         pitch += this.errNoise2.sample(this.time * 0.9) * sigma * 1.1;
       }
@@ -501,9 +585,18 @@ export class Soldier {
     this.reactionTimer = 0.55 + Math.random() * 0.45;
   }
 
+  /** Ammo cache: full spare rounds again. */
+  refillReserve(): void {
+    this.reserve = this.maxReserve;
+  }
+
   startReload(): boolean {
-    if (this.reloadTimer > 0 || this.ammo === MAG) return false;
-    this.reloadTimer = RELOAD_TIME;
+    if (this.reloadTimer > 0 || this.ammo === this.magSize) return false;
+    if (this.reserve <= 0) {
+      if (this.ammo <= 0) this.onDry?.();
+      return false;
+    }
+    this.reloadTimer = this.reloadTime;
     this.burstLeft = 0;
     this.deps.audio.play('reload.rifle.magout', { position: this.pos, volume: 0.6 });
     return true;
@@ -513,9 +606,11 @@ export class Soldier {
     if (this.reloadTimer > 0) {
       const before = this.reloadTimer;
       this.reloadTimer -= dt;
-      if (before > RELOAD_TIME * 0.45 && this.reloadTimer <= RELOAD_TIME * 0.45) this.deps.audio.play('reload.rifle.magin', { position: this.pos, volume: 0.7 });
+      if (before > this.reloadTime * 0.45 && this.reloadTimer <= this.reloadTime * 0.45) this.deps.audio.play('reload.rifle.magin', { position: this.pos, volume: 0.7 });
       if (this.reloadTimer <= 0) {
-        this.ammo = MAG;
+        const take = Math.min(this.magSize - this.ammo, this.reserve);
+        this.ammo += take;
+        this.reserve -= take;
         this.deps.audio.play('reload.rifle.boltforward', { position: this.pos, volume: 0.6 });
       }
       return;
@@ -533,12 +628,12 @@ export class Soldier {
     if (this.burstLeft <= 0) {
       if (this.time < this.burstPause) return;
       const dist = this.pos.distanceTo(player.feet);
-      this.burstLeft = dist > 35 ? 1 + ((Math.random() * 2) | 0) : dist > 15 ? 2 + ((Math.random() * 2) | 0) : 3 + ((Math.random() * 3) | 0);
+      this.burstLeft = this.semi ? 1 : dist > 35 ? 1 + ((Math.random() * 2) | 0) : dist > 15 ? 2 + ((Math.random() * 2) | 0) : 3 + ((Math.random() * 3) | 0);
     }
     // Muzzle and bore.
     this.rig.muzzle.getWorldPosition(this.muzzle);
     this.rifleRoot.getWorldQuaternion(this.q);
-    this.dir.set(0, 0, -1).applyQuaternion(this.q);
+    this.dir.set(0, 0, 1).applyQuaternion(this.q);
     // Don't shoot through a squadmate.
     for (const m of mates) {
       if (m === this || !m.alive) continue;
@@ -558,14 +653,21 @@ export class Soldier {
     this.dir.normalize();
     this.ammo--;
     this.burstLeft--;
-    this.nextShot = this.time + FIRE_INTERVAL * (0.95 + Math.random() * 0.1);
-    if (this.burstLeft <= 0) this.burstPause = this.time + 0.6 + Math.random() * 0.9;
-    const tracer = this.ammo % 4 === 0;
-    this.deps.projectiles.fire(this.muzzle, this.dir, this.ammoData.muzzleVelocity * (0.985 + Math.random() * 0.03), this.ammoData, 0, tracer, true, this, this.team === 'enemy', this.team === 'ally');
+    this.nextShot = this.time + this.fireInterval * (0.95 + Math.random() * 0.1);
+    if (this.burstLeft <= 0) this.burstPause = this.time + (this.semi ? 0.25 + Math.random() * 0.35 : 0.6 + Math.random() * 0.9);
+    const tracer = this.team === 'bd' && this.ammo % 4 === 0;
+    // Any team but the player's can hit the player; the player's team never gives hit markers.
+    const hostile = this.team !== 'alpha';
+    const ally = this.team === 'alpha';
+    const spread = Math.tan(this.pelletSpread * DEG);
+    for (let i = 0; i < this.pellets; i++) {
+      const d = i === 0 ? this.dir : this.tmp2.copy(this.dir).add(this.tmp.set(gauss() * spread, gauss() * spread, gauss() * spread)).normalize();
+      this.deps.projectiles.fire(this.muzzle, d, this.ammoData.muzzleVelocity * (0.985 + Math.random() * 0.03), this.ammoData, 0, tracer && i === 0, i < 2, this, hostile, ally, this.team);
+    }
     this.flash.trigger(1.3);
     this.deps.impacts.muzzleBlast(this.muzzle, this.dir, 1.1);
     this.deps.impacts.muzzleSmoke(this.muzzle, this.dir, 0.6);
-    this.deps.audio.play('bd.fire', { position: this.muzzle });
+    this.deps.audio.play(this.fireSound, { position: this.muzzle });
     this.recoilPitch.impulse(0.55 + Math.random() * 0.3);
     this.recoilYaw.impulse((Math.random() - 0.5) * 0.5);
     // Brass out to the right.

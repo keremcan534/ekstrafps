@@ -50,7 +50,7 @@ export class SurvivalHUD {
   }
 
   private bannerId = 0;
-  private showBanner(text: string, cls: string): void {
+  showBanner(text: string, cls: string): void {
     this.banner.textContent = text;
     this.banner.className = `sv-banner show ${cls}`;
     const id = ++this.bannerId;

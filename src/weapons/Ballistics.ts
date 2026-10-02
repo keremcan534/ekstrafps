@@ -49,6 +49,7 @@ interface Projectile {
   owner: object | null;
   hostile: boolean;
   ally: boolean;
+  team: string;
   /** Already cracked past the listener. */
   flyby: boolean;
 }
@@ -82,6 +83,7 @@ export class ProjectileSystem {
     penetration: 0,
     hostile: false,
     ally: false,
+    team: '',
   };
   private result: HitResult = { damage: 0, crit: false, killed: false, health: -1, maxHealth: 0 };
   private report: ProjectileHitReport = {
@@ -109,7 +111,7 @@ export class ProjectileSystem {
       this.pool.push({
         alive: false, pos: new THREE.Vector3(), vel: new THREE.Vector3(), v0: 0, ammo: null as unknown as AmmoData,
         shotId: 0, pellets: 1, tracer: false, age: 0, travelled: 0, ricochets: 0, soundBudget: true,
-        owner: null, hostile: false, ally: false, flyby: false,
+        owner: null, hostile: false, ally: false, team: '', flyby: false,
       });
     }
   }
@@ -122,7 +124,7 @@ export class ProjectileSystem {
 
   fire(
     origin: THREE.Vector3, dir: THREE.Vector3, speed: number, ammo: AmmoData, shotId: number, tracer: boolean, soundBudget: boolean,
-    owner: object | null = null, hostile = false, ally = false,
+    owner: object | null = null, hostile = false, ally = false, team = 'alpha',
   ): void {
     const p = this.pool[this.next];
     this.next = (this.next + 1) % CAPACITY;
@@ -141,6 +143,7 @@ export class ProjectileSystem {
     p.owner = owner;
     p.hostile = hostile;
     p.ally = ally;
+    p.team = team;
     p.flyby = false;
   }
 
@@ -283,6 +286,8 @@ export class ProjectileSystem {
     h.penetration = p.ammo.penetration;
     h.hostile = p.hostile;
     h.ally = p.ally;
+    h.team = p.team;
+    h.owner = p.owner;
     const res = this.result;
     res.damage = 0;
     res.crit = false;

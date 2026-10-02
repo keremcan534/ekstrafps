@@ -3,6 +3,7 @@ import { RAPIER, GROUPS, type BulletHit, type HitResult, type Physics, type Surf
 import { Spring, Spring3 } from '../core/Spring';
 import { clamp, DEG } from '../core/math';
 import { feel } from '../config/Feel';
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { MeshBuilder } from '../world/MeshBuilder';
 import { Damageable } from './Damageable';
 
@@ -43,6 +44,8 @@ export interface HumanoidSkin {
   headMultiplier?: number;
   /** Fraction of damage that still gets through a plate/helmet that stopped the round. */
   bluntFactor?: number;
+  /** Vertex-coloured material the plain materials are merged into (fewer draw calls). */
+  merge?: THREE.MeshStandardMaterial;
   idleKnee?: number;
 }
 
@@ -50,8 +53,8 @@ export interface Part {
   name: PartName;
   side: -1 | 0 | 1;
   parent: Part | null;
-  group: THREE.Group;
-  debris: THREE.Group;
+  /** Bone of the skinned body (also the parent for attachments). */
+  group: THREE.Bone;
   body: RAPIER.RigidBody;
   colliders: RAPIER.Collider[];
   worldPos: THREE.Vector3;
@@ -78,6 +81,8 @@ export interface HumanoidHooks {
   /** A ragdoll part slammed into something. strength 0..1. */
   onThud?(at: THREE.Vector3, strength: number): void;
   onStagger?(at: THREE.Vector3, strength: number): void;
+  /** Went down (last stand) instead of dying. */
+  onDowned?(info: DamageInfo): void;
 }
 
 /** Animation layer supplied by the owner every frame; reactions are added on top. */
@@ -109,6 +114,7 @@ export const defaultPose = (): HumanoidPose => ({
 });
 
 const MAX_TILT = 24 * DEG;
+const ONE = new THREE.Vector3(1, 1, 1);
 
 /**
  * A physical humanoid body shared by robots and soldiers.
@@ -131,6 +137,9 @@ export class Humanoid {
   readonly parts: Part[] = [];
   private byName = new Map<PartName, Part>();
   private pivot = new THREE.Group();
+  /** The whole body is ONE skinned mesh (a draw call per material), parts are bones. */
+  private mesh!: THREE.SkinnedMesh;
+  private pendingGeo: Map<THREE.Material, THREE.BufferGeometry[]>[] = [];
   private joints: RAPIER.ImpulseJoint[] = [];
   private knees: RAPIER.RevoluteImpulseJoint[] = [];
 
@@ -162,6 +171,13 @@ export class Humanoid {
 
   /** On the player's side: rounds from the player and allies pass harmlessly. */
   friendly = false;
+  /** Team id: rounds from the same team pass harmlessly ('' = no team). */
+  team = '';
+  /** Asked when health runs out: true = go down (a teammate can revive) instead of dying. */
+  canGoDown: (() => boolean) | null = null;
+  /** Down but not out: kneeling, can't act, bleeding out. */
+  downed = false;
+  bleed = 0;
   /** Accumulated stagger (0..2): bigger reactions, unsteady sway. */
   stagger = 0;
   private kneelTimer = [0, 0];
@@ -192,7 +208,8 @@ export class Humanoid {
     this.health = new Damageable(skin.health);
     this.root.add(this.pivot);
     scene.add(this.root);
-    for (const def of skin.parts) this.buildPart(def, scene);
+    for (const def of skin.parts) this.buildPart(def);
+    this.buildSkin();
 
     const thigh = this.part('thighR').group.position;
     this.hipHalf = Math.abs(thigh.x);
@@ -209,30 +226,86 @@ export class Humanoid {
     return this.health.alive;
   }
 
+  /**
+   * Bake every part's geometry (in the rest pose) into one skinned mesh: vertex
+   * skin index = part, weight 1 (rigid parts). Plain materials fold into the skin's
+   * vertex-coloured merge material; the rest become material groups.
+   */
+  private buildSkin(): void {
+    this.root.updateMatrixWorld(true);
+    const merge = this.skin.merge;
+    const byMat = new Map<THREE.Material, THREE.BufferGeometry[]>();
+    const plain = (m: THREE.Material) => {
+      const s = m as THREE.MeshStandardMaterial;
+      const emissive = s.emissive && (s.emissive.r + s.emissive.g + s.emissive.b) * (s.emissiveIntensity ?? 1) > 0.001;
+      return !!merge && s.isMeshStandardMaterial && !s.map && !s.transparent && !emissive;
+    };
+    this.parts.forEach((part, idx) => {
+      for (const [mat, geos] of this.pendingGeo[idx]) {
+        const target = plain(mat) ? merge! : mat;
+        const color = plain(mat) ? (mat as THREE.MeshStandardMaterial).color : new THREE.Color(1, 1, 1);
+        for (const g of geos) {
+          g.applyMatrix4(part.group.matrixWorld);
+          const n = g.getAttribute('position').count;
+          const si = new Uint16Array(n * 4);
+          const sw = new Float32Array(n * 4);
+          const col = new Float32Array(n * 3);
+          for (let i = 0; i < n; i++) {
+            si[i * 4] = idx;
+            sw[i * 4] = 1;
+            col[i * 3] = color.r;
+            col[i * 3 + 1] = color.g;
+            col[i * 3 + 2] = color.b;
+          }
+          g.setAttribute('skinIndex', new THREE.Uint16BufferAttribute(si, 4));
+          g.setAttribute('skinWeight', new THREE.Float32BufferAttribute(sw, 4));
+          g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+          const list = byMat.get(target) ?? [];
+          list.push(g);
+          byMat.set(target, list);
+        }
+      }
+    });
+    this.pendingGeo.length = 0;
+    const mats: THREE.Material[] = [];
+    const geos: THREE.BufferGeometry[] = [];
+    for (const [mat, list] of byMat) {
+      const g = mergeGeometries(list, false);
+      if (!g) continue;
+      mats.push(mat);
+      geos.push(g);
+      for (const x of list) x.dispose();
+    }
+    const geometry = mergeGeometries(geos, true)!;
+    for (const g of geos) g.dispose();
+    // Generous fixed bounds (the ragdoll can spread a few metres from the root).
+    geometry.boundingSphere = new THREE.Sphere(new THREE.Vector3(0, 1, 0), 3.5);
+    this.mesh = new THREE.SkinnedMesh(geometry, mats);
+    this.mesh.castShadow = true;
+    this.mesh.receiveShadow = true;
+    this.root.add(this.mesh);
+    this.mesh.updateMatrixWorld(true);
+    this.mesh.bind(new THREE.Skeleton(this.parts.map((p) => p.group)));
+  }
+
   part(name: PartName): Part {
     return this.byName.get(name)!;
   }
 
-  private buildPart(def: PartDef, scene: THREE.Object3D): void {
+  private buildPart(def: PartDef): void {
     const parent = def.parent ? this.part(def.parent) : null;
-    const group = new THREE.Group();
+    const group = new THREE.Bone();
     group.position.set(...def.pos);
     (parent ? parent.group : this.pivot).add(group);
     const b = new MeshBuilder();
     def.build(b);
-    b.build(group, { castShadow: true, receiveShadow: true });
-    // Cloned before any child part is attached, so the debris holds only this part.
-    const debris = group.clone(true);
-    debris.position.set(0, 0, 0);
-    debris.rotation.set(0, 0, 0);
-    debris.visible = false;
-    scene.add(debris);
+    this.pendingGeo.push(b.take());
 
     const body = this.physics.world.createRigidBody(
       RAPIER.RigidBodyDesc.kinematicPositionBased().setLinearDamping(0.08).setAngularDamping(1.1).setCcdEnabled(true),
     );
     const part: Part = {
-      name: def.name, side: def.side, parent, group, debris, body, colliders: [],
+      name: def.name, side: def.side, parent, group, body, colliders: [],
       worldPos: new THREE.Vector3(), worldQuat: new THREE.Quaternion(), prevPos: new THREE.Vector3(), vel: new THREE.Vector3(), prevVy: 0,
     };
     for (const c of def.colliders) {
@@ -256,7 +329,6 @@ export class Humanoid {
         onBulletHit: (h, o) => this.onHit(h, part, c, surface, o),
       });
     }
-    this.physics.addSynced(body, debris);
     this.parts.push(part);
     this.byName.set(def.name, part);
   }
@@ -266,6 +338,14 @@ export class Humanoid {
   private onHit(hit: BulletHit, part: Part, col: ColliderDef, surface: SurfaceType, out: HitResult): void {
     if (!this.alive) return;
     if (this.friendly && !hit.hostile) return;
+    if (this.team && hit.team === this.team) return;
+    if (this.downed) {
+      // Shooting someone who is down finishes them faster.
+      this.bleed -= hit.damage * 0.12;
+      out.damage = hit.damage * 0.3;
+      if (this.bleed <= 0) this.finish(hit, part, col.zone);
+      return;
+    }
     const zone = col.zone;
     const head = zone === 'head';
     let mult = head ? (this.skin.headMultiplier ?? hit.critMultiplier) : this.skin.zoneDamage[zone];
@@ -280,6 +360,13 @@ export class Humanoid {
       }
     }
     const dmg = hit.damage * mult;
+    if (this.health.health - dmg <= 0 && this.canGoDown?.()) {
+      this.goDown(hit, part, zone, dmg);
+      out.damage = dmg;
+      out.health = 0;
+      out.maxHealth = this.health.maxHealth;
+      return;
+    }
     this.health.applyDamage(dmg);
     out.damage = dmg;
     out.crit = head && !blocked;
@@ -304,6 +391,57 @@ export class Humanoid {
     this.hooks.onDamage?.(info);
   }
 
+  private goDown(hit: BulletHit, part: Part, zone: HitZone, dmg: number): void {
+    this.health.health = 1;
+    this.downed = true;
+    this.bleed = 30;
+    this.react(hit, part, zone, dmg);
+    const info = this.info;
+    info.hit = hit;
+    info.part = part;
+    info.zone = zone;
+    info.damage = dmg;
+    info.blocked = false;
+    info.surface = 'flesh';
+    info.killed = false;
+    this.hooks.onDowned?.(info);
+  }
+
+  /** Bled out / finished while down: now really dead (ragdoll). */
+  private finish(hit: BulletHit, part: Part, zone: HitZone): void {
+    this.downed = false;
+    this.health.health = 0;
+    const info = this.info;
+    info.hit = hit;
+    info.part = part;
+    info.zone = zone;
+    info.damage = 1;
+    info.killed = true;
+    this.die(hit, part, zone);
+    this.hooks.onDeath?.(info);
+  }
+
+  /** Teammate got them up. */
+  revive(): void {
+    if (!this.downed) return;
+    this.downed = false;
+    this.health.health = this.health.maxHealth * 0.5;
+  }
+
+  /** Bleed-out ticking (call every frame). */
+  tickDowned(dt: number): void {
+    if (!this.downed) return;
+    this.bleed -= dt;
+    if (this.bleed <= 0) {
+      const torso = this.part('torso');
+      const hit: BulletHit = {
+        point: torso.worldPos.clone(), normal: new THREE.Vector3(0, 1, 0), direction: new THREE.Vector3(0, -1, 0), distance: 0, damage: 1, impulse: 0.2,
+        critMultiplier: 1, weaponId: 'bleed', penetration: 0, hostile: true, ally: false, team: '',
+      };
+      this.finish(hit, torso, 'thorax');
+    }
+  }
+
   /** Melee blow (rogue robot swing): body damage + a hard shove. */
   meleeHit(damage: number, from: THREE.Vector3, impulse = 1.8): void {
     if (!this.alive) return;
@@ -312,8 +450,17 @@ export class Humanoid {
     const dir = this.tmp2.copy(this.tmp).sub(from).setY(0).normalize();
     const hit: BulletHit = {
       point: this.tmp.clone(), normal: dir.clone().negate(), direction: dir.clone(), distance: 1, damage, impulse,
-      critMultiplier: 1, weaponId: 'melee', penetration: 0, hostile: true, ally: false,
+      critMultiplier: 1, weaponId: 'melee', penetration: 0, hostile: true, ally: false, team: 'robots',
     };
+    if (this.downed) {
+      this.bleed -= damage * 0.12;
+      if (this.bleed <= 0) this.finish(hit, torso, 'thorax');
+      return;
+    }
+    if (this.health.health - damage <= 0 && this.canGoDown?.()) {
+      this.goDown(hit, torso, 'thorax', damage);
+      return;
+    }
     this.health.applyDamage(damage);
     const info = this.info;
     info.hit = hit;
@@ -421,12 +568,10 @@ export class Humanoid {
       b.setLinvel(part.vel, true);
       b.setAngvel({ x: 0, y: 0, z: 0 }, true);
       for (const c of part.colliders) c.setCollisionGroups(GROUPS.ragdoll);
-      part.debris.position.copy(part.worldPos);
-      part.debris.quaternion.copy(part.worldQuat);
-      part.debris.visible = true;
+      // From now on the bones follow the physics bodies directly.
+      part.group.matrixWorldAutoUpdate = false;
       part.prevVy = 0;
     }
-    this.pivot.visible = false;
     this.buildJoints(zone === 'head');
 
     // The killing round: its momentum at the exact hit point, plus a whole-body shove
@@ -508,18 +653,15 @@ export class Humanoid {
     this.root.visible = active;
     for (const part of this.parts) {
       for (const c of part.colliders) c.setEnabled(active);
-      if (!active) {
-        part.debris.visible = false;
-        part.body.setEnabled(false);
-      } else part.body.setEnabled(true);
+      if (!active) part.body.setEnabled(false);
+      else part.body.setEnabled(true);
     }
     if (!active) this.removeJoints();
   }
 
   /** Phones: many bodies in the shadow pass get expensive. */
   setCastShadow(cast: boolean): void {
-    this.root.traverse((o) => (o.castShadow = cast));
-    for (const p of this.parts) p.debris.traverse((o) => (o.castShadow = cast));
+    this.mesh.castShadow = cast;
   }
 
   /** Back to a living, standing body at the root's current transform. */
@@ -530,10 +672,10 @@ export class Humanoid {
       part.body.setLinvel({ x: 0, y: 0, z: 0 }, false);
       part.body.setAngvel({ x: 0, y: 0, z: 0 }, false);
       for (const c of part.colliders) c.setCollisionGroups(GROUPS.hitbox);
-      part.debris.visible = false;
+      part.group.matrixWorldAutoUpdate = true;
     }
     this.health.reset();
-    this.pivot.visible = true;
+    this.downed = false;
     for (const s of [this.tiltX, this.tiltZ, this.bodyYaw, this.spineX, this.spineY, this.spineZ, this.headX, this.headY, this.headZ, ...this.armX, ...this.armZ, ...this.elbow, ...this.knee]) {
       s.reset();
     }
@@ -661,7 +803,7 @@ export class Humanoid {
   }
 
   /** Two-bone IK in torso space: shoulder → elbow → hand on `grip`. */
-  private solveArm(upper: THREE.Group, fore: THREE.Group, grip: THREE.Object3D, side: number): void {
+  private solveArm(upper: THREE.Object3D, fore: THREE.Object3D, grip: THREE.Object3D, side: number): void {
     const torso = upper.parent!;
     torso.updateMatrixWorld(true);
     const target = this.ik.target.setFromMatrixPosition(this.tmpM.copy(torso.matrixWorld).invert().multiply(grip.matrixWorld));
@@ -711,6 +853,16 @@ export class Humanoid {
 
   private updateRagdoll(dt: number): void {
     this.ragdollTime += dt;
+    // Bones = physics bodies (body origin = bone pivot).
+    for (const part of this.parts) {
+      const t = part.body.translation();
+      const r = part.body.rotation();
+      part.worldPos.set(t.x, t.y, t.z);
+      part.worldQuat.set(r.x, r.y, r.z, r.w);
+      part.group.matrixWorld.compose(part.worldPos, part.worldQuat, ONE);
+    }
+    // Attachments still on the bones (chest markers...) follow.
+    for (const part of this.parts) for (const c of part.group.children) if (!(c as THREE.Bone).isBone) c.updateMatrixWorld(true);
     // Knees only buckle at the moment of death; afterwards the body is fully limp.
     if (this.ragdollTime > 0.45 && this.knees.length) {
       for (const k of this.knees) k.configureMotorPosition(0, 0, 1);

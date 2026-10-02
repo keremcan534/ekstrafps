@@ -51,6 +51,7 @@ export class RogueRobot {
   private deadTime = 0;
   private flash = 0;
   private pose = defaultPose();
+  private merged: THREE.MeshStandardMaterial;
   private materials: { paint: THREE.MeshStandardMaterial; dark: THREE.MeshStandardMaterial; visor: THREE.MeshStandardMaterial };
   private tmp = new THREE.Vector3();
 
@@ -61,7 +62,8 @@ export class RogueRobot {
       visor: new THREE.MeshStandardMaterial({ color: 0x000000, emissive: VISOR, emissiveIntensity: 2.6, roughness: 0.3 }),
     };
     const { paint, dark, visor } = this.materials;
-    this.body = new Humanoid(physics, scene, robotSkin(paint, dark, visor, 100), {
+    this.merged = new THREE.MeshStandardMaterial({ vertexColors: true, metalness: 0.6, roughness: 0.45 });
+    this.body = new Humanoid(physics, scene, robotSkin(paint, dark, visor, 100, this.merged), {
       onDamage: (info) => {
         this.flash = 1;
         this.wake();
@@ -143,7 +145,7 @@ export class RogueRobot {
     if (this.state === 'pooled') return;
     this.flash = Math.max(0, this.flash - dt * 8);
     const f = this.flash;
-    this.materials.paint.emissive.setRGB(f * 0.8, f * 0.7, f * 0.6);
+    this.merged.emissive.setRGB(f * 0.8, f * 0.7, f * 0.6);
     if (this.state === 'dead') {
       this.body.update(dt, this.pose);
       this.deadTime += dt;
@@ -234,10 +236,10 @@ export class RogueRobot {
         this.path = null;
         if (dist > 1.1) desired.set(best.pos.x - this.pos.x, 0, best.pos.z - this.pos.z).normalize().multiplyScalar(this.speed);
       } else {
-        if (this.repath <= 0 || !this.path) {
+        if (this.repath <= 0) {
           this.path = this.nav.findPath(this.pos, best.pos, 4000);
           this.pathIndex = 0;
-          this.repath = 0.7 + Math.random() * 0.4;
+          this.repath = this.path ? 0.7 + Math.random() * 0.4 : 1.2 + Math.random() * 0.8;
         }
         if (this.path && this.pathIndex < this.path.length) {
           const wp = this.path[this.pathIndex];

@@ -397,6 +397,20 @@ export const RECIPES: Record<string, Recipe> = {
   horde_alarm: { dur: 2.2, render: (c) => {
     for (let i = 0; i < 3; i++) tone(c, { t: i * 0.7, dur: 0.6, f0: 440, f1: 880, sweep: 0.5, type: 'sawtooth', gain: 0.09 });
   } },
+  power_down: { dur: 2.6, drive: 1.4, render: (c) => {
+    // Big breakers dropping, then the whole grid winding down.
+    burst(c, { dur: 0.09, freq: 900, type: 'lowpass', gain: 1.3 });
+    metal(c, 0.0, 180, 0.4, 0.5, [1, 2.1, 3.3]);
+    tone(c, { t: 0.05, dur: 2.3, f0: 120, f1: 28, sweep: 2.2, type: 'sawtooth', gain: 0.22 });
+    tone(c, { t: 0.05, dur: 2.0, f0: 240, f1: 40, sweep: 1.9, type: 'square', gain: 0.05 });
+    burst(c, { t: 0.5, dur: 0.07, freq: 700, type: 'lowpass', gain: 0.8 });
+  } },
+  raid_siren: { dur: 4.2, render: (c) => {
+    for (let i = 0; i < 2; i++) {
+      tone(c, { t: i * 2.0, dur: 1.0, f0: 330, f1: 520, sweep: 0.9, type: 'sawtooth', gain: 0.1 });
+      tone(c, { t: i * 2.0 + 1.0, dur: 1.0, f0: 520, f1: 330, sweep: 0.9, type: 'sawtooth', gain: 0.1 });
+    }
+  } },
   radio_click: { dur: 0.25, render: (c) => {
     burst(c, { dur: 0.012, freq: 3000, q: 2, gain: 0.8 });
     burst(c, { t: 0.01, dur: 0.16, attack: 0.005, freq: 2200, q: 0.7, gain: 0.18 });

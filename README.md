@@ -162,7 +162,15 @@ Vanta Dynamics' research campus, single level, about 220 × 170 m.
 - Intensity runs build-up → peak → fade → relax.
 - Dynamic difficulty scales mob size and toughness from your health and the damage you've taken recently.
 - Threat grows with time and with how many zones are open.
-- Death ends the run.
+- Solo: death ends the run.
+
+**4 Teams (PvPvE, default; `?mode=solo` for classic survival).**
+- Four squads of four start in opposite corners: you + three Vanta operators (hooded field kit, blue IFF band) in the lobby; Bravo (hangar), Charlie (barracks) and Delta (power plant) are AI. Hired contractors come on top (up to 5 with you).
+- Everyone has their own wallet and plays the same economy: AI operators buy wall weapons, restock at ammo caches, open shutters and hire contractors with their own money. Every point a teammate earns also pays each other member 5%.
+- Bought guns run dry; the starting pistol never does. With every gun empty you draw it automatically.
+- Downed teammates get revived; give up with **X** (or the GIVE UP button). You redeploy after 7 s next to a standing teammate, or somewhere random with your squad if everyone is down. Fallen squadmates rejoin after a minute.
+- AI behaviour: picks targets it can see, goes for the head on calm targets, backs off from robots while shooting, falls back when badly hurt, retreats when swarmed, farms a spot when there's nothing worth buying, keeps watch over its own sector while following, and calls things out on the radio.
+- Raids at 6000 / 14000 / 22000 team score: the power dies (flashlight on) and two Black Division squads storm in, hostile to everyone. First team to 20000 wins.
 
 **Map.** **M** opens the full map: zones, shutter prices, weapons, terminal, you, allies, robots. A rotating minimap sits in the corner. **F** (or **USE** on touch) buys or uses whatever you are looking at.
 

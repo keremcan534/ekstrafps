@@ -26,10 +26,11 @@ const VISOR_OK = new THREE.Color(COLORS.visor);
 const VISOR_HURT = new THREE.Color(COLORS.visorHurt);
 const WHITE = new THREE.Color(1, 1, 1);
 
-export function robotSkin(paint: THREE.Material, dark: THREE.Material, visor: THREE.Material, health: number): HumanoidSkin {
+export function robotSkin(paint: THREE.Material, dark: THREE.Material, visor: THREE.Material, health: number, merge?: THREE.MeshStandardMaterial): HumanoidSkin {
   const T = 0.42; // thigh
   return {
     health,
+    merge,
     shinLength: 0.44,
     handGrip: [0, -0.33, 0.05],
     zoneDamage: { head: 1, thorax: 1, stomach: 0.9, arm: 0.6, leg: 0.7 },
@@ -103,6 +104,7 @@ export class RobotTarget {
   readonly chestPoint = new THREE.Object3D();
   private materials: { paint: THREE.MeshStandardMaterial; dark: THREE.MeshStandardMaterial; visor: THREE.MeshStandardMaterial };
   private pose = defaultPose();
+  private merged: THREE.MeshStandardMaterial;
   private flash = 0;
   private critFlash = 0;
   private time = Math.random() * 10;
@@ -125,7 +127,8 @@ export class RobotTarget {
       visor: new THREE.MeshStandardMaterial({ color: 0x000000, emissive: COLORS.visor, emissiveIntensity: 2.2, roughness: 0.3 }),
     };
     const { paint, dark, visor } = this.materials;
-    this.body = new Humanoid(physics, scene, robotSkin(paint, dark, visor, opts.health ?? 200), {
+    this.merged = new THREE.MeshStandardMaterial({ vertexColors: true, metalness: 0.55, roughness: 0.45 });
+    this.body = new Humanoid(physics, scene, robotSkin(paint, dark, visor, opts.health ?? 200, this.merged), {
       onDamage: (info) => {
         this.flash = Math.min(1, this.flash + 0.75);
         if (info.zone === 'head') this.critFlash = 1;
@@ -187,8 +190,7 @@ export class RobotTarget {
     this.flash = Math.max(0, this.flash - dt * 9);
     this.critFlash = Math.max(0, this.critFlash - dt * 6);
     const f = this.flash;
-    this.materials.paint.emissive.setRGB(f * 0.9, f * 0.85, f * 0.8);
-    this.materials.dark.emissive.setRGB(f * 0.5, f * 0.5, f * 0.5);
+    this.merged.emissive.setRGB(f * 0.7, f * 0.66, f * 0.62);
     if (!this.alive) {
       this.body.update(dt, this.pose);
       this.respawnTimer -= dt;

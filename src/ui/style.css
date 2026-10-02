@@ -268,3 +268,37 @@ canvas { display: block; touch-action: none; }
 .touch-root.survival .btn-map { left: calc(56px + env(safe-area-inset-left)); }
 .is-touch .ammo { bottom: 6px; }
 .is-touch .sv-prompt { display: none; }
+
+/* ---------- Team race (4 teams) ---------- */
+.scoreboard { position: absolute; left: 50%; top: 10px; transform: translateX(-50%); display: flex; gap: 6px; pointer-events: none; }
+.sb-chip { display: flex; align-items: center; gap: 8px; padding: 4px 10px; background: rgba(10,11,13,0.62); border-bottom: 3px solid #888; font-size: 13px; color: #eee; }
+.sb-chip b { font-size: 11px; letter-spacing: 0.14em; }
+.sb-score { font-weight: 800; font-variant-numeric: tabular-nums; min-width: 38px; text-align: right; }
+.sb-alive { font-size: 8px; letter-spacing: 1px; color: #bbb; }
+.sb-chip.lead { background: rgba(60,48,10,0.7); }
+.sb-chip.wiped { opacity: 0.45; }
+.sb-note { position: absolute; left: 50%; top: 44px; transform: translateX(-50%); font: 10px ui-monospace, Consolas, monospace; letter-spacing: 0.16em; color: #d8352a; text-shadow: 0 1px 2px #000; pointer-events: none; }
+.killfeed { position: absolute; right: 16px; top: 228px; display: flex; flex-direction: column; align-items: flex-end; gap: 3px; pointer-events: none; }
+.kf-line { padding: 3px 8px; background: rgba(0,0,0,0.55); font-size: 12px; color: #ddd; animation: kfIn 0.2s ease-out; }
+@keyframes kfIn { from { transform: translateX(20px); opacity: 0; } }
+.match-end { position: absolute; inset: 0; display: none; flex-direction: column; align-items: center; justify-content: center; gap: 6px; background: rgba(5,6,8,0.86); z-index: 6; }
+.match-end.show { display: flex; }
+.me-title { font: 900 64px Georgia, serif; letter-spacing: 0.18em; margin-bottom: 14px; }
+.me-title.win { color: #f2d36b; } .me-title.lose { color: #c4170f; }
+.me-row { display: flex; justify-content: space-between; width: 260px; font-size: 16px; color: #ddd; }
+.is-touch .scoreboard { top: 30px; transform: translateX(-50%) scale(0.85); }
+.is-touch .sb-note { top: 62px; }
+.is-touch .killfeed { top: 236px; right: 10px; }
+.sv-banner.raid { color: #ff2d1f; font-size: 38px; text-shadow: 0 0 24px rgba(255,0,0,0.35), 0 2px 4px #000; }
+.giveup-btn { position: absolute; left: 50%; top: 64%; transform: translateX(-50%); display: none; padding: 8px 18px; background: rgba(20,4,4,0.75); border: 1px solid #8a1a12; color: #ddd; font: 600 12px ui-monospace, Consolas, monospace; letter-spacing: 0.14em; pointer-events: auto; z-index: 5; }
+.giveup-btn.show { display: block; }
+.squad-panel { position: absolute; left: 24px; bottom: 100px; display: flex; flex-direction: column; gap: 2px; pointer-events: none; font: 11px ui-monospace, Consolas, monospace; }
+.sq-row { display: flex; gap: 8px; align-items: baseline; padding: 2px 8px; background: rgba(8,12,18,0.5); border-left: 2px solid #4fa8ff; color: #cfd6de; }
+.sq-row b { color: #8fc6ff; min-width: 64px; }
+.sq-row i { color: #8a929c; min-width: 58px; font-style: normal; }
+.sq-row span { min-width: 54px; }
+.sq-row em { color: #f2d36b; font-style: normal; min-width: 38px; text-align: right; }
+.sq-row u { text-decoration: none; color: #ff8a5c; text-transform: uppercase; font-size: 9px; }
+.sq-row.dead { opacity: 0.4; border-left-color: #555; }
+.is-touch .squad-panel { left: 12px; bottom: auto; top: 106px; transform: scale(0.85); transform-origin: top left; }
+.comms-tag.friendly { color: #6cc0ff; }

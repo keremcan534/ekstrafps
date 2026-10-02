@@ -63,8 +63,8 @@ export class StatusHUD {
   }
 
   /** Enemy radio line as a subtitle. */
-  radio(text: string): void {
-    this.comms.innerHTML = `<span class="comms-tag">BLACK DIVISION</span> ${text}`;
+  radio(text: string, tag = 'BLACK DIVISION', friendly = false): void {
+    this.comms.innerHTML = `<span class="comms-tag${friendly ? ' friendly' : ''}">${tag}</span> ${text}`;
     this.comms.classList.add('show');
     this.commsTime = 2.8;
   }

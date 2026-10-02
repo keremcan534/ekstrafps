@@ -53,6 +53,10 @@ export interface BulletHit {
   hostile: boolean;
   /** Fired by an AI teammate of the player. */
   ally: boolean;
+  /** Shooter's team id ('alpha' = the player's team). Same-team hits are ignored. */
+  team: string;
+  /** Who fired it (player controller / soldier) — whose wallet gets the points. */
+  owner?: object | null;
 }
 
 export interface HitResult {

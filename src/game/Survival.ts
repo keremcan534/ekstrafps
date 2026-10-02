@@ -9,8 +9,11 @@ import type { PlayerController } from '../player/PlayerController';
 import type { PlayerHealth } from '../player/PlayerHealth';
 import type { AudioSystem } from '../audio/AudioSystem';
 import { buildWeaponModel } from '../weapons/WeaponModels';
+import { mergeStatic } from '../world/MeshBuilder';
+import type { LinkDef } from '../world/LayoutBuilder';
 import { RogueRobot, type MeleeTarget } from '../enemies/RogueRobot';
 import type { SurvivalHUD } from '../ui/SurvivalHUD';
+import type { DamageInfo } from '../targets/Humanoid';
 
 export interface SurvivalDeps {
   map: Site9;
@@ -28,7 +31,29 @@ export interface SurvivalDeps {
   hurtPlayer(damage: number, from: THREE.Vector3): void;
   /** Hire an allied operator at this position (Vanta contractor). */
   hireAlly?(at: THREE.Vector3): boolean;
+  /** 'teams': four teams (you + 3 AI) race for points, PvPvE. 'solo': classic survival. */
+  mode?: 'solo' | 'teams';
+  /** Extra zones open from the start (other teams' start rooms). */
+  startZones?: string[];
+  /** Positions the director may also send mobs at (AI team leaders). */
+  focusProvider?: () => THREE.Vector3[];
+  /** A team's score crossed a raid threshold → blackout + Black Division raid. */
+  onRaid?: (team: string) => void;
+  onWin?: (team: string) => void;
+  /** Everyone with a wallet on a team (the player's included) — for the team share. */
+  members?: (team: string) => Wallet[];
+  /** Whose wallet a shooter is (player controller / soldier). */
+  walletOf?: (owner: object) => Wallet | null;
 }
+
+/** Personal money: the player and every operator earn and spend their own. */
+export interface Wallet {
+  points: number;
+  add(n: number): void;
+}
+
+/** Share of every teammate's earnings you also get (CoD-style team economy). */
+export const TEAM_SHARE = 0.05;
 
 interface Door {
   slot: DoorSlot;
@@ -80,7 +105,72 @@ const POINTS = { hit: 10, kill: 60, headKill: 100 };
  *   grows with time and with how much of the facility you have opened.
  */
 export class Survival {
-  points = START_POINTS;
+  /** The player's spendable points (key 'alpha'). */
+  readonly teamPoints = new Map<string, number>([['alpha', START_POINTS]]);
+  /** Ammo cache approach points (AI restocks). */
+  readonly ammoCaches: THREE.Vector3[] = [];
+  readonly playerWallet: Wallet = ((sv: Survival): Wallet => ({
+    get points() {
+      return sv.points;
+    },
+    set points(v: number) {
+      sv.points = v;
+    },
+    add: (n: number) => sv.addPoints(n),
+  }))(this);
+  /** Total earned per team (the race). */
+  readonly score = new Map<string, number>([['alpha', 0]]);
+  private raidAt = [6000, 14000, 22000];
+  static readonly WIN_SCORE = 20000;
+  winner: string | null = null;
+
+  get points(): number {
+    return this.teamPoints.get('alpha') ?? 0;
+  }
+
+  set points(v: number) {
+    this.teamPoints.set('alpha', v);
+  }
+
+  /** Score at which the next Black Division raid triggers (team games). */
+  get nextRaid(): number | null {
+    return this.deps.mode === 'teams' ? (this.raidAt[0] ?? null) : null;
+  }
+
+  /**
+   * Points for a hit or kill: the shooter's own wallet gets them, every teammate
+   * gets a small share, and the team's race score goes up (raids, the win).
+   */
+  award(team: string, n: number, owner?: object | null): void {
+    if (!team || team === 'bd' || team === 'robots' || this.over) return;
+    const members = this.deps.members?.(team);
+    if (!members) {
+      if (team === 'alpha') this.addPoints(n);
+    } else {
+      const earner = (owner && this.deps.walletOf?.(owner)) || (team === 'alpha' && !owner ? this.playerWallet : null);
+      earner?.add(n);
+      const share = Math.round(n * TEAM_SHARE);
+      if (share > 0) for (const m of members) if (m !== earner) m.add(share);
+    }
+    const sc = (this.score.get(team) ?? 0) + n;
+    this.score.set(team, sc);
+    if (this.deps.mode !== 'teams') return;
+    if (sc >= this.raidAt[0]) {
+      this.raidAt.shift();
+      this.deps.onRaid?.(team);
+    }
+    if (!this.winner && sc >= Survival.WIN_SCORE) {
+      this.winner = team;
+      this.deps.onWin?.(team);
+    }
+  }
+
+  /** A soldier of `victimTeam` was hit by someone (points for the shooter's team). */
+  onSoldierHit(victimTeam: string, info: DamageInfo, killed: boolean): void {
+    const t = info.hit.team;
+    if (!t || t === victimTeam) return;
+    this.award(t, killed ? 150 : 10, info.hit.owner);
+  }
   readonly unlocked = new Set<string>(['start']);
   readonly doors: Door[] = [];
   readonly robots: RogueRobot[] = [];
@@ -149,13 +239,11 @@ export class Survival {
     for (let i = 0; i < pool; i++) {
       this.robots.push(
         new RogueRobot(physics, scene, nav, {
-          onDamage: (_r, info) => {
-            if (!info.hit.hostile && !info.hit.ally) this.addPoints(POINTS.hit);
-          },
+          onDamage: (_r, info) => this.award(info.hit.team || 'alpha', POINTS.hit, info.hit.owner),
           onDeath: (r, info) => {
-            this.kills++;
+            if (info.hit.team === 'alpha' || !info.hit.team) this.kills++;
             if (r.pos.distanceTo(deps.player.feet) < 12) this.intensity = Math.min(1, this.intensity + 0.04);
-            if (!info.hit.hostile && !info.hit.ally) this.addPoints(info.zone === 'head' ? POINTS.headKill : POINTS.kill);
+            this.award(info.hit.team || 'alpha', info.zone === 'head' ? POINTS.headKill : POINTS.kill, info.hit.owner);
           },
           onAttack: (r) => deps.audio.play('robot.stagger', { position: r.pos, volume: 0.6 }),
           onThud: (at, s) => deps.audio.play('robot.fall', { position: at, volume: 0.25 + 0.5 * s }),
@@ -170,6 +258,9 @@ export class Survival {
       );
     }
     if (mobile) for (const r of this.robots) r.body.setCastShadow(false);
+    for (const z of deps.startZones ?? []) this.unlocked.add(z);
+    if (deps.mode === 'teams') this.phaseTimer = 14;
+    deps.weapons.infiniteReserve.add('heavy_pistol');
     deps.weapons.startLoadout('heavy_pistol');
     deps.hud.setPoints(this.points);
     deps.hud.setRound(1);
@@ -255,7 +346,7 @@ export class Survival {
     });
   }
 
-  private openDoor(door: Door): void {
+  openDoor(door: Door): void {
     door.open = true;
     this.deps.physics.world.removeCollider(door.collider, true);
     const fresh = door.zones.filter((z) => !this.unlocked.has(z));
@@ -267,6 +358,10 @@ export class Survival {
     // The nav grid sees the opening after the next physics step.
     this.navRefresh.push({ x0: c.x - r, z0: c.z - r, x1: c.x + r, z1: c.z + r, frames: 2 });
     for (const z of fresh) this.populateZone(z, 3 + ((Math.random() * (2 + this.threat)) | 0));
+  }
+
+  isLinkOpen(link: LinkDef): boolean {
+    return this.doors.find((d) => d.slot.link === link)?.open ?? false;
   }
 
   isDoorOpen(slot: DoorSlot): boolean {
@@ -295,9 +390,10 @@ export class Survival {
       o.frustumCulled = true;
       if ((o as THREE.Mesh).isMesh) (o as THREE.Mesh).castShadow = true;
     });
-    rig.root.position.copy(wb.pos).addScaledVector(n, 0.12);
-    rig.root.rotation.y = wb.yaw - Math.PI / 2;
-    map.group.add(board, label, rig.root);
+    const model = mergeStatic(rig.root);
+    model.position.copy(wb.pos).addScaledVector(n, 0.12);
+    model.rotation.y = wb.yaw - Math.PI / 2;
+    map.roomGroupAt(wb.pos.x, wb.pos.z).add(board, label, model);
     this.interactables.push({
       pos: wb.pos.clone(),
       radius: 2.2,
@@ -320,7 +416,7 @@ export class Survival {
     const byZone = new Map<string, AmmoSpot[]>();
     for (const s of spots) byZone.set(s.zone, [...(byZone.get(s.zone) ?? []), s]);
     for (const [zone, list] of byZone) {
-      if (zone !== 'start' && Math.random() < 0.25) continue;
+      if (!['start', 'hangar', 'barracks', 'power'].includes(zone) && Math.random() < 0.25) continue;
       this.buildAmmo(list[(Math.random() * list.length) | 0]);
     }
   }
@@ -343,8 +439,9 @@ export class Survival {
       m.receiveShadow = true;
     }
     g.add(crate, lid, label);
-    map.group.add(g);
+    map.roomGroupAt(spot.pos.x, spot.pos.z).add(g);
     this.deps.physics.addStaticBox(spot.pos.clone().setY(0.34), new THREE.Vector3(0.55, 0.34, 0.31), new THREE.Quaternion().setFromEuler(new THREE.Euler(0, spot.yaw, 0)));
+    this.ammoCaches.push(spot.pos.clone().add(new THREE.Vector3(Math.sin(spot.yaw) * 1.1, 0, Math.cos(spot.yaw) * 1.1)).setY(0));
     this.interactables.push({
       pos: spot.pos.clone().setY(0.6),
       radius: 2.0,
@@ -352,7 +449,7 @@ export class Survival {
       cost: () => 400,
       use: () => {
         if (!this.spend(400)) return false;
-        for (const i of weapons.owned ?? []) weapons.weapons[i].reserve = weapons.weapons[i].maxReserve;
+        for (const i of weapons.owned ?? []) if (weapons.weapons[i].reserve !== Infinity) weapons.weapons[i].reserve = weapons.weapons[i].maxReserve;
         this.deps.audio.play('reload.rifle.magin');
         return true;
       },
@@ -399,7 +496,7 @@ export class Survival {
       g.add(b);
     }
     g.add(floor, glowPlane);
-    this.deps.map.group.add(g);
+    this.deps.map.roomGroupAt(g.position.x, g.position.z).add(g);
     this.hazards.push({ spot, kind, emit: 0, sound: Math.random(), tick: 0, glow });
   }
 
@@ -497,13 +594,16 @@ export class Survival {
   }
 
   private pickMobSpawn(): SpawnPoint | null {
-    const p = this.deps.player.feet;
+    // Most mobs come for the player; in team games some go for the AI teams.
+    const foci = this.deps.focusProvider?.() ?? [];
+    const p = foci.length && Math.random() < 0.45 ? foci[(Math.random() * foci.length) | 0] : this.deps.player.feet;
+    const me = this.deps.player.feet;
     // Lifts are natural entrances (doors open, they step out), so they only need
     // some distance; bays and hatches must be out of sight.
     const cands = this.deps.map.spawnPoints
       .filter((s) => this.unlocked.has(s.zone) && !(s.openTimer && s.openTimer > 0))
       .map((s) => ({ s, d: s.pos.distanceTo(p) }))
-      .filter((x) => x.d < 60 && (x.s.kind === 'lift' ? x.d > 8 : this.hidden(x.s.pos)))
+      .filter((x) => x.d < 60 && x.d > 8 && x.s.pos.distanceTo(me) > 8 && (x.s.kind === 'lift' || this.hidden(x.s.pos)))
       .sort((a, b) => a.d - b.d)
       .slice(0, 4);
     return cands.length ? cands[(Math.random() * cands.length) | 0].s : null;
@@ -624,7 +724,7 @@ export class Survival {
   }
 
   onPlayerDeath(): void {
-    if (this.over) return;
+    if (this.over || this.deps.mode === 'teams') return;
     this.over = true;
     this.deps.hud.gameOver(this.elapsed, this.kills, this.points);
   }

@@ -37,14 +37,48 @@ export class MeshBuilder {
     for (const name of Object.keys(geo.attributes)) {
       if (name !== 'position' && name !== 'normal' && name !== 'uv') geo.deleteAttribute(name);
     }
+    if (!geo.getAttribute('uv')) geo.setAttribute('uv', new THREE.BufferAttribute(new Float32Array(geo.getAttribute('position').count * 2), 2));
     let list = this.parts.get(material);
     if (!list) this.parts.set(material, (list = []));
     list.push(geo);
     return this;
   }
 
-  build(parent: THREE.Object3D, opts: { castShadow?: boolean; receiveShadow?: boolean } = {}): THREE.Mesh[] {
+  /** Hand the collected geometry over (per material) instead of building meshes. */
+  take(): Map<THREE.Material, THREE.BufferGeometry[]> {
+    const out = this.parts;
+    this.parts = new Map();
+    return out;
+  }
+
+  /**
+   * @param opts.merge a vertex-coloured material: every plain (untextured, opaque,
+   *   non-emissive) standard material is folded into it as vertex colours, so a
+   *   multi-material model costs one draw call (+ one per remaining material).
+   */
+  build(parent: THREE.Object3D, opts: { castShadow?: boolean; receiveShadow?: boolean; merge?: THREE.MeshStandardMaterial } = {}): THREE.Mesh[] {
     const meshes: THREE.Mesh[] = [];
+    if (opts.merge) {
+      const plain: THREE.BufferGeometry[] = [];
+      for (const [material, geos] of [...this.parts]) {
+        const m = material as THREE.MeshStandardMaterial;
+        const emissive = m.emissive && (m.emissive.r + m.emissive.g + m.emissive.b) * (m.emissiveIntensity ?? 1) > 0.001;
+        if (!m.isMeshStandardMaterial || m.map || m.transparent || emissive) continue;
+        for (const g of geos) {
+          const n = g.getAttribute('position').count;
+          const col = new Float32Array(n * 3);
+          for (let i = 0; i < n; i++) {
+            col[i * 3] = m.color.r;
+            col[i * 3 + 1] = m.color.g;
+            col[i * 3 + 2] = m.color.b;
+          }
+          g.setAttribute('color', new THREE.BufferAttribute(col, 3));
+          plain.push(g);
+        }
+        this.parts.delete(material);
+      }
+      if (plain.length) this.parts.set(opts.merge, plain);
+    }
     for (const [material, geos] of this.parts) {
       const merged = mergeGeometries(geos, false);
       if (!merged) continue;
@@ -59,6 +93,42 @@ export class MeshBuilder {
     this.parts.clear();
     return meshes;
   }
+}
+
+/**
+ * Collapse a static model (many small meshes) into one mesh per material, baked in
+ * the root's space. Used for decorative copies of weapon models on walls.
+ */
+export function mergeStatic(root: THREE.Object3D): THREE.Group {
+  root.updateMatrixWorld(true);
+  const inv = new THREE.Matrix4().copy(root.matrixWorld).invert();
+  const byMat = new Map<THREE.Material, THREE.BufferGeometry[]>();
+  root.traverse((o) => {
+    const m = o as THREE.Mesh;
+    if (!m.isMesh || !m.visible) return;
+    let p: THREE.Object3D | null = m;
+    while (p && p !== root) {
+      if (!p.visible) return;
+      p = p.parent;
+    }
+    let g = m.geometry.clone();
+    if (g.index) g = g.toNonIndexed();
+    for (const name of Object.keys(g.attributes)) if (name !== 'position' && name !== 'normal' && name !== 'uv') g.deleteAttribute(name);
+    if (!g.getAttribute('uv')) g.setAttribute('uv', new THREE.BufferAttribute(new Float32Array(g.getAttribute('position').count * 2), 2));
+    g.applyMatrix4(new THREE.Matrix4().multiplyMatrices(inv, m.matrixWorld));
+    const mat = m.material as THREE.Material;
+    byMat.set(mat, [...(byMat.get(mat) ?? []), g]);
+  });
+  const out = new THREE.Group();
+  for (const [mat, geos] of byMat) {
+    const merged = mergeGeometries(geos, false);
+    if (!merged) continue;
+    const mesh = new THREE.Mesh(merged, mat);
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    out.add(mesh);
+  }
+  return out;
 }
 
 function projectWorldUVs(geo: THREE.BufferGeometry): void {

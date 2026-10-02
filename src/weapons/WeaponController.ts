@@ -497,10 +497,13 @@ export class WeaponController implements WeaponListener {
   }
 
   /** Survival: start with one weapon and limited spare ammo. */
+  /** Weapons whose spare ammo never runs out (survival sidearm). */
+  readonly infiniteReserve = new Set<string>();
+
   startLoadout(id: string): void {
     const i = this.indexOf(id);
     for (const w of this.weapons) {
-      w.reserve = w.maxReserve;
+      w.reserve = this.infiniteReserve.has(w.data.id) ? Infinity : w.maxReserve;
       w.refill();
     }
     this.owned = [i];
@@ -515,12 +518,13 @@ export class WeaponController implements WeaponListener {
     const i = this.indexOf(id);
     const o = this.owned ?? (this.owned = [this.currentIndex]);
     const w = this.weapons[i];
+    const full = this.infiniteReserve.has(id) ? Infinity : w.maxReserve;
     if (o.includes(i)) {
-      w.reserve = w.maxReserve;
+      w.reserve = full;
       return 'ammo';
     }
     w.refill();
-    w.reserve = w.maxReserve;
+    w.reserve = full;
     if (o.length < 2) o.push(i);
     else o[Math.max(0, o.indexOf(this.currentIndex))] = i;
     this.requestSwitch(i);

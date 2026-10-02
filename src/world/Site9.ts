@@ -39,6 +39,14 @@ export interface HazardSpot {
 export const WEAPON_PRICES: Record<string, number> = {
   heavy_pistol: 300, kar98: 600, pump_shotgun: 900, mosin: 1000, ppsh: 1200, ak47: 1400, asval: 1600, m4a1: 1800, mk47: 2000, rd704: 2250,
 };
+/** Team start rooms (4-team mode): cheap guns on their walls, a guaranteed ammo cache. */
+export const TEAM_STARTS: Record<string, { room: string; zone: string; pos: [number, number] }> = {
+  alpha: { room: 'lobby', zone: 'start', pos: [0, 78] },
+  bravo: { room: 'hangar', zone: 'hangar', pos: [-82, 78] },
+  charlie: { room: 'barracks', zone: 'barracks', pos: [90, 76] },
+  delta: { room: 'power', zone: 'power', pos: [12, -69] },
+};
+const START_WEAPONS = ['kar98', 'pump_shotgun', 'mosin'];
 const RANDOM_WEAPONS = ['pump_shotgun', 'mosin', 'ppsh', 'ak47', 'asval', 'm4a1', 'mk47', 'rd704', 'pump_shotgun', 'ppsh', 'ak47'];
 
 export interface Terminal {
@@ -94,11 +102,11 @@ const LINKS: LinkDef[] = [
   buy('security', 'medbay', 53, 1000),
   buy('garden', 'atrium', 33, 1000, 6),
   buy('medbay', 'atrium', 33, 1000, 6),
-  buy('cafeteria', 'hangar', 68, 1500),
-  buy('garden', 'hangar', 33, 1500),
+  buy('cafeteria', 'hangar', 68, 750),
+  buy('garden', 'hangar', 33, 750),
   buy('garden', 'assembly', -53, 1250, 6),
   buy('atrium', 'assembly', 4, 1250, 6),
-  buy('hangar', 'assembly', -88, 1000, 8),
+  buy('hangar', 'assembly', -88, 750, 8),
   open('assembly', 'warehouse', -75, 14),
   buy('atrium', 'labs', 0, 1250, 8),
   buy('labs', 'cleanroom', -20, 1000),
@@ -109,13 +117,13 @@ const LINKS: LinkDef[] = [
   buy('atrium', 'servers', 4, 1250, 6),
   buy('medbay', 'servers', 53, 1250),
   open('servers', 'cooling', 75, 14),
-  buy('security', 'barracks', 68, 2000),
-  buy('medbay', 'barracks', 33, 2000),
-  buy('servers', 'barracks', 88, 1500, 6),
-  buy('cleanroom', 'power', -20, 1500),
-  buy('prototypes', 'power', 20, 1500),
-  buy('warehouse', 'power', -76, 1500),
-  buy('cooling', 'power', -76, 1500),
+  buy('security', 'barracks', 68, 750),
+  buy('medbay', 'barracks', 33, 750),
+  buy('servers', 'barracks', 88, 750, 6),
+  buy('cleanroom', 'power', -20, 750),
+  buy('prototypes', 'power', 20, 750),
+  buy('warehouse', 'power', -76, 750),
+  buy('cooling', 'power', -76, 750),
 ];
 
 /**
@@ -163,6 +171,12 @@ export class Site9 implements GameMap {
   private mats: Record<string, THREE.Material>;
   private pools = new Map<number, THREE.Material>();
   private serverLeds: THREE.MeshStandardMaterial;
+  private hemi!: THREE.HemisphereLight;
+  /** Coloured accent lights (reactor, data core) with their full intensity. */
+  private accents: [THREE.PointLight, number][] = [];
+  private emergency = new THREE.MeshStandardMaterial({ color: 0x200000, emissive: 0xff1a0a, emissiveIntensity: 0.01 }); // non-zero: keeps it out of the vertex-colour merge
+  private lampBase = new Map<THREE.MeshStandardMaterial, number>();
+  private blackout = 0;
   private coreGlow: THREE.MeshStandardMaterial;
   private time = 0;
   private mobile: boolean;
@@ -229,6 +243,7 @@ export class Site9 implements GameMap {
       skyFrame: m.steel,
       skyGlass: std({ color: 0xdff0ff, transparent: true, opacity: 0.12, roughness: 0.05, depthWrite: false }),
       trim: m.gunmetal,
+      merge: std({ vertexColors: true, roughness: 0.62, metalness: 0.25 }),
     }, METAL);
     this.navBounds = [...this.layout.bounds] as [number, number, number, number];
     this.doors = this.layout.doors;
@@ -246,6 +261,7 @@ export class Site9 implements GameMap {
     this.buildBarracks();
     this.buildPower();
     this.buildRandomSlots();
+    this.buildDetails();
     this.buildSigns();
     this.layout.build(this.group);
 
@@ -256,7 +272,12 @@ export class Site9 implements GameMap {
     // --- Lighting: bright daylight through the skylights + soft fill everywhere.
     // Ceilings don't cast shadows, so the key light reads as "light from above";
     // its shadow camera follows the player (crisp shadows nearby, cheap).
-    this.group.add(new THREE.HemisphereLight(0xe6edf5, 0x5a534b, 1.2));
+    this.hemi = new THREE.HemisphereLight(0xe6edf5, 0x5a534b, 1.2);
+    this.group.add(this.hemi);
+    for (const k of ['lampCool', 'lampWarm', 'lampBlue', 'screen', 'screenWarm']) {
+      const m = this.mats[k] as THREE.MeshStandardMaterial;
+      this.lampBase.set(m, m.emissiveIntensity);
+    }
     const sun = new THREE.DirectionalLight(0xfff1e0, 1.9);
     sun.castShadow = true;
     sun.shadow.mapSize.set(mobile ? 1024 : 2048, mobile ? 1024 : 2048);
@@ -277,6 +298,7 @@ export class Site9 implements GameMap {
         const l = new THREE.PointLight(color, intensity, dist, 2);
         l.position.set(...pos);
         this.group.add(l);
+        this.accents.push([l, intensity]);
       };
       point(0x5fd0ff, 60, 26, [88, 4, -26]); // data core
       point(0xffb060, 70, 30, [0, 8, -76]); // reactor
@@ -367,15 +389,22 @@ export class Site9 implements GameMap {
   }
 
   /** Wall weapon slot. Outside the lobby the weapon is rolled at random each game. */
+  /** Wall spots already used by gameplay objects (fixtures keep clear of them). */
+  private reserved: THREE.Vector3[] = [];
+
   private wallBuy(room: string, weapon: string, cost: number, pos: V3, yaw: number): void {
+    this.reserved.push(new THREE.Vector3(pos[0], 0, pos[2]));
     if (room !== 'lobby') {
-      weapon = RANDOM_WEAPONS[(Math.random() * RANDOM_WEAPONS.length) | 0];
+      const startRoom = Object.values(TEAM_STARTS).some((s) => s.room === room);
+      const pool = startRoom ? START_WEAPONS : RANDOM_WEAPONS;
+      weapon = pool[(Math.random() * pool.length) | 0];
       cost = WEAPON_PRICES[weapon];
     }
     this.wallBuys.push({ weapon, cost, pos: new THREE.Vector3(...pos), yaw, room });
   }
 
   private ammo(room: string, x: number, z: number, yaw: number): void {
+    this.reserved.push(new THREE.Vector3(x, 0, z));
     this.ammoSpots.push({ pos: new THREE.Vector3(x, 0, z), yaw, zone: ROOMS.find((r) => r.id === room)!.zone });
   }
 
@@ -384,6 +413,7 @@ export class Site9 implements GameMap {
   }
 
   private terminal(room: string, x: number, z: number, yaw: number): void {
+    this.reserved.push(new THREE.Vector3(x, 0, z));
     const n = new THREE.Vector3(Math.sin(yaw), 0, Math.cos(yaw));
     this.terminals.push({ kind: 'ally', cost: 1500, pos: new THREE.Vector3(x + n.x * 0.3, 1.3, z + n.z * 0.3), yaw, room });
     const along = Math.abs(n.z) > 0.5;
@@ -443,6 +473,7 @@ export class Site9 implements GameMap {
    */
   private serviceLift(room: string, x: number, z: number, yaw: number): void {
     const zone = ROOMS.find((r) => r.id === room)!.zone;
+    this.reserved.push(new THREE.Vector3(x, 0, z));
     const n = new THREE.Vector3(Math.sin(yaw), 0, Math.cos(yaw));
     const t = new THREE.Vector3(Math.cos(yaw), 0, -Math.sin(yaw));
     const at = (o: number, y: number, d: number): V3 => [x + n.x * d + t.x * o, y, z + n.z * d + t.z * o];
@@ -829,6 +860,179 @@ export class Site9 implements GameMap {
     this.spawnAt('power', [[-38, -84], [38, -84], [0, -84]]);
   }
 
+  // ---------------------------------------------------------------- set dressing
+
+  /**
+   * Fills every room with style-appropriate detail: wall fixtures along each wall
+   * (extinguishers, vents, sconces, posters, panels, cameras, pipes), ceiling
+   * services (ducts, cable trays, pipe runs, grilles) and floor clutter in corners
+   * (crates, pallets, bins, cones). Keeps clear of doors and gameplay objects.
+   */
+  private buildDetails(): void {
+    const industrial = new Set(['factory', 'hangar', 'servers', 'barracks']);
+    const extra = {
+      red: new THREE.MeshStandardMaterial({ color: 0xb3221a, roughness: 0.45, metalness: 0.2 }),
+      green: new THREE.MeshStandardMaterial({ color: 0x000000, emissive: 0x2bdc6a, emissiveIntensity: 1.8 }),
+      poster: [0x3b5a7a, 0xa3171a, 0x2f5e46, 0xc9a23a, 0x4a4a52].map((c) => new THREE.MeshStandardMaterial({ color: c, roughness: 0.8 })),
+      paper: new THREE.MeshStandardMaterial({ color: 0xe8e4da, roughness: 0.9 }),
+      cone: new THREE.MeshStandardMaterial({ color: 0xff6a1a, roughness: 0.6 }),
+      pallet: new THREE.MeshStandardMaterial({ color: 0x8a6a45, roughness: 0.9 }),
+    };
+    const rnd = (a: number, b: number) => a + Math.random() * (b - a);
+    for (const room of ROOMS) {
+      if (room.sky) continue;
+      const R = room.id;
+      const style = room.style;
+      const ind = industrial.has(style);
+      const [x0, z0, x1, z1] = room.rect;
+      const h = room.h;
+      const b = this.room(R).b;
+      const ceil = this.room(R).ceil;
+      const mat = (k: string) => this.mats[k];
+      // Door centres on this room's walls (keep fixtures off them).
+      const doorPts: THREE.Vector3[] = [];
+      for (const l of LINKS) {
+        if (l.a !== R && l.b !== R) continue;
+        const o = ROOMS.find((r) => r.id === (l.a === R ? l.b : l.a))!;
+        const vertical = room.rect[2] === o.rect[0] || room.rect[0] === o.rect[2];
+        if (vertical) doorPts.push(new THREE.Vector3(room.rect[2] === o.rect[0] ? x1 : x0, 0, l.at));
+        else doorPts.push(new THREE.Vector3(l.at, 0, room.rect[3] === o.rect[1] ? z1 : z0));
+      }
+      const clear = (x: number, z: number, r: number) => {
+        for (const p of doorPts) if (Math.hypot(p.x - x, p.z - z) < r + 2.6) return false;
+        for (const p of this.reserved) if (Math.hypot(p.x - x, p.z - z) < r + 1.8) return false;
+        for (const sp of this.spawnPoints) if (Math.hypot(sp.pos.x - x, sp.pos.z - z) < r + 1.6) return false;
+        return true;
+      };
+      // Walls: (start, end, inward normal).
+      const walls: [THREE.Vector3, THREE.Vector3, THREE.Vector3][] = [
+        [new THREE.Vector3(x0, 0, z0), new THREE.Vector3(x1, 0, z0), new THREE.Vector3(0, 0, 1)],
+        [new THREE.Vector3(x0, 0, z1), new THREE.Vector3(x1, 0, z1), new THREE.Vector3(0, 0, -1)],
+        [new THREE.Vector3(x0, 0, z0), new THREE.Vector3(x0, 0, z1), new THREE.Vector3(1, 0, 0)],
+        [new THREE.Vector3(x1, 0, z0), new THREE.Vector3(x1, 0, z1), new THREE.Vector3(-1, 0, 0)],
+      ];
+      for (const [a, c, n] of walls) {
+        const len = a.distanceTo(c);
+        const dir = c.clone().sub(a).normalize();
+        const step = ind ? 7 : 6;
+        const yaw = Math.atan2(n.x, n.z);
+        const along = Math.abs(n.z) > 0.5;
+        const sz = (w: number, hh: number, d: number): V3 => (along ? [w, hh, d] : [d, hh, w]);
+        for (let s = 2.5 + Math.random() * 2; s < len - 2; s += step + rnd(-1.5, 1.5)) {
+          const x = a.x + dir.x * s;
+          const z = a.z + dir.z * s;
+          if (!clear(x, z, 0.6)) continue;
+          const at = (off: number, y: number): V3 => [x + n.x * off, y, z + n.z * off];
+          const pick = Math.random();
+          if (pick < 0.22) {
+            // Fire extinguisher on a bracket + sign above.
+            b.cylinder(extra.red, 0.09, 0.55, at(0.14, 0.95), [0, 0, 0], 10);
+            b.cylinder(mat('dark'), 0.05, 0.08, at(0.14, 1.27), [0, 0, 0], 8);
+            b.box(mat('gunmetal'), sz(0.22, 0.06, 0.08), at(0.06, 1.05));
+            b.box(extra.red, sz(0.3, 0.3, 0.02), at(0.02, 1.75));
+          } else if (pick < 0.4) {
+            // Wall vent grille.
+            const vy = rnd(0.4, h - 1.2);
+            b.box(mat('gunmetal'), sz(0.8, 0.5, 0.05), at(0.03, vy));
+            for (let k = -2; k <= 2; k++) b.box(mat('dark'), sz(0.72, 0.03, 0.06), at(0.04, vy + k * 0.08));
+          } else if (pick < 0.58) {
+            // Electrical panel / junction box with conduit up to the ceiling.
+            b.box(mat('offwhite'), sz(0.6, 0.8, 0.18), at(0.09, 1.5));
+            b.box(mat('dark'), sz(0.5, 0.06, 0.19), at(0.1, 1.82));
+            b.cylinder(mat('gunmetal'), 0.03, h - 1.9, at(0.05, 1.9 + (h - 1.9) / 2), [0, 0, 0], 6);
+          } else if (pick < 0.76 && !ind) {
+            // Framed poster / notice board.
+            const p = extra.poster[(Math.random() * extra.poster.length) | 0];
+            b.box(mat('dark'), sz(1.0, 1.4, 0.03), at(0.015, 1.7));
+            b.box(p, sz(0.9, 1.3, 0.02), at(0.03, 1.7));
+            b.box(extra.paper, sz(0.6, 0.25, 0.01), at(0.042, 1.9));
+          } else if (pick < 0.76) {
+            // Industrial: vertical pipe pair with clamps.
+            for (const o of [-0.18, 0.18]) {
+              const px = x + dir.x * o + n.x * 0.12;
+              const pz = z + dir.z * o + n.z * 0.12;
+              b.cylinder(mat('steel'), 0.07, h, [px, h / 2, pz], [0, 0, 0], 8);
+              for (const cy of [1, 2.5, 4]) if (cy < h) b.box(mat('dark'), sz(0.18, 0.06, 0.18), [px, cy, pz]);
+            }
+          } else {
+            // Wall light (sconce) + a small exit-style sign on some.
+            b.box(mat('gunmetal'), sz(0.5, 0.12, 0.14), at(0.07, h - 0.9));
+            b.box(ind ? mat('lampWarm') : mat('lampCool'), sz(0.42, 0.04, 0.1), at(0.09, h - 0.97));
+            if (Math.random() < 0.3) b.box(extra.green, sz(0.36, 0.16, 0.03), at(0.03, h - 0.5));
+          }
+        }
+        // Security camera in one corner per wall.
+        if (Math.random() < 0.5) {
+          const s = Math.random() < 0.5 ? 1.2 : len - 1.2;
+          const x = a.x + dir.x * s + n.x * 0.25;
+          const z = a.z + dir.z * s + n.z * 0.25;
+          b.box(mat('offwhite'), [0.14, 0.12, 0.3], [x, h - 0.45, z], [0.3, yaw, 0]);
+          b.box(mat('dark'), [0.06, 0.25, 0.06], [x, h - 0.25, z]);
+          b.box(mat('lampRed'), [0.03, 0.03, 0.03], [x + n.x * 0.12, h - 0.42, z + n.z * 0.12]);
+        }
+      }
+      // Emergency lights (dark until the power fails).
+      for (const z of [z0 + 0.2, z1 - 0.2]) b.box(this.emergency, [1.2, 0.1, 0.08], [(x0 + x1) / 2, h - 0.35, z]);
+      for (const x of [x0 + 0.2, x1 - 0.2]) b.box(this.emergency, [0.08, 0.1, 1.2], [x, h - 0.35, (z0 + z1) / 2]);
+      // Ceiling services.
+      const longX = x1 - x0 >= z1 - z0;
+      if (ind && !room.skylight) {
+        // Big rectangular duct + cable tray + pipe bundle along the long axis.
+        const span = longX ? x1 - x0 - 2 : z1 - z0 - 2;
+        for (const [off, kind] of [[0.25, 'duct'], [0.55, 'tray'], [0.78, 'pipes']] as const) {
+          const cx = longX ? (x0 + x1) / 2 : x0 + (x1 - x0) * off;
+          const cz = longX ? z0 + (z1 - z0) * off : (z0 + z1) / 2;
+          if (kind === 'duct') {
+            ceil.box(mat('steel'), longX ? [span, 0.7, 1.0] : [1.0, 0.7, span], [cx, h - 0.75, cz]);
+            for (let k = -span / 2 + 2; k < span / 2; k += 4) ceil.box(mat('gunmetal'), longX ? [0.08, 0.76, 1.06] : [1.06, 0.76, 0.08], [longX ? cx + k : cx, h - 0.75, longX ? cz : cz + k]);
+          } else if (kind === 'tray') {
+            ceil.box(mat('gunmetal'), longX ? [span, 0.08, 0.6] : [0.6, 0.08, span], [cx, h - 0.55, cz]);
+            ceil.box(mat('yellow'), longX ? [span, 0.06, 0.12] : [0.12, 0.06, span], [cx, h - 0.48, cz + (longX ? 0.15 : 0)]);
+            ceil.box(mat('dark'), longX ? [span, 0.06, 0.14] : [0.14, 0.06, span], [cx, h - 0.48, cz - (longX ? 0.12 : 0)]);
+          } else {
+            for (const o of [-0.25, 0, 0.25]) {
+              ceil.cylinder(o === 0 ? extra.red : mat('steel'), 0.09, span, [longX ? cx : cx + o, h - 0.4, longX ? cz + o : cz], longX ? [0, 0, Math.PI / 2] : [Math.PI / 2, 0, 0], 8);
+            }
+          }
+        }
+        // Floor: painted walkway lines 1.2 m inside the walls.
+        for (const z of [z0 + 1.2, z1 - 1.2]) b.box(mat('yellow'), [x1 - x0 - 2.4, 0.02, 0.1], [(x0 + x1) / 2, 0.025, z]);
+        for (const x of [x0 + 1.2, x1 - 1.2]) b.box(mat('yellow'), [0.1, 0.02, z1 - z0 - 2.4], [x, 0.025, (z0 + z1) / 2]);
+      } else if (!room.skylight) {
+        // Office ceiling: return-air grilles and smoke detectors between the lamps.
+        for (let x = x0 + 4; x < x1 - 2; x += 8) {
+          for (let z = z0 + 4; z < z1 - 2; z += 8) {
+            ceil.box(mat('offwhite'), [0.6, 0.03, 0.6], [x + 3, h - 0.02, z + 3]);
+            ceil.box(mat('grey'), [0.5, 0.035, 0.05], [x + 3, h - 0.03, z + 3]);
+            ceil.cylinder(mat('white'), 0.07, 0.04, [x, h - 0.03, z + 2], [0, 0, 0], 10);
+          }
+        }
+      }
+      // Corner clutter (never in a doorway).
+      const corners: [number, number, number, number][] = [[x0 + 1.4, z0 + 1.4, 1, 1], [x1 - 1.4, z0 + 1.4, -1, 1], [x0 + 1.4, z1 - 1.4, 1, -1], [x1 - 1.4, z1 - 1.4, -1, -1]];
+      for (const [cx, cz, sx, sz] of corners) {
+        if (Math.random() < 0.35 || !clear(cx, cz, 1.2)) continue;
+        if (ind) {
+          // Pallet with stacked crates, maybe a cone.
+          this.box(R, 'woodDark', [1.2, 0.14, 1.0], [cx, 0.07, cz], true);
+          this.box(R, Math.random() < 0.5 ? 'contGreen' : 'contBlue', [1.0, 0.8, 0.8], [cx, 0.54, cz], true);
+          if (Math.random() < 0.6) this.box(R, 'wood', [0.7, 0.55, 0.6], [cx + sx * 0.1, 1.22, cz + sz * 0.05], false, [0, rnd(-0.3, 0.3), 0]);
+          if (Math.random() < 0.5) b.add(extra.cone, new THREE.ConeGeometry(0.16, 0.5, 10), [cx + sx * 1.0, 0.25, cz + sz * 0.3]);
+        } else {
+          // Bin + a potted plant or a water cooler.
+          this.cyl(R, 'gunmetal', 0.22, 0.55, [cx, 0.275, cz], true, [0, 0, 0], 10);
+          if (Math.random() < 0.5) {
+            this.cyl(R, 'white', 0.3, 0.6, [cx + sx * 0.9, 0.3, cz + sz * 0.1], true, [0, 0, 0], 12);
+            b.add(mat('leaf'), new THREE.IcosahedronGeometry(0.45, 1), [cx + sx * 0.9, 0.95, cz + sz * 0.1]);
+          } else {
+            this.box(R, 'white', [0.36, 1.0, 0.36], [cx + sx * 0.9, 0.5, cz + sz * 0.1], true);
+            b.cylinder(this.mats.glass, 0.15, 0.4, [cx + sx * 0.9, 1.2, cz + sz * 0.1], [0, 0, 0], 10);
+          }
+        }
+      }
+    }
+  }
+
   /** Room name signs above every opening, on both sides. */
   private buildSigns(): void {
     const tex = new Map<string, THREE.Texture>();
@@ -912,6 +1116,62 @@ export class Site9 implements GameMap {
     p.stack(v(-46, 0, -84), 3, 0.5);
   }
 
+  /** The room group an object at (x, z) belongs to (for visibility culling). */
+  roomGroupAt(x: number, z: number): THREE.Object3D {
+    const r = this.layout.roomAt(x, z);
+    return r ? this.layout.rooms.get(r.id)!.group : this.group;
+  }
+
+  private visibleRooms = new Set<string>();
+
+  /**
+   * Cheap portal culling: draw the room you're in plus rooms seen through open
+   * links (archways, opened shutters), up to 3 rooms deep. Closed shutters block.
+   */
+  updateVisibility(x: number, z: number, isOpen: (l: LinkDef) => boolean): void {
+    const here = this.layout.roomAt(x, z);
+    if (!here) return;
+    const seen = new Set<string>([here.id]);
+    let frontier = [here.id];
+    for (let depth = 0; depth < 3; depth++) {
+      const next: string[] = [];
+      for (const id of frontier) {
+        for (const l of LINKS) {
+          const other = l.a === id ? l.b : l.b === id ? l.a : null;
+          if (!other || seen.has(other)) continue;
+          if (l.kind === 'buy' && !isOpen(l)) continue;
+          seen.add(other);
+          next.push(other);
+        }
+      }
+      frontier = next;
+    }
+    this.visibleRooms = seen;
+    for (const [id, room] of this.layout.rooms) room.group.visible = seen.has(id);
+  }
+
+  /** Is (x, z) in a room currently being drawn? (Characters in hidden rooms skip rendering.) */
+  isVisibleAt(x: number, z: number): boolean {
+    const r = this.layout.roomAt(x, z);
+    return !r || this.visibleRooms.has(r.id);
+  }
+
+  /**
+   * Power failure (Black Division raid): lamps and screens die, ambient falls to a
+   * dim red, emergency strips pulse. k: 0 = normal .. 1 = full blackout.
+   */
+  setBlackout(k: number): void {
+    this.blackout = k;
+    this.hemi.intensity = 1.2 + (0.09 - 1.2) * k;
+    this.hemi.color.setRGB(0.9 + 0.1 * k, 0.93 - 0.75 * k, 0.96 - 0.8 * k);
+    this.hemi.groundColor.setRGB(0.35 - 0.25 * k, 0.33 - 0.3 * k, 0.29 - 0.27 * k);
+    this.sun.intensity = 1.9 * (1 - k);
+    for (const [m, base] of this.lampBase) m.emissiveIntensity = base * (1 - 0.97 * k);
+    for (const p of this.pools.values()) (p as THREE.MeshBasicMaterial).opacity = 0.32 * (1 - k);
+    // The reactor and the data core run on their own supply: dimmed, not dead.
+    for (const [l, base] of this.accents) l.intensity = base * (1 - 0.7 * k);
+  }
+
   /** Zone of the room containing (x, z). */
   zoneAt(x: number, z: number): string | null {
     return this.layout.roomAt(x, z)?.zone ?? null;
@@ -922,6 +1182,7 @@ export class Site9 implements GameMap {
     this.time += dt;
     this.serverLeds.emissiveIntensity = 1.4 + Math.sin(this.time * 9) * Math.sin(this.time * 23.7) * 0.9;
     this.coreGlow.emissiveIntensity = 2.6 + Math.sin(this.time * 1.7) * 0.6;
+    this.emergency.emissiveIntensity = this.blackout > 0.05 ? this.blackout * (1.6 + Math.sin(this.time * 4) * 1.4) : 0;
     // Shadow camera follows the player (texel-snapped so shadows don't swim).
     if (focus) {
       const r = this.mobile ? 26 : 38;

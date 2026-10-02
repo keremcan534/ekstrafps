@@ -177,7 +177,16 @@ export class NavGrid {
    * Smoothed path from a to b (world XZ). Returns waypoints excluding the start,
    * or null when unreachable. maxNodes bounds the search cost.
    */
+  /** Nodes all searches may expand per frame; callers retry later when it's spent. */
+  frameBudget = 9000;
+  private frameUsed = 0;
+
+  beginFrame(): void {
+    this.frameUsed = 0;
+  }
+
   findPath(from: THREE.Vector3, to: THREE.Vector3, maxNodes = 6000): THREE.Vector3[] | null {
+    if (this.frameUsed > this.frameBudget) return null;
     const start = this.nearestWalkable(from.x, from.z, new THREE.Vector3(), 2);
     const goal = this.nearestWalkable(to.x, to.z, new THREE.Vector3(), 4);
     if (!start || !goal) return null;
@@ -231,6 +240,7 @@ export class NavGrid {
         }
       }
     }
+    this.frameUsed += expanded + 50;
     if (!found) return null;
     const cells: number[] = [];
     for (let i = gi; i !== -1; i = this.parent[i]) cells.push(i);

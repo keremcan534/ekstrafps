@@ -50,10 +50,18 @@ export class PlayerHealth {
     return dealt;
   }
 
+  /** Seconds on the floor before an automatic respawn. */
+  respawnDelay = 3.5;
+
+  /** Bleed out now (stop waiting for a revive). */
+  giveUp(): void {
+    if (this.downed) this.kill();
+  }
+
   private kill(): void {
     this.downed = false;
     this.dead = true;
-    this.deathTimer = 3.5;
+    this.deathTimer = this.respawnDelay;
     this.onDeath?.();
   }
 

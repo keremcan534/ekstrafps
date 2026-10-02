@@ -224,6 +224,8 @@ export const SOUND_BANK: Record<string, SoundEvent> = {
   'hazard.gas': { reverb: 0.2, layers: [{ synth: 'hazard_gas', gain: 0.45 }], pitchVariance: 0.1, maxVoices: 3 },
   'lift.arrive': { reverb: 0.4, layers: [{ synth: 'lift_ding', gain: 0.7 }, { synth: 'lift_doors', gain: 0.6, delay: 0.5 }], maxVoices: 3 },
   'robot.wake': { reverb: 0.3, layers: [{ synth: 'robot_wake', gain: 0.7 }], pitchVariance: 0.12, maxVoices: 4 },
+  'power.down': { reverb: 0.7, layers: [{ synth: 'power_down', gain: 0.8 }], maxVoices: 1, bus: 'ui' },
+  'raid.siren': { reverb: 0.8, layers: [{ synth: 'raid_siren', gain: 0.6 }], maxVoices: 1, bus: 'ui' },
   'director.horde': { reverb: 0.6, layers: [{ synth: 'horde_alarm', gain: 0.6 }], maxVoices: 1, bus: 'ui' },
   'robot.boot': { layers: [{ synth: 'robot_boot', gain: 0.35 }], pitchVariance: 0.08, maxVoices: 3 },
   'player.land': { layers: [{ synth: 'land', gain: 0.5 }], pitchVariance: 0.08, bus: 'ui' },
