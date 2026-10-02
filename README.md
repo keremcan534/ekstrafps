@@ -74,6 +74,10 @@ The camera and the weapon are separate bodies. The camera responds instantly. Th
   - Leftover energy makes taps, bursts and full auto differ naturally.
   - Part of the climb reaches the view. A kept fraction must be corrected by the player.
   - Recovery is restrained, and sustained fire converges.
+- **Aimed recoil goes rearward.**
+  - When aimed, the gun drives back into the shoulder instead of flipping the sights out of view.
+  - The climb moves to the view: the dot stays on the target and the world moves.
+  - `feel.adsRecoilRearward` sets the share (0 = old muzzle flip, default 0.85).
 - **Sway.** Breathing, hand tremor and slow drift. It gets worse when arm stamina drops, and is calmer when crouched or aimed.
 - **Movement moves the weapon.** Direction-aware bob, lag under acceleration (stopping, changing direction), strafe cant and landing dip. There is no movement spread.
 - **Wall collision.** Probes from the shoulder along the aim. The gun slides back, then rises to high ready; when blocked it cannot fire. Long guns hit walls sooner than pistols.

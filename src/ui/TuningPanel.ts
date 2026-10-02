@@ -81,6 +81,7 @@ export class TuningPanel {
     const feelF = this.gui.addFolder('Global feel').close();
     feelF.add(feel, 'recoilScale', 0, 3, 0.05).name('Weapon recoil scale');
     feelF.add(feel, 'cameraRecoilScale', 0, 3, 0.05).name('View recoil scale');
+    feelF.add(feel, 'adsRecoilRearward', 0, 1, 0.05).name('ADS recoil rearward (0 = old flip)');
     feelF.add(feel, 'inertiaScale', 0, 3, 0.05).name('Inertia scale').onChange(tuned);
     feelF.add(feel, 'swayScale', 0, 3, 0.05).name('Sway scale').onChange(tuned);
     feelF.add(feel, 'armStamina').name('Arm stamina');

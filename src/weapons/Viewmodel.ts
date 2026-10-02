@@ -59,6 +59,9 @@ export interface RecoilKick {
  *   recoil (rotates around the shoulder) · wall compression · shoulder side.
  * Weight, length and ergonomics drive all of it through Handling.
  */
+/** How much of the aimed recoil goes rearward instead of flipping the muzzle (0..1). */
+export const rearwardShare = (ads: number): number => feel.adsRecoilRearward * ads * ads;
+
 export class Viewmodel {
   readonly scene = new THREE.Scene();
   readonly camera: THREE.PerspectiveCamera;
@@ -205,9 +208,13 @@ export class Viewmodel {
     const vertical = r.vertical * scale * (0.9 + Math.random() * 0.2);
     const horizontal = (r.horizontalBias + (Math.random() * 2 - 1) * r.horizontal) * scale;
     const side = this.side.value >= 0 ? 1 : -1;
-    this.recoilRot.impulse(vertical * w, -horizontal * w * side, randSign() * r.roll * scale * w);
+    // Aimed recoil "rework": when shouldered and aimed, the gun drives straight back
+    // into the shoulder instead of flipping the sights out of view; the climb is
+    // carried by the view instead (RecoilSystem), so the dot stays on the target.
+    const rw = rearwardShare(ads);
+    this.recoilRot.impulse(vertical * w * (1 - 0.85 * rw), -horizontal * w * side * (1 - 0.6 * rw), randSign() * r.roll * scale * w * (1 - 0.5 * rw));
     const wp = Math.sqrt(k * 1.6) * 1.9;
-    this.recoilPos.impulse((Math.random() * 2 - 1) * r.back * 0.1 * wp, r.back * 0.15 * wp, r.back * scale * wp);
+    this.recoilPos.impulse((Math.random() * 2 - 1) * r.back * 0.1 * wp, r.back * (0.15 - 0.1 * rw) * wp, r.back * scale * wp * (1 + 0.9 * rw));
     if (feel.muzzleFlash) this.flash.trigger(data.fx.muzzleFlashScale * (1 - 0.25 * ads));
     return { vertical, horizontal };
   }
@@ -389,7 +396,7 @@ export class Viewmodel {
     // --- Recoil + jolts ---
     const rp = this.recoilPos.update(dt);
     const rr = this.recoilRot.update(dt);
-    rr.x = clamp(rr.x, -6 * DEG, 14 * DEG);
+    rr.x = clamp(rr.x, -6 * DEG, (14 - 10 * rearwardShare(ads)) * DEG);
     rr.y = clamp(rr.y, -6 * DEG, 6 * DEG);
     const jr = this.jolt.update(dt);
     this.recoilDeg.set(rr.x / DEG, -rr.y / DEG);
@@ -412,7 +419,7 @@ export class Viewmodel {
     this.pivot.quaternion.setFromEuler(this.euler);
     // The shoulder stops the gun: rearward travel is capped (less when aimed, where the
     // sights are already at the eye), so recoil can never shove the weapon into the camera.
-    const maxBack = 0.03 - 0.018 * ads;
+    const maxBack = 0.03 - 0.018 * ads + 0.024 * rearwardShare(ads);
     const backZ = rp.z > 0 ? maxBack * Math.tanh(rp.z / maxBack) : Math.max(rp.z, -0.02);
     this.recoilPivot.position.set(rig.butt.x + clamp(rp.x, -0.01, 0.01), rig.butt.y + clamp(rp.y, -0.015, 0.015), rig.butt.z + backZ);
     this.recoilPivot.rotation.set(rr.x, rr.y, rr.z);

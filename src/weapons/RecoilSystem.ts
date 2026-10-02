@@ -3,7 +3,7 @@ import { feel } from '../config/Feel';
 import type { WeaponData } from './WeaponData';
 import type { PlayerCamera } from '../player/PlayerCamera';
 import type { PlayerController } from '../player/PlayerController';
-import type { RecoilKick } from './Viewmodel';
+import { rearwardShare, type RecoilKick } from './Viewmodel';
 
 /**
  * The VIEW side of recoil. The weapon's own kick lives in the Viewmodel springs
@@ -39,7 +39,11 @@ export class RecoilSystem {
     // and then levels off instead of rising forever.
     const cap = Math.max(0.5, r.vertical * 2.5) * DEG;
     const soft = Math.exp(-Math.max(0, this.recoverPitch) / cap);
-    const t = r.cameraTransfer * feel.cameraRecoilScale * soft;
+    // Aimed: the weapon barely flips (it drives back), so the view takes over most of
+    // the climb. Overall difficulty stays similar; what you see is the world moving,
+    // not the sights jumping off the screen.
+    const rw = rearwardShare(adsAmount);
+    const t = (r.cameraTransfer + 0.42 * rw) * feel.cameraRecoilScale * soft;
     const v = kick.vertical * t * DEG;
     const h = kick.horizontal * t * 0.6 * DEG;
     this.keepPitch += v * r.cameraKeep;
@@ -49,11 +53,12 @@ export class RecoilSystem {
     this.sinceShot = 0;
 
     // Small visual-only punch: the gun moving dominates, the view barely flinches.
-    const s = Math.sqrt(camera.punch.stiffness) * 1.9 * DEG * feel.cameraRecoilScale * (1 - 0.4 * adsAmount);
+    const s = Math.sqrt(camera.punch.stiffness) * 1.9 * DEG * feel.cameraRecoilScale * (1 - 0.4 * adsAmount - 0.35 * rw);
     camera.addPunch(r.punch * s, r.punch * 0.3 * s * (Math.random() * 2 - 1), r.punch * 0.8 * s * (Math.random() < 0.5 ? -1 : 1));
     camera.addShake(Math.min(0.35, kick.vertical * 0.012 + r.punch * 0.06) * feel.cameraRecoilScale);
     // Brief FOV kick sells the blast of big cartridges without moving the aim.
-    camera.addFovPunch(r.punch * 25 * (1 - 0.5 * adsAmount) * feel.cameraRecoilScale);
+    // Aimed rework: a slightly stronger FOV kick sells the gun slamming back.
+    camera.addFovPunch(r.punch * 25 * (1 - 0.5 * adsAmount + 0.35 * rw) * feel.cameraRecoilScale);
   }
 
   /**
