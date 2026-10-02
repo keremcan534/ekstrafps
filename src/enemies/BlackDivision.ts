@@ -48,6 +48,8 @@ export class BlackDivision {
   private trail: THREE.Vector3[] = [];
   private pending: PendingLine[] = [];
   private voiceCooldown = 0;
+  /** Facility alarm + announcement played once per deployment. */
+  private announced = false;
   private searchTime = 0;
   private respawnTimer = -1;
   private resumeTimer = -1;
@@ -167,7 +169,7 @@ export class BlackDivision {
     const { soldier, line } = this.pending.splice(i, 1)[0];
     if (!soldier.alive) return;
     const head = soldier.headPos;
-    this.deps.audio.play(`bd.${line}`, { position: head, pitch: soldier.voicePitch, volume: 1.3 });
+    this.deps.audio.play(`bd.${line}`, { position: head, pitch: soldier.voicePitch * 0.88, volume: 1.4 });
     if (head.distanceTo(this.listener()) < 60) this.onRadio?.(LINES[line]);
     this.voiceCooldown = 1.25;
   }
@@ -206,6 +208,11 @@ export class BlackDivision {
     this.enterCombat();
     this.say(spotter, spotted ? 'see_enemy' : 'contact');
     if (spotted) this.deps.audio.play('bd.encounter');
+    if (spotted && !this.announced) {
+      this.announced = true;
+      this.deps.audio.play('alarm.short');
+      setTimeout(() => this.deps.audio.play('announce.intruders'), 1700);
+    }
     const lead = this.anchor;
     if (lead) this.say(lead, 'spread_out', 1.6);
     for (const s of this.soldiers) {

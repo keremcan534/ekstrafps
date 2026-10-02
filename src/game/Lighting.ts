@@ -57,7 +57,7 @@ export class Lighting {
       scene.add(l);
       this.reds.push({ l, spot: null, f: 0, keep: false, peak: 0 });
     }
-    this.flashlight = new THREE.SpotLight(0xfff3e2, 0, 46, 0.44, 0.5, 1.25);
+    this.flashlight = new THREE.SpotLight(0xfff3e2, 0, 78, 0.36, 0.42, 1.0);
     this.flashlight.castShadow = false;
     scene.add(this.flashlight, this.flashlight.target);
     this.envBase = scene.environmentIntensity * 0.3;
@@ -130,7 +130,7 @@ export class Lighting {
     const fl = this.flashlight;
     // A touch red-shifted when the power is out (the room's red bounces into it).
     fl.color.setRGB(1, 0.95 - 0.1 * k, 0.89 - 0.12 * k);
-    fl.intensity = this.flashlightOn && this.alive() ? 18 : 0;
+    fl.intensity = this.flashlightOn && this.alive() ? 34 : 0;
     if (fl.intensity > 0) {
       const dir = this.lookDir(this.dir);
       fl.position.copy(this.eye).addScaledVector(dir, 0.3).y -= 0.12;

@@ -80,9 +80,11 @@ function tone(ctx: Ctx, o: ToneOpts): void {
 
 /** Inharmonic partials = metallic ring. */
 function metal(ctx: Ctx, t: number, base: number, dur: number, gain: number, ratios = [1, 2.76, 5.4, 8.93]): void {
+  // Metallic clank without a pitch: short, wide noise bands where the partials would
+  // ring. Sine partials read as "ping" on every hit; noise bands read as steel.
   ratios.forEach((ratio, i) => {
-    const f = base * ratio * r(0.98, 1.02);
-    if (f < ctx.sampleRate * 0.45) tone(ctx, { t, dur: dur / (1 + i * 0.6), f0: f, gain: gain / (1 + i * 0.8) });
+    const f = base * ratio * r(0.97, 1.03);
+    if (f < ctx.sampleRate * 0.45) burst(ctx, { t, dur: Math.min(0.045, dur * 0.35) / (1 + i * 0.4), freq: f, q: 2.2, gain: (gain * 1.4) / (1 + i * 0.8), curve: 1.6 });
   });
 }
 

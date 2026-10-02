@@ -41,6 +41,7 @@ import { ScreenGrade } from '../fx/ScreenGrade';
 import { MuzzleLights } from '../fx/MuzzleLights';
 import { Lighting } from '../game/Lighting';
 import { buildWeaponModel } from '../weapons/WeaponModels';
+import { WeaponLights, weaponLight } from '../fx/WeaponLights';
 
 const FIXED_DT = 1 / 120;
 
@@ -59,6 +60,17 @@ function grainDataUrl(): string {
   return c.toDataURL();
 }
 const MAX_STEPS = 6;
+
+/**
+ * Trailer capture (?trailer): a director drives frames on a fixed clock, can
+ * script input, override the camera after the gameplay camera runs, and take
+ * over the final render (post chain). All hooks are inert without a director.
+ */
+export interface FrameDirector {
+  input(input: Input, dt: number): void;
+  afterCamera(dt: number): void;
+  render(): boolean;
+}
 
 /**
  * Bootstraps every system and runs the frame loop.
@@ -129,6 +141,7 @@ export class Game {
   private coreDeadTime = new Map<TeamAgent, number>();
   private soldierDeps!: SoldierDeps;
   private muzzleLights!: MuzzleLights;
+  private weaponLights!: WeaponLights;
   private grade: ScreenGrade | null = null;
   mapOverlay: MapOverlay | null = null;
   private mapState: MapState | null = null;
@@ -138,6 +151,11 @@ export class Game {
   };
   /** Lab slow motion (Z). */
   timeScale = 1;
+  /** ?trailer: capture mode (deterministic clock, no HUD); the director attaches here. */
+  readonly trailer = new URLSearchParams(location.search).has('trailer');
+  director: FrameDirector | null = null;
+  /** Scripted camera (extraction cinematic): the view follows it; your input, hands and HUD are off. */
+  cinematic: ((dt: number) => { pos: THREE.Vector3; target: THREE.Vector3; fov: number }) | null = null;
 
   private accumulator = 0;
   private lastTime = 0;
@@ -145,7 +163,7 @@ export class Game {
   private frameMs = 16;
   private started = false;
   /** ?nolock: run without pointer lock (automated testing / screenshots). */
-  private noLock = new URLSearchParams(location.search).has('nolock');
+  private noLock = new URLSearchParams(location.search).has('nolock') || new URLSearchParams(location.search).has('trailer');
   private quality: { pixelRatio: number; shadows: boolean };
   private stationIndex = 0;
   private helpEl!: HTMLPreElement;
@@ -161,7 +179,7 @@ export class Game {
     // Phones: no realtime sun shadows by default (the shadow pass costs a draw per caster;
     // contact shadows still ground everything). Tuning panel can turn them back on.
     this.quality = { pixelRatio: Math.min(window.devicePixelRatio, this.mobile ? 1.5 : 2), shadows: !this.mobile };
-    this.renderer = new THREE.WebGLRenderer({ antialias: !this.mobile, powerPreference: 'high-performance' });
+    this.renderer = new THREE.WebGLRenderer({ antialias: !this.mobile, powerPreference: 'high-performance', preserveDrawingBuffer: params.has('trailer') });
     this.renderer.setPixelRatio(this.quality.pixelRatio);
     this.renderer.setSize(window.innerWidth, window.innerHeight);
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
@@ -294,13 +312,14 @@ export class Game {
     const s = loadSettings();
     this.debugDraw.enabled = !!s.rays;
     this.weapons.laser.enabled = !!s.laser;
-    this.debug.setVisible(s.debugHud ?? !this.mobile);
-    this.helpEl.classList.toggle('show', s.help ?? true);
+    const dev = new URLSearchParams(location.search).has('dev');
+    this.debug.setVisible(dev && (s.debugHud ?? true));
+    this.helpEl.classList.toggle('show', dev && (s.help ?? true));
     if (!this.weapons.owned && s.weapon && s.weapon > 0 && s.weapon < this.weapons.weapons.length) this.weapons.requestSwitch(s.weapon);
 
     this.input.onKey = (code) => this.onKey(code);
     this.input.onLockFailed = () =>
-      this.hud.toast('Mouse lock unavailable here: free-mouse mode (move mouse to look, click to fire). For best control open http://localhost:5173 in Chrome/Edge.', 6);
+      this.hud.toast('Mouse capture unavailable: free-mouse look. Click the game to try again.', 4);
     window.addEventListener('resize', () => this.onResize());
 
     // Compile all shaders up front so the first shot never hitches.
@@ -337,6 +356,9 @@ export class Game {
     this.nav = new NavGrid(this.physics, x0, z0, x1, z1, 0.5, 0.32, blockers);
     this.muzzleLights = new MuzzleLights(this.mobile ? 0 : 2);
     this.scene.add(this.muzzleLights.group);
+    // Black Division rifle lights: a fixed pool of real spots (phones: beams only).
+    this.weaponLights = new WeaponLights(this.mobile ? 0 : 4);
+    this.scene.add(this.weaponLights.group);
     this.soldierDeps = {
       muzzleLights: this.muzzleLights,
       listener: this.camera.eye,
@@ -453,7 +475,7 @@ export class Game {
     };
     this.lighting = new Lighting(this.scene, map, this.camera.eye, (out) => this.camera.getAimDirection(this.player, out), () => !this.health.dead, this.mobile ? 2 : 4);
     // Desktop: colour grade pass (cold shadows, reds kept, redder and moodier in a blackout).
-    if (!this.mobile) this.grade = new ScreenGrade(this.renderer);
+    if (!this.mobile && !this.trailer) this.grade = new ScreenGrade(this.renderer);
     this.survival = new Survival({
       lighting: this.lighting,
       world: () => this.world,
@@ -547,6 +569,12 @@ export class Game {
         playerAlive: () => !this.health.dead,
         playerPos: this.player.feet,
         mobile: this.mobile,
+        playerWeapon: () => this.weapons.current.data.id,
+        cinematic: (fn) => {
+          this.cinematic = fn;
+          document.body.classList.toggle('cinematic', !!fn);
+          if (fn) feel.godMode = true; // you're aboard: nothing can hurt you in the cutscene
+        },
       }, () => this.world);
       this.match.onEnd = () => {
         this.ended = true;
@@ -870,12 +898,22 @@ export class Game {
     }
   }
 
+  /** The game loop is running (PLAY was pressed at least once). */
+  get running(): boolean {
+    return this.started;
+  }
+
   get isPaused(): boolean {
     return !this.mobile && !this.input.mouseActive && !this.noLock;
   }
 
+  /** ?dev: developer tools (debug HUD, tuning panel, aim rays, god mode, AI toggle, F8...). */
+  readonly dev = new URLSearchParams(location.search).has('dev');
+
   private onKey(code: string): void {
     const w = this.weapons;
+    const devOnly = ['KeyH', 'Tab', 'KeyP', 'F1', 'Slash', 'KeyG', 'KeyJ', 'KeyO', 'KeyU', 'F2', 'F8'];
+    if (!this.dev && devOnly.includes(code)) return;
     switch (code) {
       case 'KeyH':
         this.debug.toggle();
@@ -944,18 +982,22 @@ export class Game {
       case 'F2':
         this.gotoStation(this.stationIndex + 1);
         break;
+      case 'F8':
+        // Dev: open extraction now (Site-9 team race).
+        this.match?.forceExtraction();
+        break;
       case 'KeyF':
         this.useAction();
         break;
       case 'KeyY':
         if (this.survival) this.toggleSquadMode();
+        else {
+          for (const s of this.squads) s.spawn();
+          this.hud.toast('Black Division respawned');
+        }
         break;
       case 'KeyX':
         if (this.health.downed) this.health.giveUp();
-        break;
-      case 'KeyY':
-        for (const s of this.squads) s.spawn();
-        this.hud.toast('Black Division respawned');
         break;
       case 'KeyO':
         feel.godMode = !feel.godMode;
@@ -1000,7 +1042,7 @@ export class Game {
     return this.weapons.laser.enabled;
   }
 
-  private setQuality(pixelRatio: number, shadows: boolean): void {
+  setQuality(pixelRatio: number, shadows: boolean): void {
     this.renderer.setPixelRatio(pixelRatio);
     this.renderer.setSize(window.innerWidth, window.innerHeight);
     this.grade?.resize();
@@ -1022,6 +1064,15 @@ export class Game {
     this.weapons.viewmodel.setAspect(w / h);
   }
 
+  /** One frame at an explicit timestamp (trailer capture drives the clock). */
+  stepFrame(now: number): void {
+    if (!this.started) {
+      this.started = true;
+      this.lastTime = now;
+    }
+    this.frame(now);
+  }
+
   private frame(now: number): void {
     const rawDt = (now - this.lastTime) / 1000;
     this.lastTime = now;
@@ -1034,13 +1085,14 @@ export class Game {
     const input = this.input;
     input.mouseSensitivity = playerConfig.mouseSensitivity;
     input.beginFrame();
+    this.director?.input(input, dt);
     if (this.health.downed) {
       // On the floor: look and shoot (last stand), no moving.
       input.moveX = input.moveY = 0;
       input.jumpPressed = false;
       input.sprintHeld = false;
     }
-    if (this.isPaused || (this.input.lockFailed && this.tuning.visible) || this.health.dead) {
+    if (this.isPaused || (this.input.lockFailed && this.tuning.visible) || this.health.dead || this.cinematic) {
       // Mouse released (Esc / tuning panel): freeze the player, keep the world simulating.
       input.moveX = input.moveY = 0;
       input.fireHeld = input.firePressed = false;
@@ -1077,6 +1129,17 @@ export class Game {
     this.weapons.updateState(dt, input);
     this.camera.update(dt, alpha, this.player, this.weapons.adsAmount, w.data.sight.adsFov);
     this.camera.camera.updateMatrixWorld();
+    this.director?.afterCamera(dt);
+    if (this.cinematic) {
+      const c = this.cinematic(dt);
+      const cam = this.camera.camera;
+      cam.position.copy(c.pos);
+      cam.up.set(0, 1, 0);
+      cam.lookAt(c.target);
+      cam.fov = c.fov;
+      cam.updateProjectionMatrix();
+      cam.updateMatrixWorld();
+    }
     // Look deltas are per real frame; in slow motion the weapon sees the same turn rate.
     this.weapons.updatePose(dt, yaw * this.timeScale, pitch * this.timeScale);
     this.weapons.updateFire(dt, input);
@@ -1133,6 +1196,9 @@ export class Game {
     }
     this.health.update(dt);
     this.muzzleLights.update(dt);
+    // Their lights come on in the dark: blackouts on Site-9, always in the night yard.
+    weaponLight.level = this.lighting ? Math.min(1, this.lighting.darkness * 1.3) : 1;
+    this.weaponLights.update(this.camera.camera.position);
     this.shells.update(dt);
     this.impacts.update(dt);
     this.right.set(1, 0, 0).applyQuaternion(this.camera.camera.quaternion);
@@ -1168,23 +1234,25 @@ export class Game {
     this.tuning.syncWeapon();
     this.touch?.sync(input.adsHeld, this.weapons.currentIndex, this.weapons.owned);
     if (this.touch && this.survival) {
-      const p = this.survival.prompt;
+      const p = this.survival.builder.prompt ?? this.survival.prompt;
       this.touch.setUse(p ? p.label : null, p?.cost ?? 0, p?.affordable ?? true);
     }
 
     // --- Render: world, then the weapon on top, then debug lines over everything ---
     this.renderer.info.reset();
-    if (this.grade) {
-      this.grade.mood = 0.35 + 0.65 * (this.lighting?.darkness ?? 0);
-      this.grade.begin();
+    if (!this.director?.render()) {
+      if (this.grade) {
+        this.grade.mood = 0.35 + 0.65 * (this.lighting?.darkness ?? 0);
+        this.grade.begin();
+      }
+      this.renderer.clear();
+      this.renderer.render(this.scene, this.camera.camera);
+      this.renderer.clearDepth();
+      if (!this.health.dead && !this.cinematic) this.renderer.render(this.weapons.viewmodel.scene, this.weapons.viewmodel.camera);
+      this.debugDraw.flush(realDt);
+      if (this.debugDraw.enabled) this.renderer.render(this.debugDraw.scene, this.camera.camera);
+      this.grade?.end();
     }
-    this.renderer.clear();
-    this.renderer.render(this.scene, this.camera.camera);
-    this.renderer.clearDepth();
-    if (!this.health.dead) this.renderer.render(this.weapons.viewmodel.scene, this.weapons.viewmodel.camera);
-    this.debugDraw.flush(realDt);
-    if (this.debugDraw.enabled) this.renderer.render(this.debugDraw.scene, this.camera.camera);
-    this.grade?.end();
 
     if (this.debug.visible) {
       const h = cw.data.handling;

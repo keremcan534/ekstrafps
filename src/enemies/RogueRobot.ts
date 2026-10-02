@@ -19,6 +19,10 @@ export interface RogueHooks {
   onAttack(r: RogueRobot): void;
   onThud(at: THREE.Vector3, strength: number): void;
   onWake(r: RogueRobot): void;
+  /** Short circuit: sparks while powered down (EMP from the raid). */
+  onShort?(r: RogueRobot, big: boolean): void;
+  /** Rebooted after a short circuit. */
+  onReboot?(r: RogueRobot): void;
 }
 
 type State = 'pooled' | 'rising' | 'idle' | 'waking' | 'chase' | 'dead';
@@ -99,9 +103,28 @@ export class RogueRobot {
     return this.state === 'idle';
   }
 
+  /** Seconds left of a short circuit (powered down, can't wake). */
+  stunned = 0;
+  private sparkTimer = 0;
+
+  /**
+   * Short circuit: whatever it was doing, it drops into the powered-down slump with
+   * sparks and a dead visor, then reboots after `seconds`.
+   */
+  shortCircuit(seconds: number): void {
+    if (!this.alive) return;
+    this.stunned = seconds;
+    this.sparkTimer = 0;
+    this.attackTime = -1;
+    this.path = null;
+    this.state = 'idle';
+    this.materials.visor.emissiveIntensity = 0.05;
+    this.hooks.onShort?.(this, true);
+  }
+
   /** Power up (seen/heard/shot/neighbour). */
   wake(): void {
-    if (this.state !== 'idle') return;
+    if (this.state !== 'idle' || this.stunned > 0) return;
     this.state = 'waking';
     this.wakeTime = 0;
     this.hooks.onWake(this);
@@ -155,6 +178,21 @@ export class RogueRobot {
       this.deadTime += dt;
       if (this.deadTime > 6) this.recycle();
       return;
+    }
+    if (this.stunned > 0) {
+      this.stunned -= dt;
+      this.sparkTimer -= dt;
+      if (this.sparkTimer <= 0) {
+        this.sparkTimer = 0.25 + Math.random() * 0.9;
+        this.hooks.onShort?.(this, false);
+      }
+      // Dead visor that stutters back now and then.
+      this.materials.visor.emissiveIntensity = Math.random() < 0.08 ? 1.6 : 0.05;
+      if (this.stunned <= 0) {
+        this.stunned = 0;
+        this.hooks.onReboot?.(this);
+        this.wake();
+      }
     }
     if (this.state === 'idle' || this.state === 'waking') {
       // Powered down: slumped, head hanging, arms limp, a slow sway. Waking straightens up.

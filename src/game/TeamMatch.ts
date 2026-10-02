@@ -1,4 +1,6 @@
 import * as THREE from 'three';
+import { BunkerExit, HeliExit, type CameraShot, type ExtractSite } from './Extraction';
+import { ExtractUI } from '../ui/ExtractUI';
 import { AITeam, type TeamContext, type TeamDef } from './AITeam';
 import type { Combatant, TeamAgent } from './TeamAgent';
 import type { Survival } from './Survival';
@@ -29,8 +31,6 @@ const RAID_TIME = 150;
 export const MATCH_TIME = 20 * 60;
 /** How long the exits stay open. */
 const EXTRACT_TIME = 180;
-/** Seconds to hold an exit. */
-const EXTRACT_HOLD = 6;
 /** Mega hordes (seconds into the match); one more when the exits open. */
 const MEGA_AT = [6 * 60, 11 * 60, 16 * 60];
 
@@ -57,6 +57,10 @@ export interface MatchDeps {
   playerAlive(): boolean;
   playerPos: THREE.Vector3;
   mobile: boolean;
+  /** Id of the weapon in your hands (your stand-in carries it in the exit cinematic). */
+  playerWeapon(): string;
+  /** Take over / release the camera for a cinematic. */
+  cinematic(fn: ((dt: number) => CameraShot) | null): void;
 }
 
 /**
@@ -87,9 +91,15 @@ export class TeamMatch {
   extracting = false;
   private extractLeft = 0;
   readonly exits: { pos: THREE.Vector3; name: string }[] = [];
+  /** The two exits (helicopter LZ, evac bunker) once extraction opens. */
+  private sites: ExtractSite[] = [];
+  private exUI: ExtractUI | null = null;
+  /** Seconds left of your 5-second countdown in an exit zone. */
+  private countLeft = 5;
+  private lastBeat = 6;
+  private inCinematic = false;
   private exitFx: THREE.Object3D[] = [];
   private fate = new Map<string, Fate>();
-  private playerHold = 0;
   private megaIdx = 0;
   private heatTimer = 0;
   private rushTimer = 330 + Math.random() * 60;
@@ -222,13 +232,17 @@ export class TeamMatch {
     this.raidTime = 0;
     this.d.lighting.setRaid(true);
     this.d.audio.play('power.down');
+    // The grid goes and takes the robots with it: they short out until the raid is under way.
+    this.d.survival.shortCircuit(26);
     this.d.svHud.showBanner('POWER FAILURE', 'raid');
     this.d.status.radio(`${NAME[team] ?? team} tripped the grid. Lights out.`);
     setTimeout(() => {
       if (!this.raidActive) return;
-      this.d.audio.play('raid.siren');
+      this.d.audio.play('alarm.short');
+      setTimeout(() => this.d.audio.play('announce.intruders'), 1700);
       this.d.audio.play('bd.arrival');
       const where = this.deployRaiders(team);
+      this.raiderChatter = 1.5;
       this.d.svHud.showBanner('BLACK DIVISION INCOMING', 'raid');
       this.d.status.radio(`Black Division breach: ${where}. They kill everyone. Breakers restore power.`);
     }, 4500);
@@ -292,6 +306,26 @@ export class TeamMatch {
       }
     }
     return best ?? this.respawnPoint();
+  }
+
+  /** Seconds to the next Black Division radio call during a raid (<0: none scheduled). */
+  private raiderChatter = -1;
+
+  /** Black Division radio during a raid: heard across the facility. Call from update(dt). */
+  private raiderRadio(dt: number): void {
+    if (this.raiderChatter < 0) return;
+    this.raiderChatter -= dt;
+    if (this.raiderChatter > 0) return;
+    const alive = this.raiders.flatMap((t) => t.agents.filter((a) => a.alive));
+    if (!alive.length) {
+      this.raiderChatter = -1;
+      return;
+    }
+    const a = alive[(Math.random() * alive.length) | 0];
+    const lines = ['moving', 'see_enemy', 'contact', 'flanking', 'spread_out', 'target_down'];
+    const line = lines[(Math.random() * lines.length) | 0];
+    this.d.audio.play(`bd.${line}`, { position: a.soldier.pos.clone().setY(1.7), pitch: 0.86 + Math.random() * 0.06, volume: 1.4 });
+    this.raiderChatter = 8 + Math.random() * 6;
   }
 
   /** A breaker brought the lights back early. */
@@ -367,11 +401,19 @@ export class TeamMatch {
     for (const id of ['alpha', ...this.teams.map((t) => t.def.id)]) this.fate.set(id, 'field');
     // Lockdown lifted: every shutter rolls up so every team can reach an exit.
     for (const door of sv.doors) if (!door.open) sv.openDoor(door, false);
-    this.pickExits();
-    for (const e of this.exits) this.exitFx.push(this.beacon(e.pos));
+    const sd = this.d.soldierDeps;
+    const ed = {
+      scene: this.d.scene, map: this.d.map, nav: sd.nav, physics: sd.physics, soldierDeps: sd, audio: this.d.audio, impacts: sd.impacts,
+      weaponData: this.d.weaponData, allies: this.d.allies, playerPos: this.d.playerPos, playerWeapon: this.d.playerWeapon,
+    };
+    this.sites = [new HeliExit(ed), new BunkerExit(ed)];
+    this.exits.length = 0;
+    for (const site of this.sites) this.exits.push({ pos: site.pos, name: site.name });
+    this.exUI ??= new ExtractUI(this.d.ui);
+    this.countLeft = 5;
     this.d.svHud.showBanner('EXTRACTION OPEN', 'raid');
     this.d.audio.play('raid.siren');
-    this.d.status.radio(`Exits open: ${this.exits.map((e) => e.name).join(', ')}. Get out with your score, or lose half of it.`);
+    this.d.status.radio('Exfil is go. Helicopter inbound to the atrium LZ; the evac bunker in the hangar is opening. Get out with your score, or lose half of it.');
     sv.megaHorde(this.d.mobile ? 20 : 34);
     for (const t of this.teams) {
       const L = t.leader ?? t.agents[0];
@@ -382,48 +424,6 @@ export class TeamMatch {
         this.board.feedLine(`<b style="color:${COLOR[t.def.id]}">${NAME[t.def.id]}</b> EXTRACTED`);
       });
     }
-  }
-
-  /** Three exits in big rooms, spread across the map. */
-  private pickExits(): void {
-    const nav = this.d.soldierDeps.nav;
-    const area = (r: { rect: number[] }) => (r.rect[2] - r.rect[0]) * (r.rect[3] - r.rect[1]);
-    const rooms = [...this.d.map.rooms].sort((a, b) => area(b) - area(a)).slice(0, 9);
-    const pts: { pos: THREE.Vector3; name: string }[] = [];
-    for (const r of rooms) {
-      const p = nav.nearestWalkable((r.rect[0] + r.rect[2]) / 2, (r.rect[1] + r.rect[3]) / 2, new THREE.Vector3(), 8);
-      if (p) pts.push({ pos: p.setY(0), name: r.name });
-    }
-    if (!pts.length) pts.push({ pos: this.startOf('alpha'), name: 'Hangar' });
-    this.exits.push(pts.splice((Math.random() * pts.length) | 0, 1)[0]);
-    while (this.exits.length < 3 && pts.length) {
-      let bi = 0;
-      let bd = -1;
-      pts.forEach((p, i) => {
-        const d = Math.min(...this.exits.map((e) => e.pos.distanceTo(p.pos)));
-        if (d > bd) {
-          bd = d;
-          bi = i;
-        }
-      });
-      this.exits.push(pts.splice(bi, 1)[0]);
-    }
-  }
-
-  /** A green flare column over an exit. */
-  private beacon(at: THREE.Vector3): THREE.Object3D {
-    const g = new THREE.Group();
-    const mat = new THREE.MeshBasicMaterial({ color: 0x2bff7a, transparent: true, opacity: 0.22, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, fog: false });
-    const col = new THREE.Mesh(new THREE.CylinderGeometry(1.5, 1.5, 7, 20, 1, true), mat);
-    col.position.y = 3.5;
-    const ring = new THREE.Mesh(new THREE.RingGeometry(2.6, 3.2, 32), mat.clone());
-    (ring.material as THREE.MeshBasicMaterial).opacity = 0.6;
-    ring.rotation.x = -Math.PI / 2;
-    ring.position.y = 0.04;
-    g.add(col, ring);
-    g.position.copy(at);
-    this.d.scene.add(g);
-    return g;
   }
 
   /** Your fate is decided: settle everyone else and end the match. */
@@ -450,33 +450,71 @@ export class TeamMatch {
   }
 
   private updateExtraction(dt: number): void {
+    for (const site of this.sites) site.update(dt);
+    if (this.inCinematic) return;
     this.extractLeft -= dt;
     for (const fx of this.exitFx) fx.rotation.y += dt * 0.6;
     for (const t of this.teams) if (this.fate.get(t.def.id) === 'field' && t.aliveCount === 0) this.fate.set(t.def.id, 'kia');
-    // You: stand on an exit for a few seconds.
-    let p: number | null = null;
+    // You: hold an exit zone for five seconds (counted down to the millisecond), then the cinematic.
     if (this.d.playerAlive() && this.fate.get('alpha') === 'field') {
-      const on = this.exits.some((e) => Math.hypot(e.pos.x - this.d.playerPos.x, e.pos.z - this.d.playerPos.z) < 3.4);
-      this.playerHold = on ? this.playerHold + dt : Math.max(0, this.playerHold - dt * 2);
-      if (this.playerHold > 0) p = Math.min(1, this.playerHold / EXTRACT_HOLD);
-      if (this.playerHold >= EXTRACT_HOLD) {
-        this.fate.set('alpha', 'extracted');
-        for (const a of this.d.allies()) if (a.alive) a.leave();
-        this.d.audio.play('lift.arrive');
-        this.resolve();
-        return;
+      const site = this.sites.find((s) => s.inZone(this.d.playerPos));
+      if (site) {
+        this.countLeft -= dt;
+        const whole = Math.ceil(this.countLeft);
+        if (whole < this.lastBeat) {
+          this.lastBeat = whole;
+          this.d.audio.play('extract.beat', { volume: 0.7 + 0.3 * (1 - this.countLeft / 5) });
+        }
+        this.exUI?.countdown(this.countLeft, site.name);
+        if (this.countLeft <= 0) {
+          this.startCinematic(site);
+          return;
+        }
+      } else {
+        this.countLeft = 5;
+        this.lastBeat = 6;
+        this.exUI?.countdown(null);
       }
     }
-    this.board.setHold(p);
     if (this.extractLeft <= 0) {
       for (const [id, f] of this.fate) if (f === 'field') this.fate.set(id, 'kia');
       this.resolve();
     }
   }
 
+  /** Dev / testing: run the clock out now (extraction opens on the next frame). */
+  forceExtraction(): void {
+    if (!this.extracting) this.time = MATCH_TIME;
+  }
+
+  /** Countdown done: your squad gets out in a cutscene, then EXTRACTED. */
+  private startCinematic(site: ExtractSite): void {
+    this.inCinematic = true;
+    this.exUI?.countdown(null);
+    this.exUI?.letterbox(true);
+    this.fate.set('alpha', 'extracted');
+    const squad = 1 + Math.min(3, this.d.allies().filter((a) => a.alive && !a.downed).length);
+    const cam = site.cinematic(() => {
+      this.exUI?.whiteFlash();
+      this.d.audio.play('extract.theme');
+      const sv = this.d.survival;
+      setTimeout(() => {
+        this.exUI?.letterbox(false);
+        this.exUI?.extracted(
+          { site: site.name, score: sv.score.get('alpha') ?? 0, kills: (sv as unknown as { kills: number }).kills ?? 0, time: this.time, squad },
+          () => this.d.cinematic(null),
+        );
+        this.resolve();
+      }, 140);
+    });
+    this.d.cinematic(cam);
+    this.d.status.radio(site.name === 'LZ ATRIUM' ? 'Crew chief: "Go go go! Get in!"' : 'Bunker control: "Doors closing. Move!"', 'EXFIL', true);
+  }
+
   // ---------------------------------------------------------------- frame
 
   update(dt: number, world: Combatant[]): void {
+    this.raiderRadio(dt);
     if (this.finished) return;
     this.time += dt;
     const sv0 = this.d.survival;

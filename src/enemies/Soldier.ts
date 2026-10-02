@@ -17,6 +17,7 @@ import type { AudioSystem } from '../audio/AudioSystem';
 import type { NavGrid } from '../ai/NavGrid';
 import { soldierMaterials, soldierSkin, type SoldierMaterials, type SoldierPalette } from './SoldierSkin';
 import { OBSTACLES, obstacleAt } from '../game/Obstacles';
+import { lightSources, makeBeam, weaponLight, type LightSource } from '../fx/WeaponLights';
 
 /** What the AI knows about the player, refreshed by the squad every frame. */
 export interface PlayerTarget {
@@ -80,7 +81,7 @@ const v3 = () => new THREE.Vector3();
  * Squad-level decisions (who flanks, when to speak, patrol formation) live in
  * BlackDivision; this class executes them.
  */
-export class Soldier {
+export class Soldier implements LightSource {
   readonly body: Humanoid;
   rig: WeaponRig;
   readonly index: number;
@@ -142,6 +143,9 @@ export class Soldier {
   /** Mag and reserve both empty. */
   onDry: (() => void) | null = null;
   private lastStep = 0;
+  /** Black Division: rifle light (visible beam; a pooled spot light when near the camera). */
+  private beam: ReturnType<typeof makeBeam> | null = null;
+  private beamOn = false;
   /** Jump-peek height (m), driven by the AI brain. */
   hopY = 0;
   /** Seconds pushed up against a barricade. */
@@ -241,6 +245,37 @@ export class Soldier {
       this.rifleBody,
     );
     deps.physics.addSynced(this.rifleBody, this.rifleRoot);
+    if (palette === 'bd' || palette === 'bdboss') {
+      this.beam = makeBeam();
+      this.beam.visible = false;
+      this.rifleRoot.add(this.beam);
+      lightSources.add(this);
+    }
+  }
+
+  get lit(): boolean {
+    return this.beamOn && this.alive && !this.downed && this.body.root.visible;
+  }
+
+  lightOrigin(out: THREE.Vector3): THREE.Vector3 {
+    return this.rig.muzzle.getWorldPosition(out);
+  }
+
+  lightDir(out: THREE.Vector3): THREE.Vector3 {
+    this.rifleRoot.getWorldQuaternion(this.q);
+    return out.set(0, 0, 1).applyQuaternion(this.q);
+  }
+
+  /** Keep the beam on the muzzle (the rig changes with the weapon) and fade it with the dark. */
+  private updateBeam(): void {
+    if (!this.beam) return;
+    const level = weaponLight.level;
+    this.beamOn = level > 0.05;
+    this.beam.visible = this.beamOn;
+    if (!this.beamOn) return;
+    this.rig.muzzle.getWorldPosition(this.tmp);
+    this.rifleRoot.worldToLocal(this.beam.position.copy(this.tmp));
+    this.beam.setStrength(0.2 * level);
   }
 
   get alive(): boolean {
@@ -428,6 +463,10 @@ export class Soldier {
    * @param aimMode 'low' (patrol carry), 'ready', 'aim'
    */
   update(dt: number, player: PlayerTarget, mates: Soldier[], faceTarget: THREE.Vector3 | null, aimMode: AimMode, wantFire: boolean): void {
+    if (this.beam) {
+      this.beam.visible = false;
+      this.beamOn = false;
+    }
     this.time += dt;
     if (!this.alive) {
       this.body.update(dt, this.pose);
@@ -515,6 +554,7 @@ export class Soldier {
     this.body.root.position.y += this.hopY;
     this.body.root.rotation.y = this.yaw;
     this.body.update(dt, p);
+    this.updateBeam();
 
     this.weapon(dt, player, mates, wantFire && aimMode === 'aim');
     this.flash.update(dt);

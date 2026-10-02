@@ -47,6 +47,11 @@ export interface SoundEvent {
   reverb?: number;
   /** Positional non-gunfire sounds: not heard beyond this (m, default 30). */
   maxDist?: number;
+  /**
+   * Voice calls: shouted / radio lines carry. Gentle falloff (never below ~45 %
+   * inside maxDist) instead of the steep local curve used for clinks and impacts.
+   */
+  voice?: boolean;
 }
 
 export const SOUND_BANK: Record<string, SoundEvent> = {
@@ -217,16 +222,16 @@ export const SOUND_BANK: Record<string, SoundEvent> = {
     pitchVariance: 0.03,
     maxVoices: 12,
   },
-  'bd.see_enemy': { reverb: 0.3, layers: [{ synth: 'radio_click', gain: 0.5, dry: true }, { file: 'audio/voice/bd_see_enemy.wav', gain: 1.1, delay: 0.06 }], pitchVariance: 0.02, maxVoices: 2 },
-  'bd.spread_out': { reverb: 0.3, layers: [{ synth: 'radio_click', gain: 0.5, dry: true }, { file: 'audio/voice/bd_spread_out.wav', gain: 1.1, delay: 0.06 }], pitchVariance: 0.02, maxVoices: 2 },
-  'bd.contact': { reverb: 0.3, layers: [{ synth: 'radio_click', gain: 0.5, dry: true }, { file: 'audio/voice/bd_contact.wav', gain: 1.1, delay: 0.06 }], pitchVariance: 0.02, maxVoices: 2 },
-  'bd.flanking': { reverb: 0.3, layers: [{ synth: 'radio_click', gain: 0.5, dry: true }, { file: 'audio/voice/bd_flanking.wav', gain: 1.1, delay: 0.06 }], pitchVariance: 0.02, maxVoices: 2 },
-  'bd.moving': { reverb: 0.3, layers: [{ synth: 'radio_click', gain: 0.5, dry: true }, { file: 'audio/voice/bd_moving.wav', gain: 1.1, delay: 0.06 }], pitchVariance: 0.02, maxVoices: 2 },
-  'bd.reloading': { reverb: 0.3, layers: [{ synth: 'radio_click', gain: 0.5, dry: true }, { file: 'audio/voice/bd_reloading.wav', gain: 1.1, delay: 0.06 }], pitchVariance: 0.02, maxVoices: 2 },
-  'bd.target_down': { reverb: 0.3, layers: [{ synth: 'radio_click', gain: 0.5, dry: true }, { file: 'audio/voice/bd_target_down.wav', gain: 1.1, delay: 0.06 }], pitchVariance: 0.02, maxVoices: 2 },
-  'bd.man_down': { reverb: 0.3, layers: [{ synth: 'radio_click', gain: 0.5, dry: true }, { file: 'audio/voice/bd_man_down.wav', gain: 1.1, delay: 0.06 }], pitchVariance: 0.02, maxVoices: 2 },
-  'bd.lost_visual': { reverb: 0.3, layers: [{ synth: 'radio_click', gain: 0.5, dry: true }, { file: 'audio/voice/bd_lost_visual.wav', gain: 1.1, delay: 0.06 }], pitchVariance: 0.02, maxVoices: 2 },
-  'bd.hit': { reverb: 0.3, layers: [{ synth: 'radio_click', gain: 0.5, dry: true }, { file: 'audio/voice/bd_hit.wav', gain: 1.1, delay: 0.06 }], pitchVariance: 0.02, maxVoices: 2 },
+  'bd.see_enemy': { reverb: 0.8, layers: [{ synth: 'radio_click', gain: 0.5, dry: true }, { file: 'audio/voice/bd_see_enemy.wav', gain: 1.1, delay: 0.06 }], pitchVariance: 0.02, maxVoices: 2, maxDist: 150, voice: true },
+  'bd.spread_out': { reverb: 0.8, layers: [{ synth: 'radio_click', gain: 0.5, dry: true }, { file: 'audio/voice/bd_spread_out.wav', gain: 1.1, delay: 0.06 }], pitchVariance: 0.02, maxVoices: 2, maxDist: 150, voice: true },
+  'bd.contact': { reverb: 0.8, layers: [{ synth: 'radio_click', gain: 0.5, dry: true }, { file: 'audio/voice/bd_contact.wav', gain: 1.1, delay: 0.06 }], pitchVariance: 0.02, maxVoices: 2, maxDist: 150, voice: true },
+  'bd.flanking': { reverb: 0.8, layers: [{ synth: 'radio_click', gain: 0.5, dry: true }, { file: 'audio/voice/bd_flanking.wav', gain: 1.1, delay: 0.06 }], pitchVariance: 0.02, maxVoices: 2, maxDist: 150, voice: true },
+  'bd.moving': { reverb: 0.8, layers: [{ synth: 'radio_click', gain: 0.5, dry: true }, { file: 'audio/voice/bd_moving.wav', gain: 1.1, delay: 0.06 }], pitchVariance: 0.02, maxVoices: 2, maxDist: 150, voice: true },
+  'bd.reloading': { reverb: 0.8, layers: [{ synth: 'radio_click', gain: 0.5, dry: true }, { file: 'audio/voice/bd_reloading.wav', gain: 1.1, delay: 0.06 }], pitchVariance: 0.02, maxVoices: 2, maxDist: 150, voice: true },
+  'bd.target_down': { reverb: 0.8, layers: [{ synth: 'radio_click', gain: 0.5, dry: true }, { file: 'audio/voice/bd_target_down.wav', gain: 1.1, delay: 0.06 }], pitchVariance: 0.02, maxVoices: 2, maxDist: 150, voice: true },
+  'bd.man_down': { reverb: 0.8, layers: [{ synth: 'radio_click', gain: 0.5, dry: true }, { file: 'audio/voice/bd_man_down.wav', gain: 1.1, delay: 0.06 }], pitchVariance: 0.02, maxVoices: 2, maxDist: 150, voice: true },
+  'bd.lost_visual': { reverb: 0.8, layers: [{ synth: 'radio_click', gain: 0.5, dry: true }, { file: 'audio/voice/bd_lost_visual.wav', gain: 1.1, delay: 0.06 }], pitchVariance: 0.02, maxVoices: 2, maxDist: 150, voice: true },
+  'bd.hit': { reverb: 0.8, layers: [{ synth: 'radio_click', gain: 0.5, dry: true }, { file: 'audio/voice/bd_hit.wav', gain: 1.1, delay: 0.06 }], pitchVariance: 0.02, maxVoices: 2, maxDist: 150, voice: true },
   'bullet.flyby': { layers: [{ synth: 'flyby_crack', gain: 0.75 }, { synth: 'flyby_whizz', gain: 0.25 }], pitchVariance: 0.12, maxVoices: 4, bus: 'ui' },
   'bullet.whizz': { layers: [{ synth: 'flyby_whizz', gain: 0.7 }], pitchVariance: 0.15, maxVoices: 4, bus: 'ui' },
   'impact.flesh': { reverb: 0.15, layers: [{ synth: 'impact_flesh', gain: 0.6 }], pitchVariance: 0.12, maxVoices: 6 },
@@ -241,6 +246,16 @@ export const SOUND_BANK: Record<string, SoundEvent> = {
   'robot.wake': { reverb: 0.3, layers: [{ synth: 'robot_wake', gain: 0.7 }], pitchVariance: 0.12, maxDist: 28, maxVoices: 4 },
   'power.down': { reverb: 0.7, layers: [{ file: 'audio/guns/power_out.wav', gain: 1.0 }, { synth: 'power_down', gain: 0.3, delay: 0.12 }], maxVoices: 1, bus: 'ui' },
   'bd.encounter': { layers: [{ files: ['audio/guns/bd_encounter.wav', 'audio/guns/bd_encounter2.wav'], gain: 0.9 }], maxVoices: 1, bus: 'ui' },
+  // Extraction: helicopter, evac bunker doors, countdown heartbeat, the theme.
+  'heli.approach': { layers: [{ file: 'audio/guns/heli_approach.wav', gain: 1.0 }], maxVoices: 1, bus: 'ui' },
+  'heli.takeoff': { reverb: 0.3, layers: [{ file: 'audio/guns/heli_takeoff.wav', gain: 1.1 }], maxVoices: 1, bus: 'ui' },
+  'blastdoor.open': { reverb: 0.5, layers: [{ file: 'audio/guns/blastdoor_open.wav', gain: 1.1 }], maxDist: 140, voice: true, maxVoices: 1 },
+  'blastdoor.slam': { reverb: 0.6, layers: [{ file: 'audio/guns/blastdoor_slam.wav', gain: 1.2 }], maxVoices: 1, bus: 'ui' },
+  'extract.beat': { layers: [{ file: 'audio/guns/heartbeat.wav', gain: 0.8 }], maxVoices: 2, bus: 'ui' },
+  'extract.theme': { layers: [{ file: 'audio/music/extracted.wav', gain: 0.95 }], maxVoices: 1, bus: 'ui' },
+  // Facility PA: a short klaxon, then the automated intruder announcement.
+  'alarm.short': { reverb: 0.5, layers: [{ file: 'audio/guns/alarm_short.wav', gain: 0.85 }], maxVoices: 1, bus: 'ui' },
+  'announce.intruders': { reverb: 0.4, layers: [{ file: 'audio/voice/announce_intruders.wav', gain: 1.05 }], maxVoices: 1, bus: 'ui' },
   'bd.arrival': { layers: [{ file: 'audio/guns/bd_encounter2.wav', gain: 1.0 }], maxVoices: 1, bus: 'ui' },
   // Explosions carry like gunfire: the full blast up close, a dull low rumble far off.
   'explosion': { reverb: 0.6, layers: [{ file: 'audio/guns/explosion.wav', gain: 1.25, range: 'near' }, { file: 'audio/guns/explosion_far.wav', gain: 1.1, range: 'far' }, { file: 'audio/guns/explosion_far.wav', gain: 0.9, range: 'farthest' }], maxVoices: 3 },

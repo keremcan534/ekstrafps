@@ -27,7 +27,8 @@ export class AudioSystem {
   private world: GainNode;
   private synthBuffers = new Map<string, AudioBuffer[]>();
   private fileBuffers = new Map<string, AudioBuffer>();
-  private voices = new Map<string, number>();
+  /** End times (audio clock) of the instances still playing, per event: voice limits that can't get stuck. */
+  private voices = new Map<string, number[]>();
   private listenerPos = new THREE.Vector3();
   private listenerRight = new THREE.Vector3(1, 0, 0);
   private tmp = new THREE.Vector3();
@@ -47,7 +48,23 @@ export class AudioSystem {
     comp.release.value = 0.12;
     this.master = this.ctx.createGain();
     this.master.gain.value = feel.masterVolume;
-    this.master.connect(comp).connect(this.ctx.destination);
+    // Master tone: a little weight in the lows, the harsh top tamed, then the bus
+    // compressor and a brick-wall-ish limiter so a firefight never clips into distortion.
+    const low = this.ctx.createBiquadFilter();
+    low.type = 'lowshelf';
+    low.frequency.value = 110;
+    low.gain.value = 2;
+    const high = this.ctx.createBiquadFilter();
+    high.type = 'highshelf';
+    high.frequency.value = 9000;
+    high.gain.value = -2.5;
+    const limiter = this.ctx.createDynamicsCompressor();
+    limiter.threshold.value = -1.5;
+    limiter.knee.value = 0;
+    limiter.ratio.value = 20;
+    limiter.attack.value = 0.001;
+    limiter.release.value = 0.08;
+    this.master.connect(low).connect(high).connect(comp).connect(limiter).connect(this.ctx.destination);
     this.world = this.ctx.createGain();
     this.world.connect(this.master);
 
@@ -55,7 +72,7 @@ export class AudioSystem {
     convolver.buffer = this.buildRoomImpulse(2.3);
     this.reverbIn = this.ctx.createGain();
     const wet = this.ctx.createGain();
-    wet.gain.value = 0.68;
+    wet.gain.value = 0.52;
     this.reverbIn.connect(convolver).connect(wet).connect(this.master);
   }
 
@@ -143,7 +160,17 @@ export class AudioSystem {
   /** Must be called from a user gesture (mobile browsers require it). */
   unlock(): void {
     if (this.ctx.state !== 'running') void this.ctx.resume();
+    if (this.watching) return;
+    this.watching = true;
+    // Browsers suspend audio after focus changes or device switches: resume on the next
+    // input or when the tab comes back, instead of staying silent for the rest of the run.
+    const resume = () => {
+      if (this.ctx.state !== 'running') void this.ctx.resume();
+    };
+    for (const ev of ['pointerdown', 'keydown', 'touchstart']) window.addEventListener(ev, resume, { passive: true });
+    document.addEventListener('visibilitychange', () => document.visibilityState === 'visible' && resume());
   }
+  private watching = false;
 
   setListener(position: THREE.Vector3, right: THREE.Vector3): void {
     this.listenerPos.copy(position);
@@ -158,8 +185,11 @@ export class AudioSystem {
     if (!this.ready || !name || this.ctx.state !== 'running') return;
     const ev: SoundEvent | undefined = SOUND_BANK[name];
     if (!ev) return;
-    const active = this.voices.get(name) ?? 0;
-    if (active >= (ev.maxVoices ?? 6)) return;
+    const ends = (this.voices.get(name) ?? []).filter((t) => t > this.ctx.currentTime);
+    if (ends.length >= (ev.maxVoices ?? 6)) {
+      this.voices.set(name, ends);
+      return;
+    }
 
     let gain = opts?.volume ?? 1;
     let pan = 0;
@@ -172,7 +202,11 @@ export class AudioSystem {
       // its range, so fights across the map don't fill your ears with clinks.
       const gunfire = ev.layers.some((l) => l.range === 'far');
       if (gunfire) gain *= 1 / (1 + dist * 0.06);
-      else {
+      else if (ev.voice) {
+        const maxDist = ev.maxDist ?? 60;
+        if (dist > maxDist) return;
+        gain *= Math.max(0.45, 1 - dist / maxDist);
+      } else {
         const maxDist = ev.maxDist ?? 30;
         if (dist > maxDist) return;
         const k = dist / maxDist;
@@ -247,8 +281,8 @@ export class AudioSystem {
       src.start(now + (layer.delay ?? 0));
       longest = Math.max(longest, (layer.delay ?? 0) + buf.duration / pitch);
     }
-    this.voices.set(name, active + 1);
-    setTimeout(() => this.voices.set(name, Math.max(0, (this.voices.get(name) ?? 1) - 1)), longest * 1000 * 0.6);
+    ends.push(now + longest * 0.6);
+    this.voices.set(name, ends);
   }
 
   private pickSynth(name?: string): AudioBuffer | undefined {

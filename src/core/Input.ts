@@ -40,6 +40,11 @@ export class Input {
    */
   lockFailed = false;
   onLockFailed: (() => void) | null = null;
+  /** A lock request was refused although locking works here (e.g. right after Esc): just retry on the next click. */
+  onLockRefused: (() => void) | null = null;
+  /** Pointer lock has worked at least once in this session. */
+  private everLocked = false;
+  private failures = 0;
   private keys = new Set<string>();
   private touchMoveX = 0;
   private touchMoveY = 0;
@@ -60,7 +65,11 @@ export class Input {
     document.addEventListener('pointerlockerror', () => this.markLockFailed());
     document.addEventListener('pointerlockchange', () => {
       this.pointerLocked = document.pointerLockElement === this.canvas;
-      if (this.pointerLocked) this.lockFailed = false;
+      if (this.pointerLocked) {
+        this.lockFailed = false;
+        this.everLocked = true;
+        this.failures = 0;
+      }
       if (!this.pointerLocked) {
         this.fireHeld = false;
         this.adsHeld = false;
@@ -90,6 +99,17 @@ export class Input {
 
   private markLockFailed(): void {
     if (this.lockFailed || this.pointerLocked) return;
+    // Chromium refuses a re-lock for ~1 s after the player exits with Esc. That is
+    // not "unsupported": keep real mouse look and retry on the next click.
+    if (this.everLocked) {
+      this.onLockRefused?.();
+      return;
+    }
+    // Never locked: only fall back to free-mouse look after repeated refusals.
+    if (++this.failures < 2) {
+      this.onLockRefused?.();
+      return;
+    }
     this.lockFailed = true;
     this.onLockFailed?.();
   }

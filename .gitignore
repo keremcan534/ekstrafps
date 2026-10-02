@@ -3,3 +3,10 @@ dist/
 .DS_Store
 *.log
 .vite/
+
+# Trailer: source music (third-party, never commit), renders, captured frames
+trailer/music/*.wav
+trailer/music/*.mp3
+trailer/build/
+trailer/frames/
+release/

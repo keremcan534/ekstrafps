@@ -23,7 +23,10 @@ jobs:
         with:
           node-version: 22
           cache: npm
+      # The web build never needs the Electron binary (desktop builds are local).
       - run: npm ci
+        env:
+          ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
       - run: npm run build
       - uses: actions/upload-pages-artifact@v3
         with:

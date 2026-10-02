@@ -256,6 +256,12 @@ export class ImpactSystem {
     }
   }
 
+  /** Electrical short: a crackle of blue-white sparks (big = the moment it blows). */
+  shortOut(point: THREE.Vector3, big: boolean): void {
+    this.burstSparks(point, big ? 34 : 9, big ? 7 : 4, 0.7, 0.85, 1.0, big ? 0.5 : 0.25);
+    if (big) this.flash(point, this.tmp.set(0, 1, 0), 0.7, 0.85, 1.0, 0.35);
+  }
+
   /** Big electric burst when a robot dies. */
   robotDeath(point: THREE.Vector3): void {
     this.burstSparks(point, 40, 9, 1.0, 0.7, 0.25, 0.6);

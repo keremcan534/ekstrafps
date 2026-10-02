@@ -211,6 +211,7 @@ export class Survival {
   readonly unlocked = new Set<string>(['start']);
   readonly doors: Door[] = [];
   readonly robots: RogueRobot[] = [];
+  private tmp2 = new THREE.Vector3();
   private interactables: Interactable[] = [];
   private focus: Interactable | null = null;
   private over = false;
@@ -296,6 +297,12 @@ export class Survival {
           },
           onAttack: (r) => deps.audio.play('robot.stagger', { position: r.pos, volume: 0.6 }),
           onThud: (at, s) => deps.audio.play('robot.fall', { position: at, volume: 0.25 + 0.5 * s }),
+          onShort: (r, big) => {
+            const at = this.tmp2.set(r.pos.x, 1.2 + Math.random() * 0.4, r.pos.z);
+            deps.impacts.shortOut(at, big);
+            deps.audio.play('hazard.zap', { position: at, volume: big ? 1 : 0.55 });
+          },
+          onReboot: (r) => deps.audio.play('robot.boot', { position: r.pos }),
           onWake: (r) => {
             deps.audio.play('robot.wake', { position: r.pos });
             // Wakes its neighbours a moment later.
@@ -788,7 +795,22 @@ export class Survival {
     }
   }
 
+  /** Seconds left of the raid's EMP: robots are down and no new ones come. */
+  emp = 0;
+
+  /** The raid's EMP: every robot in the facility shorts out for a while. */
+  shortCircuit(seconds: number): void {
+    this.emp = Math.max(this.emp, seconds);
+    this.wakeQueue.length = 0;
+    this.pending.length = 0;
+    for (const r of this.robots) if (r.alive) r.shortCircuit(seconds * (0.9 + Math.random() * 0.25));
+  }
+
   private updateDirector(dt: number): void {
+    if (this.emp > 0) {
+      this.emp -= dt;
+      return;
+    }
     const p = this.deps.player.feet;
     // Intensity: robots in your face push it up; calm lets it fall.
     let near = 0;

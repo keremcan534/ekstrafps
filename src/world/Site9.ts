@@ -341,6 +341,7 @@ export class Site9 implements GameMap {
     this.buildRandomSlots();
     this.collectWallSpots();
     this.buildDetails();
+    this.buildServices();
     this.buildSigns();
     this.layout.build(this.group);
     // Ceiling lamps (the practical lights near you come from these).
@@ -435,6 +436,52 @@ export class Site9 implements GameMap {
   /** Glass pane (no frame) at design coordinates. */
   private clearBox(room: string, size: V3, pos: V3): void {
     this.clear(room).box(this.mats.glass, this.sz(room, size), this.at(room, pos));
+  }
+
+  /**
+   * Building services in every enclosed room: pipe runs and a cable tray under the
+   * ceiling along the long walls, brackets, a dark kick plate along the wall bases and
+   * recessed light strips. All merged into the room mesh (no extra draw calls), no colliders.
+   */
+  private buildServices(): void {
+    for (const r of ROOMS) {
+      if (r.sky) continue;
+      const [x0, z0, x1, z1] = r.rect;
+      const w = x1 - x0;
+      const d = z1 - z0;
+      const h = r.h;
+      const cx = (x0 + x1) / 2;
+      const cz = (z0 + z1) / 2;
+      const along = w >= d;
+      const len = (along ? w : d) - 1.4;
+      const y = h - 0.55;
+      // Pipe runs on one long wall, cable tray on the other.
+      const run = (off: number, size: [number, number], mat: string, yy: number) =>
+        this.boxW(r.id, mat, along ? [len, size[0], size[1]] : [size[1], size[0], len], along ? [cx, yy, z0 + off] : [x0 + off, yy, cz], false);
+      run(0.55, [0.24, 0.24], 'gunmetal', y);
+      run(0.95, [0.15, 0.15], 'steel', y - 0.06);
+      run(d >= 6 || w >= 6 ? (along ? d : w) - 0.5 : 0.5, [0.08, 0.52], 'dark', h - 1.05);
+      for (let s = -len / 2 + 1; s < len / 2; s += 4) {
+        const p: [number, number, number] = along ? [cx + s, y + 0.12, z0 + 0.75] : [x0 + 0.75, y + 0.12, cz + s];
+        this.boxW(r.id, 'dark', along ? [0.07, 0.55, 0.85] : [0.85, 0.55, 0.07], p, false);
+      }
+      // Kick plates along the wall bases.
+      this.boxW(r.id, 'dark', [w - 0.1, 0.16, 0.05], [cx, 0.08, z0 + 0.03], false);
+      this.boxW(r.id, 'dark', [w - 0.1, 0.16, 0.05], [cx, 0.08, z1 - 0.03], false);
+      this.boxW(r.id, 'dark', [0.05, 0.16, d - 0.1], [x0 + 0.03, 0.08, cz], false);
+      this.boxW(r.id, 'dark', [0.05, 0.16, d - 0.1], [x1 - 0.03, 0.08, cz], false);
+      // Recessed light strips on the long walls (they go dark with the power like every lamp).
+      const strip = Math.min(2.2, h * 0.4);
+      for (let s = -len / 2 + 3; s < len / 2 - 2; s += 7) {
+        if (along) {
+          this.boxW(r.id, 'lampCool', [strip, 0.07, 0.04], [cx + s, h * 0.58, z1 - 0.04], false);
+          this.boxW(r.id, 'dark', [strip + 0.2, 0.2, 0.03], [cx + s, h * 0.58, z1 - 0.02], false);
+        } else {
+          this.boxW(r.id, 'lampCool', [0.04, 0.07, strip], [x1 - 0.04, h * 0.58, cz + s], false);
+          this.boxW(r.id, 'dark', [0.03, 0.2, strip + 0.2], [x1 - 0.02, h * 0.58, cz + s], false);
+        }
+      }
+    }
   }
 
   /** Visual box in a room + optional collider (world coordinates). */

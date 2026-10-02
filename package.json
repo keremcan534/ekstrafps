@@ -8,7 +8,9 @@
     "build": "tsc --noEmit && vite build",
     "typecheck": "tsc --noEmit",
     "preview": "vite preview",
-    "lab": "vite --open"
+    "lab": "vite --open",
+    "desktop": "vite build && electron .",
+    "desktop:build": "vite build && electron-builder --win portable"
   },
   "dependencies": {
     "@dimforge/rapier3d-compat": "^0.21.0",
@@ -18,7 +20,41 @@
   "devDependencies": {
     "@types/node": "^26.6.3",
     "@types/three": "^0.186.0",
+    "electron": "^44.5.1",
+    "electron-builder": "^26.15.3",
     "typescript": "^7.0.2",
     "vite": "^8.3.2"
+  },
+  "main": "electron/main.cjs",
+  "productName": "SITE-9",
+  "description": "SITE-9 - tactical squad FPS",
+  "author": "keremcan534",
+  "build": {
+    "appId": "com.keremcan534.site9",
+    "productName": "SITE-9",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**",
+      "electron/**",
+      "package.json"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "electron/icon.png"
+    },
+    "portable": {
+      "artifactName": "SITE-9.exe"
+    },
+    "asar": true,
+    "electronDist": "node_modules/electron/dist"
   }
 }
