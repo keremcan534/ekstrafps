@@ -590,7 +590,7 @@ export class Soldier {
     const step = Math.floor(this.stride / Math.PI);
     if (step !== this.lastStep) {
       this.lastStep = step;
-      if (v > 0.8) this.deps.audio.play('foley.step', { position: this.pos, volume: (v > 3 ? 0.8 : v > 1.8 ? 0.55 : 0.38) * (0.8 + Math.random() * 0.4) });
+      if (v > 0.8) this.deps.audio.play('foley.step', { position: this.pos, volume: (v > 3 ? 0.6 : v > 1.8 ? 0.35 : 0.2) * (0.8 + Math.random() * 0.4) });
     }
     this.strideAmount += (clamp(v / 1.6, 0, v > 3 ? 1.25 : 1) - this.strideAmount) * Math.min(1, dt * 8);
     const sin = Math.sin(this.yaw);
