@@ -188,7 +188,8 @@ export class Game {
     this.arena.sun.castShadow = this.quality.shadows;
     this.scene.background = new THREE.Color(this.arena.skyColor);
     this.renderer.toneMappingExposure = this.arena.exposure ?? 1.05;
-    this.scene.fog = new THREE.Fog(this.arena.skyColor, 90, 200);
+    // Phones draw fewer distant rooms: a closer haze hides where they stop.
+    this.scene.fog = this.mobile ? new THREE.Fog(this.arena.skyColor, 32, 80) : new THREE.Fog(this.arena.skyColor, 90, 200);
 
     onProgress('Rendering placeholder audio…');
     this.audio = new AudioSystem();

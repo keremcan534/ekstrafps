@@ -327,6 +327,7 @@ export class Site9 implements GameMap {
     this.buildServers();
     this.buildBarracks();
     this.buildPower();
+    this.buildDressing();
     this.buildRandomSlots();
     this.collectWallSpots();
     this.buildDetails();
@@ -1030,6 +1031,134 @@ export class Site9 implements GameMap {
   // ---------------------------------------------------------------- set dressing
 
   /**
+   * Second dressing pass for the big halls: things that tell you what the room is
+   * for and break up the open floor (most of it doubles as cover). All built from
+   * the rooms' own materials, so it merges into the existing per-room meshes:
+   * no extra draw calls (phones stay fast).
+   */
+  private buildDressing(): void {
+    // ---- Atrium: prototype display cases, low planter walls, info kiosks, floor inlays.
+    const A = 'atrium';
+    for (const [x, z] of [[-30, 30], [30, 14]]) {
+      this.box(A, 'white', [3.2, 0.9, 2.2], [x, 0.45, z]);
+      this.box(A, 'gunmetal', [3.3, 0.06, 2.3], [x, 0.92, z], false);
+      this.clearBox(A, [3.0, 1.6, 2.0], [x, 1.75, z]);
+      this.physics.addStaticBox(new THREE.Vector3(...this.at(A, [x, 1.75, z])), new THREE.Vector3(1.5, 0.8, 1.0), undefined, METAL);
+      // A dormant prototype on the stand: legs, torso, head, visor.
+      for (const s of [-1, 1]) this.box(A, 'dark', [0.2, 0.7, 0.22], [x + 0.18 * s, 1.3, z], false);
+      this.box(A, 'white', [0.62, 0.55, 0.36], [x, 1.9, z], false);
+      this.box(A, 'dark', [0.34, 0.3, 0.3], [x, 2.3, z], false);
+      this.box(A, 'lampBlue', [0.26, 0.06, 0.02], [x, 2.32, z + 0.16], false);
+      this.box(A, 'screen', [0.9, 0.3, 0.05], [x, 0.6, z + 1.13], false);
+    }
+    for (const x of [-12, 12]) {
+      for (const z of [0, 46]) {
+        this.box(A, 'offwhite', [5, 0.8, 1.1], [x, 0.4, z]);
+        this.box(A, 'soil', [4.7, 0.05, 0.9], [x, 0.82, z], false);
+        for (const dx of [-1.6, 0, 1.6]) this.box(A, dx === 0 ? 'leaf' : 'leafDark', [0.9, 0.6, 0.6], [x + dx, 1.15, z], false);
+      }
+    }
+    for (const [x, z] of [[-34, 46], [34, 2]]) {
+      this.box(A, 'white', [0.8, 1.3, 0.8], [x, 0.65, z]);
+      this.box(A, 'screen', [0.05, 0.7, 0.6], [x + (x < 0 ? 0.43 : -0.43), 1.0, z], false);
+    }
+    for (const z of [2, 42]) this.box(A, 'gunmetal', [64, 0.02, 0.25], [0, 0.012, z], false);
+    for (const x of [-26, 26]) this.box(A, 'gunmetal', [0.25, 0.02, 30], [x, 0.012, 22], false);
+
+    // ---- Assembly hall: robot-part racks along the north wall, tool carts, crate cover, walkway lines.
+    const M = 'assembly';
+    for (const x of [-100, -74, -62]) {
+      this.box(M, 'gunmetal', [5, 0.1, 1.2], [x, 0.05, 8]);
+      for (const y of [0.9, 1.9, 2.9]) this.box(M, 'gunmetal', [5, 0.06, 1.2], [x, y, 8], false);
+      for (const dx of [-2.45, 2.45]) this.box(M, 'yellow', [0.1, 3.2, 1.2], [x + dx, 1.6, 8], true, undefined);
+      for (let i = 0; i < 4; i++) {
+        this.box(M, 'white', [0.55, 0.45, 0.4], [x - 1.8 + i * 1.2, 1.2, 8], false); // torso shells
+        this.box(M, 'dark', [0.35, 0.3, 0.3], [x - 1.8 + i * 1.2, 2.13, 8], false); // heads
+        this.box(M, 'lampBlue', [0.24, 0.05, 0.02], [x - 1.8 + i * 1.2, 2.16, 8.16], false);
+        this.box(M, 'gunmetal', [0.16, 0.7, 0.16], [x - 1.6 + i * 1.2, 3.2, 8], false); // limbs
+      }
+    }
+    for (const [x, z] of [[-90, -16], [-70, -36], [-56, -16], [-98, -36]]) {
+      this.box(M, 'vanta', [1.2, 0.9, 0.7], [x, 0.55, z]);
+      this.box(M, 'gunmetal', [1.25, 0.06, 0.75], [x, 1.02, z], false);
+      for (const dy of [0.3, 0.6]) this.box(M, 'dark', [1.0, 0.03, 0.02], [x, dy + 0.3, z + 0.36], false);
+    }
+    for (const [x, z] of [[-70, -56], [-90, -56], [-50, -56]]) {
+      this.box(M, 'contGreen', [1.6, 1.4, 1.4], [x, 0.7, z]);
+      this.box(M, 'wood', [1.2, 1.0, 1.2], [x + 0.2, 1.9, z], false);
+    }
+    for (const z of [-16, -36]) this.box(M, 'yellow', [62, 0.02, 0.2], [-75, 0.012, z], false);
+
+    // ---- Hangar: forklift, tool chests, drum cluster, tow tug, floor markings.
+    const H = 'hangar';
+    this.box(H, 'yellow', [1.3, 1.2, 2.4], [-76, 0.8, 70], true, undefined, METAL);
+    this.box(H, 'dark', [1.1, 0.9, 0.9], [-76, 1.8, 70.6], false);
+    for (const dx of [-0.45, 0.45]) this.box(H, 'gunmetal', [0.12, 3.0, 0.12], [-76 + dx, 1.5, 68.7], false);
+    this.box(H, 'gunmetal', [1.1, 0.08, 1.2], [-76, 0.2, 68.0], false);
+    for (const dz of [-1.0, 1.0]) for (const dx of [-0.7, 0.7]) this.cyl(H, 'tire', 0.3, 0.25, [-76 + dx, 0.3, 70 + dz], false, [0, 0, Math.PI / 2], 10);
+    for (const z of [40, 44, 48]) {
+      this.box(H, 'vanta', [0.8, 1.1, 1.6], [-67.5, 0.55, z]);
+      for (const y of [0.3, 0.55, 0.8]) this.box(H, 'gunmetal', [0.02, 0.03, 1.4], [-67.9, y, z], false);
+    }
+    for (const [dx, dz] of [[0, 0], [0.7, 0.3], [-0.5, 0.6], [0.3, -0.7], [-0.7, -0.3]]) this.cyl(H, dx > 0 ? 'vanta' : 'contBlue', 0.3, 0.9, [-100 + dx, 0.45, 64 + dz], true, [0, 0, 0], 12);
+    this.box(H, 'yellow', [1.4, 0.8, 2.2], [-82, 0.55, 36], true, undefined, METAL);
+    this.box(H, 'dark', [1.2, 0.5, 0.8], [-82, 1.2, 35.6], false);
+    for (const z of [30, 64]) this.box(H, 'yellow', [36, 0.02, 0.25], [-88, 0.012, z], false);
+
+    // ---- Server hall: cooling units, ops desk cluster, floor grates around the core, gear crates.
+    const S = 'servers';
+    for (const z of [-50, -10]) {
+      this.box(S, 'offwhite', [1.0, 2.2, 3.0], [108.6, 1.1, z]);
+      for (let i = 0; i < 6; i++) this.box(S, 'dark', [0.02, 0.06, 2.6], [108.08, 0.5 + i * 0.25, z], false);
+    }
+    for (const dx of [-1.6, 1.6]) {
+      this.box(S, 'dark', [2.8, 0.75, 1.0], [96 + dx, 0.375, 4]);
+      this.box(S, 'screen', [0.9, 0.55, 0.05], [96 + dx - 0.5, 1.05, 3.65], false);
+      this.box(S, 'screen', [0.9, 0.55, 0.05], [96 + dx + 0.5, 1.05, 3.65], false);
+    }
+    for (let a = 0; a < 8; a++) {
+      const ang = (a / 8) * Math.PI * 2;
+      this.box(S, 'dark', [1.6, 0.02, 1.6], [88 + Math.cos(ang) * 6.5, 0.012, -26 + Math.sin(ang) * 6.5], false, [0, -ang, 0]);
+    }
+    for (const [x, z] of [[78, -50], [80, 0], [100, -40]]) {
+      this.box(S, 'dark', [1.2, 1.8, 0.8], [x, 0.9, z], true, undefined, METAL);
+      this.box(S, 'leds', [0.05, 0.05, 0.02], [x - 0.3, 1.5, z + 0.41], false);
+    }
+
+    // ---- Barracks: mess tables with benches, gym corner, locker rows.
+    const B = 'barracks';
+    for (const z of [26, 40]) {
+      this.box(B, 'woodDark', [6, 0.08, 1.1], [86, 0.76, z]);
+      for (const dx of [-2.6, 2.6]) this.box(B, 'gunmetal', [0.1, 0.72, 0.9], [86 + dx, 0.36, z], false);
+      for (const dz of [-0.85, 0.85]) this.box(B, 'woodDark', [6, 0.06, 0.35], [86, 0.45, z + dz]);
+    }
+    this.box(B, 'dark', [1.6, 0.45, 0.4], [76, 0.3, 50]);
+    this.box(B, 'gunmetal', [0.08, 1.8, 0.08], [75, 0.9, 49.5], false);
+    this.box(B, 'gunmetal', [0.08, 1.8, 0.08], [77, 0.9, 49.5], false);
+    this.box(B, 'steel', [2.4, 0.05, 0.05], [76, 1.6, 49.5], false);
+    for (const dx of [-1.25, 1.25]) this.cyl(B, 'dark', 0.22, 0.08, [76 + dx, 1.6, 49.5], false, [0, 0, Math.PI / 2], 12);
+    for (const [z0, z1] of [[20, 28], [38, 46]]) {
+      for (let z = z0; z <= z1; z += 0.8) {
+        this.box(B, 'gunmetal', [0.5, 1.9, 0.75], [66.6, 0.95, z]);
+        this.box(B, 'dark', [0.02, 0.2, 0.05], [66.86, 1.5, z + 0.25], false);
+      }
+    }
+
+    // ---- Power plant: control consoles, valve wheels, pipe bundles on the south wall.
+    const P = 'power';
+    for (const x of [-10, 10]) {
+      this.box(P, 'gunmetal', [3.4, 1.0, 0.9], [x, 0.5, -68.4]);
+      this.box(P, 'screenWarm', [1.2, 0.5, 0.05], [x - 0.8, 1.35, -68.05], false, [-0.4, 0, 0]);
+      this.box(P, 'screen', [1.2, 0.5, 0.05], [x + 0.8, 1.35, -68.05], false, [-0.4, 0, 0]);
+      for (let i = 0; i < 5; i++) this.box(P, i % 2 ? 'lampRed' : 'leds', [0.06, 0.06, 0.02], [x - 1.2 + i * 0.6, 1.02, -67.95], false);
+    }
+    for (const x of [-34, -18, 18, 34]) {
+      for (const y of [1.2, 2.0, 2.8]) this.cyl(P, 'steel', 0.18, 6, [x, y, -85.3], false, [0, 0, Math.PI / 2], 10);
+      this.cyl(P, 'vanta', 0.32, 0.05, [x + 3.2, 2.0, -84.9], false, [Math.PI / 2, 0, 0], 16);
+    }
+  }
+
+  /**
    * Fills every room with style-appropriate detail: wall fixtures along each wall
    * (extinguishers, vents, sconces, posters, panels, cameras, pipes), ceiling
    * services (ducts, cable trays, pipe runs, grilles) and floor clutter in corners
@@ -1303,13 +1432,22 @@ export class Site9 implements GameMap {
     if (!here) return;
     const seen = new Set<string>([here.id]);
     let frontier = [here.id];
-    for (let depth = 0; depth < 3; depth++) {
+    // Phones: two rooms deep, and rooms past your neighbours only within 45 m.
+    const maxDepth = this.mobile ? 2 : 3;
+    const far = this.mobile ? 45 : Infinity;
+    for (let depth = 0; depth < maxDepth; depth++) {
       const next: string[] = [];
       for (const id of frontier) {
         for (const l of LINKS) {
           const other = l.a === id ? l.b : l.b === id ? l.a : null;
           if (!other || seen.has(other)) continue;
           if (l.kind === 'buy' && !isOpen(l)) continue;
+          if (depth > 0) {
+            const r = ROOM_OF.get(other)!.rect;
+            const dx = Math.max(r[0] - x, 0, x - r[2]);
+            const dz = Math.max(r[1] - z, 0, z - r[3]);
+            if (dx * dx + dz * dz > far * far) continue;
+          }
           seen.add(other);
           next.push(other);
         }
