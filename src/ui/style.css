@@ -140,3 +140,32 @@ canvas { display: block; touch-action: none; }
 .is-touch .kills { top: 54px; }
 .is-touch .debug-hud { top: 54px; font-size: 8px; line-height: 1.35; padding: 4px 6px; max-height: calc(100vh - 64px); overflow: hidden; }
 .is-touch .help { display: none; }
+
+/* ---------- Player condition (Black Division) ---------- */
+.dmg-vignette { position: absolute; inset: 0; pointer-events: none; opacity: 0;
+  background: radial-gradient(ellipse at center, rgba(120,0,0,0) 45%, rgba(130,0,0,0.55) 78%, rgba(90,0,0,0.9) 100%); }
+.supp-vignette { position: absolute; inset: 0; pointer-events: none; opacity: 0;
+  background: radial-gradient(ellipse at center, rgba(0,0,0,0) 35%, rgba(0,0,0,0.65) 85%, rgba(0,0,0,0.9) 100%); }
+.hp { position: absolute; left: 24px; bottom: 26px; display: flex; align-items: center; gap: 10px; text-shadow: 0 1px 3px #000; }
+.hp-bar { width: 180px; height: 6px; background: rgba(255,255,255,0.15); }
+.hp-fill { height: 100%; background: #e8e8e8; transform-origin: 0 50%; transition: transform 120ms; }
+.hp-text { font-size: 22px; font-weight: 800; font-variant-numeric: tabular-nums; min-width: 40px; }
+.hp.low .hp-fill { background: #d8352a; }
+.hp.low .hp-text { color: #ff5a4a; animation: hpPulse 0.9s ease-in-out infinite; }
+@keyframes hpPulse { 50% { opacity: 0.45; } }
+.hit-ind { position: absolute; left: 50%; top: 50%; width: 90px; height: 14px; pointer-events: none; opacity: 0;
+  background: radial-gradient(ellipse at 50% 100%, rgba(255,40,30,0.95), rgba(200,0,0,0) 70%); border-top: 3px solid rgba(255,60,40,0.95); border-radius: 50% 50% 0 0; }
+.comms { position: absolute; left: 50%; top: 16%; transform: translateX(-50%); padding: 6px 14px; background: rgba(0,0,0,0.6);
+  border-left: 2px solid #b0201a; font: 600 15px/1.3 ui-monospace, Consolas, monospace; letter-spacing: 0.06em; color: #e6e6e6; opacity: 0; transition: opacity 200ms; white-space: nowrap; }
+.comms.show { opacity: 1; }
+.comms-tag { color: #d8352a; font-size: 11px; letter-spacing: 0.18em; margin-right: 8px; }
+.squad-line { position: absolute; right: 24px; top: 48px; font: 11px ui-monospace, Consolas, monospace; letter-spacing: 0.1em; color: #c9c9c9; text-shadow: 0 1px 2px #000; }
+.squad-line:empty { display: none; }
+.death-screen { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; pointer-events: none;
+  background: radial-gradient(ellipse at center, rgba(40,0,0,0.75), rgba(0,0,0,0.96)); opacity: 0; transition: opacity 0.6s; }
+.death-screen.show { opacity: 1; }
+.death-title { font-size: 64px; font-weight: 900; letter-spacing: 0.3em; color: #d8352a; }
+.death-sub { margin-top: 6px; font: 14px ui-monospace, Consolas, monospace; letter-spacing: 0.5em; color: #9a9a9a; }
+.death-hint { margin-top: 26px; font-size: 12px; letter-spacing: 0.2em; color: #777; }
+.is-touch .hp { left: 16px; bottom: auto; top: 12px; }
+.is-touch .hp-bar { width: 110px; }

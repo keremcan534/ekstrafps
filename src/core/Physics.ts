@@ -20,7 +20,7 @@ export const groups = (member: number, filter: number): number => ((member & 0xf
 export const GROUPS = {
   world: groups(G.WORLD, 0xffff),
   prop: groups(G.PROP, G.WORLD | G.PROP | G.PLAYER | G.SHELL | G.HITBOX | G.DEBRIS | G.RAY),
-  player: groups(G.PLAYER, G.WORLD | G.PROP | G.HITBOX),
+  player: groups(G.PLAYER, G.WORLD | G.PROP | G.HITBOX | G.RAY),
   shell: groups(G.SHELL, G.WORLD | G.PROP | G.DEBRIS),
   hitbox: groups(G.HITBOX, G.PROP | G.PLAYER | G.DEBRIS | G.RAY),
   debris: groups(G.DEBRIS, G.WORLD | G.PROP | G.SHELL | G.DEBRIS | G.HITBOX | G.RAY),
@@ -28,11 +28,15 @@ export const GROUPS = {
   ragdoll: groups(G.DEBRIS, G.WORLD | G.PROP | G.SHELL | G.HITBOX | G.RAY),
   /** Query groups for bullets. */
   bullet: groups(G.RAY, G.WORLD | G.PROP | G.HITBOX | G.DEBRIS),
+  /** Enemy bullets can also hit the player. */
+  enemyBullet: groups(G.RAY, G.WORLD | G.PROP | G.HITBOX | G.DEBRIS | G.PLAYER),
+  /** AI line of sight: blocked by level geometry and props only. */
+  sight: groups(G.RAY, G.WORLD | G.PROP),
   /** Query groups for the character controller. */
   playerQuery: groups(G.PLAYER, G.WORLD | G.PROP | G.HITBOX),
 } as const;
 
-export type SurfaceType = 'concrete' | 'metal' | 'robot' | 'robotWeak';
+export type SurfaceType = 'concrete' | 'metal' | 'robot' | 'robotWeak' | 'flesh' | 'armor' | 'helmet' | 'player';
 
 export interface BulletHit {
   point: THREE.Vector3;
@@ -43,6 +47,10 @@ export interface BulletHit {
   impulse: number;
   critMultiplier: number;
   weaponId: string;
+  /** Armor penetration rating of the round. */
+  penetration: number;
+  /** Fired by an enemy (not the player). */
+  hostile: boolean;
 }
 
 export interface HitResult {
@@ -62,6 +70,8 @@ export interface HitReceiver {
   /** Object decals get attached to (so marks move with props). Null = static world. */
   decalParent?: THREE.Object3D | null;
   allowDecals?: boolean;
+  /** Who this collider belongs to: a shooter's own bullets ignore it. */
+  owner?: object;
   /** Multiplier on the bullet momentum pushed into `body` (ragdolls read better a bit livelier). */
   impulseScale?: number;
   onBulletHit?(hit: BulletHit, out: HitResult): void;
@@ -89,6 +99,21 @@ export class Physics {
     normal: new THREE.Vector3(),
     distance: 0,
   };
+
+  private ignoreOwner: object | null = null;
+  private ownerFilter = (c: RAPIER.Collider): boolean => this.receivers.get(c.handle)?.owner !== this.ignoreOwner;
+
+  /** True when nothing in `queryGroups` blocks the straight line a → b. */
+  lineOfSight(a: THREE.Vector3, b: THREE.Vector3, queryGroups: number = GROUPS.sight): boolean {
+    const d = this.losDir.subVectors(b, a);
+    const len = d.length();
+    if (len < 1e-4) return true;
+    d.divideScalar(len);
+    this.ray.origin = { x: a.x, y: a.y, z: a.z };
+    this.ray.dir = { x: d.x, y: d.y, z: d.z };
+    return !this.world.castRay(this.ray, len, true, undefined, queryGroups);
+  }
+  private losDir = new THREE.Vector3();
 
   static async create(timestep: number): Promise<Physics> {
     await RAPIER.init();
@@ -139,10 +164,13 @@ export class Physics {
   /**
    * Cast a bullet ray. Returns a shared result object (do not keep a reference).
    */
-  raycast(origin: THREE.Vector3, dir: THREE.Vector3, maxDist: number, queryGroups: number = GROUPS.bullet): RayHit | null {
+  raycast(origin: THREE.Vector3, dir: THREE.Vector3, maxDist: number, queryGroups: number = GROUPS.bullet, ignoreOwner?: object | null): RayHit | null {
     this.ray.origin = { x: origin.x, y: origin.y, z: origin.z };
     this.ray.dir = { x: dir.x, y: dir.y, z: dir.z };
-    const hit = this.world.castRayAndGetNormal(this.ray, maxDist, true, undefined, queryGroups);
+    this.ignoreOwner = ignoreOwner ?? null;
+    const hit = this.world.castRayAndGetNormal(
+      this.ray, maxDist, true, undefined, queryGroups, undefined, undefined, this.ignoreOwner ? this.ownerFilter : undefined,
+    );
     if (!hit) return null;
     const out = this.rayHit;
     out.collider = hit.collider;

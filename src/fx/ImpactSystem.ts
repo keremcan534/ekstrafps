@@ -39,6 +39,7 @@ export class ImpactSystem {
    * @param decal whether the surface is static world geometry
    */
   impact(surface: SurfaceType, point: THREE.Vector3, normal: THREE.Vector3, dir: THREE.Vector3, intensity: number, decal: boolean, playSound = true): void {
+    if (surface === 'player') return; // our own body: feedback is on the HUD
     this.refl.copy(dir).addScaledVector(normal, -2 * dir.dot(normal)).normalize();
     this.buildTangents(normal);
     const n = Math.max(0.35, intensity);
@@ -71,6 +72,23 @@ export class ImpactSystem {
         this.flash(point, normal, 0.18, 1, 0.6, 0.25);
         this.burstDust(point, normal, Math.round(2 * n), 0.12, 0.12, 0.13);
         if (playSound) this.audio.play('impact.robot', { position: point });
+        break;
+      case 'flesh':
+        // Dark mist + fabric dust; no gore.
+        this.burstDust(point, normal, Math.round(4 * n), 0.32, 0.03, 0.03);
+        this.burstDust(point, normal, Math.round(2 * n), 0.12, 0.12, 0.12);
+        if (playSound) this.audio.play('impact.flesh', { position: point });
+        break;
+      case 'armor':
+        this.burstSparks(point, Math.round(5 * n), 6, 1.0, 0.75, 0.4, 0.2);
+        this.burstDust(point, normal, Math.round(3 * n), 0.2, 0.2, 0.21);
+        this.flash(point, normal, 0.1, 1, 0.75, 0.45);
+        if (playSound) this.audio.play('impact.armor', { position: point });
+        break;
+      case 'helmet':
+        this.burstSparks(point, Math.round(9 * n), 9, 1.0, 0.85, 0.55, 0.25);
+        this.flash(point, normal, 0.14, 1, 0.85, 0.6);
+        if (playSound) this.audio.play('impact.helmet', { position: point });
         break;
       case 'robotWeak':
         this.burstSparks(point, Math.round(18 * n), 11, 0.6, 0.95, 1.0, 0.35);

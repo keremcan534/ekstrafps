@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import type { HitReceiver, Physics } from '../core/Physics';
 import { MeshBuilder } from './MeshBuilder';
 import { PhysicsProps } from './PhysicsProps';
-import { gridTexture } from '../fx/Textures';
+import { corrugatedTexture, gridTexture } from '../fx/Textures';
 import type { RobotOptions } from '../targets/RobotTarget';
 
 const METAL: HitReceiver = { surface: 'metal', allowDecals: true };
@@ -17,12 +17,21 @@ type V3 = [number, number, number];
  *                         hanging steel plates at 20 m and 50 m
  *   Right zone (x > 8): stairs → raised platform → ramp, pillars, metal cover
  *   Behind spawn: crouch tunnel + jump boxes for movement testing
+ *   Black Division yard (z < -65, through two doors in the back wall): open-air
+ *   container yard where the enemy squad patrols.
  */
 export class Arena {
   readonly group = new THREE.Group();
   readonly props: PhysicsProps;
   readonly spawn = new THREE.Vector3(0, 0, 4);
   readonly robotSpawns: RobotOptions[] = [];
+  /** Black Division patrol loop (yard). */
+  readonly patrolRoute: THREE.Vector3[] = [
+    [-16.5, -70], [-17, -84], [-8, -95], [-9, -112], [2, -123], [16, -121], [20, -96], [15.5, -70], [0, -69],
+  ].map(([x, z]) => new THREE.Vector3(x, 0, z));
+  readonly squadSpawnIndex = 3;
+  /** Navigation bounds (x0, z0, x1, z1). */
+  readonly navBounds: [number, number, number, number] = [-22, -127, 22, 16];
   readonly sun: THREE.DirectionalLight;
 
   private builder = new MeshBuilder(true);
@@ -38,6 +47,14 @@ export class Arena {
       stripe: new THREE.MeshStandardMaterial({ color: 0xe8e8e8, roughness: 0.7 }),
       ceiling: new THREE.MeshStandardMaterial({ color: 0x1c1e22, roughness: 1 }),
       lamp: new THREE.MeshStandardMaterial({ color: 0x000000, emissive: 0xeaf2ff, emissiveIntensity: 2.5 }),
+      asphalt: new THREE.MeshStandardMaterial({ map: gridTexture('#2b2d30', '#232528', '#28292c'), roughness: 0.95 }),
+      yardWall: new THREE.MeshStandardMaterial({ map: gridTexture('#3a3c40', '#2e3034', '#36383c'), roughness: 0.95 }),
+      contGreen: new THREE.MeshStandardMaterial({ map: corrugatedTexture('#2f3a2d'), roughness: 0.7, metalness: 0.35 }),
+      contRust: new THREE.MeshStandardMaterial({ map: corrugatedTexture('#5b2d1d'), roughness: 0.75, metalness: 0.3 }),
+      contBlue: new THREE.MeshStandardMaterial({ map: corrugatedTexture('#1f2b3a'), roughness: 0.7, metalness: 0.35 }),
+      contFrame: new THREE.MeshStandardMaterial({ color: 0x1b1c1e, roughness: 0.6, metalness: 0.5 }),
+      sandbag: new THREE.MeshStandardMaterial({ map: gridTexture('#4a4536', '#3c382c', '#443f32'), roughness: 1 }),
+      sodium: new THREE.MeshStandardMaterial({ color: 0x000000, emissive: 0xffa24a, emissiveIntensity: 3 }),
     };
 
     this.buildShell();
@@ -45,6 +62,7 @@ export class Arena {
     this.buildLeftZone();
     this.buildRightZone();
     this.buildMovementCourse();
+    this.buildYard();
     this.builder.build(this.group);
     this.buildLabels();
 
@@ -56,17 +74,18 @@ export class Arena {
     // --- Lighting ---
     this.group.add(new THREE.HemisphereLight(0xc8d6ff, 0x3a3631, 1.0));
     const sun = new THREE.DirectionalLight(0xfff1dd, 2.4);
-    sun.position.set(14, 30, 10);
-    sun.target.position.set(0, 0, -24);
+    // Same light direction as before, re-centred so the shadow map also covers the yard.
+    sun.position.set(14, 30, -21);
+    sun.target.position.set(0, 0, -55);
     sun.castShadow = true;
     sun.shadow.mapSize.set(mobile ? 1024 : 2048, mobile ? 1024 : 2048);
     const cam = sun.shadow.camera;
-    cam.left = -48;
-    cam.right = 48;
-    cam.top = 48;
-    cam.bottom = -48;
+    cam.left = -62;
+    cam.right = 62;
+    cam.top = 62;
+    cam.bottom = -62;
     cam.near = 5;
-    cam.far = 90;
+    cam.far = 120;
     sun.shadow.bias = -0.0006;
     sun.shadow.normalBias = 0.04;
     this.group.add(sun, sun.target);
@@ -106,7 +125,14 @@ export class Arena {
     this.solid('floor', [44, 1, 80], [0, -0.5, -24]);
     this.solid('wall', [1, 10, 80], [-22.5, 5, -24]);
     this.solid('wall', [1, 10, 80], [22.5, 5, -24]);
-    this.solid('wall', [46, 10, 1], [0, 5, -64.5]);
+    // Back wall with two 4 m doors into the Black Division yard.
+    this.solid('wall', [4.5, 10, 1], [-20.75, 5, -64.5]);
+    this.solid('wall', [29, 10, 1], [0, 5, -64.5]);
+    this.solid('wall', [4.5, 10, 1], [20.75, 5, -64.5]);
+    for (const x of [-16.5, 16.5]) {
+      this.solid('wall', [4, 6.5, 1], [x, 6.75, -64.5]);
+      this.detail('accent', [4, 0.12, 1.02], [x, 3.44, -64.5]);
+    }
     this.solid('wall', [46, 10, 1], [0, 5, 16.5]);
     // Ceiling + light strips (visual only, no shadows from the ceiling)
     const ceiling = new MeshBuilder(false);
@@ -190,6 +216,65 @@ export class Arena {
     this.solid('concrete', [1.5, 1.5, 1.5], [8, 0.75, 10]);
     this.pillar(-12, 11);
     this.pillar(12, 12);
+  }
+
+  /** Open-air container yard behind the range: the Black Division patrol area. */
+  private buildYard(): void {
+    this.solid('asphalt', [46, 1, 63], [0, -0.5, -95.5]);
+    this.solid('yardWall', [1, 8, 63], [-22.5, 4, -95.5]);
+    this.solid('yardWall', [1, 8, 63], [22.5, 4, -95.5]);
+    this.solid('yardWall', [46, 8, 1], [0, 4, -127.5]);
+    this.detail('accent', [0.05, 0.3, 63], [-21.98, 0.15, -95.5]);
+    this.detail('accent', [0.05, 0.3, 63], [21.98, 0.15, -95.5]);
+
+    const container = (x: number, z: number, alongZ: boolean, mat: string, y = 0) => {
+      const size: V3 = alongZ ? [2.44, 2.6, 6.06] : [6.06, 2.6, 2.44];
+      this.solid(mat, size, [x, y + 1.3, z]);
+      // Corner posts + top rails.
+      const hx = size[0] / 2 - 0.06;
+      const hz = size[2] / 2 - 0.06;
+      for (const sx of [-1, 1]) for (const sz of [-1, 1]) this.detail('contFrame', [0.14, 2.62, 0.14], [x + sx * hx, y + 1.3, z + sz * hz]);
+      this.detail('contFrame', [size[0] + 0.02, 0.1, 0.14], [x, y + 2.57, z + hz]);
+      this.detail('contFrame', [size[0] + 0.02, 0.1, 0.14], [x, y + 2.57, z - hz]);
+      // Door end: locking bars.
+      const end = alongZ ? z + size[2] / 2 + 0.01 : x + size[0] / 2 + 0.01;
+      for (const o of [-0.7, -0.35, 0.35, 0.7]) {
+        if (alongZ) this.detail('contFrame', [0.04, 2.3, 0.04], [x + o, y + 1.3, end]);
+        else this.detail('contFrame', [0.04, 2.3, 0.04], [end, y + 1.3, z + o]);
+      }
+    };
+    container(-11, -78, true, 'contGreen');
+    container(-2, -90, false, 'contRust');
+    container(11, -80, true, 'contBlue');
+    container(11, -80, true, 'contGreen', 2.6);
+    container(15, -102, false, 'contRust');
+    container(-14, -104, false, 'contBlue');
+    container(2, -114, true, 'contGreen');
+    container(-19, -120, false, 'contRust');
+
+    const jersey = (x: number, z: number, alongZ: boolean) => {
+      this.solid('concrete', alongZ ? [0.6, 0.85, 3] : [3, 0.85, 0.6], [x, 0.425, z]);
+      this.detail('accent', alongZ ? [0.62, 0.08, 3.02] : [3.02, 0.08, 0.62], [x, 0.7, z]);
+    };
+    jersey(-3, -75, false);
+    jersey(18, -88, true);
+    jersey(-18, -90, true);
+    jersey(6, -96, true);
+    jersey(-8, -99, false);
+    jersey(9, -120, false);
+    jersey(-6, -121, false);
+
+    this.solid('sandbag', [4, 1.0, 0.7], [0, 0.5, -104]);
+    this.solid('sandbag', [0.7, 1.0, 3], [-13, 0.5, -91]);
+    this.solid('sandbag', [3, 1.0, 0.7], [17, 0.5, -114]);
+    this.solid('concrete', [2, 3, 2], [19, 1.5, -73]);
+
+    // Sodium lamp posts.
+    for (const [x, z] of [[-21.2, -80], [21.2, -95], [-21.2, -110], [0, -126.2], [21.2, -118]]) {
+      this.detail('metal', [0.12, 6, 0.12], [x, 3, z]);
+      this.detail('metal', [0.5, 0.12, 0.3], [x - Math.sign(x || 1) * 0.3, 6, z]);
+      this.detail('sodium', [0.36, 0.05, 0.2], [x - Math.sign(x || 1) * 0.35, 5.93, z]);
+    }
   }
 
   private pillar(x: number, z: number): void {

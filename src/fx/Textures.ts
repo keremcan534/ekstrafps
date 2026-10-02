@@ -300,3 +300,35 @@ export const glowTexture = (): THREE.Texture =>
       ctx.fillRect(0, 0, s, s);
     }),
   );
+
+/** Corrugated steel (shipping containers): vertical ribs, rust streaks, grime. 1 tile = 1 m. */
+export const corrugatedTexture = (base: string): THREE.Texture =>
+  cached(`corr_${base}`, () => {
+    const t = canvasTexture(256, (ctx, s) => {
+      ctx.fillStyle = base;
+      ctx.fillRect(0, 0, s, s);
+      const ribs = 4;
+      for (let i = 0; i < ribs; i++) {
+        const x = (i / ribs) * s;
+        const g = ctx.createLinearGradient(x, 0, x + s / ribs, 0);
+        g.addColorStop(0, 'rgba(0,0,0,0.35)');
+        g.addColorStop(0.3, 'rgba(255,255,255,0.10)');
+        g.addColorStop(0.55, 'rgba(255,255,255,0.02)');
+        g.addColorStop(0.8, 'rgba(0,0,0,0.25)');
+        g.addColorStop(1, 'rgba(0,0,0,0.35)');
+        ctx.fillStyle = g;
+        ctx.fillRect(x, 0, s / ribs, s);
+      }
+      for (let i = 0; i < 9; i++) {
+        ctx.fillStyle = `rgba(${90 + Math.random() * 40},${40 + Math.random() * 20},20,${0.08 + Math.random() * 0.12})`;
+        ctx.fillRect(Math.random() * s, Math.random() * s * 0.4, 2 + Math.random() * 4, s * (0.3 + Math.random() * 0.6));
+      }
+      for (let i = 0; i < 900; i++) {
+        const v = Math.random() * 22 - 11;
+        ctx.fillStyle = v > 0 ? `rgba(255,255,255,${v / 255})` : `rgba(0,0,0,${-v / 255})`;
+        ctx.fillRect(Math.random() * s, Math.random() * s, 2, 2);
+      }
+    });
+    t.wrapS = t.wrapT = THREE.RepeatWrapping;
+    return t;
+  });

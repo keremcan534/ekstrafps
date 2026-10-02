@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import type { BulletHit, HitReceiver, HitResult, Physics, SurfaceType } from '../core/Physics';
+import { GROUPS, type BulletHit, type HitReceiver, type HitResult, type Physics, type SurfaceType } from '../core/Physics';
 import { feel } from '../config/Feel';
 import { dragFactor, type AmmoData } from './AmmoData';
 import type { ParticleSystem, ParticleSpawn } from '../fx/Particles';
@@ -28,6 +28,8 @@ export interface ProjectileHitReport {
   targetHealth: number;
   targetMaxHealth: number;
   point: THREE.Vector3;
+  /** Enemy round: not the player's hit (no hit markers). */
+  hostile: boolean;
 }
 
 interface Projectile {
@@ -43,6 +45,11 @@ interface Projectile {
   travelled: number;
   ricochets: number;
   soundBudget: boolean;
+  /** Shooter: its own hitboxes are ignored. */
+  owner: object | null;
+  hostile: boolean;
+  /** Already cracked past the listener. */
+  flyby: boolean;
 }
 
 /**
@@ -70,11 +77,18 @@ export class ProjectileSystem {
     impulse: 0,
     critMultiplier: 2,
     weaponId: '',
+    penetration: 0,
+    hostile: false,
   };
   private result: HitResult = { damage: 0, crit: false, killed: false, health: -1, maxHealth: 0 };
   private report: ProjectileHitReport = {
-    shotId: 0, kind: 'world', damage: 0, distance: 0, speed: 0, targetHealth: -1, targetMaxHealth: 0, point: new THREE.Vector3(),
+    shotId: 0, kind: 'world', damage: 0, distance: 0, speed: 0, targetHealth: -1, targetMaxHealth: 0, point: new THREE.Vector3(), hostile: false,
   };
+  private closest = new THREE.Vector3();
+
+  /** Listener head (camera): enemy rounds passing close call `onFlyby`. */
+  listener: THREE.Vector3 | null = null;
+  onFlyby: ((point: THREE.Vector3, distance: number, speed: number) => void) | null = null;
 
   /** Called whenever a projectile hits anything. */
   onHit: ((r: ProjectileHitReport) => void) | null = null;
@@ -92,6 +106,7 @@ export class ProjectileSystem {
       this.pool.push({
         alive: false, pos: new THREE.Vector3(), vel: new THREE.Vector3(), v0: 0, ammo: null as unknown as AmmoData,
         shotId: 0, pellets: 1, tracer: false, age: 0, travelled: 0, ricochets: 0, soundBudget: true,
+        owner: null, hostile: false, flyby: false,
       });
     }
   }
@@ -102,7 +117,10 @@ export class ProjectileSystem {
     return n;
   }
 
-  fire(origin: THREE.Vector3, dir: THREE.Vector3, speed: number, ammo: AmmoData, shotId: number, tracer: boolean, soundBudget: boolean): void {
+  fire(
+    origin: THREE.Vector3, dir: THREE.Vector3, speed: number, ammo: AmmoData, shotId: number, tracer: boolean, soundBudget: boolean,
+    owner: object | null = null, hostile = false,
+  ): void {
     const p = this.pool[this.next];
     this.next = (this.next + 1) % CAPACITY;
     p.alive = true;
@@ -117,6 +135,9 @@ export class ProjectileSystem {
     p.travelled = 0;
     p.ricochets = 0;
     p.soundBudget = soundBudget;
+    p.owner = owner;
+    p.hostile = hostile;
+    p.flyby = false;
   }
 
   update(dt: number): void {
@@ -137,7 +158,8 @@ export class ProjectileSystem {
         const len = this.seg.length();
         if (len < 1e-6) continue;
         this.dir.copy(this.seg).divideScalar(len);
-        const hit = this.physics.raycast(p.pos, this.dir, len);
+        if (p.hostile && !p.flyby) this.checkFlyby(p, len);
+        const hit = this.physics.raycast(p.pos, this.dir, len, p.hostile ? GROUPS.enemyBullet : GROUPS.bullet, p.owner);
         if (hit) {
           this.traceDebug(p, hit.point);
           this.trail(p, hit.point);
@@ -158,6 +180,19 @@ export class ProjectileSystem {
     }
   }
 
+  /** Enemy round passing the listener's head: supersonic crack / subsonic whizz. */
+  private checkFlyby(p: Projectile, len: number): void {
+    const l = this.listener;
+    if (!l || !this.onFlyby) return;
+    const t = Math.max(0, Math.min(len, this.closest.subVectors(l, p.pos).dot(this.dir)));
+    this.closest.copy(p.pos).addScaledVector(this.dir, t);
+    const d = this.closest.distanceTo(l);
+    if (d < 2.6 && t < len) {
+      p.flyby = true;
+      this.onFlyby(this.closest, d, p.vel.length());
+    }
+  }
+
   /** Debug trajectory: one segment per frame, coloured by remaining velocity. */
   private traceDebug(p: Projectile, end: THREE.Vector3): void {
     if (!this.debug.enabled) return;
@@ -169,7 +204,8 @@ export class ProjectileSystem {
   /** Visible air trail along the real flight path (shows drop and ricochets). */
   private trail(p: Projectile, end: THREE.Vector3): void {
     if (!feel.bulletTrails && !p.tracer) return;
-    if (p.tracer) this.trails.add(this.trailStart, end, 1, 0.55, 0.22, 0.7);
+    if (p.tracer) this.trails.add(this.trailStart, end, 1, p.hostile ? 0.18 : 0.55, p.hostile ? 0.12 : 0.22, 0.7);
+    else if (p.hostile) this.trails.add(this.trailStart, end, 0.5, 0.2, 0.16, 0.45);
     else this.trails.add(this.trailStart, end, 0.42, 0.38, 0.3, 0.45);
     this.trailStart.copy(end);
   }
@@ -187,8 +223,9 @@ export class ProjectileSystem {
     t.size = t.sizeEnd = p.tracer ? 0.022 : 0.012;
     t.stretch = p.tracer ? 0.0065 : 0.0045;
     t.r = 1;
-    t.g = p.tracer ? 0.62 : 0.9;
-    t.b = p.tracer ? 0.3 : 0.7;
+    // Black Division rounds burn red.
+    t.g = p.hostile ? (p.tracer ? 0.2 : 0.55) : p.tracer ? 0.62 : 0.9;
+    t.b = p.hostile ? (p.tracer ? 0.15 : 0.45) : p.tracer ? 0.3 : 0.7;
     t.alpha = p.tracer ? 0.95 : 0.55;
     t.gravity = 0;
     t.drag = 0;
@@ -232,6 +269,8 @@ export class ProjectileSystem {
     h.distance = p.travelled;
     h.damage = p.ammo.damage * Math.max(0.25, Math.min(1.05, speedRatio));
     h.impulse = momentum * 0.18;
+    h.penetration = p.ammo.penetration;
+    h.hostile = p.hostile;
     const res = this.result;
     res.damage = 0;
     res.crit = false;
@@ -254,6 +293,7 @@ export class ProjectileSystem {
     r.targetHealth = res.health;
     r.targetMaxHealth = res.maxHealth;
     r.point.copy(point);
+    r.hostile = p.hostile;
     this.onHit?.(r);
   }
 }

@@ -9,6 +9,7 @@ export const STATIONS: { name: string; pos: [number, number, number]; yaw: numbe
   { name: 'Wall test (weapon collision)', pos: [0, 0, 14.8], yaw: Math.PI },
   { name: 'Behind pillar (lean test)', pos: [-14, 0, -17.4], yaw: 0 },
   { name: 'Crouch tunnel', pos: [-4.5, 0, 6.6], yaw: Math.PI },
+  { name: 'Black Division yard (left door)', pos: [-16.5, 0, -61], yaw: 0 },
 ];
 
 export const HELP_TEXT = `WEAPON LAB — keys
@@ -22,6 +23,8 @@ G  aim rays + probes + bullet paths
 L  laser · J  debug crosshair · N  dmg numbers
 Z  slow motion · I  infinite ammo
 K  reset robots · M  next test station
+── black division ──
+Y  respawn squad · O  god mode · U  AI on/off
 H  debug HUD · Tab  tuning panel · F1  help`;
 
 export interface LabSettings {

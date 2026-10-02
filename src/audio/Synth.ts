@@ -337,6 +337,41 @@ export const RECIPES: Record<string, Recipe> = {
     metal(c, 0.05, 520, 0.4, 0.35, [1, 2.3, 3.9]);
     tone(c, { dur: 0.25, f0: 70, f1: 35, gain: 1.0 });
   } },
+  // ---------- Black Division / player damage ----------
+  flyby_crack: { dur: 0.12, samples: (sr) => crackSamples(sr, 0.45, 9), drive: 2.2 },
+  flyby_whizz: { dur: 0.35, render: (c) => {
+    burst(c, { dur: 0.22, attack: 0.06, freq: 2600, freqEnd: 700, q: 4, gain: 0.9 });
+    tone(c, { dur: 0.25, f0: 1400, f1: 500, gain: 0.08, attack: 0.05 });
+  } },
+  impact_flesh: { dur: 0.25, render: (c) => {
+    burst(c, { dur: 0.09, freq: 420, freqEnd: 150, type: 'lowpass', gain: 1.3 });
+    tone(c, { dur: 0.08, f0: 130, f1: 55, gain: 0.7 });
+    burst(c, { dur: 0.03, freq: 1800, q: 1.5, gain: 0.25 });
+  } },
+  impact_armor: { dur: 0.4, drive: 1.5, render: (c) => {
+    tone(c, { dur: 0.09, f0: 160, f1: 70, gain: 0.9 });
+    burst(c, { dur: 0.05, freq: 900, freqEnd: 300, type: 'lowpass', gain: 1.0 });
+    metal(c, 0, r(780, 900), 0.16, 0.3, [1, 2.1, 3.4]);
+  } },
+  impact_helmet: { dur: 0.45, render: (c) => {
+    metal(c, 0, r(1600, 1900), 0.3, 0.45, [1, 2.4, 3.9]);
+    burst(c, { dur: 0.02, freq: 5000, type: 'highpass', gain: 0.5 });
+    tone(c, { dur: 0.05, f0: 220, f1: 90, gain: 0.5 });
+  } },
+  player_hit: { dur: 1.4, drive: 1.4, render: (c) => {
+    tone(c, { dur: 0.16, f0: 95, f1: 38, gain: 1.4 });
+    burst(c, { dur: 0.12, freq: 600, freqEnd: 120, type: 'lowpass', gain: 1.2 });
+    tone(c, { t: 0.02, dur: 1.2, f0: 3150, gain: 0.05, attack: 0.04 }); // ear ring
+  } },
+  player_death: { dur: 2.2, render: (c) => {
+    tone(c, { dur: 0.6, f0: 70, f1: 28, gain: 1.4 });
+    burst(c, { dur: 0.5, freq: 400, freqEnd: 60, type: 'lowpass', gain: 1.2 });
+    tone(c, { t: 0.05, dur: 2, f0: 2900, gain: 0.07, attack: 0.1 });
+  } },
+  radio_click: { dur: 0.25, render: (c) => {
+    burst(c, { dur: 0.012, freq: 3000, q: 2, gain: 0.8 });
+    burst(c, { t: 0.01, dur: 0.16, attack: 0.005, freq: 2200, q: 0.7, gain: 0.18 });
+  } },
   body_fall: { dur: 0.5, drive: 1.6, render: (c) => {
     tone(c, { dur: 0.14, f0: r(85, 100), f1: 38, gain: 1.1 });
     burst(c, { dur: 0.1, freq: 700, freqEnd: 160, type: 'lowpass', gain: 1.2 });

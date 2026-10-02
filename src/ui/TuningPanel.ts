@@ -100,6 +100,13 @@ export class TuningPanel {
     feelF.add(feel, 'masterVolume', 0, 1, 0.01).onChange(() => hooks.onFeelChanged());
     feelF.add(feel, 'robotRespawnTime', 0.5, 15, 0.5);
 
+    const bd = this.gui.addFolder('Black Division').close();
+    bd.add(feel, 'enemyAI').name('Enemy AI (U)').listen();
+    bd.add(feel, 'godMode').name('God mode (O)').listen();
+    bd.add(feel, 'enemyDamageScale', 0, 2, 0.05).name('Enemy damage scale');
+    bd.add(feel, 'enemyAccuracy', 0.2, 3, 0.05).name('Enemy accuracy');
+    bd.add(feel, 'playerRegen').name('Player health regen');
+
     const p = this.gui.addFolder('Player movement').close();
     p.add(playerConfig, 'walkSpeed', 1, 15, 0.1);
     p.add(playerConfig, 'sprintSpeed', 1, 20, 0.1);

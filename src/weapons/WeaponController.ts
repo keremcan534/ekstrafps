@@ -54,6 +54,8 @@ export class WeaponController implements WeaponListener {
   readonly recoil = new RecoilSystem();
   readonly viewmodel: Viewmodel;
   readonly projectiles: ProjectileSystem;
+  /** Every player shot (for AI hearing): muzzle position, suppressed. */
+  onPlayerShot: ((pos: THREE.Vector3, suppressed: boolean) => void) | null = null;
   readonly laser = new Laser();
   readonly trails = new Trails();
   current: Weapon;
@@ -410,6 +412,7 @@ export class WeaponController implements WeaponListener {
     this.recoil.onShot(d, kick, camera, this.adsAmount);
 
     audio.play(d.audio.fire);
+    this.onPlayerShot?.(this.muzzleWorld, d.model === 'asval');
     Haptics.pulse(d.animSet === 'bolt' ? 35 : HAPTIC_MS[d.category]);
     if (feel.muzzleFlash && d.fx.muzzleFlashScale > 0.3) {
       this.worldFlash.position.copy(this.muzzleWorld);
@@ -426,6 +429,7 @@ export class WeaponController implements WeaponListener {
   }
 
   private onProjectileHit(r: ProjectileHitReport): void {
+    if (r.hostile) return;
     this.lastHitDistance = r.distance;
     if (r.kind === 'world') return;
     this.frameDamage += r.damage;

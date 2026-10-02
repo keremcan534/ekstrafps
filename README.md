@@ -43,6 +43,9 @@ On the start screen, click anywhere or press Enter. Esc releases the mouse.
 | Z | slow motion |
 | I | infinite ammo |
 | K | reset robots |
+| Y | respawn the Black Division squad |
+| O | god mode |
+| U | enemy AI on / off |
 | M | next test station (wall test, lean pillar, long range…) |
 | H / Tab / F1 | debug HUD / tuning panel / help |
 
@@ -121,6 +124,76 @@ The camera and the weapon are separate bodies. The camera responds instantly. Th
   - Corpses still take bullet impulses. Body falls play a metal thud.
 - **Tuning.** `feel.hitReactionScale`, `feel.ragdollForce`, `feel.robotRespawnTime`.
 
+## Black Division
+
+The enemy faction: four all-black operators in plate carriers and high-cut helmets with glowing quad night vision. They are faceless on purpose. They patrol the container yard behind the range. To get there, press **M** and pick the yard door station, or walk through either door in the back wall. Code: `enemies/`, `ai/NavGrid.ts`.
+
+### Behaviour
+
+- **Patrol.** They walk in a column on the leader's trail and scan as they go.
+- **Spotting.**
+  - Each soldier has a view cone, line-of-sight rays, and an awareness meter.
+  - Awareness builds faster when you are close or sprinting, and slower when you are crouched and still.
+  - They also hear your gunfire: about 45 m normally, about 14 m with the AS VAL.
+- **Contact.**
+  - The spotter stops and reports on the radio: *"I see the enemy."*
+  - The leader orders *"Spread out."*
+  - The squad splits into roles:
+
+    | Role | What it does |
+    | --- | --- |
+    | anchor | holds at about 22 m |
+    | flanker (2) | one swings about 75° left, one about 75° right |
+    | pusher | closes to about 10 m |
+
+  - Positions are scored for line of sight, low cover and spacing. In low cover they crouch, then pop up to shoot.
+- **Search.** When they lose you, they search around your last known position. If they don't find you, they go back to patrolling.
+
+### Shooting
+
+- Reaction time before the first shot.
+- Aim error that tightens the longer you stay visible.
+- Bursts with recoil, then reloads.
+- They hold fire when a squadmate is in the line of fire.
+- Getting hit throws off their aim.
+- Their rounds are real projectiles with red tracers. Near misses crack past your head and suppress you (dark vignette, shake).
+
+### Armor and damage
+
+| Part | Rule |
+| --- | --- |
+| Plate (thorax) | Class rating 40. Penetration chance comes from the round's `penetration` vs the armor. A stopped round deals 30% blunt damage. |
+| Helmet | Class rating 30. |
+| Face | ×3 damage. |
+| Arms | ×0.6 damage. |
+| Legs | ×0.7 damage. |
+
+Penetration chance against the plate:
+
+| Round | Chance |
+| --- | --- |
+| 7.62x39 PS | about 37% |
+| Mosin LPS | about 80% |
+| 5.56 M855 | about 25% |
+| Buckshot | almost never |
+
+Dead soldiers ragdoll and drop their rifle as a physics object. The squad calls *"Man down."*
+
+### You
+
+- 100 HP. Health regeneration is optional (tuning panel).
+- Getting hit gives:
+  - a damage vignette
+  - a directional hit indicator
+  - aim punch and screen shake
+  - a hurt sound
+- When you die, they radio *"Target down."* and go back to patrolling. You respawn at the firing line.
+
+### Voice and tuning
+
+- Voice lines are placeholders made from offline TTS that was pitched down and run through mask and radio processing (`public/audio/voice/`). Drop in real recordings with the same names to replace them.
+- Tuning: *Black Division* folder in the panel. It covers AI on/off, god mode, enemy damage scale, enemy accuracy and regeneration.
+
 ## Where tuning lives
 
 All of these are editable live in the tuning panel. **Save to source** writes them back to disk (dev server only).
@@ -136,13 +209,15 @@ All of these are editable live in the tuning panel. **Save to source** writes th
 
 ```
 core/      Game loop (120 Hz fixed sim), Input, Physics (Rapier), Spring, Noise, LabTools, Haptics
-player/    PlayerController (kinematic character + lean), PlayerCamera (layered camera)
+player/    PlayerController (kinematic character + lean), PlayerCamera (layered camera), PlayerHealth
 weapons/   WeaponData, AmmoData, Handling, Weapon (mechanism), WeaponController (handling loop),
            Viewmodel (physical weapon pose), RecoilSystem (view recoil), Ballistics (projectiles),
            WeaponAnimator (procedural reloads, bolt cycling), WeaponModels (10 procedural guns, textured)
 fx/        Particles, ImpactSystem, Decals, Shells, MuzzleFlash, Laser, DebugDraw, Textures
-targets/   Damageable, RobotTarget
+targets/   Humanoid (shared body: zoned hitboxes, armor, reactions, ragdoll), RobotTarget, Damageable
+enemies/   Black Division: SoldierSkin, Soldier (perception, aim, fire, movement), BlackDivision (squad brain)
+ai/        NavGrid (baked walkable grid, A* + path smoothing)
 world/     Arena, PhysicsProps, MeshBuilder
 audio/     AudioSystem, SoundBank (event -> layers), Synth (placeholder sounds)
-ui/        HUD, DebugHUD, TuningPanel, TouchControls
+ui/        HUD, StatusHUD (health, hit indicators, radio subtitles, death), DebugHUD, TuningPanel, TouchControls
 ```

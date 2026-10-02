@@ -20,6 +20,12 @@ import { DebugHUD } from '../ui/DebugHUD';
 import { TuningPanel } from '../ui/TuningPanel';
 import { TouchControls } from '../ui/TouchControls';
 import { feel } from '../config/Feel';
+import { Haptics } from './Haptics';
+import { PlayerHealth } from '../player/PlayerHealth';
+import { StatusHUD } from '../ui/StatusHUD';
+import { NavGrid } from '../ai/NavGrid';
+import { BlackDivision } from '../enemies/BlackDivision';
+import type { PlayerTarget } from '../enemies/Soldier';
 
 const FIXED_DT = 1 / 120;
 const MAX_STEPS = 6;
@@ -50,6 +56,14 @@ export class Game {
   debug!: DebugHUD;
   tuning!: TuningPanel;
   touch: TouchControls | null = null;
+  health = new PlayerHealth();
+  status!: StatusHUD;
+  nav!: NavGrid;
+  squad!: BlackDivision;
+  private target: PlayerTarget = {
+    feet: new THREE.Vector3(), head: new THREE.Vector3(), chest: new THREE.Vector3(), velocity: new THREE.Vector3(),
+    sprinting: false, crouching: false, alive: true,
+  };
   /** Lab slow motion (Z). */
   timeScale = 1;
 
@@ -159,6 +173,8 @@ export class Game {
       debugDraw: this.debugDraw,
     });
     this.weapons.viewmodel.scene.environment = env;
+    this.status = new StatusHUD(ui);
+    this.initBlackDivision();
     this.weapons.viewmodel.scene.environmentIntensity = 0.6;
 
     this.tuning = new TuningPanel({
@@ -200,6 +216,75 @@ export class Game {
     this.renderer.compile(this.scene, this.camera.camera);
     this.renderer.compile(this.weapons.viewmodel.scene, this.weapons.viewmodel.camera);
     (window as unknown as { __lab: Game }).__lab = this;
+  }
+
+  /** Enemy squad, navigation, player hitbox + damage feedback. */
+  private initBlackDivision(): void {
+    const [x0, z0, x1, z1] = this.arena.navBounds;
+    const blockers = this.arena.robotSpawns.filter((r) => !r.rail && r.position.y < 0.5).map((r) => ({ pos: r.position, radius: 0.45 }));
+    this.nav = new NavGrid(this.physics, x0, z0, x1, z1, 0.5, 0.32, blockers);
+    this.squad = new BlackDivision(
+      {
+        physics: this.physics,
+        nav: this.nav,
+        projectiles: this.weapons.projectiles,
+        impacts: this.impacts,
+        shells: this.shells,
+        audio: this.audio,
+        scene: this.scene,
+      },
+      this.arena.patrolRoute,
+      this.arena.squadSpawnIndex,
+      () => this.camera.eye,
+    );
+    this.squad.onRadio = (text) => this.status.radio(text);
+    this.weapons.onPlayerShot = (pos, suppressed) => {
+      if (feel.enemyAI && !this.health.dead) this.squad.hearShot(pos, suppressed);
+    };
+
+    // The player's capsule takes enemy rounds.
+    const from = new THREE.Vector3();
+    this.physics.receivers.set(this.player.colliderHandle, {
+      surface: 'player',
+      owner: this.player,
+      allowDecals: false,
+      onBulletHit: (hit, out) => {
+        const dealt = this.health.damage(hit.damage);
+        out.damage = dealt;
+        out.health = this.health.health;
+        out.maxHealth = this.health.max;
+        out.killed = this.health.dead;
+        if (dealt <= 0) return;
+        from.copy(hit.point).addScaledVector(hit.direction, -Math.max(2, hit.distance));
+        this.status.damaged(dealt, from);
+        this.audio.play('player.hurt', { volume: 0.6 + dealt / 60 });
+        // Being hit knocks the aim (aim punch) and shakes the view.
+        const side = Math.random() < 0.5 ? -1 : 1;
+        this.player.pitch += 0.012 + Math.random() * 0.012;
+        this.player.yaw += side * (0.008 + Math.random() * 0.01);
+        this.camera.addPunch(0.05, side * 0.03, side * 0.06);
+        this.camera.addShake(0.35);
+        Haptics.pulse(70);
+      },
+    });
+    this.weapons.projectiles.listener = this.camera.eye;
+    this.weapons.projectiles.onFlyby = (_point, dist, speed) => {
+      const k = 1 - dist / 2.6;
+      this.audio.play(speed > 340 ? 'bullet.flyby' : 'bullet.whizz', { volume: 0.5 + 0.5 * k });
+      this.status.suppress(0.18 + 0.3 * k);
+      this.camera.addShake(0.05 + 0.08 * k);
+    };
+    this.health.onDeath = () => {
+      this.audio.play('player.death');
+      this.status.setDead(true);
+      this.camera.addShake(0.6);
+      this.squad.onPlayerKilled();
+    };
+    this.health.onRespawn = () => {
+      this.status.setDead(false);
+      this.player.teleport(this.arena.spawn, 0);
+      this.weapons.refillAll();
+    };
   }
 
   /** Called from the start overlay click/tap/Enter (a user gesture). */
@@ -282,6 +367,18 @@ export class Game {
       case 'KeyM':
         this.gotoStation(this.stationIndex + 1);
         break;
+      case 'KeyY':
+        this.squad.spawn();
+        this.hud.toast('Black Division squad respawned (yard)');
+        break;
+      case 'KeyO':
+        feel.godMode = !feel.godMode;
+        this.hud.toast(`God mode ${feel.godMode ? 'on' : 'off'}`);
+        break;
+      case 'KeyU':
+        feel.enemyAI = !feel.enemyAI;
+        this.hud.toast(`Enemy AI ${feel.enemyAI ? 'on' : 'ignores you'}`);
+        break;
     }
     this.persist();
   }
@@ -348,7 +445,7 @@ export class Game {
     const input = this.input;
     input.mouseSensitivity = playerConfig.mouseSensitivity;
     input.beginFrame();
-    if (this.isPaused || (this.input.lockFailed && this.tuning.visible)) {
+    if (this.isPaused || (this.input.lockFailed && this.tuning.visible) || this.health.dead) {
       // Mouse released (Esc / tuning panel): freeze the player, keep the world simulating.
       input.moveX = input.moveY = 0;
       input.fireHeld = input.firePressed = false;
@@ -392,6 +489,16 @@ export class Game {
     // --- World ---
     this.arena.update();
     for (const r of this.robots) r.update(dt);
+    const t = this.target;
+    t.feet.copy(this.player.feet);
+    t.head.copy(this.camera.eye);
+    t.chest.set(t.feet.x, t.feet.y + this.player.eyeHeight - 0.42, t.feet.z);
+    t.velocity.copy(this.player.velocity);
+    t.sprinting = this.player.sprinting;
+    t.crouching = this.player.crouching;
+    t.alive = !this.health.dead;
+    this.squad.update(dt, t, feel.enemyAI);
+    this.health.update(dt);
     this.shells.update(dt);
     this.impacts.update(dt);
     this.right.set(1, 0, 0).applyQuaternion(this.camera.camera.quaternion);
@@ -403,6 +510,8 @@ export class Game {
     this.hud.updateAmmo(cw.data.name, cw.ammo, cw.chambered && cw.data.closedBolt, cw.data.magazineSize, `${cw.fireMode.toUpperCase()} · ${this.weapons.ammo.caliber}`, reload);
     this.hud.updateCrosshair(this.weapons.handling.dispersionDeg * 0.5, this.camera.currentFov, this.weapons.adsAmount, cw.state !== 'ready' || this.player.sprinting);
     this.hud.update(realDt, this.camera.camera);
+    this.status.update(realDt, this.health.health, this.health.max, this.camera.camera);
+    this.status.setSquadLine(this.squad.statusText);
     this.tuning.syncWeapon();
     this.touch?.sync(input.adsHeld, this.weapons.currentIndex);
 
@@ -471,9 +580,11 @@ export class Game {
     this.camera.getAimDirection(this.player, this.aimDir);
     const eye = this.camera.eye;
     let best = 0;
-    for (const r of this.robots) {
-      if (!r.alive) continue;
-      r.chestPoint.getWorldPosition(this.tmp);
+    const points: THREE.Vector3[] = [];
+    for (const r of this.robots) if (r.alive) points.push(r.chestPoint.getWorldPosition(new THREE.Vector3()));
+    for (const s of this.squad.soldiers) if (s.alive) points.push(s.chestPos.clone());
+    for (const p of points) {
+      this.tmp.copy(p);
       const toTarget = this.tmp2.subVectors(this.tmp, eye);
       const dist = toTarget.length();
       if (dist > 60) continue;

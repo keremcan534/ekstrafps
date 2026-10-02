@@ -20,7 +20,8 @@ export class MuzzleFlash {
   private life = 0.05;
   private scale = 1;
 
-  constructor() {
+  /** @param lightDistance reach of the flash light (world-space flashes light up more). */
+  constructor(lightDistance = 1.6) {
     const additive = (tex: THREE.Texture) =>
       new THREE.MeshBasicMaterial({
         map: tex,
@@ -46,7 +47,7 @@ export class MuzzleFlash {
     }
     // Light lives outside the toggled group: hiding a light changes the light count,
     // which would force shader recompiles (a hitch) on every shot.
-    this.light = new THREE.PointLight(0xffb060, 0, 1.6, 2);
+    this.light = new THREE.PointLight(0xffb060, 0, lightDistance, 2);
     this.group.visible = false;
     this.group.traverse((o) => (o.frustumCulled = false));
   }

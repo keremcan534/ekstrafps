@@ -18,5 +18,10 @@
   "hitmarkerScale": 1,
   "haptics": true,
   "masterVolume": 0.8,
-  "robotRespawnTime": 6
+  "robotRespawnTime": 6,
+  "enemyDamageScale": 0.5,
+  "enemyAccuracy": 1,
+  "enemyAI": true,
+  "godMode": false,
+  "playerRegen": true
 }

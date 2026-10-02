@@ -605,3 +605,20 @@ export function buildWeaponModel(model: ModelKey): WeaponRig {
 
 /** Shared materials for ejected shells (world space). */
 export const shellMaterials = { brass: mat.brass, red: mat.shellRed };
+
+/**
+ * Black Division carbine for the AI: an all-black MK47-pattern rifle, hands
+ * hidden (their positions stay as IK grip points), casting shadows in the world.
+ */
+export function buildEnemyRifle(): WeaponRig {
+  const r = buildMK47();
+  r.root.traverse((o) => {
+    const m = o as THREE.Mesh;
+    if (!m.isMesh) return;
+    if (m.material === mat.tan) m.material = mat.black;
+    m.castShadow = true;
+  });
+  r.leftHand.visible = false;
+  r.rightHand.visible = false;
+  return r;
+}
