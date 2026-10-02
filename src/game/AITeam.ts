@@ -326,8 +326,8 @@ export class AITeam {
 
     // 3) Nothing to spend on yet: farm. Either hold a spot and let robots come to
     //    us (safer, steady points), or go hunting the awake ones nearby.
-    if (Math.random() < (this.def.style === 'reckless' ? 0.2 : 0.5)) {
-      this.goal = { kind: 'farm', at: L.soldier.pos.clone(), time: 0, hold: 15 + Math.random() * 15 };
+    if (Math.random() < (this.def.style === 'reckless' ? 0.15 : 0.3)) {
+      this.goal = { kind: 'farm', at: L.soldier.pos.clone(), time: 0, hold: 7 + Math.random() * 8 };
       return;
     }
     const bot = this.ctx.robots().filter((r) => r.aggro && r.pos.distanceTo(L.soldier.pos) < 45).sort((a, b) => a.pos.distanceTo(L.soldier.pos) - b.pos.distanceTo(L.soldier.pos))[0];

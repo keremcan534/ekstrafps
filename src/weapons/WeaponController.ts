@@ -108,6 +108,9 @@ export class WeaponController implements WeaponListener {
   private q2 = new THREE.Quaternion();
   private e = new THREE.Euler();
 
+  /** 1 normally, more in the dark: your muzzle flash lights the room. */
+  flashBoost = 1;
+
   constructor(defs: WeaponData[], aspect: number, private deps: WeaponControllerDeps) {
     this.weapons = defs.map((d) => new Weapon(d, this));
     this.viewmodel = new Viewmodel(aspect, defs);
@@ -362,7 +365,8 @@ export class WeaponController implements WeaponListener {
     // --- World muzzle light ---
     if (this.worldFlashLife > 0) {
       this.worldFlashLife -= dt;
-      this.worldFlash.intensity = Math.max(0, this.worldFlashLife / 0.06) * 25;
+      this.worldFlash.intensity = Math.max(0, this.worldFlashLife / 0.06) * 25 * this.flashBoost;
+      this.worldFlash.distance = 9 * (0.6 + 0.4 * this.flashBoost);
     } else {
       this.worldFlash.intensity = 0;
     }
@@ -419,7 +423,9 @@ export class WeaponController implements WeaponListener {
         oy += (Math.sin(pa) * ring + (Math.random() - 0.5) * 0.3) * pelletRad;
       }
       this.pelletDir.copy(this.muzzleDir).addScaledVector(this.right, ox).addScaledVector(this.up, oy).normalize();
-      this.projectiles.fire(this.origin, this.pelletDir, v0 * (0.985 + Math.random() * 0.03), ammo, this.shotId, tracer && i === 0, i < 3);
+      // Bolt actions: a slightly wider "catch" (4 cm) so near misses on a body still land.
+      const assist = d.fireModes.includes('bolt') ? 0.04 : 0;
+      this.projectiles.fire(this.origin, this.pelletDir, v0 * (0.985 + Math.random() * 0.03), ammo, this.shotId, tracer && i === 0, i < 3, null, false, false, 'alpha', assist);
     }
 
     // Recoil: an impulse into the weapon; part of it reaches the view.

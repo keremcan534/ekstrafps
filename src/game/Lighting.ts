@@ -47,6 +47,11 @@ export class Lighting {
     this.envBase = scene.environmentIntensity;
   }
 
+  /** 0 = lights on … 1 = blacked out (muzzle flashes scale with this). */
+  get darkness(): number {
+    return this.level;
+  }
+
   get dark(): boolean {
     return (this.raid && !this.restored) || this.cut;
   }

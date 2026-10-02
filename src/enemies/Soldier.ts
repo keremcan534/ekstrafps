@@ -141,6 +141,14 @@ export class Soldier {
   /** Mag and reserve both empty. */
   onDry: (() => void) | null = null;
   private lastStep = 0;
+  // Idle life: breathing, weight shifts, glances, a weapon check now and then.
+  private idleTime = Math.random() * 10;
+  private glance = 0;
+  private glanceTarget = 0;
+  private glanceTimer = 0;
+  private checkTimer = 4 + Math.random() * 10;
+  private checking = 0;
+  private roll = 0;
   /** Marksmanship multiplier (1 = Black Division standard). */
   skill = 1;
   /** Holding a handgun: pushed out at arm's length to aim, tucked to the chest otherwise. */
@@ -457,6 +465,36 @@ export class Soldier {
     const scan = this.state === 'patrol' ? Math.sin(this.time * 0.55 + this.index) * 0.45 : 0;
     p.headY = scan - 0.32; // face the target over the bladed torso
     p.headX = aimMode === 'aim' ? 0.18 : 0.05;
+    // Standing around (not aiming): never a statue.
+    const still = Math.hypot(this.vel.x, this.vel.z) < 0.3;
+    let rollWant = 0;
+    if (still && aimMode !== 'aim' && this.reloadTimer <= 0) {
+      this.idleTime += dt;
+      const t = this.idleTime;
+      p.spineX += Math.sin(t * 1.7 + this.index) * 0.018; // breathing
+      p.spineY += Math.sin(t * 0.37 + this.index * 2) * 0.07; // weight shift
+      this.glanceTimer -= dt;
+      if (this.glanceTimer <= 0) {
+        this.glanceTimer = 1.5 + Math.random() * 3;
+        this.glanceTarget = Math.random() < 0.35 ? 0 : (Math.random() * 2 - 1) * 0.75;
+      }
+      this.glance += (this.glanceTarget - this.glance) * Math.min(1, dt * 3);
+      p.headY += this.glance;
+      p.headX += Math.sin(t * 0.6 + this.index) * 0.05;
+      // Now and then: tilt the gun and look it over.
+      this.checkTimer -= dt;
+      if (this.checkTimer <= 0) {
+        this.checking = 1.6;
+        this.checkTimer = 8 + Math.random() * 14;
+      }
+      if (this.checking > 0) {
+        this.checking -= dt;
+        rollWant = 0.55;
+        p.headX += 0.25;
+        p.headY = -0.2;
+      }
+    } else this.checking = 0;
+    this.roll += (rollWant - this.roll) * Math.min(1, dt * 5);
     p.gripR = this.rig.rightHand;
     const reloading = this.reloadTimer > 0;
     const rk = reloading ? 1 - this.reloadTimer / this.reloadTime : 0;
@@ -599,7 +637,7 @@ export class Soldier {
     // The body's own lean (crouch, spine) is part of the parent chain.
     // Cancel the animated spine lean (not the hit reactions: those throw the aim off).
     const lean = (mode === 'low' || mode === 'high' ? 0.04 : 0.1) + this.crouch * 0.85 * 0.18;
-    this.aimNode.rotation.set(-(this.aimPitch + this.recoilPitch.value) - lean, this.aimYaw + this.recoilYaw.value, 0);
+    this.aimNode.rotation.set(-(this.aimPitch + this.recoilPitch.value) - lean, this.aimYaw + this.recoilYaw.value, this.roll);
     // Where the gun sits in the hands. Handguns: two-handed out in front to aim
     // (centred under the eyes), compressed at the chest at the ready, low while
     // running. Long guns stay shouldered (the holder origin is the shoulder pocket).
@@ -700,7 +738,7 @@ export class Soldier {
       const d = i === 0 ? this.dir : this.tmp2.copy(this.dir).add(this.tmp.set(gauss() * spread, gauss() * spread, gauss() * spread)).normalize();
       this.deps.projectiles.fire(this.muzzle, d, this.ammoData.muzzleVelocity * (0.985 + Math.random() * 0.03), this.ammoData, 0, tracer && i === 0, i < 2, this, hostile, ally, this.team);
     }
-    this.flash.trigger(1.3);
+    this.flash.trigger(1.3 * (1 + 0.15 * ((this.deps.muzzleLights?.boost ?? 1) - 1)));
     if (this.deps.muzzleLights) this.deps.muzzleLights.flash(this.muzzle, this.deps.listener ?? this.muzzle);
     this.deps.impacts.muzzleBlast(this.muzzle, this.dir, 1.1);
     this.deps.impacts.muzzleSmoke(this.muzzle, this.dir, 0.6);

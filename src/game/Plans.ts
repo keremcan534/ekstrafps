@@ -159,7 +159,7 @@ export function planFor(a: TeamAgent, c: PlanContext): Plan | null {
     // Stand back from the doors, not in them.
     const away = new THREE.Vector3(pos.x - s.pos.x, 0, pos.z - s.pos.z).normalize().multiplyScalar(7);
     const at = s.pos.clone().add(away);
-    return { kind: 'farm', at, time: 0, hold: 18 + Math.random() * 12, status: `farming (${goal})`, label: `Saving for the ${goal}. Watching the lift.` };
+    return { kind: 'farm', at, time: 0, hold: 9 + Math.random() * 9, status: `farming (${goal})`, label: `Saving for the ${goal}. Watching the lift.` };
   }
   return null;
 }

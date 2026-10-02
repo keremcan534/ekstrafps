@@ -71,7 +71,7 @@ export class MapOverlay {
     parent.appendChild(this.full);
     this.mini = document.createElement('canvas');
     this.mini.className = 'minimap';
-    this.mini.width = this.mini.height = 200;
+    this.mini.width = this.mini.height = 400; // shown at 200 css px: crisp on any screen
     parent.appendChild(this.mini);
     document.body.classList.add('has-minimap');
   }
@@ -101,7 +101,7 @@ export class MapOverlay {
     return [(x - this.data.bounds[0]) * S, (z - this.data.bounds[1]) * S];
   }
 
-  /** Rooms + walls; redrawn only when the set of unlocked zones changes. */
+  /** Rooms + walls; redrawn only when the set of unlocked zones changes. (Names are drawn upright on top.) */
   private drawStatic(state: MapState): void {
     const key = [...state.unlocked].sort().join(',');
     if (key === this.staticKey) return;
@@ -115,12 +115,25 @@ export class MapOverlay {
       g.fillStyle = ROOM_COLORS[r.style] ?? '#999';
       g.fillRect(a, b, w, h);
       if (!state.unlocked.has(r.zone)) {
-        g.fillStyle = 'rgba(12,13,15,0.62)';
+        // Locked: dark with diagonal hatching, so open ground reads at a glance.
+        g.fillStyle = 'rgba(12,13,15,0.7)';
         g.fillRect(a, b, w, h);
+        g.save();
+        g.beginPath();
+        g.rect(a, b, w, h);
+        g.clip();
+        g.strokeStyle = 'rgba(255,255,255,0.06)';
+        g.lineWidth = 3;
+        for (let k = -h; k < w; k += 18) {
+          g.moveTo(a + k, b);
+          g.lineTo(a + k + h, b + h);
+        }
+        g.stroke();
+        g.restore();
       }
     }
-    g.strokeStyle = '#141518';
-    g.lineWidth = 3;
+    g.strokeStyle = '#0d0e10';
+    g.lineWidth = 4;
     g.lineCap = 'square';
     g.beginPath();
     for (const w of this.data.walls) {
@@ -130,111 +143,135 @@ export class MapOverlay {
       g.lineTo(bx, bz);
     }
     g.stroke();
-    g.font = '600 22px system-ui, sans-serif';
-    g.textAlign = 'center';
-    g.textBaseline = 'middle';
-    for (const r of this.data.rooms) {
-      const [cx, cz] = this.toCanvas((r.rect[0] + r.rect[2]) / 2, (r.rect[1] + r.rect[3]) / 2);
-      g.fillStyle = state.unlocked.has(r.zone) ? 'rgba(20,20,22,0.75)' : 'rgba(230,230,230,0.45)';
-      g.fillText(r.name.toUpperCase(), cx, cz);
-    }
   }
 
-  /** Dynamic markers in static-canvas space. */
-  private drawMarkers(g: CanvasRenderingContext2D, state: MapState, scale: number, labels: boolean): void {
+  /** Small dark pill with text (prices, names): readable on any background. */
+  private pill(g: CanvasRenderingContext2D, text: string, x: number, y: number, fg: string, px: number, size = 11): void {
+    g.font = `700 ${size * px}px system-ui, sans-serif`;
+    const w = g.measureText(text).width + 8 * px;
+    const h = (size + 5) * px;
+    g.fillStyle = 'rgba(10,11,13,0.85)';
+    g.beginPath();
+    g.roundRect(x - w / 2, y - h / 2, w, h, 4 * px);
+    g.fill();
+    g.fillStyle = fg;
+    g.textAlign = 'center';
+    g.textBaseline = 'middle';
+    g.fillText(text, x, y + 0.5 * px);
+  }
+
+  /**
+   * Everything dynamic, drawn in screen space through `proj` (world → screen):
+   * icons and text stay upright and the same size on the rotating minimap too.
+   */
+  private drawMarkers(g: CanvasRenderingContext2D, state: MapState, proj: (x: number, z: number) => [number, number], full: boolean, px: number, clipR = Infinity, cx = 0, cy = 0): void {
+    const inside = (x: number, y: number, pad = 0) => Math.hypot(x - cx, y - cy) < clipR - pad;
+    g.lineCap = 'round';
+    // Room names (upright).
+    for (const r of this.data.rooms) {
+      const [x, y] = proj((r.rect[0] + r.rect[2]) / 2, (r.rect[1] + r.rect[3]) / 2);
+      if (!inside(x, y, 20 * px)) continue;
+      const open = state.unlocked.has(r.zone);
+      g.font = `800 ${(full ? 14 : 9) * px}px system-ui, sans-serif`;
+      g.textAlign = 'center';
+      g.textBaseline = 'middle';
+      g.lineWidth = 3.5 * px;
+      g.strokeStyle = 'rgba(0,0,0,0.85)';
+      const name = r.name.toUpperCase();
+      g.strokeText(name, x, y);
+      g.fillStyle = open ? '#f2f2f2' : '#8d9298';
+      g.fillText(name, x, y);
+      if (full && !open) {
+        g.font = `600 ${10 * px}px system-ui, sans-serif`;
+        g.strokeText('LOCKED', x, y + 14 * px);
+        g.fillStyle = '#8d9298';
+        g.fillText('LOCKED', x, y + 14 * px);
+      }
+    }
+    // Shutters: thick amber when closed (with price), thin green when open.
     for (const d of this.data.doors) {
       const open = state.isOpen(d);
-      const [cx, cz] = this.toCanvas(d.center.x, d.center.z);
-      const half = (d.width / 2) * S;
-      g.strokeStyle = open ? '#4fd36a' : '#e0a51c';
-      g.lineWidth = (open ? 3 : 7) / scale;
+      const hw = d.width / 2;
+      const [ax, ay] = proj(d.center.x - (d.alongX ? hw : 0), d.center.z - (d.alongX ? 0 : hw));
+      const [bx, by] = proj(d.center.x + (d.alongX ? hw : 0), d.center.z + (d.alongX ? 0 : hw));
+      if (!inside((ax + bx) / 2, (ay + by) / 2, 4 * px)) continue;
+      g.strokeStyle = open ? '#4fd36a' : '#ffb01f';
+      g.lineWidth = (open ? 3 : 6) * px;
       g.beginPath();
-      if (d.alongX) {
-        g.moveTo(cx - half, cz);
-        g.lineTo(cx + half, cz);
-      } else {
-        g.moveTo(cx, cz - half);
-        g.lineTo(cx, cz + half);
-      }
+      g.moveTo(ax, ay);
+      g.lineTo(bx, by);
       g.stroke();
-      if (labels && !open) {
-        g.font = `700 ${18 / scale}px system-ui, sans-serif`;
-        g.fillStyle = '#ffd25a';
-        g.strokeStyle = '#000';
-        g.lineWidth = 4 / scale;
-        g.strokeText(`$${d.link.cost}`, cx, cz - 14 / scale);
-        g.fillText(`$${d.link.cost}`, cx, cz - 14 / scale);
-      }
+      if (full && !open) this.pill(g, `$${d.link.cost}`, (ax + bx) / 2, (ay + by) / 2 - 13 * px, '#ffd25a', px, 10);
     }
+    // Wall weapons: yellow gun tag; name + price on the big map.
     for (const w of this.data.wallBuys) {
-      const [x, z] = this.toCanvas(w.pos.x, w.pos.z);
+      const [x, y] = proj(w.pos.x, w.pos.z);
+      if (!inside(x, y, 6 * px)) continue;
       g.fillStyle = '#ffd25a';
+      g.strokeStyle = '#000';
+      g.lineWidth = 1.5 * px;
       g.beginPath();
-      g.arc(x, z, 7 / scale, 0, Math.PI * 2);
+      g.roundRect(x - 6 * px, y - 4 * px, 12 * px, 8 * px, 2 * px);
       g.fill();
-      if (labels) {
-        g.font = `600 ${14 / scale}px system-ui, sans-serif`;
-        g.fillStyle = '#fff';
-        g.strokeStyle = '#000';
-        g.lineWidth = 3 / scale;
-        const t = `${w.weapon.replace('_', ' ').toUpperCase()} $${w.cost}`;
-        g.strokeText(t, x, z + 18 / scale);
-        g.fillText(t, x, z + 18 / scale);
-      }
+      g.stroke();
+      if (full) this.pill(g, `${w.weapon.replace(/_/g, ' ').toUpperCase()} $${w.cost}`, x, y + 14 * px, '#ffe9a8', px, 9);
     }
     for (const t of this.data.terminals) {
-      const [x, z] = this.toCanvas(t.pos.x, t.pos.z);
+      const [x, y] = proj(t.pos.x, t.pos.z);
+      if (!inside(x, y, 6 * px)) continue;
       g.fillStyle = '#4fb8ff';
-      g.fillRect(x - 7 / scale, z - 7 / scale, 14 / scale, 14 / scale);
+      g.strokeStyle = '#000';
+      g.lineWidth = 1.5 * px;
+      g.fillRect(x - 6 * px, y - 6 * px, 12 * px, 12 * px);
+      g.strokeRect(x - 6 * px, y - 6 * px, 12 * px, 12 * px);
+      if (full) this.pill(g, 'HIRE', x, y + 14 * px, '#9fd4ff', px, 9);
     }
     for (const u of state.utilities ?? []) {
-      const [x, z] = this.toCanvas(u.x, u.z);
+      const [x, y] = proj(u.x, u.z);
+      if (!inside(x, y, 8 * px)) continue;
       const k = UTIL[u.kind];
-      const r = 9 / scale;
-      g.fillStyle = '#101214';
+      const r = (u.kind === 'ammo' ? 7 : 9) * px;
+      g.fillStyle = '#0d0f11';
       g.strokeStyle = u.kind === 'breaker' && state.lightsOut?.() ? '#ff3b2f' : u.on ? '#ff3b2f' : k.color;
-      g.lineWidth = 2.5 / scale;
+      g.lineWidth = 2.2 * px;
       g.beginPath();
-      g.arc(x, z, r, 0, Math.PI * 2);
+      g.arc(x, y, r, 0, Math.PI * 2);
       g.fill();
       g.stroke();
       g.fillStyle = k.color;
-      g.font = `800 ${13 / scale}px system-ui, sans-serif`;
+      g.font = `900 ${(u.kind === 'ammo' ? 9 : 11) * px}px system-ui, sans-serif`;
       g.textAlign = 'center';
       g.textBaseline = 'middle';
-      g.fillText(k.glyph, x, z + 0.5 / scale);
-      if (labels && u.kind !== 'ammo') {
-        g.font = `600 ${12 / scale}px system-ui, sans-serif`;
-        g.strokeStyle = '#000';
-        g.lineWidth = 3 / scale;
-        g.strokeText(k.name, x, z + 18 / scale);
-        g.fillText(k.name, x, z + 18 / scale);
-      }
+      g.fillText(k.glyph, x, y + 0.5 * px);
+      if (full && u.kind !== 'ammo') this.pill(g, k.name, x, y + 16 * px, k.color, px, 9);
     }
-    g.textBaseline = 'alphabetic';
     const dot = (p: { x: number; z: number }, color: string, r: number) => {
-      const [x, z] = this.toCanvas(p.x, p.z);
+      const [x, y] = proj(p.x, p.z);
+      if (!inside(x, y, 3 * px)) return;
       g.fillStyle = color;
+      g.strokeStyle = '#000';
+      g.lineWidth = 1.5 * px;
       g.beginPath();
-      g.arc(x, z, r / scale, 0, Math.PI * 2);
+      g.arc(x, y, r * px, 0, Math.PI * 2);
       g.fill();
+      g.stroke();
     };
-    for (const r of state.robots) dot(r, '#ff3b2f', 5);
-    for (const e of state.enemies) dot(e, '#ff8a1f', 6);
-    for (const a of state.allies) dot(a, '#4fe0ff', 7);
-    // Player arrow.
-    const [px, pz] = this.toCanvas(state.player.x, state.player.z);
+    for (const r of state.robots) dot(r, '#ff3b2f', 3.5);
+    for (const e of state.enemies) dot(e, '#ff8a1f', 5);
+    for (const a of state.allies) dot(a, '#4fe0ff', 5.5);
+    // You: a white arrow (pointing where you face; on the minimap that's always up).
+    const [x, y] = proj(state.player.x, state.player.z);
     g.save();
-    g.translate(px, pz);
-    g.rotate(-state.player.yaw);
+    g.translate(x, y);
+    if (full) g.rotate(-state.player.yaw);
     g.fillStyle = '#ffffff';
     g.strokeStyle = '#000';
-    g.lineWidth = 2 / scale;
+    g.lineWidth = 2 * px;
     g.beginPath();
-    g.moveTo(0, -16 / scale);
-    g.lineTo(10 / scale, 12 / scale);
-    g.lineTo(0, 6 / scale);
-    g.lineTo(-10 / scale, 12 / scale);
+    g.moveTo(0, -10 * px);
+    g.lineTo(7 * px, 8 * px);
+    g.lineTo(0, 4 * px);
+    g.lineTo(-7 * px, 8 * px);
     g.closePath();
     g.fill();
     g.stroke();
@@ -253,61 +290,76 @@ export class MapOverlay {
 
   private drawFull(state: MapState): void {
     const c = this.fullCanvas;
+    const dpr = Math.min(2, window.devicePixelRatio || 1);
     const maxW = window.innerWidth * 0.92;
     const maxH = window.innerHeight * 0.82;
     const sc = Math.min(maxW / this.staticCanvas.width, maxH / this.staticCanvas.height);
     const w = Math.round(this.staticCanvas.width * sc);
     const h = Math.round(this.staticCanvas.height * sc);
-    if (c.width !== w || c.height !== h) {
-      c.width = w;
-      c.height = h;
+    if (c.width !== Math.round(w * dpr) || c.height !== Math.round(h * dpr)) {
+      c.width = Math.round(w * dpr);
+      c.height = Math.round(h * dpr);
+      c.style.width = `${w}px`;
+      c.style.height = `${h}px`;
     }
     const g = c.getContext('2d')!;
     g.setTransform(1, 0, 0, 1, 0, 0);
-    g.clearRect(0, 0, w, h);
-    g.setTransform(sc, 0, 0, sc, 0, 0);
+    g.clearRect(0, 0, c.width, c.height);
+    const k = sc * dpr;
+    g.setTransform(k, 0, 0, k, 0, 0);
     g.drawImage(this.staticCanvas, 0, 0);
-    g.textAlign = 'center';
-    g.textBaseline = 'middle';
-    this.drawMarkers(g, state, sc, true);
+    g.setTransform(1, 0, 0, 1, 0, 0);
+    const [b0, b1] = this.data.bounds;
+    this.drawMarkers(g, state, (x, z) => [(x - b0) * S * k, (z - b1) * S * k], true, dpr);
   }
 
   private drawMini(state: MapState): void {
     const c = this.mini;
     const g = c.getContext('2d')!;
+    const px = c.width / 200; // drawn at 2x for crisp icons and text
     const R = c.width / 2;
-    const metres = 55; // radius shown
+    const metres = 42; // radius shown
     const sc = R / (metres * S);
     g.setTransform(1, 0, 0, 1, 0, 0);
     g.clearRect(0, 0, c.width, c.height);
     g.save();
     g.beginPath();
-    g.arc(R, R, R - 2, 0, Math.PI * 2);
+    g.arc(R, R, R - 2 * px, 0, Math.PI * 2);
     g.clip();
-    g.fillStyle = 'rgba(14,15,17,0.72)';
+    g.fillStyle = 'rgba(14,15,17,0.78)';
     g.fillRect(0, 0, c.width, c.height);
-    const [px, pz] = this.toCanvas(state.player.x, state.player.z);
+    const [pcx, pcz] = this.toCanvas(state.player.x, state.player.z);
+    const yaw = state.player.yaw;
     g.translate(R, R);
-    g.rotate(state.player.yaw);
+    g.rotate(yaw);
     g.scale(sc, sc);
-    g.translate(-px, -pz);
-    g.globalAlpha = 0.92;
+    g.translate(-pcx, -pcz);
+    g.globalAlpha = 0.95;
     g.drawImage(this.staticCanvas, 0, 0);
     g.globalAlpha = 1;
-    this.drawMarkers(g, state, sc, false);
+    g.setTransform(1, 0, 0, 1, 0, 0);
+    const cos = Math.cos(yaw);
+    const sin = Math.sin(yaw);
+    const proj = (x: number, z: number): [number, number] => {
+      const [qx, qz] = this.toCanvas(x, z);
+      const dx = (qx - pcx) * sc;
+      const dz = (qz - pcz) * sc;
+      return [R + dx * cos - dz * sin, R + dx * sin + dz * cos];
+    };
+    this.drawMarkers(g, state, proj, false, px, R, R, R);
     g.restore();
-    g.strokeStyle = 'rgba(255,255,255,0.35)';
-    g.lineWidth = 2;
+    g.strokeStyle = 'rgba(255,255,255,0.4)';
+    g.lineWidth = 2 * px;
     g.beginPath();
-    g.arc(R, R, R - 2, 0, Math.PI * 2);
+    g.arc(R, R, R - 2 * px, 0, Math.PI * 2);
     g.stroke();
     // North marker.
-    const ang = state.player.yaw - Math.PI / 2;
+    const ang = yaw - Math.PI / 2;
     g.fillStyle = '#e0a51c';
-    g.font = '700 13px system-ui, sans-serif';
+    g.font = `800 ${13 * px}px system-ui, sans-serif`;
     g.textAlign = 'center';
     g.textBaseline = 'middle';
-    g.fillText('N', R + Math.cos(ang) * (R - 12), R + Math.sin(ang) * (R - 12));
+    g.fillText('N', R + Math.cos(ang) * (R - 12 * px), R + Math.sin(ang) * (R - 12 * px));
   }
 
   /** For callers that only know a THREE vector. */

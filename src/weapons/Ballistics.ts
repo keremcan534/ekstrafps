@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { GROUPS, type BulletHit, type HitReceiver, type HitResult, type Physics, type SurfaceType } from '../core/Physics';
+import { GROUPS, type BulletHit, type HitReceiver, type HitResult, type Physics, type RayHit, type SurfaceType } from '../core/Physics';
 import { feel } from '../config/Feel';
 import { dragFactor, type AmmoData } from './AmmoData';
 import type { ParticleSystem, ParticleSpawn } from '../fx/Particles';
@@ -32,8 +32,14 @@ export interface ProjectileHitReport {
   hostile: boolean;
 }
 
+/** Surfaces a near miss can "catch" (bodies, armor, robots — never walls). */
+const TARGET_SURFACES = new Set(['flesh', 'armor', 'helmet', 'robot', 'robotWeak']);
+const ASSIST_OFFSETS: [number, number][] = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+
 interface Projectile {
   alive: boolean;
+  /** Hit-assist radius (m): a near miss on a body still counts (bolt actions). */
+  assist: number;
   pos: THREE.Vector3;
   vel: THREE.Vector3;
   v0: number;
@@ -111,7 +117,7 @@ export class ProjectileSystem {
       this.pool.push({
         alive: false, pos: new THREE.Vector3(), vel: new THREE.Vector3(), v0: 0, ammo: null as unknown as AmmoData,
         shotId: 0, pellets: 1, tracer: false, age: 0, travelled: 0, ricochets: 0, soundBudget: true,
-        owner: null, hostile: false, ally: false, team: '', flyby: false,
+        owner: null, hostile: false, ally: false, team: '', flyby: false, assist: 0,
       });
     }
   }
@@ -122,9 +128,23 @@ export class ProjectileSystem {
     return n;
   }
 
+  private au = new THREE.Vector3();
+  private av = new THREE.Vector3();
+  private ao = new THREE.Vector3();
+  private mainOut = { collider: null, receiver: undefined, distance: 0, point: new THREE.Vector3(), normal: new THREE.Vector3() } as unknown as RayHit;
+  private copyHit(h: RayHit, out: RayHit): RayHit {
+    out.collider = h.collider;
+    out.receiver = h.receiver;
+    out.distance = h.distance;
+    out.point.copy(h.point);
+    out.normal.copy(h.normal);
+    return out;
+  }
+  private assistOut = { collider: null, receiver: undefined, distance: 0, point: new THREE.Vector3(), normal: new THREE.Vector3() } as unknown as RayHit;
+
   fire(
     origin: THREE.Vector3, dir: THREE.Vector3, speed: number, ammo: AmmoData, shotId: number, tracer: boolean, soundBudget: boolean,
-    owner: object | null = null, hostile = false, ally = false, team = 'alpha',
+    owner: object | null = null, hostile = false, ally = false, team = 'alpha', assist = 0,
   ): void {
     const p = this.pool[this.next];
     this.next = (this.next + 1) % CAPACITY;
@@ -145,6 +165,7 @@ export class ProjectileSystem {
     p.ally = ally;
     p.team = team;
     p.flyby = false;
+    p.assist = assist;
   }
 
   update(dt: number): void {
@@ -166,7 +187,12 @@ export class ProjectileSystem {
         if (len < 1e-6) continue;
         this.dir.copy(this.seg).divideScalar(len);
         if (p.hostile && !p.flyby) this.checkFlyby(p, len);
-        const hit = this.physics.raycast(p.pos, this.dir, len, p.hostile ? GROUPS.enemyBullet : GROUPS.bullet, p.owner);
+        let hit = this.physics.raycast(p.pos, this.dir, len, p.hostile ? GROUPS.enemyBullet : GROUPS.bullet, p.owner);
+        if (p.assist > 0 && (!hit || !TARGET_SURFACES.has(hit.receiver?.surface ?? ''))) {
+          // The physics ray result is a shared object: keep the centre hit before casting more.
+          const saved = hit ? this.copyHit(hit, this.mainOut) : null;
+          hit = this.assistHit(p, len, saved) ?? saved;
+        }
         if (hit) {
           this.traceDebug(p, hit.point);
           this.trail(p, hit.point);
@@ -185,6 +211,29 @@ export class ProjectileSystem {
       if (p.alive && (p.age > MAX_LIFE || p.vel.length() < MIN_SPEED || p.pos.y < -20)) p.alive = false;
       if (p.alive && (p.tracer || feel.bulletTrails)) this.drawTracer(p, dt);
     }
+  }
+
+  /**
+   * The round behaves a few centimetres wide: if the centre line misses, four
+   * parallel lines around it may still clip a body before whatever it hit.
+   */
+  private assistHit(p: Projectile, len: number, main: RayHit | null): RayHit | null {
+    const maxD = main ? main.distance : len;
+    this.au.set(0, 1, 0).cross(this.dir);
+    if (this.au.lengthSq() < 1e-6) this.au.set(1, 0, 0);
+    this.au.normalize();
+    this.av.crossVectors(this.dir, this.au).normalize();
+    let best: RayHit | null = null;
+    let bestD = maxD;
+    for (const [a, b] of ASSIST_OFFSETS) {
+      this.ao.copy(p.pos).addScaledVector(this.au, a * p.assist).addScaledVector(this.av, b * p.assist);
+      const h = this.physics.raycast(this.ao, this.dir, bestD, p.hostile ? GROUPS.enemyBullet : GROUPS.bullet, p.owner);
+      if (h && TARGET_SURFACES.has(h.receiver?.surface ?? '') && h.distance < bestD) {
+        bestD = h.distance;
+        best = this.copyHit(h, this.assistOut);
+      }
+    }
+    return best;
   }
 
   /** Enemy round passing the listener's head: supersonic crack / subsonic whizz. */

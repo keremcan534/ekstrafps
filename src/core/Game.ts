@@ -1048,6 +1048,10 @@ export class Game {
     this.nav.beginFrame();
     this.arena.update(dt, this.player.feet);
     this.lighting?.update(dt);
+    // Lights out: muzzle flashes light the room (and give shooters away).
+    const darkness = this.lighting?.darkness ?? 0;
+    this.muzzleLights.boost = 1 + 3 * darkness;
+    this.weapons.flashBoost = 1 + 2 * darkness;
     if (this.arena instanceof Site9) {
       const map = this.arena;
       const s = this.survival;

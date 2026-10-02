@@ -12,6 +12,8 @@ export class MuzzleLights {
   readonly group = new THREE.Group();
   private lights: { l: THREE.PointLight; life: number }[] = [];
   private next = 0;
+  /** 1 normally; up to 4 in the dark (a flash lights the room when nothing else does). */
+  boost = 1;
 
   constructor(count: number) {
     for (let i = 0; i < count; i++) {
@@ -32,7 +34,8 @@ export class MuzzleLights {
   update(dt: number): void {
     for (const s of this.lights) {
       s.life = Math.max(0, s.life - dt);
-      s.l.intensity = s.life > 0 ? (s.life / 0.06) * 5 : 0;
+      s.l.intensity = s.life > 0 ? (s.life / 0.06) * 5 * this.boost : 0;
+      s.l.distance = 2.8 + 3 * (this.boost - 1);
     }
   }
 }
