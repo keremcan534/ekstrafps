@@ -451,7 +451,7 @@ export class Game {
       downed: false,
       hit: (d, from) => this.hurtPlayer(d, from),
     };
-    this.lighting = new Lighting(this.scene, map, this.camera.eye, (out) => this.camera.getAimDirection(this.player, out), () => !this.health.dead, this.mobile ? 1 : 4);
+    this.lighting = new Lighting(this.scene, map, this.camera.eye, (out) => this.camera.getAimDirection(this.player, out), () => !this.health.dead, this.mobile ? 2 : 4);
     // Desktop: colour grade pass (cold shadows, reds kept, redder and moodier in a blackout).
     if (!this.mobile) this.grade = new ScreenGrade(this.renderer);
     this.survival = new Survival({
@@ -1175,7 +1175,7 @@ export class Game {
     // --- Render: world, then the weapon on top, then debug lines over everything ---
     this.renderer.info.reset();
     if (this.grade) {
-      this.grade.mood = this.lighting?.darkness ?? 0;
+      this.grade.mood = 0.35 + 0.65 * (this.lighting?.darkness ?? 0);
       this.grade.begin();
     }
     this.renderer.clear();

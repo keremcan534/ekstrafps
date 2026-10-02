@@ -12,6 +12,9 @@ type V3 = [number, number, number];
 const METAL: HitReceiver = { surface: 'metal', allowDecals: true };
 
 /** A weapon for sale on a wall (Survival). */
+/** Moonlight through the skylights and over the yard. */
+const SUN = 0.3;
+
 export interface WallBuy {
   weapon: string;
   cost: number;
@@ -210,7 +213,8 @@ export class Site9 implements GameMap {
   readonly squads: SquadSpawn[] = [];
   readonly navBounds: [number, number, number, number];
   readonly sun: THREE.DirectionalLight;
-  readonly skyColor = 0xa9bccd;
+  /** Night over Site-9: the skylights and the yard read dark. */
+  readonly skyColor = 0x1b2330;
   readonly exposure = 0.88;
   readonly stations: Station[] = [
     { name: 'Arrival Lobby (start)', pos: ((p) => [p[0], 0, p[1]])(Wp(0, 78)) as V3, yaw: 0 },
@@ -239,8 +243,12 @@ export class Site9 implements GameMap {
   private pools = new Map<number, THREE.Material>();
   private serverLeds: THREE.MeshStandardMaterial;
   private hemi!: THREE.HemisphereLight;
+  /** Hemisphere fill with the power on (darker on desktop, phones keep a little more). */
+  private ambient = 0.42;
   /** Coloured accent lights (reactor, data core) with their full intensity. */
   private accents: [THREE.PointLight, number][] = [];
+  /** Ceiling lamps: position just under the panel, light colour, ceiling height. */
+  readonly lampSpots: { pos: THREE.Vector3; color: number; h: number }[] = [];
   /** Emergency strip positions (the red lights during a blackout come from these). */
   readonly emergencySpots: THREE.Vector3[] = [];
   private emergency = new THREE.MeshStandardMaterial({ color: 0x200000, emissive: 0xff1a0a, emissiveIntensity: 0.01 }); // non-zero: keeps it out of the vertex-colour merge
@@ -335,21 +343,29 @@ export class Site9 implements GameMap {
     this.buildDetails();
     this.buildSigns();
     this.layout.build(this.group);
+    // Ceiling lamps (the practical lights near you come from these).
+    for (const room of this.layout.rooms.values()) {
+      const glow = styles[room.def.style]?.glow || 0xfff1e0;
+      // Hung low in tall halls so each lamp makes a pool, not a floodlight.
+      for (const p of room.lamps) this.lampSpots.push({ pos: new THREE.Vector3(p.x, Math.min(p.y - 0.25, 5.2), p.z), color: glow, h: p.y });
+    }
 
     this.props = new PhysicsProps(physics);
     this.group.add(this.props.group);
     this.placeProps();
 
-    // --- Lighting: bright daylight through the skylights + soft fill everywhere.
+    // --- Lighting: night. Dim cool fill and moonlight through the skylights; the
+    // light comes from the lamps (pools on the floor + real lights near you, see Lighting).
     // Ceilings don't cast shadows, so the key light reads as "light from above";
     // its shadow camera follows the player (crisp shadows nearby, cheap).
-    this.hemi = new THREE.HemisphereLight(0xe6edf5, 0x5a534b, 1.2);
+    this.ambient = mobile ? 0.42 : 0.24;
+    this.hemi = new THREE.HemisphereLight(0xc4d0e0, 0x3a3631, this.ambient);
     this.group.add(this.hemi);
     for (const k of ['lampCool', 'lampWarm', 'lampBlue', 'screen', 'screenWarm']) {
       const m = this.mats[k] as THREE.MeshStandardMaterial;
       this.lampBase.set(m, m.emissiveIntensity);
     }
-    const sun = new THREE.DirectionalLight(0xfff1e0, 1.9);
+    const sun = new THREE.DirectionalLight(0xa8bce0, SUN);
     sun.castShadow = true;
     sun.shadow.mapSize.set(mobile ? 1024 : 2048, mobile ? 1024 : 2048);
     const cam = sun.shadow.camera;
@@ -381,7 +397,7 @@ export class Site9 implements GameMap {
   private pool(color: number): THREE.Material {
     let m = this.pools.get(color);
     if (!m) {
-      m = new THREE.MeshBasicMaterial({ map: glowTexture(), color, transparent: true, opacity: 0.32, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false });
+      m = new THREE.MeshBasicMaterial({ map: glowTexture(), color, transparent: true, opacity: 0.42, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false });
       this.pools.set(color, m);
     }
     return m;
@@ -1475,12 +1491,13 @@ export class Site9 implements GameMap {
    */
   setBlackout(k: number): void {
     this.blackout = k;
-    this.hemi.intensity = 1.2 + (0.13 - 1.2) * k;
-    this.hemi.color.setRGB(0.9 + 0.1 * k, 0.93 - 0.75 * k, 0.96 - 0.8 * k);
-    this.hemi.groundColor.setRGB(0.35 - 0.25 * k, 0.33 - 0.3 * k, 0.29 - 0.27 * k);
-    this.sun.intensity = 1.9 * (1 - k);
+    this.hemi.intensity = this.ambient + (0.1 - this.ambient) * k;
+    // Blacked out: the last of the fill is a faint red (the emergency strips).
+    this.hemi.color.setRGB(0.77 + 0.2 * k, 0.82 - 0.65 * k, 0.88 - 0.72 * k);
+    this.hemi.groundColor.setRGB(0.23 - 0.13 * k, 0.21 - 0.18 * k, 0.19 - 0.17 * k);
+    this.sun.intensity = SUN * (1 - 0.8 * k);
     for (const [m, base] of this.lampBase) m.emissiveIntensity = base * (1 - 0.97 * k);
-    for (const p of this.pools.values()) (p as THREE.MeshBasicMaterial).opacity = 0.32 * (1 - k);
+    for (const p of this.pools.values()) (p as THREE.MeshBasicMaterial).opacity = 0.42 * (1 - k);
     // The reactor and the data core run on their own supply: dimmed, not dead.
     for (const [l, base] of this.accents) l.intensity = base * (1 - 0.7 * k);
   }

@@ -4,6 +4,9 @@ import type { Site9 } from '../world/Site9';
 /**
  * Facility power and your flashlight.
  *
+ * Site-9 runs at night: a dim fill, and the light near you comes from the lamps
+ * (practical lights parked on the nearest fixtures, see updateReds).
+ *
  * The lights go out during a Black Division raid (until someone restores power at
  * a breaker) or when someone cuts them at a breaker on purpose. Going dark
  * flickers a few times, then the hemisphere/sun/lamps, sky, fog and image-based
@@ -30,10 +33,15 @@ export class Lighting {
   private fogBase: THREE.Color | null;
   private envBase: number;
   private dir = new THREE.Vector3();
-  /** Red emergency light pools near you while the power is out (fixed pool, intensity 0 when unused). */
-  private reds: { l: THREE.PointLight; spot: THREE.Vector3 | null; f: number; keep: boolean }[] = [];
+  /**
+   * Practical lights: a fixed pool of point lights parked on the lamps nearest
+   * you (in sight). Power on: the ceiling lamps, in their colour. Blacked out:
+   * only a few emergency lamps, dim red. Intensity 0 when unused.
+   */
+  private reds: { l: THREE.PointLight; spot: THREE.Vector3 | null; f: number; keep: boolean; peak: number }[] = [];
   private pickTimer = 0;
-  private static readonly RED_FOG = new THREE.Color(0x1a0303);
+  private wasDarkPick = false;
+  private static readonly RED_FOG = new THREE.Color(0x120406);
 
   constructor(
     private scene: THREE.Scene,
@@ -44,18 +52,18 @@ export class Lighting {
     redCount = 4,
   ) {
     for (let i = 0; i < redCount; i++) {
-      const l = new THREE.PointLight(0xff2412, 0, 19, 1.5);
+      const l = new THREE.PointLight(0xffffff, 0, 11, 1.8);
       l.castShadow = false;
       scene.add(l);
-      this.reds.push({ l, spot: null, f: 0, keep: false });
+      this.reds.push({ l, spot: null, f: 0, keep: false, peak: 0 });
     }
     this.flashlight = new THREE.SpotLight(0xfff3e2, 0, 46, 0.44, 0.5, 1.25);
     this.flashlight.castShadow = false;
     scene.add(this.flashlight, this.flashlight.target);
+    this.envBase = scene.environmentIntensity * 0.3;
     this.sky = scene.background as THREE.Color;
     this.skyBase = this.sky.clone();
     this.fogBase = scene.fog ? (scene.fog as THREE.Fog).color.clone() : null;
-    this.envBase = scene.environmentIntensity;
   }
 
   /** 0 = lights on … 1 = blacked out (muzzle flashes scale with this). */
@@ -132,40 +140,49 @@ export class Lighting {
   }
 
   /**
-   * Keep the red lights on the emergency lamps nearest you that you can see.
-   * Lamps leaving the set fade out before their light moves (no popping).
+   * Park the practical lights on the lamps nearest you that you can see. Lamps
+   * leaving the set fade out before their light moves (no popping).
    */
   private updateReds(dt: number, k: number): void {
     if (!this.reds.length) return;
+    const dark = k > 0.5;
     this.pickTimer -= dt;
-    let want: THREE.Vector3[] | null = null;
-    if (this.pickTimer <= 0 && k > 0.02) {
+    if (dark !== this.wasDarkPick) {
+      // Power changed: everything fades out, then re-picks from the other set.
+      this.wasDarkPick = dark;
+      for (const r of this.reds) r.keep = false;
+      this.pickTimer = 0.35;
+    } else if (this.pickTimer <= 0) {
       this.pickTimer = 0.3;
       const e = this.eye;
-      want = this.map.emergencySpots
-        .filter((s) => Math.abs(s.x - e.x) < 30 && Math.abs(s.z - e.z) < 30 && this.map.isVisibleAt(s.x, s.z))
-        .sort((a, b) => a.distanceToSquared(e) - b.distanceToSquared(e))
-        .slice(0, this.reds.length);
-    }
-    if (want) {
-      for (const r of this.reds) r.keep = !!r.spot && want.includes(r.spot);
-      for (const s of want) {
-        if (this.reds.some((r) => r.spot === s)) continue;
+      const near = (p: THREE.Vector3) => Math.abs(p.x - e.x) < 32 && Math.abs(p.z - e.z) < 32 && this.map.isVisibleAt(p.x, p.z);
+      // Blacked out: only every third emergency lamp is a working beacon (sparse red, mostly dark).
+      const cands: { pos: THREE.Vector3; color: number; peak: number; dist: number }[] = dark
+        ? this.map.emergencySpots.filter((p, i) => i % 3 === 0 && near(p)).map((pos) => ({ pos, color: 0xff2a14, peak: 22, dist: 14 }))
+        : this.map.lampSpots.filter((s) => near(s.pos)).map((s) => ({ pos: s.pos, color: s.color, peak: 34, dist: 11 }));
+      cands.sort((a, b) => a.pos.distanceToSquared(e) - b.pos.distanceToSquared(e));
+      const want = cands.slice(0, dark ? Math.min(2, this.reds.length) : this.reds.length);
+      for (const r of this.reds) r.keep = !!r.spot && want.some((w) => w.pos === r.spot);
+      for (const w of want) {
+        if (this.reds.some((r) => r.spot === w.pos)) continue;
         const free = this.reds.find((r) => !r.spot);
-        if (free) {
-          free.spot = s;
-          free.f = 0;
-          free.keep = true;
-          free.l.position.copy(s);
-        }
+        if (!free) continue;
+        free.spot = w.pos;
+        free.f = 0;
+        free.keep = true;
+        free.peak = w.peak;
+        free.l.color.setHex(w.color);
+        free.l.position.copy(w.pos);
+        free.l.distance = w.dist;
       }
     }
-    if (k <= 0.02) for (const r of this.reds) r.keep = false;
-    const pulse = this.map.emergencyPulse;
+    const pulse = dark ? this.map.emergencyPulse : 1;
+    // Power on: lamps follow the blackout level down (the flicker included).
+    const level = dark ? k : 1 - k;
     for (const r of this.reds) {
       r.f = r.keep ? Math.min(1, r.f + dt * 2.5) : Math.max(0, r.f - dt * 4);
       if (r.f === 0 && !r.keep) r.spot = null;
-      r.l.intensity = r.spot ? 45 * r.f * k * pulse : 0;
+      r.l.intensity = r.spot ? r.peak * r.f * level * pulse : 0;
     }
   }
 }
