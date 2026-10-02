@@ -151,6 +151,17 @@ export function planFor(a: TeamAgent, c: PlanContext): Plan | null {
     const r = bots.sort((x, y) => flat(x.pos, pos) - flat(y.pos, pos))[0];
     return { kind: 'farm', at: r.pos.clone(), time: 0, hold: 6, status: `farming (${goal})`, label: `Saving for the ${goal}. Hunting bots.` };
   }
+  // Early game: keep moving. Sweep a room you can reach (bots wake up as you pass)
+  // instead of camping a lift with nothing to buy yet.
+  if (sv.time < 240 && Math.random() < 0.7) {
+    const rooms = map.rooms.filter((r) => reach.has(r.zone));
+    for (let i = 0; i < 10 && rooms.length; i++) {
+      const r = rooms[(Math.random() * rooms.length) | 0];
+      const at = new THREE.Vector3(r.rect[0] + 3 + Math.random() * (r.rect[2] - r.rect[0] - 6), 0, r.rect[1] + 3 + Math.random() * (r.rect[3] - r.rect[1] - 6));
+      if (flat(at, pos) < 15 || (c.anchor && c.leash && flat(at, c.anchor) > c.leash)) continue;
+      return { kind: 'roam', at, time: 0, status: 'sweeping', label: `Sweeping the ${r.name} for bots.` };
+    }
+  }
   const lifts = map.spawnPoints
     .filter((s) => s.kind === 'lift' && reach.has(s.zone) && (!c.anchor || !c.leash || flat(s.pos, c.anchor) < c.leash))
     .sort((x, y) => flat(x.pos, pos) - flat(y.pos, pos));

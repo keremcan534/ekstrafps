@@ -306,18 +306,19 @@ export const RECIPES: Record<string, Recipe> = {
     burst(c, { dur: 0.05, freq: 300, type: 'lowpass', gain: 0.5 });
   } },
   impact_robot: { dur: 0.2, render: (c) => {
-    burst(c, { dur: 0.05, freq: 900, q: 1.2, gain: 0.8 });
+    burst(c, { dur: 0.05, freq: 900, q: 0.9, gain: 0.8 });
     burst(c, { dur: 0.06, freq: 450, type: 'lowpass', gain: 0.7 });
-    metal(c, 0, r(600, 850), 0.04, 0.12, [1, 2.3]);
   } },
   impact_robotweak: { dur: 0.25, render: (c) => {
-    burst(c, { dur: 0.08, freq: 1600, freqEnd: 400, type: 'bandpass', gain: 1.0 });
+    // Under the recorded hit: a hard crack and a low body thud (no ringing partials).
+    burst(c, { dur: 0.08, freq: 1600, freqEnd: 400, type: 'bandpass', gain: 0.8 });
     burst(c, { dur: 0.01, freq: 4500, type: 'highpass', gain: 0.4 });
-    metal(c, 0, r(2300, 2700), 0.04, 0.1);
+    burst(c, { dur: 0.07, freq: 300, type: 'lowpass', gain: 0.6 });
   } },
   shell_brass: { dur: 0.08, render: (c) => {
-    burst(c, { dur: 0.008, freq: 5200, q: 2, gain: 0.5 });
-    burst(c, { t: 0.03, dur: 0.006, freq: 4200, q: 2, gain: 0.3 });
+    // Casing on the floor: a dull dry tick (narrow bands at 4-5 kHz read as "ping").
+    burst(c, { dur: 0.006, freq: 2600, type: 'highpass', gain: 0.35 });
+    burst(c, { dur: 0.02, freq: 700, type: 'lowpass', gain: 0.4 });
   } },
   shell_plastic: { dur: 0.15, render: (c) => burst(c, { dur: 0.04, freq: 900, type: 'lowpass', gain: 0.5 }) },
 
@@ -340,16 +341,15 @@ export const RECIPES: Record<string, Recipe> = {
     burst(c, { dur: 0.008, freq: 5000, type: 'highpass', gain: 0.3 });
   } },
   robot_death: { dur: 1.2, render: (c) => {
+    // Powering down and collapsing: hiss falling away + heavy clatter (no laser sweep).
     burst(c, { dur: 0.7, freq: 1600, freqEnd: 150, type: 'lowpass', gain: 1.4, curve: 0.8 });
-    tone(c, { dur: 0.45, f0: 1100, f1: 90, type: 'sawtooth', gain: 0.18 });
-    metal(c, 0.05, 520, 0.4, 0.35, [1, 2.3, 3.9]);
+    burst(c, { dur: 0.5, attack: 0.02, freq: 2400, freqEnd: 500, q: 1.2, gain: 0.35 });
     tone(c, { dur: 0.25, f0: 70, f1: 35, gain: 1.0 });
   } },
   // ---------- Black Division / player damage ----------
   flyby_crack: { dur: 0.12, samples: (sr) => crackSamples(sr, 0.45, 9), drive: 2.2 },
   flyby_whizz: { dur: 0.35, render: (c) => {
-    burst(c, { dur: 0.22, attack: 0.06, freq: 2600, freqEnd: 700, q: 4, gain: 0.9 });
-    tone(c, { dur: 0.25, f0: 1400, f1: 500, gain: 0.08, attack: 0.05 });
+    burst(c, { dur: 0.22, attack: 0.06, freq: 2600, freqEnd: 700, q: 2.5, gain: 0.9 });
   } },
   impact_flesh: { dur: 0.25, render: (c) => {
     burst(c, { dur: 0.09, freq: 420, freqEnd: 150, type: 'lowpass', gain: 1.3 });
@@ -366,15 +366,15 @@ export const RECIPES: Record<string, Recipe> = {
     burst(c, { dur: 0.05, freq: 1800, q: 1.2, gain: 0.8 });
     burst(c, { dur: 0.07, freq: 350, type: 'lowpass', gain: 0.7 });
   } },
-  player_hit: { dur: 1.4, drive: 1.4, render: (c) => {
+  player_hit: { dur: 0.6, drive: 1.4, render: (c) => {
+    // Body hit: thump + muffled impact. (The old 3 kHz "ear ring" sounded like a ding.)
     tone(c, { dur: 0.16, f0: 95, f1: 38, gain: 1.4 });
     burst(c, { dur: 0.12, freq: 600, freqEnd: 120, type: 'lowpass', gain: 1.2 });
-    tone(c, { t: 0.02, dur: 1.2, f0: 3150, gain: 0.05, attack: 0.04 }); // ear ring
   } },
   player_death: { dur: 2.2, render: (c) => {
     tone(c, { dur: 0.6, f0: 70, f1: 28, gain: 1.4 });
     burst(c, { dur: 0.5, freq: 400, freqEnd: 60, type: 'lowpass', gain: 1.2 });
-    tone(c, { t: 0.05, dur: 2, f0: 2900, gain: 0.07, attack: 0.1 });
+    burst(c, { t: 0.1, dur: 1.8, attack: 0.3, freq: 180, type: 'lowpass', gain: 0.35 });
   } },
   hazard_zap: { dur: 0.4, drive: 2, render: (c) => {
     burst(c, { dur: 0.05, freq: 3200, type: 'highpass', gain: 0.8 });
@@ -399,9 +399,10 @@ export const RECIPES: Record<string, Recipe> = {
     burst(c, { t: 0.65, dur: 0.06, freq: 260, type: 'lowpass', gain: 0.5 });
   } },
   robot_wake: { dur: 0.9, drive: 1.3, render: (c) => {
-    tone(c, { dur: 0.6, f0: 120, f1: 620, sweep: 0.5, type: 'sawtooth', gain: 0.12 });
-    tone(c, { t: 0.1, dur: 0.5, f0: 240, f1: 1240, sweep: 0.45, type: 'square', gain: 0.05 });
-    metal(c, 0.45, 900, 0.2, 0.2);
+    // Hydraulics charging + a joint locking (filtered noise, no sci-fi sweep).
+    burst(c, { dur: 0.55, attack: 0.15, freq: 400, freqEnd: 1600, q: 1.4, gain: 0.5 });
+    burst(c, { t: 0.5, dur: 0.06, freq: 350, type: 'lowpass', gain: 0.8 });
+    burst(c, { t: 0.5, dur: 0.01, freq: 3000, type: 'highpass', gain: 0.3 });
   } },
   horde_alarm: { dur: 2.2, render: (c) => {
     for (let i = 0; i < 3; i++) tone(c, { t: i * 0.7, dur: 0.6, f0: 440, f1: 880, sweep: 0.5, type: 'sawtooth', gain: 0.09 });
@@ -437,9 +438,9 @@ export const RECIPES: Record<string, Recipe> = {
     burst(c, { t: 0.04, dur: 0.06, freq: 2600, type: 'bandpass', q: 3, gain: 0.25 });
   } },
   servo_strain: { dur: 0.5, render: (c) => {
-    tone(c, { dur: 0.35, f0: r(520, 600), f1: 230, sweep: 0.3, type: 'sawtooth', gain: 0.07 });
-    tone(c, { dur: 0.3, f0: r(780, 860), f1: 340, sweep: 0.28, type: 'square', gain: 0.035 });
-    metal(c, 0, r(900, 1100), 0.12, 0.12);
+    // Actuator strain: a gritty hydraulic hiss and a clunk (the old saw/square whine pinged).
+    burst(c, { dur: 0.3, attack: 0.03, freq: r(900, 1100), freqEnd: 500, q: 1.1, gain: 0.35 });
+    burst(c, { t: 0.02, dur: 0.05, freq: 300, type: 'lowpass', gain: 0.5 });
   } },
   robot_boot: { dur: 0.4, render: (c) => {
     // Servos spinning up: filtered noise, no beep.

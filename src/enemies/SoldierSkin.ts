@@ -77,6 +77,12 @@ export function soldierMaterials(palette: SoldierPalette = 'bd'): SoldierMateria
     steel: new THREE.MeshStandardMaterial({ color: 0x5c6166, roughness: 0.35, metalness: 0.8 }),
     trim: new THREE.MeshStandardMaterial({ color: 0xb8662c, roughness: 0.6, metalness: 0.2 }),
   };
+  // Non-BD lenses are ballistic glasses: dark glass, no glow.
+  if (palette !== 'bd' && palette !== 'bdboss') {
+    m.lens.color.setHex(0x0b0d10);
+    m.lens.emissive.setHex(0x203040);
+    m.lens.emissiveIntensity = 0.15;
+  }
   if (palette === 'bdboss') {
     m.hood.color.setHex(0x55595f);
     m.fur.color.setHex(0x6f675d);
@@ -131,13 +137,20 @@ const rbox = (b: MeshBuilder, m: THREE.Material, size: V3, pos: V3, rot: V3 = [0
 const HOOD = new THREE.SphereGeometry(1, 14, 10, Math.PI / 2 + 0.8, Math.PI * 2 - 1.6, 0, Math.PI * 0.82);
 /** Rolled rim round the face opening. */
 const HOOD_RIM = new THREE.TorusGeometry(1, 0.17, 6, 14);
+/** High-cut helmet shell: the top of a sphere (scaled per axis). */
+const DOME = new THREE.SphereGeometry(1, 16, 8, 0, Math.PI * 2, 0, Math.PI * 0.5);
 
 const THIGH = 0.44;
 const SHIN = 0.46;
 const UPPER = 0.29;
 
-export function soldierSkin(health: number, palette: SoldierPalette = 'bd'): HumanoidSkin {
+/**
+ * @param kit loadout variant 0..3 (assault pack · radio pack · thigh rig · shemagh),
+ *            so a squad doesn't look like four copies of one man.
+ */
+export function soldierSkin(health: number, palette: SoldierPalette = 'bd', kit = 0): HumanoidSkin {
   const m = soldierMaterials(palette);
+  const team = palette === 'bravo' || palette === 'charlie' || palette === 'delta';
   // Your team wears a hooded field kit instead of helmet + NVG.
   const hooded = palette === 'vanta';
   // Black Division: respirators under the NVG; the commander adds a fur-hooded parka and heavier plates.
@@ -152,6 +165,12 @@ export function soldierSkin(health: number, palette: SoldierPalette = 'bd'): Hum
         if (side === 1) {
           rbox(b, m.gear, [0.05, 0.17, 0.09], [0.1, -0.13, -0.01]); // drop-leg holster
           rbox(b, m.boots, [0.03, 0.08, 0.05], [0.12, -0.06, -0.01]);
+          rbox(b, m.boots, [0.17, 0.02, 0.18], [0, -0.3, 0]); // leg strap
+        } else if (kit === 2) {
+          // Thigh rig: two mag pouches on a drop panel.
+          rbox(b, m.gear, [0.04, 0.2, 0.13], [-0.1, -0.2, 0.005]);
+          for (const z of [-0.03, 0.035]) rbox(b, m.plate, [0.045, 0.1, 0.05], [-0.115, -0.15, z]);
+          rbox(b, m.boots, [0.17, 0.02, 0.18], [0, -0.32, 0]);
         }
       },
       colliders: [{ half: [0.08, THIGH / 2, 0.09], center: [0, -THIGH / 2, 0], mass: 9, zone: 'leg', surface: 'flesh' }],
@@ -159,10 +178,13 @@ export function soldierSkin(health: number, palette: SoldierPalette = 'bd'): Hum
     {
       name: side === 1 ? 'shinR' : 'shinL', parent: side === 1 ? 'thighR' : 'thighL', pos: [0, -THIGH, 0], side,
       build: (b) => {
-        rbox(b, m.gear, [0.13, 0.11, 0.06], [0, -0.03, 0.075]); // knee pad
+        rbox(b, m.plate, [0.13, 0.11, 0.06], [0, -0.03, 0.075]); // knee pad (hard cap)
+        rbox(b, m.boots, [0.142, 0.02, 0.15], [0, -0.06, 0.01]); // pad strap
         rbox(b, m.pants, [0.13, 0.3, 0.14], [0, -0.18, 0]);
         rbox(b, m.boots, [0.135, 0.15, 0.16], [0, -0.385, -0.005]);
         rbox(b, m.boots, [0.125, 0.075, 0.12], [0, -0.42, 0.1]);
+        rbox(b, m.rubber, [0.14, 0.025, 0.27], [0, -0.452, 0.045]); // lugged sole
+        for (const y of [-0.34, -0.37, -0.4]) rbox(b, m.gear, [0.1, 0.008, 0.012], [0, y, 0.082]); // laces
       },
       colliders: [{ half: [0.075, SHIN / 2, 0.09], center: [0, -SHIN / 2, 0.02], mass: 5, zone: 'leg', surface: 'flesh' }],
     },
@@ -179,6 +201,7 @@ export function soldierSkin(health: number, palette: SoldierPalette = 'bd'): Hum
         if (hooded) rbox(b, m.tubes, [0.106, 0.022, 0.116], [0, -0.17, 0]);
         if (boss) rbox(b, m.hood, [0.135, UPPER * 0.95, 0.145], [0, -UPPER / 2, 0]); // parka sleeve
         if (bd && side === 1) rbox(b, m.lens, [0.004, 0.03, 0.05], [0.052, -0.07, 0]); // IR band
+        if (kit === 1 && !boss) rbox(b, m.plate, [0.13, 0.07, 0.14], [0.012 * side, 0.01, 0]); // shoulder armour
       },
       colliders: [{ half: [0.055, UPPER / 2, 0.06], center: [0, -UPPER / 2, 0], mass: 3, zone: 'arm', surface: 'flesh' }],
     },
@@ -186,8 +209,11 @@ export function soldierSkin(health: number, palette: SoldierPalette = 'bd'): Hum
       name: side === 1 ? 'foreArmR' : 'foreArmL', parent: side === 1 ? 'upperArmR' : 'upperArmL', pos: [0, -UPPER, 0], side,
       build: (b) => {
         rbox(b, m.fabric, [0.09, 0.24, 0.1], [0, -0.12, 0]);
+        rbox(b, m.plate, [0.08, 0.075, 0.05], [0, -0.025, -0.045]); // elbow pad
         rbox(b, m.glove, [0.075, 0.1, 0.09], [0, -0.29, 0.005]); // glove
+        rbox(b, m.plate, [0.062, 0.03, 0.025], [0, -0.3, 0.05]); // knuckle guard
         rbox(b, m.boots, [0.08, 0.03, 0.095], [0, -0.245, 0.005]); // cuff
+        if (side === -1) rbox(b, m.gear, [0.095, 0.05, 0.105], [0, -0.17, 0]); // watch / admin band
       },
       colliders: [{ half: [0.05, 0.16, 0.055], center: [0, -0.15, 0], mass: 2, zone: 'arm', surface: 'flesh' }],
     },
@@ -226,8 +252,31 @@ export function soldierSkin(health: number, palette: SoldierPalette = 'bd'): Hum
           rbox(b, m.gear, [0.07, 0.045, 0.27], [0.11, 0.445, 0]);
           rbox(b, m.gear, [0.07, 0.045, 0.27], [-0.11, 0.445, 0]);
           // Triple mag pouch + admin pouch.
-          for (const x of [-0.09, 0, 0.09]) rbox(b, m.gear, [0.08, 0.13, 0.055], [x, 0.17, 0.18]);
+          for (const x of [-0.09, 0, 0.09]) {
+            rbox(b, m.gear, [0.08, 0.13, 0.055], [x, 0.17, 0.18]);
+            rbox(b, m.boots, [0.07, 0.012, 0.06], [x, 0.235, 0.185]); // bungee retention
+          }
           rbox(b, m.gear, [0.2, 0.08, 0.04], [0, 0.33, 0.175]);
+          // MOLLE rows on the sides of the plate, a tourniquet on the shoulder strap.
+          for (const y of [0.13, 0.19, 0.25]) for (const s of [-1, 1]) rbox(b, m.boots, [0.02, 0.012, 0.2], [0.188 * s, y, 0]);
+          rbox(b, m.rubber, [0.035, 0.09, 0.03], [-0.11, 0.39, 0.15], [0.2, 0, 0]);
+          rbox(b, m.gear, [0.07, 0.1, 0.09], [0.2, 0.12, -0.02]); // IFAK on the cummerbund
+          if (kit === 0) {
+            // Assault pack: main bag, lid, side straps, a rolled mat.
+            rbox(b, m.gear, [0.29, 0.36, 0.15], [0, 0.28, -0.29]);
+            rbox(b, m.plate, [0.27, 0.07, 0.14], [0, 0.47, -0.285]);
+            for (const s of [-1, 1]) rbox(b, m.boots, [0.02, 0.32, 0.03], [0.1 * s, 0.28, -0.37]);
+            b.cylinder(m.pants, 0.045, 0.27, [0, 0.08, -0.29], [0, 0, Math.PI / 2], 10);
+          } else if (kit === 1) {
+            // Radio pack: a boxy manpack and a tall whip antenna.
+            rbox(b, m.plate, [0.22, 0.28, 0.12], [0, 0.29, -0.27]);
+            rbox(b, m.boots, [0.12, 0.05, 0.03], [0, 0.35, -0.335]);
+            b.cylinder(m.boots, 0.006, 0.75, [0.08, 0.75, -0.3], [-0.12, 0, -0.08], 5);
+            b.cylinder(m.gear, 0.012, 0.06, [0.075, 0.42, -0.3], [-0.12, 0, -0.08], 6);
+          } else if (kit === 3) {
+            // Sling bag across the back.
+            rbox(b, m.gear, [0.2, 0.17, 0.09], [0.08, 0.12, -0.24], [0, 0, 0.35]);
+          }
           b.add(m.patch, new THREE.PlaneGeometry(0.055, 0.055), [0.085, 0.37, 0.196]);
           // Radio + antenna, hydration carrier.
           rbox(b, m.gear, [0.065, 0.13, 0.05], [-0.13, 0.3, -0.18]);
@@ -281,6 +330,16 @@ export function soldierSkin(health: number, palette: SoldierPalette = 'bd'): Hum
           }
           b.cylinder(m.fabric, 0.055, 0.09, [0, 0.03, 0], [0, 0, 0], 10);
           rbox(b, m.fabric, [0.19, 0.23, 0.21], [0, 0.15, 0.01]); // balaclava
+          if (team) {
+            // Wraparound ballistic glasses over the balaclava.
+            rbox(b, m.lens, [0.17, 0.042, 0.02], [0, 0.175, 0.113]);
+            for (const s of [-1, 1]) rbox(b, m.boots, [0.012, 0.016, 0.1], [0.092 * s, 0.177, 0.06]);
+          }
+          if (kit === 3 && !boss) {
+            // Shemagh wrapped round the neck and lower face.
+            rbox(b, m.pants, [0.22, 0.09, 0.22], [0, 0.04, 0.01]);
+            rbox(b, m.pants, [0.17, 0.07, 0.05], [0, 0.09, 0.11]);
+          }
           if (bd) {
             // Full-face respirator: rubber facepiece, two round eye lenses, twin side filters, voicemitter.
             rbox(b, m.rubber, [0.16, 0.15, 0.06], [0, 0.135, 0.1]);
@@ -303,11 +362,14 @@ export function soldierSkin(health: number, palette: SoldierPalette = 'bd'): Hum
             } else b.cylinder(m.gear, 0.02, 0.03, [0, 0.08, 0.142], [Math.PI / 2 - 0.4, 0, 0], 12);
           }
           // High-cut helmet, rails, ear pro.
-          rbox(b, m.helmet, [0.235, 0.13, 0.255], [0, 0.275, -0.005]);
-          rbox(b, m.helmet, [0.245, 0.035, 0.265], [0, 0.22, -0.005]);
+          // Rounded high-cut shell over a short brim band, cover patch on top.
+          b.add(m.helmet, DOME.clone(), [0, 0.225, -0.005], [0, 0, 0], [0.128, 0.122, 0.14]);
+          rbox(b, m.helmet, [0.25, 0.04, 0.27], [0, 0.222, -0.005]);
+          rbox(b, m.gear, [0.11, 0.012, 0.09], [0, 0.346, -0.01]); // velcro patch
           for (const s of [-1, 1]) {
-            rbox(b, m.gear, [0.02, 0.04, 0.12], [0.123 * s, 0.24, -0.01]);
+            rbox(b, m.gear, [0.02, 0.035, 0.15], [0.127 * s, 0.258, -0.01]); // ARC rails
             b.cylinder(m.gear, 0.047, 0.045, [0.115 * s, 0.15, 0], [0, 0, Math.PI / 2], 14);
+            b.cylinder(m.boots, 0.03, 0.05, [0.12 * s, 0.15, 0], [0, 0, Math.PI / 2], 12); // ear cup
           }
           if (boss) {
             // Binocular NVG flipped up on the mount, dark (he doesn't need it to find you).

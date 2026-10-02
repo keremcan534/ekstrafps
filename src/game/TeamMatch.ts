@@ -28,11 +28,13 @@ const COLOR: Record<string, string> = { alpha: '#4fa8ff', bravo: '#ffa040', char
 /** Seconds of power-out per raid (the raid ends early when Black Division is wiped). */
 const RAID_TIME = 150;
 /** Match length: when the clock runs out the exits open. */
-export const MATCH_TIME = 20 * 60;
+export const matchClock = { minutes: 15 };
+/** Match length in seconds (chosen in the menu: 10 / 15 / 20 / 30 min). */
+const matchTime = () => matchClock.minutes * 60;
 /** How long the exits stay open. */
 const EXTRACT_TIME = 180;
 /** Mega hordes (seconds into the match); one more when the exits open. */
-const MEGA_AT = [6 * 60, 11 * 60, 16 * 60];
+const MEGA_AT = [0.3, 0.55, 0.8]; // fractions of the match length
 
 type Fate = 'field' | 'extracted' | 'kia';
 
@@ -140,7 +142,7 @@ export class TeamMatch {
       this.teams.push(new AITeam(def, this.ctx));
     }
     this.board = new Scoreboard(d.ui, TEAM_ROWS);
-    setTimeout(() => d.status.radio(`${MATCH_TIME / 60} minutes on the clock. When it runs out the exits open: extract to keep your score, die and lose half.`), 4000);
+    setTimeout(() => d.status.radio(`${matchClock.minutes} minutes on the clock. When it runs out the exits open: extract to keep your score, die and lose half.`), 4000);
   }
 
   private heardPlayer: { pos: THREE.Vector3; t: number } | null = null;
@@ -174,7 +176,7 @@ export class TeamMatch {
 
   /** 0 at the start, 1 when the clock runs out: AI gets sharper, deaths cost more. */
   get heat(): number {
-    return Math.min(1, this.time / MATCH_TIME);
+    return Math.min(1, this.time / matchTime());
   }
 
   get raidActive(): boolean {
@@ -484,7 +486,7 @@ export class TeamMatch {
 
   /** Dev / testing: run the clock out now (extraction opens on the next frame). */
   forceExtraction(): void {
-    if (!this.extracting) this.time = MATCH_TIME;
+    if (!this.extracting) this.time = matchTime();
   }
 
   /** Countdown done: your squad gets out in a cutscene, then EXTRACTED. */
@@ -526,15 +528,16 @@ export class TeamMatch {
       for (const t of this.teams) t.escalate(h);
       for (const t of this.raiders) t.escalate(h);
       sv0.deathPenalty = Math.round(100 + 250 * h);
+      sv0.heat = h;
     }
     // Mega hordes.
-    if (this.megaIdx < MEGA_AT.length && this.time >= MEGA_AT[this.megaIdx]) {
+    if (this.megaIdx < MEGA_AT.length && this.time >= MEGA_AT[this.megaIdx] * matchTime()) {
       this.megaIdx++;
       sv0.megaHorde((this.d.mobile ? 14 : 24) + this.megaIdx * (this.d.mobile ? 3 : 6));
       this.d.status.radio('Mega horde: every bay on Site-9 just opened.');
     }
     // Mid/late game: full-squad pushes on you.
-    if (this.time > MATCH_TIME * 0.28) {
+    if (this.time > matchTime() * 0.28) {
       this.rushTimer -= dt * (0.6 + this.heat);
       if (this.rushTimer <= 0) {
         this.rushTimer = 120 + Math.random() * 70;
@@ -551,7 +554,7 @@ export class TeamMatch {
       }
     }
     // Clock.
-    if (!this.extracting && this.time >= MATCH_TIME) this.startExtraction();
+    if (!this.extracting && this.time >= matchTime()) this.startExtraction();
     if (this.extracting) {
       this.updateExtraction(dt);
       if (this.finished) return;
@@ -584,7 +587,7 @@ export class TeamMatch {
         leader = id;
       }
     }
-    const secs = Math.max(0, Math.ceil(this.extracting ? this.extractLeft : MATCH_TIME - this.time));
+    const secs = Math.max(0, Math.ceil(this.extracting ? this.extractLeft : matchTime() - this.time));
     const mmss = `${(secs / 60) | 0}:${String(secs % 60).padStart(2, '0')}`;
     this.board.update(sv.score, this.alive, this.extracting ? null : sv.nextRaid, leader, this.extracting ? `EXTRACT ${mmss}` : mmss, this.extracting);
   }

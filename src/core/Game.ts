@@ -34,7 +34,7 @@ import { planFor } from '../game/Plans';
 import { assignRevives } from '../game/AITeam';
 import { TeamMatch } from '../game/TeamMatch';
 import type { RogueRobot } from '../enemies/RogueRobot';
-import { Survival } from '../game/Survival';
+import { START_POINTS, Survival } from '../game/Survival';
 import { SurvivalHUD } from '../ui/SurvivalHUD';
 import { MapOverlay, type MapState } from '../ui/MapOverlay';
 import { ScreenGrade } from '../fx/ScreenGrade';
@@ -858,7 +858,7 @@ export class Game {
     ally.soldier.body.canGoDown = () => !this.health.dead || this.allies.some((a) => a !== ally && a.alive && !a.downed);
     ally.armory = (id) => this.weapons.weapons.find((w) => w.data.id === id)?.data;
     ally.squad = this.squadFocus;
-    ally.points = hired ? 0 : 500;
+    ally.points = hired ? 0 : START_POINTS;
     ally.spawn(at, this.player.yaw);
     // Contractors arrive armed; the starting squad has pistols like you.
     ally.arm(hired ? (p.role === 'marksman' ? 'mosin' : p.role === 'assault' ? 'ppsh' : 'ak47') : SIDEARM);
@@ -1197,7 +1197,8 @@ export class Game {
     this.health.update(dt);
     this.muzzleLights.update(dt);
     // Their lights come on in the dark: blackouts on Site-9, always in the night yard.
-    weaponLight.level = this.lighting ? Math.min(1, this.lighting.darkness * 1.3) : 1;
+    // Site-9 runs at night: BD weapon lights stay on (stronger once the power dies).
+    weaponLight.level = this.lighting ? Math.max(0.6, Math.min(1, this.lighting.darkness * 1.3)) : 1;
     this.weaponLights.update(this.camera.camera.position);
     this.shells.update(dt);
     this.impacts.update(dt);

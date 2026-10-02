@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { matchClock } from '../game/TeamMatch';
 import type { Game } from '../core/Game';
 import { feel } from '../config/Feel';
 import { playerConfig } from '../player/PlayerConfig';
@@ -24,12 +25,14 @@ interface Prefs {
   shadows: boolean;
   /** performance: 0.75x resolution, no real-time shadows · balanced: up to 1.25x · quality: native up to 2x. */
   graphics: 'performance' | 'balanced' | 'quality';
+  /** 4 Teams: match length in minutes. */
+  matchMinutes: number;
 }
 
 const PREFS_KEY = 'site9.prefs';
 
 export function loadPrefs(): Prefs {
-  const d: Prefs = { volume: feel.masterVolume, sensitivity: 1, fov: playerConfig.baseFov, shadows: true, graphics: 'balanced' };
+  const d: Prefs = { volume: feel.masterVolume, sensitivity: 1, fov: playerConfig.baseFov, shadows: true, graphics: 'balanced', matchMinutes: 15 };
   try {
     return { ...d, ...(JSON.parse(localStorage.getItem(PREFS_KEY) ?? '{}') as Partial<Prefs>) };
   } catch {
@@ -51,6 +54,7 @@ const BASE_SENS = playerConfig.mouseSensitivity;
 export function applyPrefs(game: Game, p: Prefs): void {
   feel.masterVolume = p.volume;
   game.audio?.setVolume(p.volume);
+  matchClock.minutes = p.matchMinutes;
   playerConfig.mouseSensitivity = BASE_SENS * p.sensitivity;
   playerConfig.baseFov = p.fov;
   const dpr = window.devicePixelRatio || 1;
@@ -63,7 +67,7 @@ const MAPS = {
   site9: { name: 'SITE-9', tag: 'VANTA DYNAMICS CAMPUS', text: 'Sixteen rooms of a robotics facility gone dark. Four squads, rogue machines, raids.' },
 };
 const MODES = {
-  teams: { name: '4 TEAMS', tag: 'PvPvE', text: 'Your squad of four against three AI squads and the robots. First to 20 000.' },
+  teams: { name: '4 TEAMS', tag: 'PvPvE', text: 'Your squad of four against three AI squads and the robots. First to 20 000, or extract when the clock runs out.' },
   solo: { name: 'SURVIVAL', tag: 'SOLO', text: 'Classic survival. Open the facility zone by zone; death ends the run.' },
 };
 
@@ -241,6 +245,21 @@ export class MainMenu {
           else p.delete('mode');
           p.set('menu', '1');
           location.search = p.toString();
+        });
+      }
+    }
+    if (o.map === 'site9' && o.mode !== 'solo' && !this.paused) {
+      el('div', 'panel-label', this.panel, 'MATCH LENGTH');
+      const seg = el('div', 'gseg', this.panel);
+      const p = this.prefs;
+      for (const m of [10, 15, 20, 30]) {
+        const b = el('button', `gseg-btn ${p.matchMinutes === m ? 'active' : ''}`, seg, `${m} MIN`);
+        b.addEventListener('click', (e) => {
+          e.stopPropagation();
+          p.matchMinutes = m;
+          seg.querySelectorAll('.gseg-btn').forEach((x) => x.classList.toggle('active', x === b));
+          savePrefs(p);
+          matchClock.minutes = m;
         });
       }
     }

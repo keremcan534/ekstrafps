@@ -322,7 +322,7 @@ export class Utilities {
     g.rotation.y = yaw;
     this.deps.map.roomGroupAt(at.x, at.z).add(g);
     const { head, lamp } = this.turretRig(g);
-    const collider = this.deps.physics.addStaticBox(this.tmp.set(at.x, 0.7, at.z), new THREE.Vector3(0.3, 0.7, 0.3));
+    const collider = this.deps.physics.addStaticBox(this.tmp.set(at.x, 0.45, at.z), new THREE.Vector3(0.3, 0.45, 0.3));
     const spot: WallSpot = { pos: at.clone(), yaw, room: '', zone: '' };
     const t: Turret = {
       spot, at: at.clone(), head, lamp, muzzle: new THREE.Vector3(), cost: 0,
@@ -366,7 +366,9 @@ export class Utilities {
     const g = this.group(s, 1.0);
     const { head, lamp } = this.turretRig(g);
     this.sign(g, `SENTRY $${PRICES.turret}`, '#ff8a5c', [0, 1.7, 0], 0.8);
-    this.deps.physics.addStaticBox(this.front(s, 1.0, 0.7), new THREE.Vector3(0.3, 0.7, 0.3));
+    // Collider stops below the head: the sight ray starts inside the head, and a ray
+    // that starts inside a solid collider always reports a hit (the sentry went blind).
+    this.deps.physics.addStaticBox(this.front(s, 1.0, 0.45), new THREE.Vector3(0.3, 0.45, 0.3));
     this.sv.carveNav(this.front(s, 1.0), 1.0);
     const t: Turret = {
       spot: s, at: this.front(s, 2.0), head, lamp, muzzle: new THREE.Vector3(), cost: PRICES.turret,

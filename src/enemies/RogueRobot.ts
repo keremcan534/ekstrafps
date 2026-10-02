@@ -28,6 +28,9 @@ export interface RogueHooks {
 type State = 'pooled' | 'rising' | 'idle' | 'waking' | 'chase' | 'dead';
 
 const VISOR = new THREE.Color(0xff3a22);
+/** Visor colour per variant: runners read amber, brutes deep red. */
+const VISORS = { normal: VISOR, runner: new THREE.Color(0xffb21a), brute: new THREE.Color(0xff0a2a) };
+export type RobotVariant = keyof typeof VISORS;
 
 /**
  * Rogue production robot (the "zombie" of Site-9). Either a powered-down
@@ -38,6 +41,9 @@ const VISOR = new THREE.Color(0xff3a22);
  * Humanoid body as the target dummies (zoned hitboxes, reactions, ragdoll).
  * Pooled: robots are created once and recycled between spawns.
  */
+/** Dark gunmetal with a red edge: the brute's bolted-on plating. */
+const ARMOR_MAT = new THREE.MeshStandardMaterial({ color: 0x3a2a2a, metalness: 0.75, roughness: 0.35, emissive: 0x200000 });
+
 export class RogueRobot {
   readonly body: Humanoid;
   state: State = 'pooled';
@@ -59,6 +65,9 @@ export class RogueRobot {
   private merged: THREE.MeshStandardMaterial;
   private materials: { paint: THREE.MeshStandardMaterial; dark: THREE.MeshStandardMaterial; visor: THREE.MeshStandardMaterial };
   private tmp = new THREE.Vector3();
+  /** Rare heavy variant (armour plates, triple health) or the fast runner. */
+  variant: RobotVariant = 'normal';
+  private armor: THREE.Object3D[] = [];
 
   constructor(physics: Physics, scene: THREE.Object3D, private nav: NavGrid, private hooks: RogueHooks) {
     this.materials = {
@@ -83,7 +92,33 @@ export class RogueRobot {
       onThud: (at, s) => hooks.onThud(at, s),
     }, this);
     this.pose.idle = false;
+    this.buildArmor();
     this.body.setActive(false);
+  }
+
+  /** Brute plating: chest slab, shoulder pauldrons, a head crest (hidden unless brute). */
+  private buildArmor(): void {
+    const plate = ARMOR_MAT;
+    const add = (part: 'torso' | 'head' | 'upperArmL' | 'upperArmR', size: [number, number, number], pos: [number, number, number], rx = 0) => {
+      const m = new THREE.Mesh(new THREE.BoxGeometry(...size), plate);
+      m.position.set(...pos);
+      m.rotation.x = rx;
+      m.castShadow = true;
+      m.visible = false;
+      this.body.part(part).group.add(m);
+      this.armor.push(m);
+    };
+    add('torso', [0.62, 0.42, 0.1], [0, 0.36, 0.2]);
+    add('torso', [0.66, 0.1, 0.4], [0, 0.6, 0]);
+    add('upperArmL', [0.24, 0.12, 0.26], [0, 0.02, 0]);
+    add('upperArmR', [0.24, 0.12, 0.26], [0, 0.02, 0]);
+    add('head', [0.06, 0.1, 0.34], [0, 0.32, 0]);
+  }
+
+  setVariant(v: RobotVariant): void {
+    this.variant = v;
+    this.materials.visor.emissive.copy(VISORS[v]);
+    for (const m of this.armor) m.visible = v === 'brute';
   }
 
   get active(): boolean {

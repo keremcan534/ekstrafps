@@ -193,7 +193,7 @@ export const SOUND_BANK: Record<string, SoundEvent> = {
   'impact.concrete': { reverb: 0.22, layers: [{ synth: 'impact_concrete', gain: 0.35 }], pitchVariance: 0.12, maxVoices: 8, maxDist: 24 },
   'impact.metal': { reverb: 0.22, layers: [{ synth: 'impact_metal', gain: 0.45 }], pitchVariance: 0.06, maxVoices: 6, maxDist: 20 },
   'impact.robot': { reverb: 0.22, layers: [{ files: ['audio/guns/metal_hit0.wav', 'audio/guns/metal_hit1.wav', 'audio/guns/metal_hit2.wav'], synth: 'impact_robot', gain: 0.5 }], pitchVariance: 0.03, maxDist: 22, maxVoices: 6 },
-  'impact.robotweak': { reverb: 0.22, layers: [{ files: ['audio/guns/metal_hit0.wav', 'audio/guns/metal_hit1.wav', 'audio/guns/metal_hit2.wav'], synth: 'impact_robotweak', gain: 0.55 }, { synth: 'impact_robotweak', gain: 0.25 }], pitchVariance: 0.03, maxDist: 22, maxVoices: 4 },
+  'impact.robotweak': { reverb: 0.22, layers: [{ file: 'audio/guns/metal_hs.wav', gain: 0.75 }, { synth: 'impact_robotweak', gain: 0.25 }], pitchVariance: 0.04, maxDist: 24, maxVoices: 6 },
   'impact.prop': { layers: [{ synth: 'prop_hit', gain: 0.4 }], pitchVariance: 0.15, maxVoices: 6, maxDist: 18 },
   'shell.brass': { layers: [{ synth: 'shell_brass', gain: 0.1 }], pitchVariance: 0.03, maxVoices: 4 },
   'shell.plastic': { layers: [{ synth: 'shell_plastic', gain: 0.2 }], pitchVariance: 0.15, maxVoices: 3 },
@@ -260,7 +260,7 @@ export const SOUND_BANK: Record<string, SoundEvent> = {
   // Explosions carry like gunfire: the full blast up close, a dull low rumble far off.
   'explosion': { reverb: 0.6, layers: [{ file: 'audio/guns/explosion.wav', gain: 1.25, range: 'near' }, { file: 'audio/guns/explosion_far.wav', gain: 1.1, range: 'far' }, { file: 'audio/guns/explosion_far.wav', gain: 0.9, range: 'farthest' }], maxVoices: 3 },
   'raid.siren': { reverb: 0.8, layers: [{ synth: 'raid_siren', gain: 0.6 }], maxVoices: 1, bus: 'ui' },
-  'director.horde': { reverb: 0.6, layers: [{ synth: 'horde_alarm', gain: 0.6 }], maxVoices: 1, bus: 'ui' },
+  'director.horde': { reverb: 0.5, layers: [{ file: 'audio/guns/alarm_short.wav', synth: 'horde_alarm', gain: 0.45 }], maxVoices: 1, bus: 'ui' },
   'robot.boot': { layers: [{ synth: 'robot_boot', gain: 0.35 }], pitchVariance: 0.08, maxDist: 18, maxVoices: 3 },
   'player.land': { layers: [{ synth: 'land', gain: 0.5 }], pitchVariance: 0.08, bus: 'ui' },
   'player.jump': { layers: [{ synth: 'jump', gain: 0.4 }], pitchVariance: 0.1, bus: 'ui' },

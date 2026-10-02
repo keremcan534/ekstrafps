@@ -215,7 +215,7 @@ export class Soldier implements LightSource {
     this.errNoise2 = new Noise1D(index * 29 + 11);
     this.ammoData = getAmmo('762x39_ps');
     this.flash = new MuzzleFlash(2.6, false);
-    this.body = new Humanoid(deps.physics, deps.scene, soldierSkin(palette === 'bdboss' ? 650 : team === 'bd' ? 160 : 200, palette), {
+    this.body = new Humanoid(deps.physics, deps.scene, soldierSkin(palette === 'bdboss' ? 650 : team === 'bd' ? 160 : 200, palette, index % 4), {
       onDamage: (info) => this.onDamaged(info),
       onDeath: (info) => this.onKilled(info),
       onThud: (at, s) => hooks.onThud(at, s),

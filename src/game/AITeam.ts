@@ -3,7 +3,7 @@ import type { SoldierDeps } from '../enemies/Soldier';
 import type { SoldierPalette } from '../enemies/SoldierSkin';
 import type { WeaponData } from '../weapons/WeaponData';
 import type { Site9 } from '../world/Site9';
-import type { Survival } from './Survival';
+import { START_POINTS, type Survival } from './Survival';
 import type { RogueRobot } from '../enemies/RogueRobot';
 import { TeamAgent, randomPersonality, type Combatant } from './TeamAgent';
 import type { DamageInfo } from '../targets/Humanoid';
@@ -134,7 +134,7 @@ export class AITeam {
     return best;
   }
 
-  private addAgent(at: THREE.Vector3, points = 500): TeamAgent {
+  private addAgent(at: THREE.Vector3, points = START_POINTS): TeamAgent {
     const loner = this.def.style === 'reckless' ? 0.45 : this.def.style === 'balanced' ? 0.15 : 0.03;
     const isBoss = !!this.def.boss && this.agents.length === 0;
     const personality = randomPersonality(loner);
@@ -442,7 +442,8 @@ export class AITeam {
 
     // 3) Nothing to spend on yet: farm. Either hold a spot and let robots come to
     //    us (safer, steady points), or go hunting the awake ones nearby.
-    if (Math.random() < (this.def.style === 'reckless' ? 0.15 : 0.3)) {
+    const early = this.ctx.survival.time < 240;
+    if (!early && Math.random() < (this.def.style === 'reckless' ? 0.15 : 0.3)) {
       this.goal = { kind: 'farm', at: L.soldier.pos.clone(), time: 0, hold: 7 + Math.random() * 8 };
       return;
     }

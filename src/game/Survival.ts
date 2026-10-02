@@ -11,7 +11,7 @@ import type { AudioSystem } from '../audio/AudioSystem';
 import { buildWeaponModel } from '../weapons/WeaponModels';
 import { mergeStatic } from '../world/MeshBuilder';
 import type { LinkDef } from '../world/LayoutBuilder';
-import { RogueRobot, type MeleeTarget } from '../enemies/RogueRobot';
+import { RogueRobot, type MeleeTarget, type RobotVariant } from '../enemies/RogueRobot';
 import type { SurvivalHUD } from '../ui/SurvivalHUD';
 import type { DamageInfo } from '../targets/Humanoid';
 import type { Lighting } from './Lighting';
@@ -98,7 +98,8 @@ interface Hazard {
 
 const HAZARD_DPS = { electric: 70, gas: 26, fire: 80 };
 
-const START_POINTS = 500;
+/** Enough to open one starter shutter right away ($750). */
+export const START_POINTS = 800;
 const POINTS = { hit: 10, kill: 60, headKill: 100 };
 
 /**
@@ -285,7 +286,7 @@ export class Survival {
       });
     }
     // Four teams farm robots: the facility needs a lot more of them.
-    const pool = deps.mode === 'teams' ? (mobile ? 22 : 40) : mobile ? 14 : 24;
+    const pool = deps.mode === 'teams' ? (mobile ? 24 : 46) : mobile ? 14 : 24;
     for (let i = 0; i < pool; i++) {
       this.robots.push(
         new RogueRobot(physics, scene, nav, {
@@ -293,7 +294,8 @@ export class Survival {
           onDeath: (r, info) => {
             if (info.hit.team === 'alpha' || !info.hit.team) this.kills++;
             if (r.pos.distanceTo(deps.player.feet) < 12) this.intensity = Math.min(1, this.intensity + 0.04);
-            this.award(info.hit.team || 'alpha', info.zone === 'head' ? POINTS.headKill : POINTS.kill, info.hit.owner);
+            const bonus = r.variant === 'brute' ? 3 : 1;
+            this.award(info.hit.team || 'alpha', (info.zone === 'head' ? POINTS.headKill : POINTS.kill) * bonus, info.hit.owner);
           },
           onAttack: (r) => deps.audio.play('robot.stagger', { position: r.pos, volume: 0.6 }),
           onThud: (at, s) => deps.audio.play('robot.fall', { position: at, volume: 0.25 + 0.5 * s }),
@@ -755,13 +757,20 @@ export class Survival {
     return cands.length ? cands[(Math.random() * cands.length) | 0].s : null;
   }
 
-  private robotStats(): { health: number; speed: number } {
+  private robotStats(): { health: number; speed: number; variant: RobotVariant; damage: number } {
     const t = this.threat;
     const health = (85 + 30 * (t - 1)) * (0.85 + 0.15 * this.skill);
+    // Rare brute (team games, after the first couple of minutes): triple health, slow, hits hard.
+    if (this.deps.mode === 'teams' && this.elapsed > 120 && Math.random() < 0.02 + 0.06 * this.heat) {
+      return { health: health * 3.2, speed: 1.25 + Math.random() * 0.25, variant: 'brute', damage: 100 };
+    }
     const sprint = Math.random() < Math.min(0.55, Math.max(0, (t - 2.5) * 0.12 * this.skill));
     const speed = sprint ? 3.4 + Math.random() * 0.6 : Math.min(2.7, 1.35 + 0.12 * t) * (0.85 + Math.random() * 0.3);
-    return { health, speed };
+    return { health, speed, variant: sprint ? 'runner' : 'normal', damage: 60 };
   }
+
+  /** Match heat 0..1 (the team match sets it): more robots as the clock runs. */
+  heat = 0;
 
   /** Mob member: arrives from a hidden lift / bay / hatch. */
   private queueMobSpawn(): boolean {
@@ -789,8 +798,9 @@ export class Survival {
       if (!this.hidden(this.tmp, 12)) continue;
       const robot = this.robots.find((o) => !o.active);
       if (!robot) return;
-      const { health } = this.robotStats();
-      robot.spawn(this.tmp, health, Math.min(2.6, 1.4 + 0.12 * this.threat), 60, 'idle');
+      const { health, variant, damage } = this.robotStats();
+      robot.setVariant(variant === 'runner' ? 'normal' : variant);
+      robot.spawn(this.tmp, health, variant === 'brute' ? 1.3 : Math.min(2.6, 1.4 + 0.12 * this.threat), damage, 'idle');
       placed++;
     }
   }
@@ -837,7 +847,9 @@ export class Survival {
     this.phaseTimer -= dt;
     const teams = this.deps.mode === 'teams';
     const mega = this.elapsed < this.megaUntil ? 1.7 : 1;
-    const cap = (teams ? (this.deps.mobile ? 16 : 30) : this.deps.mobile ? 10 : 18) * mega;
+    // Up to +20% as the match heats up.
+    const grow = 1 + 0.2 * this.heat;
+    const cap = (teams ? (this.deps.mobile ? 16 : 30) : this.deps.mobile ? 10 : 18) * mega * grow;
     // Between mobs the pressure never fully stops: lone hunters trickle in.
     if (this.phase === 'relax' || this.phase === 'fade') {
       this.trickleTimer -= dt;
@@ -845,14 +857,14 @@ export class Survival {
         // Team games: a steady stream from the start (the first minutes were too quiet).
         const early = teams && this.elapsed < 150 ? 0.55 : 1;
         this.trickleTimer = Math.max(3, 9 - this.threat * 0.8) * (0.7 + Math.random() * 0.6) * (teams ? 0.5 : 1) * early;
-        if (aggro < (2 + this.threat) * (teams ? 2.5 : 1)) this.queueMobSpawn();
+        if (aggro < (2 + this.threat) * (teams ? 2.5 : 1) * grow) this.queueMobSpawn();
       }
     }
     switch (this.phase) {
       case 'relax':
         if (this.phaseTimer <= 0) {
           this.phase = 'buildup';
-          this.mobLeft = Math.max(4, Math.min(teams ? 70 : 45, Math.round((4 + this.threat * 2.6) * this.skill * (teams ? 1.8 : 1))));
+          this.mobLeft = Math.max(4, Math.min(teams ? 80 : 45, Math.round((4 + this.threat * 2.6) * this.skill * (teams ? 1.8 : 1) * grow)));
           this.spawnTimer = 0.5;
           this.deps.hud.horde();
           this.deps.audio.play('director.horde');
@@ -931,9 +943,10 @@ export class Survival {
       this.pending.splice(i, 1);
       const robot = this.robots.find((o) => !o.active);
       if (!robot) continue;
-      const { health, speed } = this.robotStats();
+      const { health, speed, variant, damage } = this.robotStats();
+      robot.setVariant(variant);
       const toward = Math.atan2(this.deps.player.feet.x - a.sp.pos.x, this.deps.player.feet.z - a.sp.pos.z);
-      robot.spawn(a.sp.pos, health, speed, 60, a.sp.kind === 'hatch' ? 'rise' : 'step', toward);
+      robot.spawn(a.sp.pos, health, speed, damage, a.sp.kind === 'hatch' ? 'rise' : 'step', toward);
     }
     for (const sp of this.deps.map.spawnPoints) {
       if (sp.light && sp.light.emissiveIntensity > 0.4) sp.light.emissiveIntensity = Math.max(0.4, sp.light.emissiveIntensity - dt * 1.5);
