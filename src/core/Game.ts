@@ -156,13 +156,15 @@ export class Game {
     const pref = controlPreference();
     const params = new URLSearchParams(location.search);
     this.mobile = params.has('touch') || (!params.has('mouse') && (pref === 'mobile' || (pref === 'auto' && isTouchDevice())));
-    this.quality = { pixelRatio: Math.min(window.devicePixelRatio, this.mobile ? 1.5 : 2), shadows: true };
+    // Phones: no realtime sun shadows by default (the shadow pass costs a draw per caster;
+    // contact shadows still ground everything). Tuning panel can turn them back on.
+    this.quality = { pixelRatio: Math.min(window.devicePixelRatio, this.mobile ? 1.5 : 2), shadows: !this.mobile };
     this.renderer = new THREE.WebGLRenderer({ antialias: !this.mobile, powerPreference: 'high-performance' });
     this.renderer.setPixelRatio(this.quality.pixelRatio);
     this.renderer.setSize(window.innerWidth, window.innerHeight);
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1.05;
-    this.renderer.shadowMap.enabled = true;
+    this.renderer.shadowMap.enabled = this.quality.shadows;
     this.renderer.shadowMap.type = this.mobile ? THREE.PCFShadowMap : THREE.PCFSoftShadowMap;
     this.renderer.autoClear = false;
     this.renderer.info.autoReset = false;
@@ -183,6 +185,7 @@ export class Game {
     const mapId = new URLSearchParams(location.search).get('map');
     this.arena = mapId === 'site9' ? new Site9(this.physics, this.mobile) : new Arena(this.physics, this.mobile);
     this.scene.add(this.arena.group);
+    this.arena.sun.castShadow = this.quality.shadows;
     this.scene.background = new THREE.Color(this.arena.skyColor);
     this.renderer.toneMappingExposure = this.arena.exposure ?? 1.05;
     this.scene.fog = new THREE.Fog(this.arena.skyColor, 90, 200);
@@ -1058,8 +1061,12 @@ export class Game {
       map.updateVisibility(this.player.feet.x, this.player.feet.z, (l) => (s ? s.isLinkOpen(l) : true));
       // Characters in rooms that aren't drawn don't need drawing either.
       if (s) for (const r of s.robots) if (r.active) r.body.root.visible = map.isVisibleAt(r.pos.x, r.pos.z);
-      for (const a of this.allies) a.soldier.body.root.visible = map.isVisibleAt(a.soldier.pos.x, a.soldier.pos.z);
-      if (this.match) for (const a of this.match.agents()) a.soldier.body.root.visible = map.isVisibleAt(a.soldier.pos.x, a.soldier.pos.z);
+      // Phones: operators further than 55 m are a few pixels: skip drawing them.
+      const far2 = this.mobile ? 55 * 55 : Infinity;
+      const f = this.player.feet;
+      const show = (p: THREE.Vector3) => map.isVisibleAt(p.x, p.z) && (p.x - f.x) ** 2 + (p.z - f.z) ** 2 < far2;
+      for (const a of this.allies) a.soldier.body.root.visible = show(a.soldier.pos);
+      if (this.match) for (const a of this.match.agents()) a.soldier.body.root.visible = show(a.soldier.pos);
     }
     for (const r of this.robots) r.update(dt);
     const t = this.target;

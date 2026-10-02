@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import type { ModelKey } from './WeaponData';
 import { metalRoughness, metalTexture, polymerTexture, woodTexture } from '../fx/Textures';
 
@@ -57,7 +58,7 @@ const mat = {
   accent: std(0xff7a1a, 0.2, 0.5),
   wood: wood(0x9a5a2e),
   woodDark: wood(0x6a3c20, 0.6),
-  woodMosin: wood(0xc0602a, 0.42),
+  woodMosin: wood(0xa04f22, 0.45),
   woodKar: wood(0x5c3520, 0.5),
   bakelite: poly(0x6a2a18, 0.45, 0.05),
   glove: poly(0x2e342e, 0.9, 0),
@@ -69,10 +70,19 @@ const mat = {
   dotGlow: new THREE.MeshBasicMaterial({ color: 0xff2020, transparent: true, opacity: 0.25, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false }),
   lens: new THREE.MeshStandardMaterial({ color: 0x88ccff, metalness: 0.1, roughness: 0.05, transparent: true, opacity: 0.12, depthWrite: false }),
   bead: new THREE.MeshBasicMaterial({ color: 0xb8ff6a, toneMapped: false }),
+  akWood: wood(0x8c4b1e, 0.55),
+  akGrip: poly(0x5c2216, 0.5, 0.05),
+  parkerized: metal(0x2f3236, 0.75, 0.55),
+  rubber: poly(0x141516, 0.95, 0),
+  reticle: new THREE.MeshBasicMaterial({ color: 0xff2a1a, toneMapped: false, side: THREE.DoubleSide }),
+  holoGlass: new THREE.MeshStandardMaterial({ color: 0xffd9a0, metalness: 0.2, roughness: 0.05, transparent: true, opacity: 0.06, depthWrite: false }),
+  darkHole: std(0x060607, 0.2, 0.9),
 };
 
 type V3 = [number, number, number];
 const cylGeo = new THREE.CylinderGeometry(1, 1, 1, 18);
+const sphereGeo = new THREE.SphereGeometry(1, 8, 6);
+const torusGeo = new THREE.TorusGeometry(1, 0.22, 6, 18);
 
 /**
  * Rounded boxes (no sharp CG edges) with UVs projected in metres, so textures
@@ -192,17 +202,159 @@ function ironFront(root: THREE.Object3D, z: number, line: number, base: number):
   root.add(dot);
 }
 
-/** Curved magazine made of rotated segments (AK-style). */
-function curvedMag(parent: THREE.Object3D, material: THREE.Material, segs: number, width: number, depth: number, curve: number): void {
-  let y = 0;
-  let z = 0;
-  for (let i = 0; i < segs; i++) {
-    const a = 0.08 + i * curve;
-    const h = 0.055;
-    box(parent, material, [width, h, depth], [0, y - h / 2, z], [a, 0, 0]);
-    y -= h * Math.cos(a) * 0.95;
-    z -= h * Math.sin(a) * 0.95;
+// ------------------------------------------------------------------ detail kit
+
+/**
+ * Side-profile part (stocks, grips, handguards): a 2D outline in (z, y) — z back,
+ * y up — extruded `thick` across X with rounded edges. Real silhouettes instead
+ * of stacked boxes.
+ */
+function profile(parent: THREE.Object3D, material: THREE.Material, pts: [number, number][], thick: number, x = 0): THREE.Mesh {
+  const shape = new THREE.Shape(pts.map(([z, y]) => new THREE.Vector2(z, y)));
+  const bevel = Math.min(0.004, thick * 0.18);
+  const geo = new THREE.ExtrudeGeometry(shape, { depth: thick - bevel * 2, bevelEnabled: true, bevelThickness: bevel, bevelSize: bevel * 0.8, bevelSegments: 2, curveSegments: 4 });
+  geo.rotateY(-Math.PI / 2);
+  geo.translate((thick - bevel * 2) / 2 + x, 0, 0);
+  // UVs in metres along the part (grain runs along the stock).
+  const pos = geo.getAttribute('position');
+  const uv = geo.getAttribute('uv');
+  for (let i = 0; i < pos.count; i++) uv.setXY(i, pos.getZ(i) * 6, pos.getY(i) * 6);
+  uv.needsUpdate = true;
+  const m = new THREE.Mesh(geo, material);
+  parent.add(m);
+  return m;
+}
+
+
+/** Rivet / screw heads (tiny spheres). */
+function rivets(parent: THREE.Object3D, material: THREE.Material, pts: V3[], r = 0.0028): void {
+  for (const p of pts) {
+    const m = new THREE.Mesh(sphereGeo, material);
+    m.scale.set(r, r, r);
+    m.position.set(...p);
+    parent.add(m);
   }
+}
+
+/** Ring around the Z axis (barrel bands, castle nuts, suppressor rings). */
+function ringZ(parent: THREE.Object3D, material: THREE.Material, radius: number, thick: number, pos: V3): THREE.Mesh {
+  const m = new THREE.Mesh(torusGeo, material);
+  m.scale.set(radius, radius, thick / 0.22);
+  m.position.set(...pos);
+  parent.add(m);
+  return m;
+}
+
+/** Sling loop (ring standing in the YZ plane). */
+function slingLoop(parent: THREE.Object3D, pos: V3, r = 0.009): void {
+  const m = new THREE.Mesh(torusGeo, mat.steel);
+  m.scale.set(r, r, r);
+  m.rotation.y = Math.PI / 2;
+  m.position.set(...pos);
+  parent.add(m);
+}
+
+/** Row of identical small boxes (rail slots, serrations, ribs, vents). */
+function row(parent: THREE.Object3D, material: THREE.Material, n: number, size: V3, start: V3, step: V3): void {
+  for (let i = 0; i < n; i++) box(parent, material, size, [start[0] + step[0] * i, start[1] + step[1] * i, start[2] + step[2] * i]);
+}
+
+/** Picatinny top rail teeth along Z on top of a rail at height `top`. */
+function railTeeth(parent: THREE.Object3D, z0: number, z1: number, top: number, w = 0.022): void {
+  for (let z = z0; z > z1; z -= 0.01) box(parent, mat.black, [w, 0.004, 0.005], [0, top + 0.002, z]);
+}
+
+/** Trigger guard loop under the receiver (front post + bottom bar + rear tie-in). */
+function triggerGuard(parent: THREE.Object3D, material: THREE.Material, zFront: number, zRear: number, top: number, depth: number): void {
+  const len = zRear - zFront;
+  box(parent, material, [0.012, 0.005, len], [0, top - depth, zFront + len / 2]);
+  box(parent, material, [0.012, depth, 0.005], [0, top - depth / 2, zFront]);
+  box(parent, material, [0.012, depth * 0.6, 0.005], [0, top - depth * 0.3, zRear]);
+}
+
+/**
+ * Holographic sight (EOTech-pattern box): hood with a square window, base with
+ * battery housing and buttons, and a red ring-and-dot reticle that floats in
+ * the window. Returns the sight point (the reticle centre).
+ */
+function holoSight(root: THREE.Object3D, z: number, railTop: number): THREE.Object3D {
+  const y = railTop + 0.034;
+  const P = mat.black;
+  box(root, P, [0.036, 0.012, 0.08], [0, railTop + 0.006, z]); // base / mount
+  box(root, mat.gunmetal, [0.04, 0.008, 0.014], [0.0, railTop + 0.004, z + 0.026]); // cross-bolt clamp
+  ringZ(root, mat.steel, 0.004, 0.003, [0.022, railTop + 0.004, z + 0.026]).rotation.y = Math.PI / 2;
+  box(root, P, [0.032, 0.018, 0.034], [0, railTop + 0.014, z - 0.034]); // battery housing
+  box(root, mat.gunmetal, [0.01, 0.01, 0.012], [0.019, railTop + 0.016, z - 0.034]); // battery cap
+  // Hood: side wings, curved top, front + rear window frames.
+  for (const sx of [-1, 1]) box(root, P, [0.005, 0.044, 0.07], [0.0205 * sx, y, z - 0.002]);
+  box(root, P, [0.046, 0.007, 0.074], [0, y + 0.024, z - 0.002]);
+  box(root, P, [0.036, 0.006, 0.006], [0, y - 0.016, z - 0.034]);
+  box(root, P, [0.036, 0.006, 0.006], [0, y + 0.017, z - 0.034]);
+  box(root, P, [0.036, 0.006, 0.006], [0, y - 0.016, z + 0.03]);
+  box(root, P, [0.036, 0.006, 0.006], [0, y + 0.017, z + 0.03]);
+  // Rear control buttons.
+  for (const bx of [-0.01, 0.0, 0.01]) box(root, mat.rubber, [0.007, 0.006, 0.004], [bx, railTop + 0.01, z + 0.04]);
+  // Windows + reticle (65 MOA ring, 1 MOA dot).
+  for (const wz of [z - 0.034, z + 0.03]) {
+    const glass = new THREE.Mesh(new THREE.PlaneGeometry(0.034, 0.03), mat.holoGlass);
+    glass.position.set(0, y, wz);
+    root.add(glass);
+  }
+  const ringM = new THREE.Mesh(new THREE.RingGeometry(0.0052, 0.0061, 40), mat.reticle);
+  ringM.position.set(0, y, z - 0.035);
+  root.add(ringM);
+  const dot = new THREE.Mesh(new THREE.CircleGeometry(0.00075, 12), mat.reticle);
+  dot.position.set(0, y, z - 0.035);
+  root.add(dot);
+  for (const [tx, ty] of [[0, 1], [0, -1], [1, 0], [-1, 0]]) {
+    const tick = new THREE.Mesh(new THREE.PlaneGeometry(tx ? 0.0016 : 0.0005, ty ? 0.0016 : 0.0005), mat.reticle);
+    tick.position.set(tx * 0.0049, y + ty * 0.0049, z - 0.035);
+    root.add(tick);
+  }
+  return point(root, [0, y, z - 0.035]);
+}
+
+/** Centre line of a curved magazine, top to bottom, in (z, y): it bends forward as it goes down. */
+function magLine(len: number, bend: number, n = 10): { z: number; y: number; a: number }[] {
+  const out = [{ z: 0, y: 0, a: 0.08 }];
+  let z = 0;
+  let y = 0;
+  for (let i = 1; i <= n; i++) {
+    const a = 0.08 + (bend * i) / n;
+    y -= (len / n) * Math.cos(a);
+    z -= (len / n) * Math.sin(a);
+    out.push({ z, y, a });
+  }
+  return out;
+}
+
+/** Outline along the centre line, `half` to either side (front edge down, rear edge up). */
+function magOutline(line: { z: number; y: number; a: number }[], half: number, off = 0): [number, number][] {
+  const front = line.map((p) => [p.z - (half - off) * Math.cos(p.a), p.y + (half - off) * Math.sin(p.a)] as [number, number]);
+  const rear = line.map((p) => [p.z + (half + off) * Math.cos(p.a), p.y - (half + off) * Math.sin(p.a)] as [number, number]);
+  return [...front, ...rear.reverse()];
+}
+
+/**
+ * Curved magazine as one smooth body (the old signature: `segs` segments of `h`
+ * bending by `curve` each). Returns the bottom of the centre line.
+ */
+function curvedMag(parent: THREE.Object3D, material: THREE.Material, segs: number, width: number, depth: number, curve: number, h = 0.055): { z: number; y: number; a: number } {
+  const line = magLine(segs * h * 0.95, (segs - 1) * curve);
+  profile(parent, material, magOutline(line, depth / 2), width);
+  return line[line.length - 1];
+}
+
+/** Steel AK magazine: smooth curved body, stamped ribs down both sides, floorplate. */
+function ribbedMag(parent: THREE.Object3D, material: THREE.Material, segs: number, width: number, depth: number, curve: number, h = 0.055): void {
+  const end = curvedMag(parent, material, segs, width, depth, curve, h);
+  const line = magLine(segs * h * 0.95, (segs - 1) * curve);
+  const rib = line.slice(1, line.length - 1);
+  for (const sx of [-1, 1]) {
+    profile(parent, material, magOutline(rib, 0.004, -depth * 0.2), 0.003, (width / 2 + 0.0005) * sx);
+    profile(parent, material, magOutline(rib, 0.004, depth * 0.2), 0.003, (width / 2 + 0.0005) * sx);
+  }
+  box(parent, mat.blued, [width + 0.006, 0.008, depth + 0.006], [0, end.y - 0.003, end.z], [end.a, 0, 0]); // floorplate
 }
 
 function rig(
@@ -233,8 +385,8 @@ function heldRound(hand: THREE.Object3D): THREE.Group {
 function buildMosin(): WeaponRig {
   const R = new THREE.Group();
   const W = mat.woodMosin;
-  box(R, W, [0.046, 0.11, 0.3], [0, -0.045, 0.21], [-0.1, 0, 0]);
-  box(R, mat.blued, [0.048, 0.115, 0.012], [0, -0.063, 0.362], [-0.1, 0, 0]);
+  profile(R, W, [[0.04, 0.03], [0.358, -0.005], [0.366, -0.122], [0.2, -0.085], [0.06, -0.05], [0.04, -0.03]], 0.046);
+  box(R, mat.blued, [0.048, 0.118, 0.01], [0, -0.064, 0.366], [-0.07, 0, 0]);
   box(R, W, [0.04, 0.056, 0.14], [0, -0.014, 0.02]);
   box(R, W, [0.052, 0.056, 0.62], [0, 0.0, -0.33]);
   box(R, W, [0.04, 0.022, 0.38], [0, 0.04, -0.43]);
@@ -258,6 +410,20 @@ function buildMosin(): WeaponRig {
   box(R, mat.polymer, [0.022, 0.022, 0.05], [0.034, 0.0, -0.46]);
   const rightHand = hand(R, [0, -0.04, 0.03], [0.1, -0.26, 0.38], [0.05, 0.085, 0.085]);
   const leftHand = hand(R, [-0.005, -0.042, -0.38], [-0.22, -0.27, -0.06], [0.056, 0.05, 0.1]);
+  // Barrel bands with springs, globe front sight hood, cleaning rod, box magazine + trigger guard.
+  for (const z of [-0.29, -0.6]) rivets(R, mat.steel, [[0.03, 0.012, z]], 0.004);
+  ringZ(R, mat.blued, 0.012, 0.004, [0, 0.03, -0.86]);
+  box(R, mat.blued, [0.024, 0.024, 0.024], [0, 0.064, -0.862]);
+  box(R, mat.darkHole, [0.016, 0.016, 0.026], [0, 0.066, -0.862]);
+  tube(R, mat.steel, 0.003, 0.28, [0, 0.016, -0.73]);
+  box(R, mat.blued, [0.036, 0.036, 0.11], [0, -0.06, -0.08]); // magazine box
+  box(R, mat.blued, [0.03, 0.006, 0.12], [0, -0.08, -0.08]); // floorplate
+  triggerGuard(R, mat.blued, -0.02, 0.06, -0.075, 0.03);
+  box(R, mat.blued, [0.04, 0.006, 0.12], [0, 0.064, -0.235], [-0.05, 0, 0]); // rear sight ramp leaf
+  box(R, mat.steel, [0.036, 0.008, 0.012], [0, 0.07, -0.24]); // range slider
+  box(R, mat.darkHole, [0.004, 0.02, 0.04], [0.024, -0.02, 0.18]); // sling slot
+  box(R, mat.darkHole, [0.004, 0.02, 0.04], [-0.024, -0.02, 0.18]);
+  tube(R, mat.steel, 0.014, 0.03, [0, 0.03, 0.085]); // cocking knob
   return rig(R, {
     muzzle: point(R, [0, 0.03, -0.88]),
     ejectPort: point(R, [0.02, 0.05, -0.05]),
@@ -271,9 +437,8 @@ function buildMosin(): WeaponRig {
 function buildKar98(): WeaponRig {
   const R = new THREE.Group();
   const W = mat.woodKar;
-  box(R, W, [0.046, 0.105, 0.28], [0, -0.042, 0.2], [-0.1, 0, 0]);
-  box(R, mat.blued, [0.048, 0.11, 0.012], [0, -0.06, 0.34], [-0.1, 0, 0]);
-  box(R, W, [0.042, 0.07, 0.1], [0, -0.032, 0.03], [0.35, 0, 0]);
+  profile(R, W, [[0.04, 0.03], [0.336, 0.0], [0.344, -0.118], [0.2, -0.085], [0.09, -0.09], [0.05, -0.05], [0.03, -0.03]], 0.046);
+  box(R, mat.blued, [0.048, 0.12, 0.01], [0, -0.059, 0.344], [-0.07, 0, 0]);
   box(R, W, [0.05, 0.055, 0.52], [0, 0.0, -0.28]);
   box(R, W, [0.038, 0.02, 0.3], [0, 0.038, -0.39]);
   for (const z of [-0.3, -0.52]) box(R, mat.blued, [0.054, 0.068, 0.014], [0, 0.01, z]);
@@ -295,6 +460,20 @@ function buildKar98(): WeaponRig {
   box(R, mat.polymer, [0.022, 0.022, 0.05], [0.034, 0.0, -0.42]);
   const rightHand = hand(R, [0, -0.05, 0.035], [0.1, -0.26, 0.38], [0.05, 0.085, 0.085]);
   const leftHand = hand(R, [-0.005, -0.042, -0.34], [-0.22, -0.27, -0.04], [0.056, 0.05, 0.1]);
+  ringZ(R, mat.blued, 0.012, 0.004, [0, 0.03, -0.755]);
+  box(R, mat.blued, [0.026, 0.028, 0.022], [0, 0.062, -0.755]); // front sight hood
+  box(R, mat.darkHole, [0.018, 0.02, 0.024], [0, 0.064, -0.755]);
+  box(R, mat.blued, [0.012, 0.012, 0.03], [0, -0.008, -0.62]); // bayonet lug
+  tube(R, mat.steel, 0.003, 0.24, [0, 0.014, -0.63]);
+  box(R, mat.blued, [0.03, 0.006, 0.12], [0, -0.052, -0.08]); // floorplate
+  triggerGuard(R, mat.blued, -0.02, 0.06, -0.05, 0.03);
+  box(R, mat.blued, [0.034, 0.006, 0.1], [0, 0.062, -0.23], [-0.05, 0, 0]); // tangent sight
+  box(R, mat.steel, [0.03, 0.008, 0.012], [0, 0.068, -0.24]);
+  box(R, mat.darkHole, [0.004, 0.012, 0.03], [0.024, -0.03, 0.12]); // sling slot
+  box(R, mat.darkHole, [0.004, 0.012, 0.03], [-0.024, -0.03, 0.12]);
+  slingLoop(R, [-0.026, 0.0, -0.52]);
+  tube(R, mat.steel, 0.012, 0.026, [0, 0.03, 0.088]); // cocking piece
+  box(R, mat.steel, [0.004, 0.012, 0.012], [0, 0.044, 0.095]); // wing safety
   return rig(R, {
     muzzle: point(R, [0, 0.03, -0.775]),
     ejectPort: point(R, [0.02, 0.05, -0.05]),
@@ -314,24 +493,60 @@ function buildAK47(): WeaponRig {
   box(R, mat.blued, [0.04, 0.026, 0.05], [0, 0.072, -0.18]);
   const sight = ironRear(R, -0.2, 0.096);
   tube(R, mat.blued, 0.012, 0.17, [0, 0.068, -0.295]);
-  box(R, mat.wood, [0.044, 0.03, 0.15], [0, 0.072, -0.29]);
-  box(R, mat.wood, [0.058, 0.056, 0.2], [0, 0.02, -0.3]);
+  // Upper handguard over the gas tube; lower handguard with a finger swell and grooves.
+  profile(R, mat.akWood, [[-0.215, 0.06], [-0.37, 0.06], [-0.375, 0.074], [-0.36, 0.088], [-0.225, 0.088], [-0.21, 0.076]], 0.042);
+  profile(R, mat.akWood, [[-0.205, 0.048], [-0.398, 0.046], [-0.398, 0.0], [-0.37, -0.012], [-0.3, -0.006], [-0.24, -0.012], [-0.205, -0.004]], 0.056);
   tube(R, mat.blued, 0.011, 0.13, [0, 0.03, -0.465]);
   box(R, mat.blued, [0.026, 0.05, 0.03], [0, 0.055, -0.5]);
   ironFront(R, -0.505, 0.096, 0.08);
   tube(R, mat.blued, 0.015, 0.04, [0, 0.03, -0.53]);
-  box(R, mat.wood, [0.044, 0.072, 0.24], [0, -0.012, 0.2], [-0.09, 0, 0]);
-  box(R, mat.blued, [0.048, 0.088, 0.012], [0, -0.024, 0.322]);
-  box(R, mat.bakelite, [0.034, 0.09, 0.045], [0, -0.065, 0.03], [0.3, 0, 0]);
+  // Stock: slim wrist behind the receiver, deepening toward the butt with the classic drop.
+  profile(R, mat.akWood, [[0.075, 0.034], [0.32, 0.006], [0.322, -0.104], [0.2, -0.07], [0.13, -0.036], [0.075, -0.012]], 0.042);
+  box(R, mat.blued, [0.046, 0.114, 0.01], [0, -0.049, 0.327], [0.02, 0, 0]);
+  // Pistol grip: raked back, slightly swelled.
+  profile(R, mat.akGrip, [[-0.005, -0.008], [0.04, -0.008], [0.072, -0.105], [0.05, -0.118], [0.026, -0.112], [0.006, -0.06]], 0.032);
+  for (let i = 0; i < 4; i++) box(R, mat.akGrip, [0.034, 0.003, 0.005], [0, -0.03 - i * 0.02, 0.036 + i * 0.006], [0.3, 0, 0]); // grip ribs
   box(R, mat.blued, [0.008, 0.026, 0.05], [0, -0.022, -0.03]);
   box(R, mat.steel, [0.004, 0.02, 0.1], [0.027, 0.04, -0.05]);
   const mag = group(R, [0, -0.012, -0.12]);
-  curvedMag(mag, mat.bakelite, 4, 0.03, 0.068, 0.12);
+  ribbedMag(mag, mat.blued, 7, 0.03, 0.066, 0.068, 0.033);
   const bolt = group(R, [0.032, 0.04, -0.1]);
   box(bolt, mat.steel, [0.022, 0.012, 0.03], [0.008, 0, 0]);
+  box(bolt, mat.steel, [0.008, 0.018, 0.02], [0.02, 0.004, 0.0]); // charging handle knob
   box(R, mat.polymer, [0.022, 0.022, 0.05], [0.038, 0.012, -0.34]);
   const rightHand = hand(R, [0, -0.06, 0.035], [0.1, -0.25, 0.36], [0.05, 0.085, 0.085]);
   const leftHand = hand(R, [-0.005, -0.022, -0.31], [-0.22, -0.26, -0.02], [0.055, 0.05, 0.1]);
+  // Stamped receiver: trunnion rivets, mag-well dimples, side scope rail.
+  for (const sx of [-1, 1]) {
+    rivets(R, mat.steel, [[0.026 * sx, 0.04, -0.18], [0.026 * sx, 0.01, -0.18], [0.026 * sx, 0.04, -0.165], [0.026 * sx, 0.01, 0.06], [0.026 * sx, 0.04, 0.06], [0.026 * sx, -0.004, -0.02]]);
+    box(R, mat.gunmetal, [0.003, 0.012, 0.018], [0.0255 * sx, 0.02, -0.1]);
+  }
+  box(R, mat.blued, [0.004, 0.022, 0.1], [-0.027, 0.024, 0.0]);
+  // Ribbed dust cover + rear-sight leaf + rear trunnion tang.
+  row(R, mat.blued, 4, [0.054, 0.003, 0.006], [0, 0.082, 0.04], [0, 0, -0.035]);
+  box(R, mat.blued, [0.03, 0.004, 0.05], [0, 0.088, -0.165], [-0.06, 0, 0]);
+  box(R, mat.steel, [0.034, 0.008, 0.01], [0, 0.088, -0.17]);
+  box(R, mat.blued, [0.048, 0.05, 0.02], [0, 0.012, 0.085]);
+  // Long selector lever on the right side, mag release paddle, trigger guard.
+  box(R, mat.blued, [0.004, 0.014, 0.12], [0.027, 0.036, -0.03], [-0.08, 0, 0]);
+  box(R, mat.blued, [0.006, 0.012, 0.012], [0.028, 0.044, 0.03]);
+  box(R, mat.blued, [0.02, 0.01, 0.012], [0, -0.034, -0.078]);
+  triggerGuard(R, mat.blued, -0.07, 0.0, -0.011, 0.034);
+  // Gas block + handguard retainer bands, vents in the upper wood, cleaning rod, bayonet lug.
+  box(R, mat.blued, [0.03, 0.04, 0.032], [0, 0.05, -0.41]);
+  box(R, mat.blued, [0.062, 0.062, 0.008], [0, 0.02, -0.203]);
+  box(R, mat.blued, [0.062, 0.062, 0.008], [0, 0.022, -0.398]);
+  for (const sx of [-1, 1]) row(R, mat.akWood, 2, [0.002, 0.004, 0.12], [0.028 * sx, 0.012 + 0.012, -0.3], [0, 0.016, 0]); // handguard grooves
+  tube(R, mat.blued, 0.0032, 0.14, [0, 0.008, -0.47]);
+  box(R, mat.blued, [0.012, 0.012, 0.02], [0, 0.022, -0.492]);
+  // Slant muzzle brake.
+  box(R, mat.blued, [0.026, 0.026, 0.036], [0, 0.03, -0.548]);
+  box(R, mat.blued, [0.026, 0.012, 0.03], [0, 0.044, -0.555], [0.35, 0, 0]);
+  // Sling loops (front at the gas block, rear under the stock), butt plate trap door.
+  slingLoop(R, [-0.02, 0.044, -0.41]);
+  slingLoop(R, [0, -0.06, 0.26]);
+  box(R, mat.steel, [0.02, 0.03, 0.004], [0, -0.024, 0.329]);
+  rivets(R, mat.steel, [[0, 0.01, 0.329], [0, -0.06, 0.329]], 0.0035);
   return rig(R, {
     muzzle: point(R, [0, 0.03, -0.55]),
     ejectPort: point(R, [0.03, 0.04, -0.06]),
@@ -358,14 +573,39 @@ function buildM4A1(): WeaponRig {
   box(R, mat.polymer, [0.046, 0.085, 0.015], [0, 0.03, 0.31]);
   box(R, mat.black, [0.034, 0.085, 0.045], [0, -0.058, 0.025], [0.32, 0, 0]);
   box(R, mat.black, [0.008, 0.026, 0.05], [0, -0.026, -0.03]);
-  const sight = redDot(R, -0.07, 0.094);
+  const sight = holoSight(R, -0.06, 0.094);
   const mag = group(R, [0, -0.03, -0.11]);
-  curvedMag(mag, mat.black, 3, 0.026, 0.064, 0.06);
+  curvedMag(mag, mat.parkerized, 3, 0.026, 0.064, 0.06);
+  box(mag, mat.black, [0.03, 0.01, 0.07], [0, -0.165, -0.012], [0.25, 0, 0]);
   const bolt = group(R, [0, 0.072, 0.05]);
   box(bolt, mat.steel, [0.035, 0.01, 0.02], [0, 0, 0]);
   box(R, mat.polymer, [0.022, 0.022, 0.05], [0.036, 0.05, -0.36]);
   const rightHand = hand(R, [0, -0.058, 0.03], [0.1, -0.25, 0.36], [0.05, 0.085, 0.085]);
   const leftHand = hand(R, [-0.005, 0.005, -0.33], [-0.22, -0.24, -0.04], [0.055, 0.05, 0.1]);
+  railTeeth(R, 0.04, -0.42, 0.094);
+  // Upper: forward assist, ejection-port cover, brass deflector; lower: bolt catch, selector, mag release.
+  tube(R, mat.black, 0.006, 0.034, [0.026, 0.066, 0.005]);
+  box(R, mat.black, [0.002, 0.016, 0.05], [0.0255, 0.052, -0.065]);
+  box(R, mat.black, [0.008, 0.02, 0.014], [0.027, 0.064, -0.028]);
+  box(R, mat.black, [0.003, 0.012, 0.022], [-0.024, 0.0, -0.085]);
+  ringZ(R, mat.black, 0.007, 0.003, [-0.024, 0.016, 0.01]).rotation.y = Math.PI / 2;
+  box(R, mat.black, [0.003, 0.004, 0.018], [-0.026, 0.02, 0.015]);
+  ringZ(R, mat.gunmetal, 0.0045, 0.004, [0.024, -0.02, -0.07]).rotation.y = Math.PI / 2;
+  triggerGuard(R, mat.black, -0.068, 0.0, -0.022, 0.03);
+  box(R, mat.black, [0.05, 0.03, 0.03], [0, -0.06, -0.08], [0.25, 0, 0]); // flared mag well
+  // Handguard rail slots on the sides, A-frame front sight, birdcage flash hider.
+  for (const sx of [-1, 1]) row(R, mat.gunmetal, 9, [0.003, 0.006, 0.012], [0.032 * sx, 0.05, -0.21], [0, 0, -0.022]);
+  box(R, mat.black, [0.024, 0.006, 0.026], [0, 0.064, -0.445]);
+  box(R, mat.black, [0.004, 0.05, 0.014], [0.011, 0.086, -0.445]);
+  box(R, mat.black, [0.004, 0.05, 0.014], [-0.011, 0.086, -0.445]);
+  box(R, mat.black, [0.003, 0.03, 0.004], [0, 0.098, -0.445]);
+  for (const [x, y] of [[0.009, 0.009], [-0.009, 0.009], [0.009, -0.009], [-0.009, -0.009]]) box(R, mat.blued, [0.004, 0.004, 0.024], [x, 0.05 + y, -0.515]);
+  // Buffer tube castle nut, stock lever and ribs, QD sling cup, grip ridges.
+  ringZ(R, mat.gunmetal, 0.018, 0.006, [0, 0.055, 0.075]);
+  box(R, mat.black, [0.008, 0.014, 0.04], [0, -0.006, 0.23]);
+  row(R, mat.polymer, 4, [0.046, 0.003, 0.012], [0, 0.072, 0.2], [0, 0, 0.025]);
+  ringZ(R, mat.steel, 0.006, 0.004, [0.024, 0.035, 0.28]).rotation.y = Math.PI / 2;
+  for (const sx of [-1, 1]) box(R, mat.polymer, [0.002, 0.06, 0.03], [0.0175 * sx, -0.06, 0.028], [0.32, 0, 0]); // grip texture panels
   return rig(R, {
     muzzle: point(R, [0, 0.05, -0.53]),
     ejectPort: point(R, [0.028, 0.055, -0.06]),
@@ -384,18 +624,34 @@ function buildMK47(): WeaponRig {
   box(R, mat.tan, [0.064, 0.06, 0.22], [0, 0.05, -0.31]);
   tube(R, mat.blued, 0.012, 0.08, [0, 0.05, -0.46]);
   box(R, mat.gunmetal, [0.03, 0.03, 0.045], [0, 0.05, -0.52]);
+  tube(R, mat.gunmetal, 0.015, 0.12, [0, 0.055, 0.1]); // buffer tube
   box(R, mat.tan, [0.046, 0.082, 0.17], [0, 0.03, 0.235]);
   box(R, mat.polymer, [0.048, 0.09, 0.012], [0, 0.028, 0.31]);
   box(R, mat.black, [0.034, 0.085, 0.045], [0, -0.058, 0.025], [0.3, 0, 0]);
   box(R, mat.black, [0.008, 0.026, 0.05], [0, -0.026, -0.03]);
-  const sight = redDot(R, -0.08, 0.096);
+  const sight = holoSight(R, -0.07, 0.096);
   const mag = group(R, [0, -0.03, -0.11]);
-  curvedMag(mag, mat.black, 4, 0.03, 0.068, 0.12);
+  ribbedMag(mag, mat.black, 4, 0.03, 0.068, 0.12);
   const bolt = group(R, [0, 0.073, 0.05]);
   box(bolt, mat.steel, [0.035, 0.01, 0.02], [0, 0, 0]);
   box(R, mat.polymer, [0.022, 0.022, 0.05], [0.038, 0.05, -0.36]);
   const rightHand = hand(R, [0, -0.058, 0.03], [0.1, -0.25, 0.36], [0.05, 0.085, 0.085]);
   const leftHand = hand(R, [-0.005, 0.005, -0.32], [-0.22, -0.24, -0.04], [0.055, 0.05, 0.1]);
+  railTeeth(R, 0.04, -0.4, 0.096);
+  for (const sx of [-1, 1]) {
+    row(R, mat.darkHole, 5, [0.002, 0.012, 0.026], [0.0325 * sx, 0.05, -0.23], [0, 0, -0.035]);
+    rivets(R, mat.gunmetal, [[0.025 * sx, 0.075, -0.18], [0.025 * sx, 0.075, 0.03]], 0.0025);
+  }
+  tube(R, mat.black, 0.006, 0.034, [0.027, 0.068, 0.005]);
+  box(R, mat.black, [0.002, 0.016, 0.05], [0.0265, 0.054, -0.065]);
+  box(R, mat.black, [0.003, 0.012, 0.022], [-0.025, 0.0, -0.085]);
+  box(R, mat.black, [0.003, 0.004, 0.018], [-0.027, 0.02, 0.015]);
+  triggerGuard(R, mat.black, -0.068, 0.0, -0.022, 0.03);
+  // Big 3-port brake.
+  for (let i = 0; i < 3; i++) box(R, mat.darkHole, [0.032, 0.008, 0.006], [0, 0.05, -0.505 - i * 0.013]);
+  box(R, mat.gunmetal, [0.034, 0.012, 0.045], [0, 0.06, -0.52]);
+  ringZ(R, mat.gunmetal, 0.018, 0.006, [0, 0.056, 0.08]);
+  slingLoop(R, [0.024, 0.03, 0.29]);
   return rig(R, {
     muzzle: point(R, [0, 0.05, -0.543]),
     ejectPort: point(R, [0.029, 0.056, -0.06]),
@@ -429,6 +685,14 @@ function buildASVAL(): WeaponRig {
   box(R, mat.polymer, [0.022, 0.022, 0.05], [0.034, 0.0, -0.3]);
   const rightHand = hand(R, [0, -0.062, 0.035], [0.1, -0.25, 0.36], [0.05, 0.085, 0.085]);
   const leftHand = hand(R, [-0.005, -0.032, -0.27], [-0.22, -0.26, 0.0], [0.055, 0.05, 0.1]);
+  for (const sx of [-1, 1]) rivets(R, mat.steel, [[0.023 * sx, 0.04, -0.14], [0.023 * sx, 0.0, -0.14], [0.023 * sx, 0.04, 0.05], [0.023 * sx, 0.0, 0.05]]);
+  for (const z of [-0.18, -0.25, -0.32, -0.39, -0.46, -0.53]) ringZ(R, mat.gunmetal, 0.0236, 0.003, [0, 0.03, z]);
+  box(R, mat.blued, [0.004, 0.012, 0.1], [0.024, 0.038, -0.02], [-0.06, 0, 0]); // safety / selector lever
+  box(R, mat.blued, [0.004, 0.022, 0.08], [-0.024, 0.026, 0.0]); // side rail
+  triggerGuard(R, mat.blued, -0.068, 0.0, -0.011, 0.034);
+  box(R, mat.gunmetal, [0.03, 0.02, 0.02], [0, 0.034, 0.075]); // stock hinge
+  rivets(R, mat.steel, [[0.016, 0.034, 0.075], [-0.016, 0.034, 0.075]], 0.004);
+  box(R, mat.black, [0.03, 0.04, 0.012], [0, 0.07, -0.12]); // rear sight block
   return rig(R, {
     muzzle: point(R, [0, 0.03, -0.577]),
     ejectPort: point(R, [0.027, 0.035, -0.05]),
@@ -441,7 +705,7 @@ function buildASVAL(): WeaponRig {
 /** PPSh-41: full wooden stock, perforated barrel shroud, 71-round drum. 0.843 m. */
 function buildPPSh(): WeaponRig {
   const R = new THREE.Group();
-  box(R, mat.woodDark, [0.05, 0.068, 0.27], [0, -0.03, 0.195], [-0.12, 0, 0]);
+  profile(R, mat.woodDark, [[0.05, 0.03], [0.325, -0.002], [0.33, -0.098], [0.19, -0.07], [0.1, -0.048], [0.05, -0.02]], 0.048);
   box(R, mat.woodDark, [0.042, 0.05, 0.1], [0, -0.022, 0.01]);
   box(R, mat.woodDark, [0.05, 0.048, 0.16], [0, 0.002, -0.12]);
   box(R, mat.blued, [0.054, 0.085, 0.01], [0, -0.05, 0.33]);
@@ -461,11 +725,33 @@ function buildPPSh(): WeaponRig {
   drum.position.set(0, -0.085, -0.01);
   mag.add(drum);
   tube(mag, mat.gunmetal, 0.074, 0.006, [0, -0.085, -0.01]).rotation.set(0, 0, Math.PI / 2);
+  tube(mag, mat.gunmetal, 0.074, 0.006, [0, -0.085, -0.01]).position.x = 0.022;
+  const drumKey = new THREE.Mesh(cylGeo, mat.steel);
+  drumKey.scale.set(0.012, 0.02, 0.012);
+  drumKey.rotation.z = Math.PI / 2;
+  drumKey.position.set(0.032, -0.085, -0.01);
+  mag.add(drumKey);
   const bolt = group(R, [0.028, 0.048, -0.12]);
   box(bolt, mat.steel, [0.016, 0.01, 0.02], [0.004, 0, 0]);
   box(R, mat.polymer, [0.022, 0.022, 0.05], [0.03, 0.04, -0.3]);
   const rightHand = hand(R, [0, -0.04, 0.03], [0.1, -0.25, 0.36], [0.05, 0.08, 0.085]);
   const leftHand = hand(R, [-0.005, -0.012, -0.24], [-0.22, -0.26, 0.02], [0.055, 0.05, 0.1]);
+  // Perforated shroud: dark cooling slots along both sides and the top.
+  for (const sx of [-1, 1]) row(R, mat.darkHole, 6, [0.002, 0.008, 0.026], [0.0205 * sx, 0.05, -0.215], [0, 0, -0.045]);
+  row(R, mat.darkHole, 6, [0.01, 0.002, 0.026], [0, 0.0705, -0.215], [0, 0, -0.045]);
+  box(R, mat.blued, [0.046, 0.05, 0.03], [0, 0.05, -0.5], [-0.5, 0, 0]); // slanted compensator nose
+  box(R, mat.darkHole, [0.014, 0.004, 0.01], [0, 0.07, -0.49]); // brake port
+  box(R, mat.blued, [0.03, 0.012, 0.03], [0, 0.083, -0.03]); // rear L-flip sight
+  box(R, mat.blued, [0.014, 0.022, 0.006], [0, 0.09, -0.025]);
+  box(R, mat.blued, [0.05, 0.02, 0.04], [0, 0.07, -0.055]); // receiver hinge cap
+  rivets(R, mat.steel, [[0.026, 0.06, -0.07], [-0.026, 0.06, -0.07]], 0.0035);
+  box(R, mat.steel, [0.006, 0.01, 0.02], [0.028, 0.06, -0.15]); // safety on the bolt handle slot
+  triggerGuard(R, mat.blued, -0.06, 0.005, -0.01, 0.034);
+  box(R, mat.blued, [0.016, 0.02, 0.01], [0, -0.03, -0.075]); // drum catch
+  box(R, mat.blued, [0.052, 0.012, 0.03], [0, 0.0, 0.07]); // receiver tang
+  slingLoop(R, [-0.026, 0.0, -0.12]);
+  slingLoop(R, [0, -0.07, 0.24]);
+  rivets(R, mat.steel, [[0, -0.01, 0.336], [0, -0.07, 0.336]], 0.0035);
   return rig(R, {
     muzzle: point(R, [0, 0.045, -0.51]),
     ejectPort: point(R, [0.02, 0.068, -0.11]),
@@ -498,6 +784,17 @@ function buildRD704(): WeaponRig {
   box(R, mat.polymer, [0.022, 0.022, 0.05], [0.04, 0.045, -0.42]);
   const rightHand = hand(R, [0, -0.06, 0.035], [0.1, -0.25, 0.36], [0.05, 0.085, 0.085]);
   const leftHand = hand(R, [-0.005, 0.0, -0.4], [-0.22, -0.24, -0.08], [0.056, 0.052, 0.1]);
+  railTeeth(R, 0.04, -0.48, 0.094);
+  for (const sx of [-1, 1]) {
+    rivets(R, mat.steel, [[0.026 * sx, 0.04, -0.18], [0.026 * sx, 0.01, -0.18], [0.026 * sx, 0.04, 0.06], [0.026 * sx, 0.01, 0.06]]);
+    row(R, mat.darkHole, 4, [0.002, 0.01, 0.03], [0.0335 * sx, 0.06, -0.255], [0, 0, -0.055]);
+  }
+  row(R, mat.gunmetal, 4, [0.054, 0.003, 0.006], [0, 0.083, 0.04], [0, 0, -0.035]);
+  box(R, mat.blued, [0.004, 0.014, 0.12], [0.027, 0.036, -0.03], [-0.08, 0, 0]);
+  triggerGuard(R, mat.black, -0.07, 0.0, -0.011, 0.034);
+  box(R, mat.gunmetal, [0.024, 0.016, 0.02], [0, 0.02, 0.32]); // folding-stock latch
+  for (let i = 0; i < 4; i++) box(R, mat.darkHole, [0.036, 0.004, 0.008], [0, 0.035, -0.585 - i * 0.012]);
+  slingLoop(R, [0.022, 0.0, 0.28]);
   return rig(R, {
     muzzle: point(R, [0, 0.035, -0.625]),
     ejectPort: point(R, [0.03, 0.04, -0.06]),
@@ -520,6 +817,12 @@ function buildPistol(): WeaponRig {
   const slide = group(R, [0, 0, 0]);
   box(slide, mat.gunmetal, [0.036, 0.034, 0.21], [0, 0.032, -0.075]);
   box(slide, mat.steel, [0.037, 0.012, 0.03], [0, 0.03, 0.0]);
+  for (const sx of [-1, 1]) {
+    row(slide, mat.darkHole, 6, [0.002, 0.022, 0.003], [0.0181 * sx, 0.034, 0.005], [0, 0, 0.0055]);
+    row(slide, mat.darkHole, 4, [0.002, 0.018, 0.003], [0.0181 * sx, 0.034, -0.15], [0, 0, -0.006]);
+  }
+  box(slide, mat.darkHole, [0.003, 0.012, 0.03], [0.0182, 0.04, -0.045]); // ejection port
+  box(slide, mat.steel, [0.02, 0.003, 0.02], [0, 0.0495, -0.045]); // chamber top
   box(slide, mat.polymer, [0.009, 0.016, 0.008], [0.0095, 0.054, 0.02]);
   box(slide, mat.polymer, [0.009, 0.016, 0.008], [-0.0095, 0.054, 0.02]);
   box(slide, mat.polymer, [0.0055, 0.016, 0.006], [0, 0.053, -0.17]);
@@ -537,6 +840,15 @@ function buildPistol(): WeaponRig {
   const rightHand = hand(R, [0, -0.06, 0.025], [0.08, -0.24, 0.36], [0.05, 0.09, 0.08]);
   const leftHand = hand(R, [-0.025, -0.075, 0.015], [-0.18, -0.25, 0.32], [0.05, 0.075, 0.08]);
   box(R, mat.polymer, [0.026, 0.02, 0.05], [0, -0.022, -0.13]);
+  box(R, mat.polymer, [0.026, 0.006, 0.07], [0, -0.012, -0.12]); // accessory rail
+  row(R, mat.black, 3, [0.027, 0.003, 0.006], [0, -0.006, -0.1], [0, 0, -0.015]);
+  triggerGuard(R, mat.polymer, -0.065, -0.02, -0.012, 0.03);
+  box(R, mat.polymer, [0.03, 0.01, 0.022], [0, -0.004, 0.035], [-0.4, 0, 0]); // beavertail
+  for (const sx of [-1, 1]) {
+    for (let i = 0; i < 4; i++) box(R, mat.black, [0.002, 0.012, 0.03], [0.0165 * sx, -0.04 - i * 0.017, 0.008 + i * 0.005], [0.3, 0, 0]);
+    box(R, mat.steel, [0.003, 0.004, 0.012], [0.0165 * sx, 0.012, -0.05]); // takedown lever
+  }
+  tube(R, mat.steel, 0.0035, 0.02, [0, 0.016, -0.197]); // recoil spring guide
   return rig(R, {
     muzzle: point(R, [0, 0.03, -0.205]),
     ejectPort: point(R, [0.02, 0.045, -0.05]),
@@ -554,9 +866,9 @@ function buildShotgun(): WeaponRig {
   box(R, mat.accent, [0.052, 0.01, 0.05], [0, 0.0, -0.11]);
   tube(R, mat.gunmetal, 0.015, 0.52, [0, 0.042, -0.43]);
   tube(R, mat.gunmetal, 0.012, 0.4, [0, 0.008, -0.38]);
-  box(R, mat.wood, [0.046, 0.085, 0.27], [0, -0.012, 0.21], [-0.06, 0, 0]);
+  profile(R, mat.wood, [[0.075, 0.03], [0.34, 0.016], [0.344, -0.082], [0.2, -0.06], [0.11, -0.04], [0.075, -0.012]], 0.044);
   box(R, mat.polymer, [0.05, 0.095, 0.02], [0, -0.02, 0.345]);
-  box(R, mat.wood, [0.036, 0.09, 0.046], [0, -0.06, 0.04], [0.3, 0, 0]);
+  profile(R, mat.wood, [[0.0, -0.01], [0.075, -0.012], [0.09, -0.1], [0.06, -0.11], [0.03, -0.1], [0.012, -0.05]], 0.036);
   box(R, mat.polymer, [0.008, 0.026, 0.05], [0, -0.022, -0.02]);
   const bead = new THREE.Mesh(new THREE.SphereGeometry(0.0035, 10, 8), mat.bead);
   bead.position.set(0, 0.064, -0.68);
@@ -572,6 +884,17 @@ function buildShotgun(): WeaponRig {
   tube(heldShell, mat.brass, 0.01, 0.014, [0, 0, 0.032]);
   heldShell.visible = false;
   box(R, mat.polymer, [0.024, 0.022, 0.05], [0, -0.012, -0.6]);
+  box(R, mat.darkHole, [0.002, 0.022, 0.06], [0.0255, 0.03, -0.05]); // ejection port
+  box(R, mat.darkHole, [0.026, 0.002, 0.07], [0, -0.0135, -0.06]); // loading port
+  box(R, mat.steel, [0.014, 0.006, 0.01], [0, 0.06, 0.04]); // tang safety
+  box(R, mat.gunmetal, [0.006, 0.004, 0.5], [0, 0.058, -0.43]); // vent rib
+  for (let z = -0.22; z > -0.66; z -= 0.04) box(R, mat.gunmetal, [0.004, 0.0035, 0.004], [0, 0.0545, z]);
+  ringZ(R, mat.gunmetal, 0.013, 0.006, [0, 0.008, -0.58]); // mag tube cap
+  box(R, mat.gunmetal, [0.03, 0.04, 0.02], [0, 0.024, -0.58]); // barrel clamp
+  triggerGuard(R, mat.gunmetal, -0.055, 0.0, -0.014, 0.032);
+  slingLoop(R, [0, -0.008, -0.6]);
+  slingLoop(R, [0, -0.072, 0.27]);
+  rivets(R, mat.steel, [[0.026, 0.03, -0.12], [0.026, 0.03, 0.02], [-0.026, 0.03, -0.12], [-0.026, 0.03, 0.02]], 0.003);
   return rig(R, {
     muzzle: point(R, [0, 0.042, -0.7]),
     ejectPort: point(R, [0.028, 0.035, -0.05]),
@@ -603,6 +926,40 @@ export function buildWeaponModel(model: ModelKey): WeaponRig {
   return r;
 }
 
+/**
+ * Merge a rig's static parts (direct mesh children of the root) per material.
+ * Moving parts (mag, bolt, pump, hands) and attachment points are left alone.
+ * The detailed models have ~100 parts: on AI soldiers that would be ~100 draw
+ * calls each; merged it's ~10.
+ */
+export function compactRig(rig: WeaponRig): void {
+  const root = rig.root;
+  const keep = new Set<THREE.Object3D>([rig.mag, rig.bolt, rig.pump, rig.leftHand, rig.rightHand, rig.muzzle, rig.ejectPort, rig.sight, rig.laser].filter((o): o is THREE.Object3D => !!o));
+  const byMat = new Map<THREE.Material, THREE.BufferGeometry[]>();
+  const drop: THREE.Object3D[] = [];
+  for (const c of root.children) {
+    const m = c as THREE.Mesh;
+    if (!m.isMesh || keep.has(m)) continue;
+    m.updateMatrix();
+    let g = m.geometry.clone();
+    if (g.index) g = g.toNonIndexed();
+    for (const name of Object.keys(g.attributes)) if (name !== 'position' && name !== 'normal' && name !== 'uv') g.deleteAttribute(name);
+    if (!g.getAttribute('uv')) g.setAttribute('uv', new THREE.BufferAttribute(new Float32Array(g.getAttribute('position').count * 2), 2));
+    g.applyMatrix4(m.matrix);
+    const mt = m.material as THREE.Material;
+    byMat.set(mt, [...(byMat.get(mt) ?? []), g]);
+    drop.push(m);
+  }
+  for (const m of drop) root.remove(m);
+  for (const [mt, geos] of byMat) {
+    const merged = mergeGeometries(geos, false);
+    if (!merged) continue;
+    const mesh = new THREE.Mesh(merged, mt);
+    mesh.frustumCulled = false;
+    root.add(mesh);
+  }
+}
+
 /** Shared materials for ejected shells (world space). */
 export const shellMaterials = { brass: mat.brass, red: mat.shellRed };
 
@@ -612,6 +969,7 @@ export const shellMaterials = { brass: mat.brass, red: mat.shellRed };
  */
 export function buildEnemyRifle(): WeaponRig {
   const r = buildMK47();
+  compactRig(r);
   r.root.traverse((o) => {
     const m = o as THREE.Mesh;
     if (!m.isMesh) return;
