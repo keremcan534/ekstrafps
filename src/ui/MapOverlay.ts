@@ -22,6 +22,8 @@ export interface MapState {
   /** Stations, breakers, crate, sentries, ammo. */
   utilities?: UtilityMarker[];
   lightsOut?: () => boolean;
+  /** Extraction points (open at the end of the match). */
+  exits?: { x: number; z: number; name: string }[];
 }
 
 const UTIL: Record<UtilityMarker['kind'], { color: string; glyph: string; name: string }> = {
@@ -244,6 +246,23 @@ export class MapOverlay {
       g.textBaseline = 'middle';
       g.fillText(k.glyph, x, y + 0.5 * px);
       if (full && u.kind !== 'ammo') this.pill(g, k.name, x, y + 16 * px, k.color, px, 9);
+    }
+    for (const e of state.exits ?? []) {
+      const [x, y] = proj(e.x, e.z);
+      if (!inside(x, y, 10 * px)) continue;
+      g.fillStyle = 'rgba(43,255,122,0.25)';
+      g.strokeStyle = '#2bff7a';
+      g.lineWidth = 2.6 * px;
+      g.beginPath();
+      g.arc(x, y, 12 * px, 0, Math.PI * 2);
+      g.fill();
+      g.stroke();
+      g.fillStyle = '#2bff7a';
+      g.font = `900 ${11 * px}px system-ui, sans-serif`;
+      g.textAlign = 'center';
+      g.textBaseline = 'middle';
+      g.fillText('⇪', x, y + 0.5 * px);
+      this.pill(g, full ? `EXIT · ${e.name.toUpperCase()}` : 'EXIT', x, y + 19 * px, '#2bff7a', px, 9);
     }
     const dot = (p: { x: number; z: number }, color: string, r: number) => {
       const [x, y] = proj(p.x, p.z);

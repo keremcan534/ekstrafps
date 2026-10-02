@@ -16,6 +16,7 @@ import type { Shells } from '../fx/Shells';
 import type { AudioSystem } from '../audio/AudioSystem';
 import type { NavGrid } from '../ai/NavGrid';
 import { soldierMaterials, soldierSkin, type SoldierMaterials, type SoldierPalette } from './SoldierSkin';
+import { OBSTACLES, obstacleAt } from '../game/Obstacles';
 
 /** What the AI knows about the player, refreshed by the squad every frame. */
 export interface PlayerTarget {
@@ -141,6 +142,10 @@ export class Soldier {
   /** Mag and reserve both empty. */
   onDry: (() => void) | null = null;
   private lastStep = 0;
+  /** Jump-peek height (m), driven by the AI brain. */
+  hopY = 0;
+  /** Seconds pushed up against a barricade. */
+  private breach = 0;
   // Idle life: breathing, weight shifts, glances, a weapon check now and then.
   private idleTime = Math.random() * 10;
   private glance = 0;
@@ -507,6 +512,7 @@ export class Soldier {
 
     this.aim(dt, faceTarget, aimMode, player);
     this.body.root.position.copy(this.pos);
+    this.body.root.position.y += this.hopY;
     this.body.root.rotation.y = this.yaw;
     this.body.update(dt, p);
 
@@ -565,8 +571,17 @@ export class Soldier {
     this.vel.z += clamp(desired.z - this.vel.z, -accel * dt, accel * dt);
     const nx = this.pos.x + this.vel.x * dt;
     const nz = this.pos.z + this.vel.z * dt;
+    // A barricade in the way: stop, and after a moment start breaching it.
+    const wall = OBSTACLES.length ? obstacleAt(nx, nz, 0.35, this.team) : null;
+    if (wall) {
+      this.vel.set(0, 0, 0);
+      this.breach += dt;
+      if (this.breach > 0.8) wall.damage(90 * dt);
+    } else this.breach = 0;
     // Never step into solid cells (slide along the free axis instead).
-    if (this.deps.nav.walkable(nx, nz)) this.pos.set(nx, 0, nz);
+    if (wall) {
+      // held at the barricade
+    } else if (this.deps.nav.walkable(nx, nz)) this.pos.set(nx, 0, nz);
     else if (this.deps.nav.walkable(nx, this.pos.z)) {
       this.pos.x = nx;
       this.vel.z = 0;

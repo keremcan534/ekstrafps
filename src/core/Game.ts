@@ -485,6 +485,10 @@ export class Game {
     this.health.onDeath = () => {
       onDeath?.();
       this.survival?.onPlayerDeath();
+      this.survival?.builder.exit();
+      // Once the exits are open there's no coming back.
+      if (this.match?.extracting) this.health.autoRespawn = false;
+      this.match?.playerDied();
     };
     // Last stand: with a living teammate you go down instead of dying.
     this.health.canGoDown = () => this.allies.some((a) => a.alive && !a.downed);
@@ -538,6 +542,7 @@ export class Game {
         allies: () => this.allies,
         playerAlive: () => !this.health.dead,
         playerPos: this.player.feet,
+        mobile: this.mobile,
       }, () => this.world);
       this.match.onEnd = () => {
         this.ended = true;
@@ -598,6 +603,19 @@ export class Game {
         this.toggleSquadMode();
       });
       ui.appendChild(this.squadBtn);
+      const bb = document.createElement('button');
+      bb.className = 'build-btn';
+      bb.textContent = 'BUILD';
+      bb.addEventListener('pointerdown', (e) => {
+        e.stopPropagation();
+        this.survival?.builder.cycle();
+      });
+      ui.appendChild(bb);
+      if (this.survival) this.survival.builder.onChange = () => {
+        const m = this.survival!.builder.mode;
+        bb.textContent = m ? m.toUpperCase() : 'BUILD';
+        bb.classList.toggle('on', !!m);
+      };
     }
   }
 
@@ -610,6 +628,10 @@ export class Game {
 
   /** F / USE: pick up a downed squadmate if one is right here, else buy / use. */
   private useAction(): void {
+    if (this.survival?.builder.active && !this.health.downed && !this.health.dead) {
+      this.survival.builder.place();
+      return;
+    }
     const a = this.downedAllyNear();
     if (a && !this.health.downed && !this.health.dead) {
       this.reviving = { a, t: 0 };
@@ -875,6 +897,11 @@ export class Game {
         else this.hud.toast(`Laser ${this.toggleLaser() ? 'on' : 'off'}`);
         break;
       case 'KeyJ':
+        // Site-9: build mode. Elsewhere: the debug crosshair.
+        if (this.survival) {
+          this.survival.builder.cycle();
+          break;
+        }
         feel.debugCrosshair = !feel.debugCrosshair;
         this.hud.toast(`Debug crosshair ${feel.debugCrosshair ? 'on' : 'off'}`);
         break;
@@ -1066,8 +1093,8 @@ export class Game {
       const far2 = this.mobile ? 55 * 55 : Infinity;
       const f = this.player.feet;
       const show = (p: THREE.Vector3) => map.isVisibleAt(p.x, p.z) && (p.x - f.x) ** 2 + (p.z - f.z) ** 2 < far2;
-      for (const a of this.allies) a.soldier.body.root.visible = show(a.soldier.pos);
-      if (this.match) for (const a of this.match.agents()) a.soldier.body.root.visible = show(a.soldier.pos);
+      for (const a of this.allies) a.soldier.body.root.visible = !a.gone && show(a.soldier.pos);
+      if (this.match) for (const a of this.match.agents()) a.soldier.body.root.visible = !a.gone && show(a.soldier.pos);
     }
     for (const r of this.robots) r.update(dt);
     const t = this.target;
@@ -1095,6 +1122,7 @@ export class Game {
       for (const a of this.allies) if (a.alive) ms.allies.push({ x: a.soldier.pos.x, z: a.soldier.pos.z });
       // Gunfire gives enemy operators away for a moment.
       this.match?.loud(ms.enemies, 'alpha');
+      if (this.match?.extracting && !ms.exits) ms.exits = this.match.exits.map((e) => ({ x: e.pos.x, z: e.pos.z, name: e.name }));
       this.mapOverlay.update(realDt, ms);
     }
     this.health.update(dt);

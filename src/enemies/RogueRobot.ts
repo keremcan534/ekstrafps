@@ -4,6 +4,7 @@ import { clamp } from '../core/math';
 import { Humanoid, defaultPose, type DamageInfo } from '../targets/Humanoid';
 import { robotSkin } from '../targets/RobotTarget';
 import type { NavGrid } from '../ai/NavGrid';
+import { OBSTACLES, obstacleAt, type Obstacle } from '../game/Obstacles';
 
 /** Anything a rogue robot can attack (the player, allies, other teams...). */
 export interface MeleeTarget {
@@ -141,6 +142,9 @@ export class RogueRobot {
     this.body.setActive(false);
   }
 
+  /** Barricade being torn at. */
+  private chew: Obstacle | null = null;
+
   update(dt: number, targets: MeleeTarget[], others: RogueRobot[]): void {
     if (this.state === 'pooled') return;
     this.flash = Math.max(0, this.flash - dt * 8);
@@ -273,7 +277,15 @@ export class RogueRobot {
     this.vel.z += clamp(desired.z - this.vel.z, -accel, accel);
     const nx = this.pos.x + this.vel.x * dt;
     const nz = this.pos.z + this.vel.z * dt;
-    if (this.nav.walkable(nx, nz)) this.pos.set(nx, 0, nz);
+    // A barricade in the way: stop and tear at it.
+    const wall = OBSTACLES.length ? obstacleAt(nx, nz, 0.4) : null;
+    // Keep the barricade through the swing (the robot stands still while it winds up).
+    if (wall) this.chew = wall;
+    else if (this.attackTime < 0) this.chew = null;
+    if (wall) {
+      this.vel.set(0, 0, 0);
+      if (this.attackTime < 0 && this.cooldown <= 0) this.attackTime = 0;
+    } else if (this.nav.walkable(nx, nz)) this.pos.set(nx, 0, nz);
     else if (this.nav.walkable(nx, this.pos.z)) this.pos.x = nx;
     else if (this.nav.walkable(this.pos.x, nz)) this.pos.z = nz;
     else this.vel.set(0, 0, 0);
@@ -281,7 +293,8 @@ export class RogueRobot {
     // Face the target when close, else the direction of travel.
     const v = Math.hypot(this.vel.x, this.vel.z);
     let want = this.yaw;
-    if (best && dist < 4) want = Math.atan2(best.pos.x - this.pos.x, best.pos.z - this.pos.z);
+    if (this.chew) want = Math.atan2(this.chew.x - this.pos.x, this.chew.z - this.pos.z);
+    else if (best && dist < 4) want = Math.atan2(best.pos.x - this.pos.x, best.pos.z - this.pos.z);
     else if (v > 0.2) want = Math.atan2(this.vel.x, this.vel.z);
     const da = Math.atan2(Math.sin(want - this.yaw), Math.cos(want - this.yaw));
     this.yaw += clamp(da, -6 * dt, 6 * dt);
@@ -306,7 +319,8 @@ export class RogueRobot {
         p.armR = -2.5 + Math.min(1, (t - 0.38) / 0.12) * 2.4; // swing down
         if (t - dt < 0.44 && t >= 0.44) {
           this.hooks.onAttack(this);
-          if (best && best.pos.distanceTo(this.pos) < 2.0) best.hit(this.damage, this.pos);
+          if (this.chew?.alive) this.chew.damage(this.damage * 1.2);
+          else if (best && best.pos.distanceTo(this.pos) < 2.0) best.hit(this.damage, this.pos);
         }
         if (t > 0.7) {
           this.attackTime = -1;

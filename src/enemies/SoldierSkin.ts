@@ -30,6 +30,10 @@ export interface SoldierMaterials {
   /** Gas-mask eye lenses (dark glass with a faint green sheen). */
   lens: THREE.MeshStandardMaterial;
   rubber: THREE.MeshStandardMaterial;
+  /** Lens rims, mask hardware. */
+  steel: THREE.MeshStandardMaterial;
+  /** Parka zipper / trim accent. */
+  trim: THREE.MeshStandardMaterial;
 }
 
 /** Black Division (all black, green NVG) or Vanta Security (navy, white helmet, cyan NVG). */
@@ -42,9 +46,10 @@ export function soldierMaterials(palette: SoldierPalette = 'bd'): SoldierMateria
   if (m) return m;
   // fabric, gear, plate, helmet, NVG glow, strobe colour per faction.
   const P: Record<SoldierPalette, number[]> = {
-    bd: [0x121315, 0x1a1c1e, 0x17191b, 0x1c1e20, 0x2bff7a, 0xff1a10],
-    // The commander: charcoal parka over heavy plates.
-    bdboss: [0x1f2022, 0x151618, 0x101112, 0x191a1c, 0x2bff7a, 0xff1a10],
+    // Night-urban blue-grey uniform, near-black carrier and webbing.
+    bd: [0x3b444f, 0x232930, 0x1e2329, 0x39414a, 0x2bff7a, 0xff1a10],
+    // The commander: grey parka over heavy plates, grey helmet cover.
+    bdboss: [0x3a3f45, 0x202326, 0x1a1c1f, 0x5a5e63, 0x2bff7a, 0xff1a10],
     // Vanta field kit: light grey jacket, dark carrier and webbing (the hood/mask/fur come from K below).
     vanta: [0x868c93, 0x2b2e32, 0x222528, 0x8f949b, 0x40d0ff, 0x3aa0ff],
     bravo: [0x8a7458, 0x6e5c44, 0x5d4e3a, 0xa38a68, 0xffa040, 0xffa040],
@@ -69,10 +74,14 @@ export function soldierMaterials(palette: SoldierPalette = 'bd'): SoldierMateria
     pants: new THREE.MeshStandardMaterial({ color: palette === 'vanta' ? 0x33373c : cFab, roughness: 0.95, metalness: 0 }),
     lens: new THREE.MeshStandardMaterial({ color: 0x050807, emissive: 0x2bff7a, emissiveIntensity: 0.25, roughness: 0.08, metalness: 0.7 }),
     rubber: new THREE.MeshStandardMaterial({ color: 0x0c0d0e, roughness: 0.75, metalness: 0.05 }),
+    steel: new THREE.MeshStandardMaterial({ color: 0x5c6166, roughness: 0.35, metalness: 0.8 }),
+    trim: new THREE.MeshStandardMaterial({ color: 0xb8662c, roughness: 0.6, metalness: 0.2 }),
   };
   if (palette === 'bdboss') {
-    m.hood.color.setHex(0x26282b);
-    m.fur.color.setHex(0x3a332b);
+    m.hood.color.setHex(0x55595f);
+    m.fur.color.setHex(0x6f675d);
+    // The commander's lenses are dark glass, no glow.
+    m.lens.emissiveIntensity = 0.06;
   }
   shared.set(palette, m);
   return m;
@@ -227,12 +236,18 @@ export function soldierSkin(health: number, palette: SoldierPalette = 'bd'): Hum
           rbox(b, m.fabric, [0.14, 0.08, 0.14], [0, 0.47, 0]); // collar
           if (boss) {
             // Parka hanging open over the plates: side and back panels, padded shoulders, big fur collar.
-            for (const s of [-1, 1]) rbox(b, m.hood, [0.07, 0.52, 0.3], [0.19 * s, 0.22, -0.01]);
-            rbox(b, m.hood, [0.4, 0.52, 0.07], [0, 0.22, -0.17]);
-            for (const s of [-1, 1]) rbox(b, m.hood, [0.12, 0.08, 0.3], [0.15 * s, 0.45, 0]);
-            for (const [x, y, z, w, d] of [[0, 0.52, -0.13, 0.36, 0.12], [0.16, 0.5, -0.02, 0.1, 0.22], [-0.16, 0.5, -0.02, 0.1, 0.22], [0.1, 0.5, 0.1, 0.09, 0.08], [-0.1, 0.5, 0.1, 0.09, 0.08]] as const) {
-              rbox(b, m.fur, [w, 0.09, d], [x, y, z]);
+            for (const s of [-1, 1]) {
+              rbox(b, m.hood, [0.08, 0.6, 0.32], [0.195 * s, 0.17, -0.01]); // sides, down past the belt
+              rbox(b, m.hood, [0.11, 0.58, 0.05], [0.15 * s, 0.18, 0.17]); // open front panels
+              rbox(b, m.trim, [0.012, 0.56, 0.012], [0.095 * s, 0.18, 0.197]); // zipper edges
+              rbox(b, m.hood, [0.14, 0.09, 0.32], [0.15 * s, 0.45, 0]); // padded shoulders
             }
+            rbox(b, m.hood, [0.42, 0.6, 0.07], [0, 0.17, -0.175]);
+            // Big fur collar round the neck and over the shoulders.
+            for (const [x, y, z, w, h, d] of [
+              [0, 0.54, -0.14, 0.44, 0.15, 0.14], [0.18, 0.53, -0.03, 0.14, 0.14, 0.26], [-0.18, 0.53, -0.03, 0.14, 0.14, 0.26],
+              [0.12, 0.5, 0.12, 0.11, 0.13, 0.1], [-0.12, 0.5, 0.12, 0.11, 0.13, 0.1], [0, 0.6, -0.1, 0.3, 0.08, 0.12],
+            ] as const) rbox(b, m.fur, [w, h, d], [x, y, z]);
             rbox(b, m.plate, [0.3, 0.1, 0.07], [0, 0.07, 0.15]); // groin plate
           }
           if (hooded) {
@@ -269,17 +284,23 @@ export function soldierSkin(health: number, palette: SoldierPalette = 'bd'): Hum
           if (bd) {
             // Full-face respirator: rubber facepiece, two round eye lenses, twin side filters, voicemitter.
             rbox(b, m.rubber, [0.16, 0.15, 0.06], [0, 0.135, 0.1]);
+            const lr = boss ? 0.031 : 0.024;
             for (const s of [-1, 1]) {
-              b.cylinder(m.rubber, 0.03, 0.02, [0.037 * s, 0.168, 0.124], [Math.PI / 2, 0, 0], 14);
-              b.cylinder(m.lens, 0.024, 0.006, [0.037 * s, 0.168, 0.135], [Math.PI / 2, 0, 0], 14);
-              b.cylinder(m.gear, 0.027, 0.055, [0.072 * s, 0.085, 0.12], [Math.PI / 2 - 0.35, 0, -0.55 * s], 12);
+              b.cylinder(m.rubber, lr + 0.007, 0.022, [0.039 * s, 0.168, 0.124], [Math.PI / 2, 0, 0], 16);
+              if (boss) b.cylinder(m.steel, lr + 0.004, 0.008, [0.039 * s, 0.168, 0.134], [Math.PI / 2, 0, 0], 16);
+              b.cylinder(m.lens, lr, 0.006, [0.039 * s, 0.168, 0.137], [Math.PI / 2, 0, 0], 16);
+              // Regulars: twin side filters. The commander: one big canister on the left cheek.
+              if (!boss) b.cylinder(m.gear, 0.027, 0.055, [0.072 * s, 0.085, 0.12], [Math.PI / 2 - 0.35, 0, -0.55 * s], 12);
             }
-            b.cylinder(m.gear, 0.02, 0.03, [0, 0.08, 0.142], [Math.PI / 2 - 0.4, 0, 0], 12);
-          }
-          if (boss) {
-            // Fur-rimmed parka hood pulled up behind the helmet.
-            b.add(m.hood, HOOD.clone(), [0, 0.15, -0.045], [0.2, 0, 0], [0.15, 0.17, 0.15]);
-            b.add(m.fur, HOOD_RIM.clone(), [0, 0.16, 0.06], [0.15, 0, 0], [0.14, 0.16, 0.16]);
+            if (boss) {
+              b.cylinder(m.rubber, 0.034, 0.03, [0.085, 0.08, 0.11], [Math.PI / 2 - 0.3, 0, -0.7], 16);
+              b.cylinder(m.gear, 0.042, 0.075, [0.115, 0.06, 0.125], [Math.PI / 2 - 0.3, 0, -0.7], 16);
+              b.cylinder(m.steel, 0.043, 0.008, [0.135, 0.045, 0.15], [Math.PI / 2 - 0.3, 0, -0.7], 16);
+              // Round voicemitter in front of the mouth.
+              b.cylinder(m.rubber, 0.03, 0.03, [0, 0.085, 0.14], [Math.PI / 2 - 0.4, 0, 0], 16);
+              b.cylinder(m.steel, 0.024, 0.012, [0, 0.08, 0.158], [Math.PI / 2 - 0.4, 0, 0], 16);
+              for (const y of [0.072, 0.082, 0.092]) rbox(b, m.rubber, [0.03, 0.004, 0.004], [0, y, 0.166]);
+            } else b.cylinder(m.gear, 0.02, 0.03, [0, 0.08, 0.142], [Math.PI / 2 - 0.4, 0, 0], 12);
           }
           // High-cut helmet, rails, ear pro.
           rbox(b, m.helmet, [0.235, 0.13, 0.255], [0, 0.275, -0.005]);
@@ -288,11 +309,22 @@ export function soldierSkin(health: number, palette: SoldierPalette = 'bd'): Hum
             rbox(b, m.gear, [0.02, 0.04, 0.12], [0.123 * s, 0.24, -0.01]);
             b.cylinder(m.gear, 0.047, 0.045, [0.115 * s, 0.15, 0], [0, 0, Math.PI / 2], 14);
           }
-          // Quad NVG on a flip-down mount: four faintly glowing tubes.
-          rbox(b, m.gear, [0.05, 0.05, 0.035], [0, 0.275, 0.135]);
-          rbox(b, m.gear, [0.15, 0.055, 0.045], [0, 0.205, 0.135]);
-          for (const x of [-0.055, -0.019, 0.019, 0.055]) b.cylinder(m.helmet, 0.018, 0.05, [x, 0.19, 0.17], [Math.PI / 2, 0, 0], 10);
-          for (const x of [-0.055, -0.019, 0.019, 0.055]) b.cylinder(m.tubes, 0.014, 0.005, [x, 0.19, 0.196], [Math.PI / 2, 0, 0], 10);
+          if (boss) {
+            // Binocular NVG flipped up on the mount, dark (he doesn't need it to find you).
+            rbox(b, m.gear, [0.05, 0.05, 0.035], [0, 0.29, 0.135]);
+            rbox(b, m.gear, [0.12, 0.05, 0.05], [0, 0.335, 0.15]);
+            for (const x of [-0.035, 0.035]) {
+              b.cylinder(m.gear, 0.022, 0.07, [x, 0.36, 0.17], [-0.5, 0, 0], 12);
+              b.cylinder(m.steel, 0.023, 0.008, [x, 0.375, 0.2], [-0.5, 0, 0], 12);
+              b.cylinder(m.lens, 0.018, 0.004, [x, 0.378, 0.205], [-0.5, 0, 0], 12);
+            }
+          } else {
+            // Quad NVG on a flip-down mount: four faintly glowing tubes.
+            rbox(b, m.gear, [0.05, 0.05, 0.035], [0, 0.275, 0.135]);
+            rbox(b, m.gear, [0.15, 0.055, 0.045], [0, 0.205, 0.135]);
+            for (const x of [-0.055, -0.019, 0.019, 0.055]) b.cylinder(m.helmet, 0.018, 0.05, [x, 0.19, 0.17], [Math.PI / 2, 0, 0], 10);
+            for (const x of [-0.055, -0.019, 0.019, 0.055]) b.cylinder(m.tubes, 0.014, 0.005, [x, 0.19, 0.196], [Math.PI / 2, 0, 0], 10);
+          }
           rbox(b, m.gear, [0.07, 0.04, 0.05], [0, 0.29, -0.13]); // counterweight
           rbox(b, m.strobe, [0.022, 0.022, 0.022], [0.0, 0.322, -0.12]);
         },

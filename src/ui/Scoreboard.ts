@@ -21,6 +21,8 @@ export class Scoreboard {
   private note: HTMLDivElement;
   private feed: HTMLDivElement;
   private end: HTMLDivElement;
+  private hold: HTMLDivElement;
+  private holdKey = '';
 
   constructor(parent: HTMLElement, private teams: TeamRow[]) {
     this.root = div('scoreboard', parent);
@@ -40,9 +42,19 @@ export class Scoreboard {
     this.note = div('sb-note', parent);
     this.feed = div('killfeed', parent);
     this.end = div('match-end', parent);
+    this.hold = div('revive-bar extract-bar', parent);
   }
 
-  update(scores: Map<string, number>, alive: Map<string, number>, nextRaid: number | null, leader: string | null): void {
+  /** Extraction progress (0..1) or null to hide. */
+  setHold(p: number | null): void {
+    const key = p === null ? '' : p.toFixed(2);
+    if (key === this.holdKey) return;
+    this.holdKey = key;
+    this.hold.classList.toggle('show', p !== null);
+    if (p !== null) this.hold.innerHTML = `EXTRACTING<i style="transform:scaleX(${p.toFixed(3)})"></i>`;
+  }
+
+  update(scores: Map<string, number>, alive: Map<string, number>, nextRaid: number | null, leader: string | null, clock = '', urgent = false): void {
     for (const t of this.teams) {
       const c = this.chips.get(t.id)!;
       const key = `${scores.get(t.id) ?? 0}|${alive.get(t.id) ?? 0}|${leader === t.id}`;
@@ -54,8 +66,9 @@ export class Scoreboard {
       c.el.classList.toggle('lead', leader === t.id);
       c.el.classList.toggle('wiped', a === 0);
     }
-    const n = nextRaid ? `BLACK DIVISION RAID AT ${nextRaid}` : '';
+    const n = [clock, nextRaid ? `RAID AT ${nextRaid}` : ''].filter(Boolean).join(' · ');
     if (this.note.textContent !== n) this.note.textContent = n;
+    this.note.classList.toggle('urgent', urgent);
   }
 
   /** "Bravo · Volkov ✕ Charlie" style feed line. */
@@ -66,12 +79,16 @@ export class Scoreboard {
     while (this.feed.children.length > 5) this.feed.firstChild?.remove();
   }
 
-  showEnd(winner: TeamRow, youWon: boolean, scores: Map<string, number>): void {
+  showEnd(winner: TeamRow, youWon: boolean, scores: Map<string, number>, tags?: Map<string, string>, sub = ''): void {
+    this.setHold(null);
     const rows = [...this.teams]
       .sort((a, b) => (scores.get(b.id) ?? 0) - (scores.get(a.id) ?? 0))
-      .map((t) => `<div class="me-row"><b style="color:${t.color}">${t.name}</b><span>${scores.get(t.id) ?? 0}</span></div>`)
+      .map((t) => {
+        const tag = tags?.get(t.id);
+        return `<div class="me-row"><b style="color:${t.color}">${t.name}</b>${tag ? `<em class="${tag === 'EXTRACTED' ? 'ok' : 'bad'}">${tag}</em>` : ''}<span>${scores.get(t.id) ?? 0}</span></div>`;
+      })
       .join('');
-    this.end.innerHTML = `<div class="me-title ${youWon ? 'win' : 'lose'}">${youWon ? 'VICTORY' : `${winner.name.toUpperCase()} WINS`}</div>${rows}<button class="sv-restart">PLAY AGAIN</button>`;
+    this.end.innerHTML = `<div class="me-title ${youWon ? 'win' : 'lose'}">${youWon ? 'VICTORY' : `${winner.name.toUpperCase()} WINS`}</div>${sub ? `<div class="me-sub">${sub}</div>` : ''}${rows}<button class="sv-restart">PLAY AGAIN</button>`;
     this.end.classList.add('show');
     this.end.querySelector('button')!.addEventListener('click', () => location.reload());
   }

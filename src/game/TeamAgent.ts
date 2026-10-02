@@ -113,6 +113,16 @@ export class TeamAgent {
   onSay: ((a: TeamAgent, text: string) => void) | null = null;
   /** Falling back / kiting right now (HUD, brain). */
   retreating = false;
+  /** Elite operator: jump-peeks, ADAD strafes, snaps to heads, reacts fast. */
+  chad = false;
+  /** Aim skill before match heat scales it. */
+  baseSkill = 1;
+  /** Extracted: off the map (no body, no hits, not counted). */
+  gone = false;
+  private hopT = -1;
+  private hopCd = 1 + Math.random() * 2;
+  private adadT = 0;
+  private adadSide = 1;
   /** Called when this operator first acquires the player as a target. */
   onSpotPlayer: (() => void) | null = null;
   /** Shared by the squad: the operator everyone shoots first (focus fire). */
@@ -169,6 +179,8 @@ export class TeamAgent {
     agentBySoldier.set(this.soldier, this);
     this.soldier.onDry = () => this.arm(SIDEARM);
     const soldier = this.soldier;
+    // eslint-disable-next-line @typescript-eslint/no-this-alias
+    const me = this;
     this.self = {
       team,
       kind: 'soldier',
@@ -176,7 +188,7 @@ export class TeamAgent {
       aim: new THREE.Vector3(),
       head: new THREE.Vector3(),
       get alive() {
-        return soldier.alive;
+        return !me.gone && soldier.alive;
       },
       get downed() {
         return soldier.downed;
@@ -186,7 +198,15 @@ export class TeamAgent {
   }
 
   get alive(): boolean {
-    return this.soldier.alive;
+    return !this.gone && this.soldier.alive;
+  }
+
+  /** Extracted: the body leaves the map. */
+  leave(): void {
+    this.gone = true;
+    this.chad = false;
+    this.soldier.hopY = 0;
+    this.soldier.body.setActive(false);
   }
 
   get downed(): boolean {
@@ -204,6 +224,10 @@ export class TeamAgent {
   }
 
   spawn(at: THREE.Vector3, yaw: number): void {
+    if (this.gone) {
+      this.gone = false;
+      this.soldier.body.setActive(true);
+    }
     this.soldier.spawn(at, yaw);
     this.soldier.state = 'combat';
     this.target = null;
@@ -260,10 +284,18 @@ export class TeamAgent {
   }
 
   update(dt: number, world: Combatant[], mates: Soldier[]): void {
+    if (this.gone) return;
     const s = this.soldier;
     this.sayTimer -= dt;
     this.alertTime -= dt;
     this.hurtAgo += dt;
+    // Hop arc (0.5 s, ~0.5 m).
+    if (this.hopT >= 0) {
+      this.hopT += dt;
+      const k = this.hopT / 0.5;
+      s.hopY = k < 1 ? Math.sin(k * Math.PI) * 0.5 : 0;
+      if (k >= 1) this.hopT = -1;
+    }
     if (!s.alive || s.downed) {
       this.retreating = false;
       s.update(dt, this.tgt, mates, null, 'low', false);
@@ -301,6 +333,10 @@ export class TeamAgent {
       if (best && best !== this.target) {
         s.onAcquire();
         s.visibleTime = 0;
+        if (this.chad) {
+          s.visibleTime = 1.6; // already settled: no warm-up spread
+          (s as unknown as { reactionTimer: number }).reactionTimer = 0.18 + Math.random() * 0.12;
+        }
         if (best.kind === 'player') this.onSpotPlayer?.();
         if (!this.hadTarget && Math.random() < 0.7) this.say(pick(best.kind === 'robot' ? CONTACT_BOT : CONTACT_SQUAD));
       }
@@ -418,8 +454,26 @@ export class TeamAgent {
         }
         if (p.role !== 'marksman') s.crouchTarget = this.peekTimer > 0 && this.peekTimer < 0.6 ? 1 : this.peekTimer > 0 ? 0 : s.crouchTarget > 0.5 && dist > 6 ? 1 : 0;
       }
-      // Settled on a close, calm target: go for the head (pays more, kills faster).
-      const head = !kite && s.visibleTime > 1.2 && dist < 24 && p.role !== 'assault';
+      // Elite: jump-peek every few seconds and ADAD strafe between shots.
+      if (this.chad && !kite) {
+        this.hopCd -= dt;
+        if (this.hopCd <= 0 && this.hopT < 0) {
+          this.hopT = 0;
+          this.hopCd = 1.4 + Math.random() * 2.2;
+        }
+        this.adadT -= dt;
+        if (this.adadT <= 0) {
+          this.adadT = 0.22 + Math.random() * 0.25;
+          this.adadSide = -this.adadSide;
+          const dx = t.pos.x - s.pos.x;
+          const dz = t.pos.z - s.pos.z;
+          const l = Math.hypot(dx, dz) || 1;
+          this.tmp.set(s.pos.x + (-dz / l) * this.adadSide * 1.4, 0, s.pos.z + (dx / l) * this.adadSide * 1.4);
+          if (this.deps.nav.clearLine(s.pos.x, s.pos.z, this.tmp.x, this.tmp.z)) s.steerTo(this.tmp, JOG);
+        }
+      }
+      // Settled on a close, calm target: go for the head (pays more, kills faster). Chads always do.
+      const head = this.chad ? dist < 45 : !kite && s.visibleTime > 1.2 && dist < 24 && p.role !== 'assault';
       s.update(dt, this.tgt, mates, head ? this.tgt.head : this.tgt.chest, 'aim', true);
       return;
     }

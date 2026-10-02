@@ -277,7 +277,14 @@ canvas { display: block; touch-action: none; }
 .sb-alive { font-size: 8px; letter-spacing: 1px; color: #bbb; }
 .sb-chip.lead { background: rgba(60,48,10,0.7); }
 .sb-chip.wiped { opacity: 0.45; }
-.sb-note { position: absolute; left: 50%; top: 44px; transform: translateX(-50%); font: 10px ui-monospace, Consolas, monospace; letter-spacing: 0.16em; color: #d8352a; text-shadow: 0 1px 2px #000; pointer-events: none; }
+.sb-note { position: absolute; left: 50%; top: 44px; transform: translateX(-50%); font: 700 11px ui-monospace, Consolas, monospace; letter-spacing: 0.16em; color: #d9dde2; text-shadow: 0 1px 2px #000; pointer-events: none; white-space: nowrap; }
+.sb-note.urgent { color: #2bff7a; font-size: 13px; animation: sbPulse 1s ease-in-out infinite; }
+@keyframes sbPulse { 50% { opacity: 0.55; } }
+.extract-bar { top: 66%; border-color: #2bff7a; color: #c8ffd9; }
+.extract-bar i { background: #2bff7a; }
+.me-sub { font: 700 13px ui-monospace, Consolas, monospace; letter-spacing: 0.2em; color: #c8ccd2; margin: -6px 0 14px; }
+.me-row em { font: 700 10px ui-monospace, Consolas, monospace; letter-spacing: 0.12em; font-style: normal; margin: 0 10px 0 auto; padding-top: 4px; }
+.me-row em.ok { color: #2bff7a; } .me-row em.bad { color: #ff5a4a; }
 .killfeed { position: absolute; right: 16px; top: 228px; display: flex; flex-direction: column; align-items: flex-end; gap: 3px; pointer-events: none; }
 .kf-line { padding: 3px 8px; background: rgba(0,0,0,0.55); font-size: 12px; color: #ddd; animation: kfIn 0.2s ease-out; }
 @keyframes kfIn { from { transform: translateX(20px); opacity: 0; } }
@@ -312,6 +319,8 @@ canvas { display: block; touch-action: none; }
 .lg.foe { background: #ff8a1f; border-radius: 50%; }
 .squad-btn { position: absolute; right: 206px; top: 100px; height: 48px; padding: 0 12px; border-radius: 24px; border: 1px solid rgba(255,255,255,0.35); background: rgba(10,12,14,0.45); color: #cfe6ff; font: 700 11px ui-monospace, Consolas, monospace; letter-spacing: 0.12em; pointer-events: auto; }
 .squad-btn.on { border-color: #4fa8ff; box-shadow: 0 0 10px rgba(79,168,255,0.5); }
+.build-btn { position: absolute; right: 150px; top: 156px; height: 40px; min-width: 76px; padding: 0 10px; border-radius: 20px; border: 1px solid rgba(255,255,255,0.35); background: rgba(10,12,14,0.45); color: #c8ffd9; font: 700 10px ui-monospace, Consolas, monospace; letter-spacing: 0.12em; pointer-events: auto; }
+.build-btn.on { border-color: #2bff7a; box-shadow: 0 0 10px rgba(43,255,122,0.5); }
 
 /* Map polish: readable legend */
 .map-legend { font-size: 13px !important; gap: 14px !important; padding: 8px 14px; background: rgba(8,9,11,0.8); border-radius: 6px; }

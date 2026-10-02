@@ -40,6 +40,8 @@ export interface Turret {
   cooldown: number;
   yaw: number;
   shots: number;
+  /** Deployed from build mode: removed when its time runs out. */
+  temp?: { group: THREE.Object3D; collider: { handle: number } };
 }
 
 export const PRICES = { med: 400, armor: 1000, restore: 750, crate: 950, turret: 1500 };
@@ -313,8 +315,33 @@ export class Utilities {
 
   // ---------------------------------------------------------------- sentries
 
-  private buildTurret(s: WallSpot): void {
-    const g = this.group(s, 1.0);
+  /** Build mode: a tripod sentry at `at`, running for `time` s, then packed away. */
+  deploy(at: THREE.Vector3, yaw: number, team: string, owner: object | null, time: number): void {
+    const g = new THREE.Group();
+    g.position.copy(at);
+    g.rotation.y = yaw;
+    this.deps.map.roomGroupAt(at.x, at.z).add(g);
+    const { head, lamp } = this.turretRig(g);
+    const collider = this.deps.physics.addStaticBox(this.tmp.set(at.x, 0.7, at.z), new THREE.Vector3(0.3, 0.7, 0.3));
+    const spot: WallSpot = { pos: at.clone(), yaw, room: '', zone: '' };
+    const t: Turret = {
+      spot, at: at.clone(), head, lamp, muzzle: new THREE.Vector3(), cost: 0,
+      time: 0, team: '', owner: null, target: null, scan: 0, cooldown: 0, yaw: 0, shots: 0, temp: { group: g, collider },
+    };
+    this.turrets.push(t);
+    const marker: UtilityMarker = { kind: 'turret', x: at.x, z: at.z, on: true };
+    this.markers.push(marker);
+    this.turretMarkers.set(t, marker);
+    this.activate(t, team, owner);
+    t.time = time;
+  }
+
+  /** Deployed sentries a team has running. */
+  deployed(team: string): number {
+    return this.turrets.filter((t) => t.temp && t.team === team && t.time > 0).length;
+  }
+
+  private turretRig(g: THREE.Group): { head: THREE.Group; lamp: THREE.MeshStandardMaterial } {
     for (let i = 0; i < 3; i++) {
       const a = (i / 3) * Math.PI * 2;
       const leg = this.mesh(g, this.mats.dark, [0.05, 0.9, 0.05], [Math.sin(a) * 0.22, 0.42, Math.cos(a) * 0.22]);
@@ -332,6 +359,12 @@ export class Utilities {
     head.add(barrel);
     const lamp = new THREE.MeshStandardMaterial({ color: 0x0a0a0a, emissive: 0xff2a1a, emissiveIntensity: 0.05 });
     this.mesh(head, lamp, [0.06, 0.06, 0.02], [0.1, 0.06, 0.26]);
+    return { head, lamp };
+  }
+
+  private buildTurret(s: WallSpot): void {
+    const g = this.group(s, 1.0);
+    const { head, lamp } = this.turretRig(g);
     this.sign(g, `SENTRY $${PRICES.turret}`, '#ff8a5c', [0, 1.7, 0], 0.8);
     this.deps.physics.addStaticBox(this.front(s, 1.0, 0.7), new THREE.Vector3(0.3, 0.7, 0.3));
     this.sv.carveNav(this.front(s, 1.0), 1.0);
@@ -372,13 +405,21 @@ export class Utilities {
     for (const m of this.breakerLamps) m.emissive.setHex(dark ? 0xff2a1a : 0x2bdc6a);
     for (const l of this.breakerLevers) l.rotation.x += ((dark ? 2.6 : 0) - l.rotation.x) * Math.min(1, dt * 10);
 
-    for (const t of this.turrets) {
+    for (const t of [...this.turrets]) {
       if (t.time <= 0) continue;
       t.time -= dt;
       if (t.time <= 0) {
         t.lamp.emissiveIntensity = 0.05;
         this.turretMarkers.get(t)!.on = false;
         this.deps.audio.play('robot.death', { position: t.head.getWorldPosition(this.tmp), volume: 0.4 });
+        if (t.temp) {
+          // A deployed sentry packs itself away.
+          t.temp.group.removeFromParent();
+          this.deps.physics.world.removeCollider(t.temp.collider as never, true);
+          this.turrets.splice(this.turrets.indexOf(t), 1);
+          this.markers.splice(this.markers.indexOf(this.turretMarkers.get(t)!), 1);
+          this.turretMarkers.delete(t);
+        }
         continue;
       }
       t.head.getWorldPosition(this.eye);

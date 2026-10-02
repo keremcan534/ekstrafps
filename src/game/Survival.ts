@@ -16,6 +16,7 @@ import type { SurvivalHUD } from '../ui/SurvivalHUD';
 import type { DamageInfo } from '../targets/Humanoid';
 import type { Lighting } from './Lighting';
 import type { Combatant } from './TeamAgent';
+import { Builder } from './Builder';
 import { Utilities } from './Utilities';
 import type { WallSpot } from '../world/Site9';
 
@@ -63,7 +64,7 @@ export interface Wallet {
 }
 
 /** Share of every teammate's earnings you also get (CoD-style team economy). */
-export const TEAM_SHARE = 0.05;
+export const TEAM_SHARE = 0.15;
 
 interface Door {
   slot: DoorSlot;
@@ -175,8 +176,34 @@ export class Survival {
     }
   }
 
+  /** Losing people costs: a team's race score drops when one of its operators dies. */
+  penalize(team: string, n: number): void {
+    if (this.over || !this.score.has(team)) return;
+    this.score.set(team, Math.max(0, (this.score.get(team) ?? 0) - n));
+  }
+
+  /** Match clock (seconds). */
+  get time(): number {
+    return this.elapsed;
+  }
+
+  private megaUntil = -1;
+  /** Points a team loses per operator killed (rises with match heat). */
+  deathPenalty = 100;
+
+  /** A giant wave from every opened lift and bay, spread over all teams. */
+  megaHorde(size: number): void {
+    this.mobLeft += size;
+    this.phase = 'buildup';
+    this.spawnTimer = 0;
+    this.megaUntil = this.elapsed + 75;
+    this.deps.hud.showBanner('MEGA HORDE', 'round');
+    this.deps.audio.play('director.horde');
+  }
+
   /** A soldier of `victimTeam` was hit by someone (points for the shooter's team). */
   onSoldierHit(victimTeam: string, info: DamageInfo, killed: boolean): void {
+    if (killed) this.penalize(victimTeam, this.deathPenalty);
     const t = info.hit.team;
     if (!t || t === victimTeam) return;
     this.award(t, killed ? 150 : 10, info.hit.owner);
@@ -210,6 +237,8 @@ export class Survival {
   overridePrompt: string | null = null;
   /** Stations, breakers, supply crate, sentries. */
   utilities: Utilities | null = null;
+  /** Build mode: barricades, traps, deployable sentries. */
+  builder!: Builder;
   private navRefresh: { x0: number; z0: number; x1: number; z1: number; frames: number }[] = [];
   private tmp = new THREE.Vector3();
   private eye = new THREE.Vector3();
@@ -232,6 +261,7 @@ export class Survival {
     this.placeAmmo(map.ammoSpots);
     this.placeHazards(map.hazardSpots);
     this.utilities = new Utilities(this, deps, spots);
+    this.builder = new Builder(this, deps, () => deps.world?.() ?? []);
     for (const t of map.terminals) {
       this.interactables.push({
         pos: t.pos.clone(),
@@ -279,9 +309,9 @@ export class Survival {
     if (mobile) for (const r of this.robots) r.body.setCastShadow(false);
     for (const z of deps.startZones ?? []) {
       this.unlocked.add(z);
-      this.populateZone(z, 3); // something to farm from the first minute
+      this.populateZone(z, 6); // plenty to farm from the first minute
     }
-    if (deps.mode === 'teams') this.phaseTimer = 14;
+    if (deps.mode === 'teams') this.phaseTimer = 5;
     deps.weapons.infiniteReserve.add('heavy_pistol');
     deps.weapons.startLoadout('heavy_pistol');
     deps.hud.setPoints(this.points);
@@ -380,7 +410,7 @@ export class Survival {
     });
   }
 
-  openDoor(door: Door): void {
+  openDoor(door: Door, populate = true): void {
     door.open = true;
     this.reachVersion++;
     this.deps.physics.world.removeCollider(door.collider, true);
@@ -392,7 +422,7 @@ export class Survival {
     const r = door.slot.width / 2 + 1;
     // The nav grid sees the opening after the next physics step.
     this.navRefresh.push({ x0: c.x - r, z0: c.z - r, x1: c.x + r, z1: c.z + r, frames: 2 });
-    for (const z of fresh) this.populateZone(z, (this.deps.mode === 'teams' ? 5 : 3) + ((Math.random() * (2 + this.threat)) | 0));
+    if (populate) for (const z of fresh) this.populateZone(z, (this.deps.mode === 'teams' ? 5 : 3) + ((Math.random() * (2 + this.threat)) | 0));
   }
 
   private reachVersion = 0;
@@ -784,12 +814,15 @@ export class Survival {
 
     this.phaseTimer -= dt;
     const teams = this.deps.mode === 'teams';
-    const cap = teams ? (this.deps.mobile ? 16 : 30) : this.deps.mobile ? 10 : 18;
+    const mega = this.elapsed < this.megaUntil ? 1.7 : 1;
+    const cap = (teams ? (this.deps.mobile ? 16 : 30) : this.deps.mobile ? 10 : 18) * mega;
     // Between mobs the pressure never fully stops: lone hunters trickle in.
     if (this.phase === 'relax' || this.phase === 'fade') {
       this.trickleTimer -= dt;
       if (this.trickleTimer <= 0) {
-        this.trickleTimer = Math.max(3, 9 - this.threat * 0.8) * (0.7 + Math.random() * 0.6) * (teams ? 0.5 : 1);
+        // Team games: a steady stream from the start (the first minutes were too quiet).
+        const early = teams && this.elapsed < 150 ? 0.55 : 1;
+        this.trickleTimer = Math.max(3, 9 - this.threat * 0.8) * (0.7 + Math.random() * 0.6) * (teams ? 0.5 : 1) * early;
         if (aggro < (2 + this.threat) * (teams ? 2.5 : 1)) this.queueMobSpawn();
       }
     }
@@ -866,6 +899,7 @@ export class Survival {
     if (!this.over) this.updateFocus();
     else this.deps.hud.setPrompt('', 0, false);
     this.utilities?.update(dt, this.deps.world?.() ?? []);
+    this.builder.update(dt);
 
     // Arrivals (lift doors take a moment), lift lights fade.
     for (let i = this.pending.length - 1; i >= 0; i--) {

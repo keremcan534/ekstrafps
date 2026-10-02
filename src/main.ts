@@ -13,7 +13,7 @@ overlay.innerHTML = `
       <div><b>LMB</b> fire · <b>RMB</b> aim · <b>R</b> reload · <b>B</b> fire mode · <b>V</b> shoulder · <b>T</b> inspect · <b>1-0</b> weapons</div>
       <div><b>G</b> aim rays · <b>L</b> laser · <b>Z</b> slow-mo · <b>I</b> inf. ammo · <b>K</b> reset robots · <b>M</b> test stations</div>
       <div><b>Tab</b> tuning · <b>H</b> debug HUD · <b>F1</b> help · <b>Esc</b> release mouse</div>
-      <div>Site-9: <b>F</b> buy doors / weapons / contractors · <b>M</b> map · <b>X</b> give up while downed · Weapon Lab: Black Division in the yard · <b>O</b> god mode · <b>U</b> AI on/off</div>
+      <div>Site-9: <b>F</b> buy doors / weapons / contractors · <b>M</b> map · <b>J</b> build (F place) · <b>X</b> give up while downed · Weapon Lab: Black Division in the yard · <b>O</b> god mode · <b>U</b> AI on/off</div>
     </div>
     <div class="controls touch-only">
       <div>Left side: move (drag up onto ⇧ to lock sprint) · Right side: look · FIRE also aims while held</div>

@@ -42,6 +42,8 @@ export interface TeamContext {
   onRaiderSpotsPlayer?(): void;
   /** The Black Division commander went down (bonus, banner). */
   onBossDown?(info: DamageInfo): void;
+  /** Match heat 0..1: fights get harder and more punishing as the clock runs. */
+  heat?(): number;
 }
 
 /** Each downed member gets the nearest standing teammate (one rescuer each). */
@@ -73,7 +75,9 @@ export function assignRevives(agents: TeamAgent[]): void {
 }
 
 interface Goal {
-  kind: 'door' | 'hire' | 'roam' | 'hunt' | 'retreat' | 'farm';
+  kind: 'door' | 'hire' | 'roam' | 'hunt' | 'retreat' | 'farm' | 'rush' | 'extract';
+  /** Moving target (a rush follows its victim). */
+  track?: () => THREE.Vector3 | null;
   at: THREE.Vector3;
   run?: () => void;
   time: number;
@@ -104,6 +108,13 @@ export class AITeam {
   private thinkTimer = Math.random();
   private errandTimer = Math.random() * 2;
   private tmp = new THREE.Vector3();
+  /** Extraction phase: wiped teams don't come back. */
+  noRespawn = false;
+  /** Made it out (extraction). */
+  extracted = false;
+  /** Extraction: where to go and what happens on arrival. */
+  private exit: { at: THREE.Vector3; done: () => void } | null = null;
+  private exitHold = 0;
 
   constructor(readonly def: TeamDef, private ctx: TeamContext, size = SQUAD_SIZE) {
     for (let i = 0; i < size; i++) this.addAgent(def.start.clone().add(new THREE.Vector3((i % 2) * 1.6 - 0.8, 0, ((i / 2) | 0) * 1.5)));
@@ -143,7 +154,7 @@ export class AITeam {
     agent.squad = this.shared;
     if (this.def.style === 'hunter') agent.onSpotPlayer = () => this.ctx.onRaiderSpotsPlayer?.();
     agent.armory = (id) => this.ctx.weaponData(id);
-    agent.soldier.skill = this.def.style === 'hunter' ? 0.95 : 1.15;
+    agent.baseSkill = agent.soldier.skill = this.def.style === 'hunter' ? 0.95 : 1.15;
     agent.points = this.def.economy ? points : 0;
     // Go down (revivable) while a teammate is still standing. Raiders just die.
     agent.soldier.body.canGoDown = () => this.def.style !== 'hunter' && this.agents.some((a) => a !== agent && a.alive && !a.downed);
@@ -151,8 +162,8 @@ export class AITeam {
     agent.spawn(at2, Math.random() * Math.PI * 2);
     if (this.def.economy) agent.arm(SIDEARM);
     if (isBoss) {
-      agent.arm('rd704');
-      agent.soldier.skill = 1.3;
+      agent.arm('asval'); // compact and suppressed: you hear him late
+      agent.baseSkill = agent.soldier.skill = 1.3;
     }
     this.agents.push(agent);
     return agent;
@@ -177,7 +188,60 @@ export class AITeam {
     }
   }
 
+  /**
+   * Match heat: everyone aims better, and the best of the squad turn into
+   * "chads" (jump-peeks, ADAD, head snaps). Raiders always field one.
+   */
+  escalate(heat: number): void {
+    const want = this.def.style === 'hunter' ? 1 : heat > 0.65 ? 2 : heat > 0.3 ? 1 : 0;
+    let have = 0;
+    for (const a of this.agents) {
+      if (!a.alive) continue;
+      if (a.chad && have < want) have++;
+      else a.chad = false;
+    }
+    for (const a of this.agents) {
+      if (have >= want) break;
+      if (!a.alive || a.chad || a.personality.name === 'The Warden') continue;
+      a.chad = true;
+      have++;
+    }
+    for (const a of this.agents) {
+      a.soldier.skill = (a.chad ? Math.max(1.55, a.baseSkill) : a.baseSkill) * (1 + 0.35 * heat);
+      if (a.chad) a.personality.aggression = Math.max(a.personality.aggression, 0.85);
+    }
+  }
+
+  /** Everyone drops what they're doing and storms `track` (SAIN-style push). */
+  rush(track: () => THREE.Vector3 | null): boolean {
+    const L = this.leader;
+    const at = track();
+    if (!L || !at || this.extracted || this.exit) return false;
+    this.goal = { kind: 'rush', at: at.clone(), track, time: 0 };
+    for (const a of this.agents) {
+      a.plan = null;
+      a.errand = null;
+    }
+    return true;
+  }
+
+  get rushing(): boolean {
+    return this.goal?.kind === 'rush';
+  }
+
+  /** Extraction: head for `at`, hold it, leave the map. */
+  extractTo(at: THREE.Vector3, done: () => void): void {
+    this.exit = { at, done };
+    this.noRespawn = true;
+    this.goal = null;
+    for (const a of this.agents) {
+      a.plan = null;
+      a.errand = null;
+    }
+  }
+
   update(dt: number, world: Combatant[]): void {
+    if (this.extracted) return;
     this.shared.focusTime -= dt;
     if (this.shared.focusTime <= 0 || (this.shared.focus && (!this.shared.focus.alive || this.shared.focus.downed))) this.shared.focus = null;
     const mates = this.agents.map((a) => a.soldier);
@@ -187,7 +251,7 @@ export class AITeam {
     }
     // Wipe → respawn somewhere random (raiders don't come back).
     if (this.aliveCount === 0) {
-      if (this.def.style === 'hunter') return;
+      if (this.def.style === 'hunter' || this.noRespawn) return;
       if (this.respawnTimer < 0) this.respawnTimer = 12;
       this.respawnTimer -= dt;
       if (this.respawnTimer <= 0) this.redeploy(this.ctx.respawnPoint());
@@ -199,7 +263,7 @@ export class AITeam {
       this.thinkTimer = 1.2 + Math.random() * 0.6;
       this.think();
     }
-    if (this.def.economy) {
+    if (this.def.economy && !this.exit) {
       this.errandTimer -= dt;
       if (this.errandTimer <= 0) {
         this.errandTimer = 2 + Math.random();
@@ -234,10 +298,31 @@ export class AITeam {
     const g = this.goal;
     if (g) {
       g.time += dt;
-      if (g.time > 45) this.goal = null; // stuck: rethink
+      if (g.track) {
+        const p = g.track();
+        if (p) g.at.copy(p);
+        else this.goal = null;
+      }
+      if (g.time > (g.kind === 'rush' ? 70 : g.kind === 'extract' ? 120 : 45)) this.goal = null; // stuck: rethink
     }
-    L.order = g ? { kind: 'goto', at: g.at, speed: g.kind === 'hunt' || g.kind === 'retreat' ? 3.7 : 2.6 } : { kind: 'hold' };
-    if (g && L.distTo(g.at) < 2.2) {
+    const fast = g && (g.kind === 'hunt' || g.kind === 'retreat' || g.kind === 'rush' || g.kind === 'extract');
+    L.order = g ? { kind: 'goto', at: g.at, speed: fast ? (g.kind === 'rush' ? 4.3 : 3.7) : 2.6 } : { kind: 'hold' };
+    // At the exit: hold it for a few seconds, then everyone still standing is out.
+    if (g && g.kind === 'extract' && this.exit) {
+      if (L.distTo(g.at) < 3.2) {
+        L.order = { kind: 'hold' };
+        this.exitHold += dt;
+        if (this.exitHold >= 6) {
+          for (const a of this.agents) if (a.alive && !a.downed && a.distTo(g.at) < 25) a.leave();
+          for (const a of this.agents) if (a.alive) a.leave();
+          this.extracted = true;
+          this.exit.done();
+          this.goal = null;
+        }
+      } else this.exitHold = Math.max(0, this.exitHold - dt);
+    } else if (g && g.kind === 'rush' && L.distTo(g.at) < 6) {
+      this.goal = null; // on them: the fight takes over
+    } else if (g && L.distTo(g.at) < 2.2) {
       if (g.hold && g.time < g.hold) L.order = { kind: 'hold' };
       else {
         g.run?.();
@@ -274,8 +359,23 @@ export class AITeam {
         }
       }
     }
+    if (this.exit && this.goal?.kind !== 'extract') {
+      // Extraction overrides everything but a retreat from a swarm.
+      if (this.goal?.kind !== 'retreat') this.goal = { kind: 'extract', at: this.exit.at.clone(), time: 0 };
+      return;
+    }
     if (this.goal) return;
     if (this.def.style === 'hunter') return this.hunt(L);
+    // Late game: squads go looking for the gunfight instead of farming.
+    const heat = this.ctx.heat?.() ?? 0;
+    if (heat > 0.25 && Math.random() < heat * 0.35) {
+      const heard = (this.ctx.intel?.(this.def.id) ?? []).sort((a, b) => L.distTo(a.pos) - L.distTo(b.pos))[0];
+      if (heard && L.distTo(heard.pos) < 90) {
+        this.goal = { kind: 'hunt', at: heard.pos.clone(), time: 0 };
+        L.plan = null;
+        return;
+      }
+    }
     // Lone wolves go after their own plan now and then.
     for (const a of this.agents) {
       if (a === L || !a.alive || a.downed || a.plan || a.target) continue;
