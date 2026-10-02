@@ -13,6 +13,8 @@ export class PlayerHealth {
   sinceDamage = 99;
   private deathTimer = 0;
 
+  /** Lab: come back after a few seconds. Survival: death is game over. */
+  autoRespawn = true;
   onDeath: (() => void) | null = null;
   onRespawn: (() => void) | null = null;
 
@@ -34,6 +36,7 @@ export class PlayerHealth {
   update(dt: number): void {
     this.sinceDamage += dt;
     if (this.dead) {
+      if (!this.autoRespawn) return;
       this.deathTimer -= dt;
       if (this.deathTimer <= 0) {
         this.dead = false;

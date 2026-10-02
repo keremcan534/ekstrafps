@@ -60,6 +60,8 @@ export class WeaponController implements WeaponListener {
   readonly trails = new Trails();
   current: Weapon;
   currentIndex = 0;
+  /** Survival loadout: indices of owned weapons (max 2). null = lab, every weapon. */
+  owned: number[] | null = null;
   handling!: Handling;
   ammo!: AmmoData;
 
@@ -203,10 +205,19 @@ export class WeaponController implements WeaponListener {
     const { player } = this.deps;
 
     // --- Switching ---
-    if (input.slotPressed >= 0) this.requestSwitch(input.slotPressed);
-    if (input.cyclePressed !== 0) {
-      const n = this.weapons.length;
-      this.requestSwitch((this.currentIndex + input.cyclePressed + n) % n);
+    if (this.owned) {
+      const o = this.owned;
+      if (input.slotPressed >= 0 && input.slotPressed < o.length) this.requestSwitch(o[input.slotPressed]);
+      if (input.cyclePressed !== 0 && o.length > 1) {
+        const i = Math.max(0, o.indexOf(this.pendingIndex >= 0 ? this.pendingIndex : this.currentIndex));
+        this.requestSwitch(o[(i + input.cyclePressed + o.length) % o.length]);
+      }
+    } else {
+      if (input.slotPressed >= 0) this.requestSwitch(input.slotPressed);
+      if (input.cyclePressed !== 0) {
+        const n = this.weapons.length;
+        this.requestSwitch((this.currentIndex + input.cyclePressed + n) % n);
+      }
     }
     if (this.pendingIndex >= 0 && this.current.state === 'holstered') {
       const next = this.pendingIndex;
@@ -479,6 +490,41 @@ export class WeaponController implements WeaponListener {
     this.e.set(Math.random() * 0.4, Math.PI / 2 + Math.random() * 0.4, 0);
     this.q.copy(camera.camera.quaternion).multiply(this.q2.setFromEuler(this.e));
     shells.eject(rig.shellType, this.eject, this.vel, this.q);
+  }
+
+  indexOf(id: string): number {
+    return this.weapons.findIndex((w) => w.data.id === id);
+  }
+
+  /** Survival: start with one weapon and limited spare ammo. */
+  startLoadout(id: string): void {
+    const i = this.indexOf(id);
+    for (const w of this.weapons) {
+      w.reserve = w.maxReserve;
+      w.refill();
+    }
+    this.owned = [i];
+    this.requestSwitch(i);
+  }
+
+  /**
+   * Survival purchase: a weapon you own gets its spare ammo refilled; a new one
+   * fills a free slot or replaces the weapon in your hands.
+   */
+  giveWeapon(id: string): 'ammo' | 'new' {
+    const i = this.indexOf(id);
+    const o = this.owned ?? (this.owned = [this.currentIndex]);
+    const w = this.weapons[i];
+    if (o.includes(i)) {
+      w.reserve = w.maxReserve;
+      return 'ammo';
+    }
+    w.refill();
+    w.reserve = w.maxReserve;
+    if (o.length < 2) o.push(i);
+    else o[Math.max(0, o.indexOf(this.currentIndex))] = i;
+    this.requestSwitch(i);
+    return 'new';
   }
 
   refillAll(): void {

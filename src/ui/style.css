@@ -167,7 +167,7 @@ canvas { display: block; touch-action: none; }
 .death-title { font-size: 64px; font-weight: 900; letter-spacing: 0.3em; color: #d8352a; }
 .death-sub { margin-top: 6px; font: 14px ui-monospace, Consolas, monospace; letter-spacing: 0.5em; color: #9a9a9a; }
 .death-hint { margin-top: 26px; font-size: 12px; letter-spacing: 0.2em; color: #777; }
-.is-touch .hp { left: 16px; bottom: auto; top: 12px; }
+.is-touch .hp { left: 16px; bottom: auto; top: 52px; }
 .is-touch .hp-bar { width: 110px; }
 
 /* ---------- Map picker ---------- */
@@ -175,3 +175,48 @@ canvas { display: block; touch-action: none; }
 .maps button { margin-left: 8px; padding: 6px 12px; background: transparent; color: #ddd; border: 1px solid #555; font: inherit; letter-spacing: 0.08em; cursor: pointer; }
 .maps button.active { border-color: var(--accent); color: var(--accent); }
 .maps button:hover { border-color: #aaa; }
+
+/* ---------- Survival ---------- */
+.sv-points { position: absolute; left: 24px; bottom: 58px; font-size: 26px; font-weight: 800; color: #f2d36b; text-shadow: 0 2px 4px #000; font-variant-numeric: tabular-nums; }
+.sv-popups { position: absolute; left: 140px; bottom: 64px; width: 80px; height: 30px; pointer-events: none; }
+.sv-pop { position: absolute; bottom: 0; font-weight: 800; font-size: 18px; text-shadow: 0 1px 3px #000; animation: svPop 0.9s ease-out forwards; }
+.sv-pop.plus { color: #f2d36b; }
+.sv-pop.minus { color: #ff6a5a; }
+@keyframes svPop { 0% { transform: translateY(0); opacity: 1; } 100% { transform: translateY(-34px); opacity: 0; } }
+.sv-round { position: absolute; left: 22px; top: 14px; font: 900 64px/1 Georgia, 'Times New Roman', serif; color: #b3150f; text-shadow: 0 0 12px rgba(0,0,0,0.8), 0 2px 0 #3a0503; }
+.sv-round::before { content: 'THREAT'; display: block; font: 700 10px system-ui, sans-serif; letter-spacing: 0.3em; color: #ddd; margin-bottom: 2px; }
+.sv-remain { position: absolute; left: 26px; top: 96px; font: 11px ui-monospace, Consolas, monospace; letter-spacing: 0.14em; color: #ddd; text-shadow: 0 1px 2px #000; text-transform: uppercase; }
+.sv-prompt { position: absolute; left: 50%; bottom: 30%; transform: translateX(-50%); padding: 8px 16px; background: rgba(0,0,0,0.62); font-size: 16px; color: #eee; white-space: nowrap; opacity: 0; transition: opacity 120ms; pointer-events: none; }
+.sv-prompt.show { opacity: 1; }
+.sv-prompt.deny { animation: svDeny 0.35s; }
+@keyframes svDeny { 25% { transform: translateX(calc(-50% - 8px)); } 75% { transform: translateX(calc(-50% + 8px)); } }
+.sv-key { display: inline-block; min-width: 22px; padding: 1px 6px; margin-right: 6px; border: 1px solid #ccc; font-weight: 700; font-size: 13px; text-align: center; }
+.sv-cost { margin-left: 8px; color: #f2d36b; font-weight: 700; }
+.sv-cost.no { color: #ff6a5a; }
+.sv-banner { position: absolute; left: 50%; top: 22%; transform: translateX(-50%); font: 900 44px Georgia, 'Times New Roman', serif; letter-spacing: 0.12em; color: #c4170f; text-shadow: 0 0 18px rgba(0,0,0,0.9); opacity: 0; transition: opacity 0.4s; pointer-events: none; white-space: nowrap; }
+.sv-banner.show { opacity: 1; }
+.sv-banner.clear { color: #e8e8e8; font-size: 30px; }
+.sv-over { position: absolute; inset: 0; display: none; flex-direction: column; align-items: center; justify-content: center; background: rgba(10,0,0,0.82); z-index: 5; }
+.sv-over.show { display: flex; }
+.sv-over-title { font: 900 72px Georgia, serif; color: #c4170f; letter-spacing: 0.2em; }
+.sv-over-sub { margin-top: 10px; font-size: 16px; color: #ccc; letter-spacing: 0.06em; }
+.sv-restart { margin-top: 28px; padding: 12px 34px; font: 800 16px system-ui, sans-serif; letter-spacing: 0.2em; background: #c4170f; color: #fff; border: 0; cursor: pointer; }
+.is-touch .sv-points { left: 16px; bottom: auto; top: 76px; font-size: 20px; }
+.is-touch .sv-round { left: auto; right: 16px; top: 8px; font-size: 44px; }
+.is-touch .sv-remain { left: auto; right: 18px; top: 56px; }
+
+/* ---------- Map (M) + minimap ---------- */
+.minimap { position: absolute; right: 16px; top: 16px; width: 200px; height: 200px; pointer-events: none; }
+.has-minimap .kills { right: 230px; }
+.has-minimap .squad-line { right: 230px; top: 18px; }
+.map-full { position: absolute; inset: 0; display: none; flex-direction: column; align-items: center; justify-content: center; background: rgba(8,9,11,0.86); z-index: 4; }
+.map-full.show { display: flex; }
+.map-full canvas { box-shadow: 0 0 0 1px rgba(255,255,255,0.15); }
+.map-legend { margin-top: 10px; display: flex; gap: 16px; flex-wrap: wrap; justify-content: center; font-size: 12px; color: #ccc; letter-spacing: 0.04em; }
+.map-legend .lg { display: inline-block; width: 10px; height: 10px; margin-right: 6px; vertical-align: -1px; border-radius: 50%; }
+.lg.you { background: #fff; } .lg.ally { background: #4fe0ff; } .lg.door { background: #e0a51c; border-radius: 0; height: 4px; }
+.lg.buy { background: #ffd25a; } .lg.term { background: #4fb8ff; border-radius: 0; } .lg.bot { background: #ff3b2f; }
+.lg-key { color: #888; }
+.is-touch .minimap { width: 130px; height: 130px; right: 12px; top: 96px; }
+.btn-use { left: 50%; transform: translateX(-50%); bottom: calc(26vh); width: 64px; height: 40px; font-size: 12px; font-weight: 800; border-color: #e0a51c; color: #ffd25a; }
+.btn-map { left: calc(194px + env(safe-area-inset-left)); font-size: 9px; }

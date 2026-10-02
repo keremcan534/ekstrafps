@@ -26,7 +26,7 @@ const VISOR_OK = new THREE.Color(COLORS.visor);
 const VISOR_HURT = new THREE.Color(COLORS.visorHurt);
 const WHITE = new THREE.Color(1, 1, 1);
 
-function robotSkin(paint: THREE.Material, dark: THREE.Material, visor: THREE.Material, health: number): HumanoidSkin {
+export function robotSkin(paint: THREE.Material, dark: THREE.Material, visor: THREE.Material, health: number): HumanoidSkin {
   const T = 0.42; // thigh
   return {
     health,

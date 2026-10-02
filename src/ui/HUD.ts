@@ -133,7 +133,8 @@ export class HUD {
     n.el.style.display = 'block';
   }
 
-  updateAmmo(weaponName: string, ammo: number, chambered: boolean, mag: number, mode: string, reloadProgress: number): void {
+  /** @param mag shown after the slash (magazine size, or spare rounds in Survival); @param magSize for the low-ammo warning */
+  updateAmmo(weaponName: string, ammo: number, chambered: boolean, mag: number, mode: string, reloadProgress: number, magSize = mag): void {
     if (weaponName !== this.lastWeapon) {
       this.weaponEl.textContent = weaponName;
       this.lastWeapon = weaponName;
@@ -147,7 +148,7 @@ export class HUD {
       this.ammoEl.textContent = String(ammo);
       this.magEl.textContent = `${chambered ? '+1' : ''} / ${mag}`;
       this.lastAmmo = shown;
-      this.ammoEl.classList.toggle('low', ammo <= Math.ceil(mag * 0.25));
+      this.ammoEl.classList.toggle('low', ammo <= Math.ceil(magSize * 0.25));
       this.lastMag = mag;
     }
     if (reloadProgress >= 0) {

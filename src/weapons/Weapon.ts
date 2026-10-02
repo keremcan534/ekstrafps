@@ -124,6 +124,9 @@ export class Weapon {
   private stopShellReload = false;
   private chamberPumpPlayed = false;
 
+  /** Spare rounds (Survival). Infinity in the lab. */
+  reserve = Infinity;
+
   constructor(
     public readonly data: WeaponData,
     private listener: WeaponListener,
@@ -341,6 +344,7 @@ export class Weapon {
   startReload(): boolean {
     if (this.state !== 'ready' || this.ammo >= this.data.magazineSize) return false;
     if (this.cycling) return false; // finish working the action first
+    if (this.reserve <= 0) return false;
     this.autoReloadTimer = -1;
     this.reloadEmpty = this.data.closedBolt ? !this.chambered : this.ammo === 0;
     this.setState('reloading');
@@ -365,7 +369,11 @@ export class Weapon {
     while (this.eventIndex < events.length && t >= events[this.eventIndex].t) {
       const e = events[this.eventIndex++];
       if (e.sound) this.listener.onSound(this, e.sound);
-      if (e.commit) this.ammo = this.data.magazineSize;
+      if (e.commit) {
+        const take = Math.min(this.data.magazineSize - this.ammo, this.reserve);
+        this.ammo += take;
+        this.reserve -= take;
+      }
       if (e.chamber) this.chamberFromMagazine();
     }
     if (t >= 1) {
@@ -390,9 +398,12 @@ export class Weapon {
       if (this.shellPhaseTime >= this.data.reload.shellStart) this.enterShellPhase('insert');
     } else if (this.shellPhase === 'insert') {
       if (this.shellPhaseTime >= this.data.reload.shellInsert) {
-        this.ammo = Math.min(this.data.magazineSize, this.ammo + 1);
+        if (this.reserve > 0) {
+          this.ammo = Math.min(this.data.magazineSize, this.ammo + 1);
+          this.reserve--;
+        }
         this.listener.onSound(this, 'shellInsert');
-        if (this.ammo >= this.data.magazineSize || this.stopShellReload) this.enterShellPhase('end');
+        if (this.ammo >= this.data.magazineSize || this.stopShellReload || this.reserve <= 0) this.enterShellPhase('end');
         else this.enterShellPhase('insert');
       }
     } else {
@@ -429,5 +440,12 @@ export class Weapon {
   refill(): void {
     this.ammo = this.data.magazineSize;
     if (this.data.closedBolt) this.chambered = true;
+    if (this.reserve !== Infinity) this.reserve = this.maxReserve;
+  }
+
+  /** Survival: spare rounds a full resupply gives. */
+  get maxReserve(): number {
+    const m = this.data.magazineSize;
+    return m <= 6 ? m * 8 : m <= 10 ? m * 6 : m * 4;
   }
 }

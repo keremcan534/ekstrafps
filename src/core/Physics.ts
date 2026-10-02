@@ -51,6 +51,8 @@ export interface BulletHit {
   penetration: number;
   /** Fired by an enemy (not the player). */
   hostile: boolean;
+  /** Fired by an AI teammate of the player. */
+  ally: boolean;
 }
 
 export interface HitResult {

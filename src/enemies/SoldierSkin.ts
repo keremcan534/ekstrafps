@@ -22,21 +22,27 @@ export interface SoldierMaterials {
   patch: THREE.MeshStandardMaterial;
 }
 
-let shared: SoldierMaterials | null = null;
+/** Black Division (all black, green NVG) or Vanta Security (navy, white helmet, cyan NVG). */
+export type SoldierPalette = 'bd' | 'vanta';
 
-export function soldierMaterials(): SoldierMaterials {
-  if (shared) return shared;
-  shared = {
-    fabric: new THREE.MeshStandardMaterial({ color: 0x121315, roughness: 0.96, metalness: 0 }),
-    gear: new THREE.MeshStandardMaterial({ color: 0x1a1c1e, roughness: 0.86, metalness: 0.05 }),
-    plate: new THREE.MeshStandardMaterial({ color: 0x17191b, roughness: 0.78, metalness: 0.08 }),
+const shared = new Map<SoldierPalette, SoldierMaterials>();
+
+export function soldierMaterials(palette: SoldierPalette = 'bd'): SoldierMaterials {
+  let m = shared.get(palette);
+  if (m) return m;
+  const vanta = palette === 'vanta';
+  m = {
+    fabric: new THREE.MeshStandardMaterial({ color: vanta ? 0x26354a : 0x121315, roughness: 0.96, metalness: 0 }),
+    gear: new THREE.MeshStandardMaterial({ color: vanta ? 0x39424f : 0x1a1c1e, roughness: 0.86, metalness: 0.05 }),
+    plate: new THREE.MeshStandardMaterial({ color: vanta ? 0x46505e : 0x17191b, roughness: 0.78, metalness: 0.08 }),
     boots: new THREE.MeshStandardMaterial({ color: 0x0b0b0c, roughness: 0.5, metalness: 0.1 }),
-    helmet: new THREE.MeshStandardMaterial({ color: 0x1c1e20, roughness: 0.62, metalness: 0.18 }),
-    tubes: new THREE.MeshStandardMaterial({ color: 0x050605, emissive: 0x2bff7a, emissiveIntensity: 0.9, roughness: 0.1, metalness: 0.6 }),
-    strobe: new THREE.MeshStandardMaterial({ color: 0x100000, emissive: 0xff1a10, emissiveIntensity: 0, roughness: 0.4 }),
+    helmet: new THREE.MeshStandardMaterial({ color: vanta ? 0xd9dee4 : 0x1c1e20, roughness: 0.55, metalness: 0.18 }),
+    tubes: new THREE.MeshStandardMaterial({ color: 0x050605, emissive: vanta ? 0x40d0ff : 0x2bff7a, emissiveIntensity: 0.9, roughness: 0.1, metalness: 0.6 }),
+    strobe: new THREE.MeshStandardMaterial({ color: 0x100000, emissive: vanta ? 0x3aa0ff : 0xff1a10, emissiveIntensity: 0, roughness: 0.4 }),
     patch: new THREE.MeshStandardMaterial({ map: insigniaTexture(), roughness: 0.9 }),
   };
-  return shared;
+  shared.set(palette, m);
+  return m;
 }
 
 /** Unit insignia: a black shield with a single red vertical slash. */
@@ -73,8 +79,8 @@ const THIGH = 0.44;
 const SHIN = 0.46;
 const UPPER = 0.29;
 
-export function soldierSkin(health: number): HumanoidSkin {
-  const m = soldierMaterials();
+export function soldierSkin(health: number, palette: SoldierPalette = 'bd'): HumanoidSkin {
+  const m = soldierMaterials(palette);
   const legs = ([-1, 1] as const).flatMap((side): PartDef[] => [
     {
       name: side === 1 ? 'thighR' : 'thighL', parent: 'pelvis', pos: [0.1 * side, -0.05, 0], side,

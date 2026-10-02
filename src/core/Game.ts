@@ -27,7 +27,11 @@ import { PlayerHealth } from '../player/PlayerHealth';
 import { StatusHUD } from '../ui/StatusHUD';
 import { NavGrid } from '../ai/NavGrid';
 import { BlackDivision } from '../enemies/BlackDivision';
-import type { PlayerTarget } from '../enemies/Soldier';
+import type { PlayerTarget, SoldierDeps } from '../enemies/Soldier';
+import { Ally } from '../enemies/Ally';
+import { Survival } from '../game/Survival';
+import { SurvivalHUD } from '../ui/SurvivalHUD';
+import { MapOverlay, type MapState } from '../ui/MapOverlay';
 
 const FIXED_DT = 1 / 120;
 const MAX_STEPS = 6;
@@ -63,6 +67,11 @@ export class Game {
   status!: StatusHUD;
   nav!: NavGrid;
   squads: BlackDivision[] = [];
+  survival: Survival | null = null;
+  allies: Ally[] = [];
+  private soldierDeps!: SoldierDeps;
+  mapOverlay: MapOverlay | null = null;
+  private mapState: MapState | null = null;
   private target: PlayerTarget = {
     feet: new THREE.Vector3(), head: new THREE.Vector3(), chest: new THREE.Vector3(), velocity: new THREE.Vector3(),
     sprinting: false, crouching: false, alive: true,
@@ -179,6 +188,7 @@ export class Game {
     this.weapons.viewmodel.scene.environment = env;
     this.status = new StatusHUD(ui);
     this.initBlackDivision();
+    if (this.arena instanceof Site9) this.initSurvival(ui, this.arena);
     this.weapons.viewmodel.scene.environmentIntensity = 0.6;
 
     this.tuning = new TuningPanel({
@@ -199,6 +209,8 @@ export class Game {
         onRays: () => this.toggleRays(),
         onLaser: () => this.toggleLaser(),
         onFireMode: () => this.weapons.cycleFireMode(),
+        onUse: () => this.survival?.interact(),
+        onMap: () => this.mapOverlay?.toggle(),
       });
     }
 
@@ -208,7 +220,7 @@ export class Game {
     this.weapons.laser.enabled = !!s.laser;
     this.debug.setVisible(s.debugHud ?? !this.mobile);
     this.helpEl.classList.toggle('show', s.help ?? true);
-    if (s.weapon && s.weapon > 0 && s.weapon < this.weapons.weapons.length) this.weapons.requestSwitch(s.weapon);
+    if (!this.weapons.owned && s.weapon && s.weapon > 0 && s.weapon < this.weapons.weapons.length) this.weapons.requestSwitch(s.weapon);
 
     this.input.onKey = (code) => this.onKey(code);
     this.input.onLockFailed = () =>
@@ -227,18 +239,19 @@ export class Game {
     const [x0, z0, x1, z1] = this.arena.navBounds;
     const blockers = this.arena.robotSpawns.filter((r) => !r.rail && r.position.y < 0.5).map((r) => ({ pos: r.position, radius: 0.45 }));
     this.nav = new NavGrid(this.physics, x0, z0, x1, z1, 0.5, 0.32, blockers);
+    this.soldierDeps = {
+      physics: this.physics,
+      nav: this.nav,
+      projectiles: this.weapons.projectiles,
+      impacts: this.impacts,
+      shells: this.shells,
+      audio: this.audio,
+      scene: this.scene,
+      lowSpec: this.mobile,
+    };
     for (const spawn of this.arena.squads) {
       const squad = new BlackDivision(
-        {
-          physics: this.physics,
-          nav: this.nav,
-          projectiles: this.weapons.projectiles,
-          impacts: this.impacts,
-          shells: this.shells,
-          audio: this.audio,
-          scene: this.scene,
-          lowSpec: this.mobile,
-        },
+        this.soldierDeps,
         spawn.route,
         spawn.spawnIndex,
         () => this.camera.eye,
@@ -248,6 +261,7 @@ export class Game {
     }
     this.weapons.onPlayerShot = (pos, suppressed) => {
       if (feel.enemyAI && !this.health.dead) for (const s of this.squads) s.hearShot(pos, suppressed);
+      this.survival?.hearShot(pos, suppressed);
     };
 
     // The player's capsule takes enemy rounds.
@@ -257,22 +271,11 @@ export class Game {
       owner: this.player,
       allowDecals: false,
       onBulletHit: (hit, out) => {
-        const dealt = this.health.damage(hit.damage);
-        out.damage = dealt;
+        from.copy(hit.point).addScaledVector(hit.direction, -Math.max(2, hit.distance));
+        out.damage = this.hurtPlayer(hit.damage, from);
         out.health = this.health.health;
         out.maxHealth = this.health.max;
         out.killed = this.health.dead;
-        if (dealt <= 0) return;
-        from.copy(hit.point).addScaledVector(hit.direction, -Math.max(2, hit.distance));
-        this.status.damaged(dealt, from);
-        this.audio.play('player.hurt', { volume: 0.6 + dealt / 60 });
-        // Being hit knocks the aim (aim punch) and shakes the view.
-        const side = Math.random() < 0.5 ? -1 : 1;
-        this.player.pitch += 0.012 + Math.random() * 0.012;
-        this.player.yaw += side * (0.008 + Math.random() * 0.01);
-        this.camera.addPunch(0.05, side * 0.03, side * 0.06);
-        this.camera.addShake(0.35);
-        Haptics.pulse(70);
       },
     });
     this.weapons.projectiles.listener = this.camera.eye;
@@ -306,6 +309,75 @@ export class Game {
     }
     const state = this.squads.some((s) => s.state === 'combat') ? 'COMBAT' : this.squads.some((s) => s.state === 'search') ? 'SEARCH' : 'PATROL';
     return `BLACK DIVISION ${alive}/${total} · ${state}`;
+  }
+
+  /** Damage the player with all the feedback (vignette, direction, aim punch, sound). */
+  hurtPlayer(damage: number, from: THREE.Vector3): number {
+    const dealt = this.health.damage(damage);
+    if (dealt <= 0) return 0;
+    this.status.damaged(dealt, from);
+    this.audio.play('player.hurt', { volume: 0.6 + dealt / 60 });
+    // Being hit knocks the aim (aim punch) and shakes the view.
+    const side = Math.random() < 0.5 ? -1 : 1;
+    this.player.pitch += 0.012 + Math.random() * 0.012;
+    this.player.yaw += side * (0.008 + Math.random() * 0.01);
+    this.camera.addPunch(0.05, side * 0.03, side * 0.06);
+    this.camera.addShake(0.35);
+    Haptics.pulse(70);
+    this.survival?.onPlayerDamaged(dealt);
+    return dealt;
+  }
+
+  /** Site-9: Zombies economy + Left 4 Dead director, map + minimap. */
+  private initSurvival(ui: HTMLElement, map: Site9): void {
+    const hud = new SurvivalHUD(ui, this.mobile);
+    this.survival = new Survival({
+      map,
+      physics: this.physics,
+      scene: this.scene,
+      nav: this.nav,
+      weapons: this.weapons,
+      player: this.player,
+      health: this.health,
+      audio: this.audio,
+      hud,
+      mobile: this.mobile,
+      hurtPlayer: (d, from) => this.hurtPlayer(d, from),
+      hireAlly: (at) => this.hireAlly(at),
+    });
+    this.health.autoRespawn = false;
+    const onDeath = this.health.onDeath;
+    this.health.onDeath = () => {
+      onDeath?.();
+      this.survival?.onPlayerDeath();
+    };
+    this.mapOverlay = new MapOverlay(ui, {
+      rooms: map.rooms, walls: map.layout.wallRuns, doors: map.doors, wallBuys: map.wallBuys, terminals: map.terminals, bounds: map.layout.bounds,
+    });
+    const survival = this.survival;
+    this.mapState = {
+      player: { x: 0, z: 0, yaw: 0 },
+      unlocked: survival.unlocked,
+      isOpen: (d) => survival.isDoorOpen(d),
+      robots: [],
+      allies: [],
+      enemies: [],
+    };
+  }
+
+  /** Vanta contractor from the security terminal (max 3 alive). */
+  private hireAlly(at: THREE.Vector3): boolean {
+    this.allies = this.allies.filter((a) => a.alive);
+    if (this.allies.length >= 3) {
+      this.hud.toast('Squad full (3 contractors)');
+      return false;
+    }
+    const ally = new Ally(this.soldierDeps, this.allies.length);
+    ally.spawn(at, this.player.yaw);
+    this.allies.push(ally);
+    this.audio.play('bd.moving', { position: at, pitch: 1.15 });
+    this.hud.toast('Vanta contractor hired');
+    return true;
   }
 
   /** Called from the start overlay click/tap/Enter (a user gesture). */
@@ -386,7 +458,14 @@ export class Game {
         this.hud.toast('Robots reset');
         break;
       case 'KeyM':
+        if (this.mapOverlay) this.mapOverlay.toggle();
+        else this.gotoStation(this.stationIndex + 1);
+        break;
+      case 'F2':
         this.gotoStation(this.stationIndex + 1);
+        break;
+      case 'KeyF':
+        this.survival?.interact();
         break;
       case 'KeyY':
         for (const s of this.squads) s.spawn();
@@ -509,7 +588,7 @@ export class Game {
     this.weapons.updateFire(dt, input);
 
     // --- World ---
-    this.arena.update(dt);
+    this.arena.update(dt, this.player.feet);
     for (const r of this.robots) r.update(dt);
     const t = this.target;
     t.feet.copy(this.player.feet);
@@ -520,6 +599,25 @@ export class Game {
     t.crouching = this.player.crouching;
     t.alive = !this.health.dead;
     for (const s of this.squads) s.update(dt, t, feel.enemyAI);
+    if (this.survival) {
+      const mates = this.allies.map((a) => a.soldier);
+      for (const a of this.allies) a.update(dt, this.player, this.survival.robots, mates);
+      this.survival.extraTargets = this.allies.filter((a) => a.alive).map((a) => a.melee);
+    }
+    this.survival?.update(dt);
+    if (this.mapOverlay && this.mapState && this.survival) {
+      const ms = this.mapState;
+      ms.player.x = this.player.feet.x;
+      ms.player.z = this.player.feet.z;
+      ms.player.yaw = this.player.yaw;
+      ms.robots.length = 0;
+      for (const r of this.survival.robots) if (r.aggro) ms.robots.push({ x: r.pos.x, z: r.pos.z });
+      ms.enemies.length = 0;
+      for (const sq of this.squads) for (const s of sq.soldiers) if (s.alive) ms.enemies.push({ x: s.pos.x, z: s.pos.z });
+      ms.allies.length = 0;
+      for (const a of this.allies) if (a.alive) ms.allies.push({ x: a.soldier.pos.x, z: a.soldier.pos.z });
+      this.mapOverlay.update(realDt, ms);
+    }
     this.health.update(dt);
     this.shells.update(dt);
     this.impacts.update(dt);
@@ -529,13 +627,13 @@ export class Game {
     // --- UI ---
     const cw = this.weapons.current;
     const reload = cw.state === 'reloading' ? (cw.data.reload.kind === 'magazine' ? cw.stateProgress : cw.ammo / cw.data.magazineSize) : -1;
-    this.hud.updateAmmo(cw.data.name, cw.ammo, cw.chambered && cw.data.closedBolt, cw.data.magazineSize, `${cw.fireMode.toUpperCase()} · ${this.weapons.ammo.caliber}`, reload);
+    this.hud.updateAmmo(cw.data.name, cw.ammo, cw.chambered && cw.data.closedBolt, cw.reserve === Infinity ? cw.data.magazineSize : cw.reserve, `${cw.fireMode.toUpperCase()} · ${this.weapons.ammo.caliber}`, reload, cw.data.magazineSize);
     this.hud.updateCrosshair(this.weapons.handling.dispersionDeg * 0.5, this.camera.currentFov, this.weapons.adsAmount, cw.state !== 'ready' || this.player.sprinting);
     this.hud.update(realDt, this.camera.camera);
     this.status.update(realDt, this.health.health, this.health.max, this.camera.camera);
     this.status.setSquadLine(this.squadStatus());
     this.tuning.syncWeapon();
-    this.touch?.sync(input.adsHeld, this.weapons.currentIndex);
+    this.touch?.sync(input.adsHeld, this.weapons.currentIndex, this.weapons.owned);
 
     // --- Render: world, then the weapon on top, then debug lines over everything ---
     this.renderer.info.reset();

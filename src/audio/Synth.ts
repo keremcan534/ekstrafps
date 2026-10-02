@@ -368,6 +368,23 @@ export const RECIPES: Record<string, Recipe> = {
     burst(c, { dur: 0.5, freq: 400, freqEnd: 60, type: 'lowpass', gain: 1.2 });
     tone(c, { t: 0.05, dur: 2, f0: 2900, gain: 0.07, attack: 0.1 });
   } },
+  lift_ding: { dur: 1.2, render: (c) => {
+    tone(c, { dur: 0.9, f0: 1318, gain: 0.35 });
+    tone(c, { t: 0.32, dur: 0.9, f0: 1046, gain: 0.35 });
+    tone(c, { dur: 0.9, f0: 2636, gain: 0.05 });
+  } },
+  lift_doors: { dur: 0.9, render: (c) => {
+    burst(c, { dur: 0.7, attack: 0.08, freq: 500, type: 'lowpass', gain: 0.45 });
+    metal(c, 0.65, 380, 0.15, 0.25, [1, 2.3]);
+  } },
+  robot_wake: { dur: 0.9, drive: 1.3, render: (c) => {
+    tone(c, { dur: 0.6, f0: 120, f1: 620, sweep: 0.5, type: 'sawtooth', gain: 0.12 });
+    tone(c, { t: 0.1, dur: 0.5, f0: 240, f1: 1240, sweep: 0.45, type: 'square', gain: 0.05 });
+    metal(c, 0.45, 900, 0.2, 0.2);
+  } },
+  horde_alarm: { dur: 2.2, render: (c) => {
+    for (let i = 0; i < 3; i++) tone(c, { t: i * 0.7, dur: 0.6, f0: 440, f1: 880, sweep: 0.5, type: 'sawtooth', gain: 0.09 });
+  } },
   radio_click: { dur: 0.25, render: (c) => {
     burst(c, { dur: 0.012, freq: 3000, q: 2, gain: 0.8 });
     burst(c, { t: 0.01, dur: 0.16, attack: 0.005, freq: 2200, q: 0.7, gain: 0.18 });

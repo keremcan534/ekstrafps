@@ -13,7 +13,7 @@ import type { ImpactSystem } from '../fx/ImpactSystem';
 import type { Shells } from '../fx/Shells';
 import type { AudioSystem } from '../audio/AudioSystem';
 import type { NavGrid } from '../ai/NavGrid';
-import { soldierMaterials, soldierSkin } from './SoldierSkin';
+import { soldierMaterials, soldierSkin, type SoldierMaterials } from './SoldierSkin';
 
 /** What the AI knows about the player, refreshed by the squad every frame. */
 export interface PlayerTarget {
@@ -148,18 +148,23 @@ export class Soldier {
   private muzzle = v3();
   private dir = v3();
 
+  private mats: SoldierMaterials;
+
   constructor(
     private deps: SoldierDeps,
     index: number,
     private hooks: SoldierHooks,
+    /** 'ally' = Vanta Security on the player's side (blue kit, bullets don't hurt the player's team). */
+    readonly team: 'enemy' | 'ally' = 'enemy',
   ) {
     this.index = index;
+    this.mats = soldierMaterials(team === 'ally' ? 'vanta' : 'bd');
     this.voicePitch = 0.94 + index * 0.035;
     this.errNoise = new Noise1D(index * 17 + 3);
     this.errNoise2 = new Noise1D(index * 29 + 11);
     this.ammoData = getAmmo('762x39_ps');
     this.flash = new MuzzleFlash(2.6, !deps.lowSpec);
-    this.body = new Humanoid(deps.physics, deps.scene, soldierSkin(160), {
+    this.body = new Humanoid(deps.physics, deps.scene, soldierSkin(team === 'ally' ? 220 : 160, team === 'ally' ? 'vanta' : 'bd'), {
       onDamage: (info) => this.onDamaged(info),
       onDeath: (info) => this.onKilled(info),
       onThud: (at, s) => hooks.onThud(at, s),
@@ -254,7 +259,7 @@ export class Soldier {
     b.setRotation(this.q, true);
     b.setLinvel({ x: info.hit.direction.x * 1.5 + this.vel.x, y: 1.2, z: info.hit.direction.z * 1.5 + this.vel.z }, true);
     b.setAngvel({ x: (Math.random() - 0.5) * 6, y: (Math.random() - 0.5) * 6, z: (Math.random() - 0.5) * 6 }, true);
-    soldierMaterials().strobe.emissiveIntensity = 0;
+    this.mats.strobe.emissiveIntensity = 0;
     this.hooks.onKilled(this, info);
   }
 
@@ -349,7 +354,7 @@ export class Soldier {
 
     // IR strobe on the helmet blinks (shared material: whole squad blinks together).
     this.strobe = (this.time * 1.3) % 1;
-    soldierMaterials().strobe.emissiveIntensity = this.strobe < 0.05 ? 6 : 0;
+    this.mats.strobe.emissiveIntensity = this.strobe < 0.05 ? 6 : 0;
 
     // Animation layer.
     const p = this.pose;
@@ -556,7 +561,7 @@ export class Soldier {
     this.nextShot = this.time + FIRE_INTERVAL * (0.95 + Math.random() * 0.1);
     if (this.burstLeft <= 0) this.burstPause = this.time + 0.6 + Math.random() * 0.9;
     const tracer = this.ammo % 4 === 0;
-    this.deps.projectiles.fire(this.muzzle, this.dir, this.ammoData.muzzleVelocity * (0.985 + Math.random() * 0.03), this.ammoData, 0, tracer, true, this, true);
+    this.deps.projectiles.fire(this.muzzle, this.dir, this.ammoData.muzzleVelocity * (0.985 + Math.random() * 0.03), this.ammoData, 0, tracer, true, this, this.team === 'enemy', this.team === 'ally');
     this.flash.trigger(1.3);
     this.deps.impacts.muzzleBlast(this.muzzle, this.dir, 1.1);
     this.deps.impacts.muzzleSmoke(this.muzzle, this.dir, 0.6);

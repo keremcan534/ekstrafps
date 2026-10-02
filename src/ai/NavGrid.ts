@@ -24,6 +24,8 @@ export class NavGrid {
   private search = 0;
   private heap: number[] = [];
   private heapF: number[] = [];
+  private physicsRef: Physics;
+  private agentRadius: number;
 
   constructor(
     physics: Physics,
@@ -35,6 +37,8 @@ export class NavGrid {
     agentRadius = 0.32,
     extraBlockers: { pos: THREE.Vector3; radius: number }[] = [],
   ) {
+    this.physicsRef = physics;
+    this.agentRadius = agentRadius;
     this.cols = Math.ceil((maxX - minX) / cell);
     this.rows = Math.ceil((maxZ - minZ) / cell);
     const n = this.cols * this.rows;
@@ -92,6 +96,24 @@ export class NavGrid {
       }
     }
     for (let i = 0; i < n; i++) if (this.cost[i] !== BLOCKED) this.cost[i] = near[i];
+  }
+
+  /** Re-probe cells in a rectangle (a door opened / an obstacle moved). Call after a physics step. */
+  refreshArea(x0: number, z0: number, x1: number, z1: number): void {
+    const world = this.physicsRef.world;
+    const solid = groups(G.RAY, G.WORLD);
+    const body = new RAPIER.Cuboid(this.agentRadius, 0.62, this.agentRadius);
+    const rot = { x: 0, y: 0, z: 0, w: 1 };
+    const [c0, r0] = this.cellOf(x0, z0);
+    const [c1, r1] = this.cellOf(x1, z1);
+    for (let r = Math.max(0, r0); r <= Math.min(this.rows - 1, r1); r++) {
+      for (let c = Math.max(0, c0); c <= Math.min(this.cols - 1, c1); c++) {
+        const x = this.minX + (c + 0.5) * this.cell;
+        const z = this.minZ + (r + 0.5) * this.cell;
+        const blocked = !!world.intersectionWithShape({ x, y: 1.0, z }, rot, body, undefined, solid);
+        this.cost[r * this.cols + c] = blocked ? BLOCKED : 0;
+      }
+    }
   }
 
   private inside(c: number, r: number): boolean {

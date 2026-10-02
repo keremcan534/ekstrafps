@@ -9,6 +9,8 @@ export interface TouchActions {
   /** Toggle the test laser; returns the new state. */
   onLaser(): boolean;
   onFireMode(): void;
+  onUse?(): void;
+  onMap?(): void;
 }
 
 const DEADZONE = 0.12;
@@ -62,9 +64,12 @@ export class TouchControls {
     this.holdButton('btn btn-lean-l', 'LEAN', (down) => (input.touchLean = down ? -1 : 0));
     this.holdButton('btn btn-lean-r', 'LEAN', (down) => (input.touchLean = down ? 1 : 0));
     const slots = el('slots', this.root);
+    this.names = weaponNames;
     weaponNames.forEach((name, i) => {
       this.slotBtns.push(this.button('btn btn-slot', name, () => (input.slotPressed = i), slots));
     });
+    if (actions.onUse) this.button('btn btn-use', 'USE', actions.onUse);
+    if (actions.onMap) this.button('btn btn-small btn-map', 'MAP', actions.onMap);
     this.button('btn btn-small btn-tune', '⚙', actions.onTune);
     this.button('btn btn-small btn-debug', 'DBG', actions.onDebug);
     const rays = this.button('btn btn-small btn-rays', 'RAY', () => rays.classList.toggle('on', actions.onRays()));
@@ -76,10 +81,26 @@ export class TouchControls {
   }
 
   /** Keep the ADS / slot highlights in sync with gameplay (e.g. ADS dropped on reload). */
-  sync(adsActive: boolean, slot: number): void {
+  sync(adsActive: boolean, slot: number, owned: number[] | null = null): void {
     this.adsBtn.classList.toggle('on', adsActive);
-    this.slotBtns.forEach((b, i) => b.classList.toggle('on', i === slot));
+    // Survival: only the owned weapons are shown, as slots 1 and 2.
+    const key = owned ? owned.join(',') : 'all';
+    if (key !== this.ownedKey) {
+      this.ownedKey = key;
+      this.slotBtns.forEach((b, i) => {
+        if (!owned) {
+          b.style.display = '';
+          b.textContent = this.names[i];
+          return;
+        }
+        b.style.display = i < owned.length ? '' : 'none';
+        if (i < owned.length) b.textContent = this.names[owned[i]];
+      });
+    }
+    this.slotBtns.forEach((b, i) => b.classList.toggle('on', owned ? owned[i] === slot : i === slot));
   }
+  private ownedKey = '';
+  private names: string[] = [];
 
   private button(cls: string, label: string, onPress: () => void, parent: HTMLElement = this.root): HTMLDivElement {
     const b = el(cls, parent);

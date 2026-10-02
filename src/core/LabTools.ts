@@ -22,7 +22,8 @@ T  inspect weapon (mag / chamber)
 G  aim rays + probes + bullet paths
 L  laser · J  debug crosshair · N  dmg numbers
 Z  slow motion · I  infinite ammo
-K  reset robots · M  next test station
+K  reset robots · M  map (Site-9) / stations · F2  stations
+F  use: buy door / weapon / hire (Site-9)
 ── black division ──
 Y  respawn squad · O  god mode · U  AI on/off
 H  debug HUD · Tab  tuning panel · F1  help`;

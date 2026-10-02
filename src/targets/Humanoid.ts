@@ -97,10 +97,15 @@ export interface HumanoidPose {
   gripR: THREE.Object3D | null;
   /** Idle breathing / look-around (dummies). */
   idle: boolean;
+  /** Free-arm pitch per arm (negative = forward/up), elbow bend. Ignored with grips. */
+  armL: number;
+  armR: number;
+  elbows: number;
 }
 
 export const defaultPose = (): HumanoidPose => ({
   crouch: 0, stridePhase: 0, strideAmount: 0, strideSide: 0, spineX: 0, spineY: 0, headX: 0, headY: 0, gripL: null, gripR: null, idle: true,
+  armL: 0, armR: 0, elbows: 0,
 });
 
 const MAX_TILT = 24 * DEG;
@@ -155,6 +160,8 @@ export class Humanoid {
   private knee = [new Spring(90, 10), new Spring(90, 10)];
   readonly rise = new Spring(130, 11);
 
+  /** On the player's side: rounds from the player and allies pass harmlessly. */
+  friendly = false;
   /** Accumulated stagger (0..2): bigger reactions, unsteady sway. */
   stagger = 0;
   private kneelTimer = [0, 0];
@@ -258,6 +265,7 @@ export class Humanoid {
 
   private onHit(hit: BulletHit, part: Part, col: ColliderDef, surface: SurfaceType, out: HitResult): void {
     if (!this.alive) return;
+    if (this.friendly && !hit.hostile) return;
     const zone = col.zone;
     const head = zone === 'head';
     let mult = head ? (this.skin.headMultiplier ?? hit.critMultiplier) : this.skin.zoneDamage[zone];
@@ -293,6 +301,34 @@ export class Humanoid {
       return;
     }
     this.react(hit, part, zone, dmg);
+    this.hooks.onDamage?.(info);
+  }
+
+  /** Melee blow (rogue robot swing): body damage + a hard shove. */
+  meleeHit(damage: number, from: THREE.Vector3): void {
+    if (!this.alive) return;
+    const torso = this.part('torso');
+    torso.group.getWorldPosition(this.tmp);
+    const dir = this.tmp2.copy(this.tmp).sub(from).setY(0).normalize();
+    const hit: BulletHit = {
+      point: this.tmp.clone(), normal: dir.clone().negate(), direction: dir.clone(), distance: 1, damage, impulse: 1.8,
+      critMultiplier: 1, weaponId: 'melee', penetration: 0, hostile: true, ally: false,
+    };
+    this.health.applyDamage(damage);
+    const info = this.info;
+    info.hit = hit;
+    info.part = torso;
+    info.zone = 'thorax';
+    info.damage = damage;
+    info.blocked = false;
+    info.surface = 'flesh';
+    info.killed = !this.alive;
+    if (!this.alive) {
+      this.die(hit, torso, 'thorax');
+      this.hooks.onDeath?.(info);
+      return;
+    }
+    this.react(hit, torso, 'thorax', damage);
     this.hooks.onDamage?.(info);
   }
 
@@ -464,6 +500,28 @@ export class Humanoid {
     this.knees.length = 0;
   }
 
+  /**
+   * Pooling: an inactive body is invisible and has no colliders (no hits, no
+   * blocking). Reactivate with reset().
+   */
+  setActive(active: boolean): void {
+    this.root.visible = active;
+    for (const part of this.parts) {
+      for (const c of part.colliders) c.setEnabled(active);
+      if (!active) {
+        part.debris.visible = false;
+        part.body.setEnabled(false);
+      } else part.body.setEnabled(true);
+    }
+    if (!active) this.removeJoints();
+  }
+
+  /** Phones: many bodies in the shadow pass get expensive. */
+  setCastShadow(cast: boolean): void {
+    this.root.traverse((o) => (o.castShadow = cast));
+    for (const p of this.parts) p.debris.traverse((o) => (o.castShadow = cast));
+  }
+
   /** Back to a living, standing body at the root's current transform. */
   reset(fromFloor: boolean): void {
     this.removeJoints();
@@ -596,8 +654,8 @@ export class Humanoid {
         upper.quaternion.multiply(this.qa.setFromEuler(this.euler.set(ax * 0.6, 0, az * 0.6)));
         fore.quaternion.multiply(this.qa.setFromEuler(this.euler.set(-Math.max(0, el) * 0.5, 0, 0)));
       } else {
-        upper.rotation.set(ax, 0, az + side * (0.06 + hurt * 0.04));
-        fore.rotation.set(-(0.15 + el), 0, 0);
+        upper.rotation.set(ax + (i === 1 ? pose.armR : pose.armL), 0, az + side * (0.06 + hurt * 0.04));
+        fore.rotation.set(-(0.15 + el + pose.elbows), 0, 0);
       }
     }
   }

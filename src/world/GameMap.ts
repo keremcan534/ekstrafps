@@ -30,5 +30,5 @@ export interface GameMap {
   readonly stations: Station[];
   /** Scene background / fog colour. */
   readonly skyColor: number;
-  update(dt: number): void;
+  update(dt: number, focus?: THREE.Vector3): void;
 }

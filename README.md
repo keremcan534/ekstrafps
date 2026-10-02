@@ -136,22 +136,40 @@ Pick a map on the start screen. A map can also be opened directly with `?map=sit
 
 The graybox test range plus the Black Division container yard.
 
-### Site-9
+### Site-9 (Survival)
 
-Vanta Dynamics' single-level underground robotics facility (`world/Site9.ts`, about 112 × 84 m).
+Vanta Dynamics' research campus, single level, about 220 × 170 m.
+
+**Layout.** 16 rooms are generated from rectangles by `world/LayoutBuilder.ts`. It builds walls where rooms meet, door openings, per-room materials, contact shadows along wall bases, and light pools under lamps.
 
 | Area | What's there |
 | --- | --- |
-| Centre | Assembly hall, 9 m tall. Conveyor lines with dormant robots and gantries. A raised glass control booth reached by stairs. |
-| Around the hall | A ring corridor. |
-| North | Lift lobby (spawn), security checkpoint, canteen, Black Division barracks. |
-| East | R&D offices, server hall, clean lab, director's office. |
-| South | Robot test cells, generator room. |
-| West | Garage, warehouse. |
+| Arrival Lobby | The start, behind the lifts. |
+| Cafeteria and Security | The two cheap side routes. |
+| Atrium | Glass roof and the ATLAS statue. The direct route, and more expensive. |
+| Further in | Garden court, medical bay, assembly hall, warehouse, hangar with a VTOL, R&D labs, clean room, prototype lab, server hall with the data core, cooling plant, barracks, power plant. |
 
-Two Black Division squads patrol the map: one walks the ring, the other sweeps the wings.
+**Economy (Zombies).**
+- Points: 10 per hit, 60 per kill, 100 per head kill.
+- 29 links between rooms: 26 roll-up shutters ($750–$2000), the rest open archways.
+- Wall weapons: buying one you own refills its ammo for half price.
+- Two weapon slots, with limited spare ammo.
+- Vanta contractors cost $1500 at the security terminal (max 3). They follow you and fight; robots attack them too.
 
-**M** cycles through the map's stations.
+**Pacing (Left 4 Dead director).**
+- Newly opened zones get a few powered-down robots. They wake when they see you, hear gunfire, get shot, or a neighbour wakes.
+- Mobs arrive from service lifts (chime, doors open), charging bays or hatches. Bays and hatches only spawn out of sight.
+- Intensity runs build-up → peak → fade → relax.
+- Dynamic difficulty scales mob size and toughness from your health and the damage you've taken recently.
+- Threat grows with time and with how many zones are open.
+- Death ends the run.
+
+**Map.** **M** opens the full map: zones, shutter prices, weapons, terminal, you, allies, robots. A rotating minimap sits in the corner. **F** (or **USE** on touch) buys or uses whatever you are looking at.
+
+**Performance.**
+- Room geometry is merged per room, so whole rooms are culled.
+- The shadow camera follows the player.
+- On phones: no point lights, no robot shadows, smaller pools.
 
 ## Black Division
 
@@ -238,15 +256,16 @@ All of these are editable live in the tuning panel. **Save to source** writes th
 
 ```
 core/      Game loop (120 Hz fixed sim), Input, Physics (Rapier), Spring, Noise, LabTools, Haptics
+game/      Survival (economy, doors, wall weapons, director, dynamic difficulty)
 player/    PlayerController (kinematic character + lean), PlayerCamera (layered camera), PlayerHealth
 weapons/   WeaponData, AmmoData, Handling, Weapon (mechanism), WeaponController (handling loop),
            Viewmodel (physical weapon pose), RecoilSystem (view recoil), Ballistics (projectiles),
            WeaponAnimator (procedural reloads, bolt cycling), WeaponModels (10 procedural guns, textured)
 fx/        Particles, ImpactSystem, Decals, Shells, MuzzleFlash, Laser, DebugDraw, Textures
 targets/   Humanoid (shared body: zoned hitboxes, armor, reactions, ragdoll), RobotTarget, Damageable
-enemies/   Black Division: SoldierSkin, Soldier (perception, aim, fire, movement), BlackDivision (squad brain)
+enemies/   SoldierSkin, Soldier, BlackDivision (squad brain), RogueRobot (wanderer/mob melee robot), Ally (hired contractor)
 ai/        NavGrid (baked walkable grid, A* + path smoothing)
-world/     Arena, PhysicsProps, MeshBuilder
+world/     GameMap, Arena (Weapon Lab), Site9 + LayoutBuilder, PhysicsProps, MeshBuilder
 audio/     AudioSystem, SoundBank (event -> layers), Synth (placeholder sounds)
-ui/        HUD, StatusHUD (health, hit indicators, radio subtitles, death), DebugHUD, TuningPanel, TouchControls
+ui/        HUD, StatusHUD, SurvivalHUD, MapOverlay (map + minimap), DebugHUD, TuningPanel, TouchControls
 ```
