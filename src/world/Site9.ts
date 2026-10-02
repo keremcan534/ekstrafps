@@ -4,7 +4,7 @@ import { PhysicsProps } from './PhysicsProps';
 import { corrugatedTexture, glowTexture, grimeRoughness, gridTexture, woodTexture } from '../fx/Textures';
 import type { RobotOptions } from '../targets/RobotTarget';
 import type { GameMap, SquadSpawn, Station } from './GameMap';
-import { LayoutBuilder, type BuiltRoom, type DoorSlot, type LinkDef, type RoomDef, type RoomStyle } from './LayoutBuilder';
+import { LayoutBuilder, type BuiltRoom, type DoorSlot, type LinkDef, type RoomDef, type RoomStyle, type Rect } from './LayoutBuilder';
 import type { MeshBuilder } from './MeshBuilder';
 
 type V3 = [number, number, number];
@@ -136,9 +136,62 @@ const LINKS: LinkDef[] = [
   buy('cooling', 'power', -76, 750),
 ];
 
+// ---------------------------------------------------------------- scale
+/**
+ * Everything above (and every coordinate in the room builders below) is the
+ * design layout. The built map is MAP_SCALE of it in X/Z: rooms shrink to
+ * whole-metre rects, and each design point is mapped linearly inside its own
+ * room, so things on a wall stay on that wall and the middle stays the middle.
+ * Small props keep their real size; only long runs (≥ 4 m) shrink with the room.
+ */
+export const MAP_SCALE = 0.8;
+const DESIGN = new Map<string, Rect>(ROOMS.map((r) => [r.id, [...r.rect] as Rect]));
+for (const r of ROOMS) r.rect = r.rect.map((v) => Math.round(v * MAP_SCALE)) as Rect;
+const ROOM_OF = new Map(ROOMS.map((r) => [r.id, r]));
+function axisMap(id: string, a: 0 | 1, v: number): number {
+  const d = DESIGN.get(id)!;
+  const w = ROOM_OF.get(id)!.rect;
+  const i0 = a === 0 ? 0 : 1;
+  const i1 = a === 0 ? 2 : 3;
+  return w[i0] + ((v - d[i0]) / (d[i1] - d[i0])) * (w[i1] - w[i0]);
+}
+/** World / design scale of a room along X (0) or Z (1). */
+function kOf(id: string, a: 0 | 1): number {
+  const d = DESIGN.get(id)!;
+  const w = ROOM_OF.get(id)!.rect;
+  return a === 0 ? (w[2] - w[0]) / (d[2] - d[0]) : (w[3] - w[1]) / (d[3] - d[1]);
+}
+/** Design point in room `id` → world (x, z). */
+function W(id: string, x: number, z: number): [number, number] {
+  return [axisMap(id, 0, x), axisMap(id, 1, z)];
+}
+/** Design point → world, using whichever room it is in (or nearest). */
+function Wp(x: number, z: number): [number, number] {
+  let best = ROOMS[0].id;
+  let bd = Infinity;
+  for (const [id, r] of DESIGN) {
+    const dx = Math.max(r[0] - x, 0, x - r[2]);
+    const dz = Math.max(r[1] - z, 0, z - r[3]);
+    const d = dx * dx + dz * dz;
+    if (d < bd) {
+      bd = d;
+      best = id;
+    }
+  }
+  return W(best, x, z);
+}
+for (const l of LINKS) {
+  const da = DESIGN.get(l.a)!;
+  const db = DESIGN.get(l.b)!;
+  const vertical = da[2] === db[0] || da[0] === db[2];
+  const ax = vertical ? 1 : 0;
+  l.at = Math.round((axisMap(l.a, ax, l.at) + axisMap(l.b, ax, l.at)) / 2);
+}
+for (const st of Object.values(TEAM_STARTS)) st.pos = W(st.room, st.pos[0], st.pos[1]);
+
 /**
  * Site-9 (Survival map): Vanta Dynamics' research campus, one level,
- * ~220 × 170 m. Bright and airy on purpose: a glass-roofed atrium with a giant
+ * ~176 × 136 m (MAP_SCALE of the design layout). Bright and airy on purpose: a glass-roofed atrium with a giant
  * robot statue, an open-air garden court, warm cafeteria, clean labs, a hangar
  * with a VTOL, a cathedral-sized assembly hall where rogue robots are built.
  *
@@ -151,7 +204,7 @@ export class Site9 implements GameMap {
   readonly mode = 'survival' as const;
   readonly group = new THREE.Group();
   readonly props: PhysicsProps;
-  readonly spawn = new THREE.Vector3(0, 0, 78);
+  readonly spawn = new THREE.Vector3(...((p) => [p[0], 0, p[1]])(W('lobby', 0, 78)) as V3);
   readonly spawnYaw = 0;
   readonly robotSpawns: RobotOptions[] = [];
   readonly squads: SquadSpawn[] = [];
@@ -160,14 +213,14 @@ export class Site9 implements GameMap {
   readonly skyColor = 0xa9bccd;
   readonly exposure = 0.88;
   readonly stations: Station[] = [
-    { name: 'Arrival Lobby (start)', pos: [0, 0, 78], yaw: 0 },
-    { name: 'Atrium', pos: [0, 0, 40], yaw: 0 },
-    { name: 'Garden Court', pos: [-53, 0, 45], yaw: 0 },
-    { name: 'Assembly Hall', pos: [-60, 0, 0], yaw: Math.PI / 2 },
-    { name: 'Hangar', pos: [-80, 0, 70], yaw: Math.PI / 2 },
-    { name: 'Server Hall', pos: [45, 0, 0], yaw: -Math.PI / 2 },
-    { name: 'Barracks', pos: [70, 0, 75], yaw: -Math.PI / 2 },
-    { name: 'Power Plant', pos: [0, 0, -70], yaw: 0 },
+    { name: 'Arrival Lobby (start)', pos: ((p) => [p[0], 0, p[1]])(Wp(0, 78)) as V3, yaw: 0 },
+    { name: 'Atrium', pos: ((p) => [p[0], 0, p[1]])(Wp(0, 40)) as V3, yaw: 0 },
+    { name: 'Garden Court', pos: ((p) => [p[0], 0, p[1]])(Wp(-53, 45)) as V3, yaw: 0 },
+    { name: 'Assembly Hall', pos: ((p) => [p[0], 0, p[1]])(Wp(-60, 0)) as V3, yaw: Math.PI / 2 },
+    { name: 'Hangar', pos: ((p) => [p[0], 0, p[1]])(Wp(-80, 70)) as V3, yaw: Math.PI / 2 },
+    { name: 'Server Hall', pos: ((p) => [p[0], 0, p[1]])(Wp(45, 0)) as V3, yaw: -Math.PI / 2 },
+    { name: 'Barracks', pos: ((p) => [p[0], 0, p[1]])(Wp(70, 75)) as V3, yaw: -Math.PI / 2 },
+    { name: 'Power Plant', pos: ((p) => [p[0], 0, p[1]])(Wp(0, -70)) as V3, yaw: 0 },
   ];
   readonly layout: LayoutBuilder;
   readonly doors: DoorSlot[];
@@ -311,7 +364,8 @@ export class Site9 implements GameMap {
     if (!mobile) {
       const point = (color: number, intensity: number, dist: number, pos: V3) => {
         const l = new THREE.PointLight(color, intensity, dist, 2);
-        l.position.set(...pos);
+        const [wx, wz] = Wp(pos[0], pos[2]);
+        l.position.set(wx, pos[1], wz);
         this.group.add(l);
         this.accents.push([l, intensity]);
       };
@@ -336,8 +390,36 @@ export class Site9 implements GameMap {
 
   // ---------------------------------------------------------------- prop kit
 
-  /** Visual box in a room + optional collider. */
+  /** Design-space size: long runs (≥ 4 m) shrink with the room, props keep their size. */
+  private sz(room: string, size: V3): V3 {
+    return [size[0] >= 4 ? size[0] * kOf(room, 0) : size[0], size[1], size[2] >= 4 ? size[2] * kOf(room, 1) : size[2]];
+  }
+
+  /** Design-space position in `room` → world. */
+  private at(room: string, pos: V3): V3 {
+    const [x, z] = W(room, pos[0], pos[2]);
+    return [x, pos[1], z];
+  }
+
+  /** Box at design coordinates (room builders). */
   private box(room: string, mat: string, size: V3, pos: V3, solid = true, rot?: V3, receiver?: HitReceiver): void {
+    this.boxW(room, mat, this.sz(room, size), this.at(room, pos), solid, rot, receiver);
+  }
+
+  /** Cylinder at design coordinates; big radii and horizontal lengths shrink with the room. */
+  private cyl(room: string, mat: string, r: number, h: number, pos: V3, solid = true, rot: V3 = [0, 0, 0], segments = 16): void {
+    const k = Math.min(kOf(room, 0), kOf(room, 1));
+    const horizontal = Math.abs(rot[0]) > 0.1 || Math.abs(rot[2]) > 0.1;
+    this.cylW(room, mat, r >= 3 ? r * k : r, horizontal && h >= 4 ? h * k : h, this.at(room, pos), solid, rot, segments);
+  }
+
+  /** Glass pane (no frame) at design coordinates. */
+  private clearBox(room: string, size: V3, pos: V3): void {
+    this.clear(room).box(this.mats.glass, this.sz(room, size), this.at(room, pos));
+  }
+
+  /** Visual box in a room + optional collider (world coordinates). */
+  private boxW(room: string, mat: string, size: V3, pos: V3, solid = true, rot?: V3, receiver?: HitReceiver): void {
     this.room(room).b.box(this.mats[mat], size, pos, rot);
     if (solid) {
       const q = rot ? new THREE.Quaternion().setFromEuler(new THREE.Euler(...rot)) : undefined;
@@ -345,8 +427,8 @@ export class Site9 implements GameMap {
     }
   }
 
-  /** Cylinder (Y axis unless rotated) + an approximate box collider. */
-  private cyl(room: string, mat: string, r: number, h: number, pos: V3, solid = true, rot: V3 = [0, 0, 0], segments = 16): void {
+  /** Cylinder (Y axis unless rotated) + an approximate box collider (world coordinates). */
+  private cylW(room: string, mat: string, r: number, h: number, pos: V3, solid = true, rot: V3 = [0, 0, 0], segments = 16): void {
     this.room(room).b.cylinder(this.mats[mat], r, h, pos, rot, segments);
     if (solid) {
       const q = new THREE.Quaternion().setFromEuler(new THREE.Euler(...rot));
@@ -358,25 +440,28 @@ export class Site9 implements GameMap {
     return this.room(room).clear;
   }
 
-  private glass(room: string, size: V3, pos: V3): void {
+  private glass(room: string, sizeD: V3, posD: V3): void {
+    const size = this.sz(room, sizeD);
+    const pos = this.at(room, posD);
     this.clear(room).box(this.mats.glass, size, pos);
     this.physics.addStaticBox(new THREE.Vector3(...pos), new THREE.Vector3(size[0] / 2, size[1] / 2, size[2] / 2), undefined, METAL);
     const vertical = size[0] < size[2];
     const len = vertical ? size[2] : size[0];
     for (const s of [-1, 1]) {
       const o = (len / 2) * s;
-      this.box(room, 'gunmetal', [0.07, size[1], 0.07], vertical ? [pos[0], pos[1], pos[2] + o] : [pos[0] + o, pos[1], pos[2]], false);
+      this.boxW(room, 'gunmetal', [0.07, size[1], 0.07], vertical ? [pos[0], pos[1], pos[2] + o] : [pos[0] + o, pos[1], pos[2]], false);
     }
-    this.box(room, 'gunmetal', vertical ? [0.07, 0.07, len] : [len, 0.07, 0.07], [pos[0], pos[1] + size[1] / 2, pos[2]], false);
+    this.boxW(room, 'gunmetal', vertical ? [0.07, 0.07, len] : [len, 0.07, 0.07], [pos[0], pos[1] + size[1] / 2, pos[2]], false);
   }
 
-  private tree(room: string, x: number, z: number, scale = 1, potted = false): void {
+  private tree(room: string, xd: number, zd: number, scale = 1, potted = false): void {
+    const [x, z] = W(room, xd, zd);
     if (potted) {
-      this.cyl(room, 'gunmetal', 0.7 * scale, 0.8, [x, 0.4, z]);
-      this.cyl(room, 'soil', 0.62 * scale, 0.05, [x, 0.8, z], false);
+      this.cylW(room, 'gunmetal', 0.7 * scale, 0.8, [x, 0.4, z]);
+      this.cylW(room, 'soil', 0.62 * scale, 0.05, [x, 0.8, z], false);
     }
     const y0 = potted ? 0.8 : 0;
-    this.cyl(room, 'bark', 0.14 * scale, 2.6 * scale, [x, y0 + 1.3 * scale, z], !potted, [0, 0, 0], 8);
+    this.cylW(room, 'bark', 0.14 * scale, 2.6 * scale, [x, y0 + 1.3 * scale, z], !potted, [0, 0, 0], 8);
     const crown = (dx: number, dy: number, dz: number, r: number, mat: string) =>
       this.room(room).b.add(this.mats[mat], new THREE.IcosahedronGeometry(r * scale, 1), [x + dx * scale, y0 + dy * scale, z + dz * scale]);
     crown(0, 3.1, 0, 1.3, 'leaf');
@@ -385,29 +470,34 @@ export class Site9 implements GameMap {
     crown(0.1, 3.8, -0.2, 0.8, 'leafDark');
   }
 
-  private tableSet(room: string, x: number, z: number, top = 'white'): void {
-    this.box(room, top, [2.4, 0.08, 1.0], [x, 0.76, z]);
-    this.box(room, 'gunmetal', [0.12, 0.72, 0.12], [x, 0.36, z], false);
-    for (const s of [-1, 1]) this.box(room, 'gunmetal', [2.2, 0.48, 0.4], [x, 0.24, z + s * 0.85]);
+  private tableSet(room: string, xd: number, zd: number, top = 'white'): void {
+    const [x, z] = W(room, xd, zd);
+    this.boxW(room, top, [2.4, 0.08, 1.0], [x, 0.76, z]);
+    this.boxW(room, 'gunmetal', [0.12, 0.72, 0.12], [x, 0.36, z], false);
+    for (const s of [-1, 1]) this.boxW(room, 'gunmetal', [2.2, 0.48, 0.4], [x, 0.24, z + s * 0.85]);
   }
 
-  private sofa(room: string, x: number, z: number, yaw: number, mat = 'fabric'): void {
+  private sofa(room: string, xd: number, zd: number, yaw: number, mat = 'fabric'): void {
+    const [x, z] = W(room, xd, zd);
     const c = Math.cos(yaw);
     const s = Math.sin(yaw);
-    this.box(room, mat, [2.2, 0.45, 0.9], [x, 0.22, z], true, [0, yaw, 0]);
-    this.box(room, mat, [2.2, 0.55, 0.25], [x - s * 0.4, 0.6, z - c * 0.4], false, [0, yaw, 0]);
+    this.boxW(room, mat, [2.2, 0.45, 0.9], [x, 0.22, z], true, [0, yaw, 0]);
+    this.boxW(room, mat, [2.2, 0.55, 0.25], [x - s * 0.4, 0.6, z - c * 0.4], false, [0, yaw, 0]);
   }
 
   /** Cabinet / rack row along X at `z`. */
-  private row(room: string, mat: string, x0: number, x1: number, z: number, h: number, d: number): void {
-    this.box(room, mat, [x1 - x0, h, d], [(x0 + x1) / 2, h / 2, z], true, undefined, METAL);
+  private row(room: string, mat: string, x0d: number, x1d: number, zd: number, h: number, d: number): void {
+    const [x0, z] = W(room, x0d, zd);
+    const [x1] = W(room, x1d, zd);
+    this.boxW(room, mat, [x1 - x0, h, d], [(x0 + x1) / 2, h / 2, z], true, undefined, METAL);
   }
 
   /** Wall weapon slot. Outside the lobby the weapon is rolled at random each game. */
   /** Wall spots already used by gameplay objects (fixtures keep clear of them). */
   private reserved: THREE.Vector3[] = [];
 
-  private wallBuy(room: string, weapon: string, cost: number, pos: V3, yaw: number): void {
+  private wallBuy(room: string, weapon: string, cost: number, posD: V3, yaw: number): void {
+    const pos = this.at(room, posD);
     this.reserved.push(new THREE.Vector3(pos[0], 0, pos[2]));
     if (room !== 'lobby') {
       const startRoom = Object.values(TEAM_STARTS).some((s) => s.room === room);
@@ -418,23 +508,27 @@ export class Site9 implements GameMap {
     this.wallBuys.push({ weapon, cost, pos: new THREE.Vector3(...pos), yaw, room });
   }
 
-  private ammo(room: string, x: number, z: number, yaw: number): void {
+  private ammo(room: string, xd: number, zd: number, yaw: number): void {
+    const [x, z] = W(room, xd, zd);
     this.reserved.push(new THREE.Vector3(x, 0, z));
     this.ammoSpots.push({ pos: new THREE.Vector3(x, 0, z), yaw, zone: ROOMS.find((r) => r.id === room)!.zone });
   }
 
-  private hazard(room: string, x0: number, z0: number, x1: number, z1: number): void {
+  private hazard(room: string, x0d: number, z0d: number, x1d: number, z1d: number): void {
+    const [x0, z0] = W(room, x0d, z0d);
+    const [x1, z1] = W(room, x1d, z1d);
     this.hazardSpots.push({ rect: [x0, z0, x1, z1], zone: ROOMS.find((r) => r.id === room)!.zone });
   }
 
-  private terminal(room: string, x: number, z: number, yaw: number): void {
+  private terminal(room: string, xd: number, zd: number, yaw: number): void {
+    const [x, z] = W(room, xd, zd);
     this.reserved.push(new THREE.Vector3(x, 0, z));
     const n = new THREE.Vector3(Math.sin(yaw), 0, Math.cos(yaw));
     this.terminals.push({ kind: 'ally', cost: 1500, pos: new THREE.Vector3(x + n.x * 0.3, 1.3, z + n.z * 0.3), yaw, room });
     const along = Math.abs(n.z) > 0.5;
-    this.box(room, 'gunmetal', along ? [2.2, 2.6, 0.4] : [0.4, 2.6, 2.2], [x, 1.3, z], false);
-    this.box(room, 'screen', along ? [1.6, 1.0, 0.05] : [0.05, 1.0, 1.6], [x + n.x * 0.23, 1.7, z + n.z * 0.23], false);
-    this.box(room, 'vanta', along ? [2.2, 0.15, 0.42] : [0.42, 0.15, 2.2], [x, 2.65, z], false);
+    this.boxW(room, 'gunmetal', along ? [2.2, 2.6, 0.4] : [0.4, 2.6, 2.2], [x, 1.3, z], false);
+    this.boxW(room, 'screen', along ? [1.6, 1.0, 0.05] : [0.05, 1.0, 1.6], [x + n.x * 0.23, 1.7, z + n.z * 0.23], false);
+    this.boxW(room, 'vanta', along ? [2.2, 0.15, 0.42] : [0.42, 0.15, 2.2], [x, 2.65, z], false);
   }
 
   /** Extra random content candidates around the campus. */
@@ -532,23 +626,27 @@ export class Site9 implements GameMap {
   }
 
   private spawnAt(zone: string, pts: [number, number][], kind: SpawnPoint['kind'] = 'bay'): void {
-    for (const [x, z] of pts) this.spawnPoints.push({ pos: new THREE.Vector3(x, 0, z), zone, kind });
+    for (const [xd, zd] of pts) {
+      const [x, z] = Wp(xd, zd);
+      this.spawnPoints.push({ pos: new THREE.Vector3(x, 0, z), zone, kind });
+    }
   }
 
   /**
    * Service lift set into a wall (yaw = direction it faces). Robots arrive in it:
    * a chime, the call light flashes, one steps out.
    */
-  private serviceLift(room: string, x: number, z: number, yaw: number): void {
+  private serviceLift(room: string, xd: number, zd: number, yaw: number): void {
+    const [x, z] = W(room, xd, zd);
     const zone = ROOMS.find((r) => r.id === room)!.zone;
     this.reserved.push(new THREE.Vector3(x, 0, z));
     const n = new THREE.Vector3(Math.sin(yaw), 0, Math.cos(yaw));
     const t = new THREE.Vector3(Math.cos(yaw), 0, -Math.sin(yaw));
     const at = (o: number, y: number, d: number): V3 => [x + n.x * d + t.x * o, y, z + n.z * d + t.z * o];
     const sizeT = (a: number, h: number, b: number): V3 => (Math.abs(n.z) > 0.5 ? [a, h, b] : [b, h, a]);
-    this.box(room, 'gunmetal', sizeT(3.2, 3.2, 0.1), at(0, 1.6, 0.05), false);
-    this.box(room, 'dark', sizeT(2.5, 2.7, 0.04), at(0, 1.35, 0.07), false); // dark cab behind the doors
-    this.box(room, 'yellow', sizeT(3.2, 0.12, 0.08), at(0, 3.25, 0.12), false);
+    this.boxW(room, 'gunmetal', sizeT(3.2, 3.2, 0.1), at(0, 1.6, 0.05), false);
+    this.boxW(room, 'dark', sizeT(2.5, 2.7, 0.04), at(0, 1.35, 0.07), false); // dark cab behind the doors
+    this.boxW(room, 'yellow', sizeT(3.2, 0.12, 0.08), at(0, 3.25, 0.12), false);
     const light = new THREE.MeshStandardMaterial({ color: 0x000000, emissive: 0xffa040, emissiveIntensity: 0.4 });
     this.room(room).b.box(light, sizeT(0.5, 0.18, 0.05), at(0, 2.95, 0.15));
     // Door leaves are separate meshes so they can slide open.
@@ -638,9 +736,9 @@ export class Site9 implements GameMap {
     }
     // Holding cells (bars) in the south-east corner.
     for (let x = 54; x <= 64; x += 0.35) this.box(R, 'steel', [0.05, 3, 0.05], [x, 1.5, 79], false);
-    this.physics.addStaticBox(new THREE.Vector3(59, 1.5, 79), new THREE.Vector3(5.2, 1.5, 0.08), undefined, METAL);
+    this.physics.addStaticBox(new THREE.Vector3(...this.at(R, [59, 1.5, 79])), new THREE.Vector3(5.2 * kOf(R, 0), 1.5, 0.08), undefined, METAL);
     // Contractor terminal: hire a Vanta Security operator.
-    this.terminals.push({ kind: 'ally', cost: 1500, pos: new THREE.Vector3(24, 1.3, 83.5), yaw: Math.PI, room: R });
+    this.terminals.push({ kind: 'ally', cost: 1500, pos: new THREE.Vector3(...this.at(R, [24, 1.3, 83.5])), yaw: Math.PI, room: R });
     this.box(R, 'gunmetal', [2.2, 2.6, 0.4], [24, 1.3, 83.75], false);
     this.box(R, 'screen', [1.6, 1.0, 0.05], [24, 1.7, 83.52], false);
     this.serviceLift(R, 65.85, 60, -Math.PI / 2);
@@ -711,11 +809,11 @@ export class Site9 implements GameMap {
       for (const side of [-1, 1]) {
         const x = side * 38.5;
         this.box(R, 'offwhite', [3, 0.35, 46], [x, y, 23], false);
-        this.clear(R).box(this.mats.glass, [0.05, 1.1, 46], [x - side * 1.5, y + 0.7, 23]);
+        this.clearBox(R, [0.05, 1.1, 46], [x - side * 1.5, y + 0.7, 23]);
         for (let z = 4; z < 44; z += 6) this.box(R, y < 10 ? 'lampWarm' : 'lampCool', [0.05, 2.2, 4], [side * 39.82, y + 1.6, z], false);
       }
       this.box(R, 'offwhite', [74, 0.35, 3], [0, y, -4.5], false);
-      this.clear(R).box(this.mats.glass, [74, 1.1, 0.05], [0, y + 0.7, -3]);
+      this.clearBox(R, [74, 1.1, 0.05], [0, y + 0.7, -3]);
     }
     for (const x of [-26, -9, 9, 26]) this.box(R, 'vanta', [3, 7, 0.08], [x, 11, -5.7], false);
     for (const [x, z] of [[-10, 8], [10, 8], [-10, 38], [10, 38], [-30, 22], [30, 22]]) this.box(R, 'woodDark', [3, 0.45, 0.8], [x, 0.23, z]);
@@ -729,9 +827,10 @@ export class Site9 implements GameMap {
   }
 
   /** ATLAS: Vanta's flagship robot, ~8 m tall, on the atrium island. */
-  private atlas(R: string, x: number, y: number, z: number): void {
+  private atlas(R: string, xd: number, y: number, zd: number): void {
+    const [x, z] = W(R, xd, zd);
     const s = 4.2;
-    const b = (mat: string, size: V3, pos: V3) => this.box(R, mat, [size[0] * s, size[1] * s, size[2] * s], [x + pos[0] * s, y + pos[1] * s, z + pos[2] * s], false);
+    const b = (mat: string, size: V3, pos: V3) => this.boxW(R, mat, [size[0] * s, size[1] * s, size[2] * s], [x + pos[0] * s, y + pos[1] * s, z + pos[2] * s], false);
     for (const side of [-1, 1]) {
       b('gunmetal', [0.18, 0.85, 0.2], [0.14 * side, 0.43, 0]);
       b('dark', [0.22, 0.08, 0.32], [0.14 * side, 0.04, 0.04]);
@@ -810,7 +909,7 @@ export class Site9 implements GameMap {
       this.cyl(R, 'gunmetal', 1.4, 2.4, [x, 4.8, 49], false, [Math.PI / 2, 0, 0], 16);
       this.box(R, 'dark', [7, 0.08, 0.4], [x, 6.3, 49], false);
     }
-    this.clear(R).box(this.mats.glass, [3.2, 1.2, 2.2], [-88, 4.6, 42.4]);
+    this.clearBox(R, [3.2, 1.2, 2.2], [-88, 4.6, 42.4]);
     this.box(R, 'vanta', [0.05, 1.2, 6], [-85.78, 3.4, 52], false);
     // Cargo truck, containers, fuel tanks, the giant hangar door (west wall).
     this.box(R, 'gunmetal', [2.6, 3.0, 9], [-72, 1.9, 28], true, undefined, METAL);
@@ -904,7 +1003,7 @@ export class Site9 implements GameMap {
     }
     this.row(R, 'gunmetal', 70, 86, 15, 2.1, 0.6);
     for (let x = 70; x <= 90; x += 0.36) this.box(R, 'steel', [0.04, 3, 0.04], [x, 1.5, 60], false);
-    this.physics.addStaticBox(new THREE.Vector3(80, 1.5, 60), new THREE.Vector3(10, 1.5, 0.08), undefined, METAL);
+    this.physics.addStaticBox(new THREE.Vector3(...this.at(R, [80, 1.5, 60])), new THREE.Vector3(10 * kOf(R, 0), 1.5, 0.08), undefined, METAL);
     for (const z of [68, 74, 80]) {
       this.box(R, 'woodDark', [1.2, 1.1, 2.4], [72, 0.55, z]);
       this.box(R, 'offwhite', [0.6, 1.6, 0.05], [106, 1.4, z], false);
@@ -1082,18 +1181,18 @@ export class Site9 implements GameMap {
         if (Math.random() < 0.35 || !clear(cx, cz, 1.2)) continue;
         if (ind) {
           // Pallet with stacked crates, maybe a cone.
-          this.box(R, 'woodDark', [1.2, 0.14, 1.0], [cx, 0.07, cz], true);
-          this.box(R, Math.random() < 0.5 ? 'contGreen' : 'contBlue', [1.0, 0.8, 0.8], [cx, 0.54, cz], true);
-          if (Math.random() < 0.6) this.box(R, 'wood', [0.7, 0.55, 0.6], [cx + sx * 0.1, 1.22, cz + sz * 0.05], false, [0, rnd(-0.3, 0.3), 0]);
+          this.boxW(R, 'woodDark', [1.2, 0.14, 1.0], [cx, 0.07, cz], true);
+          this.boxW(R, Math.random() < 0.5 ? 'contGreen' : 'contBlue', [1.0, 0.8, 0.8], [cx, 0.54, cz], true);
+          if (Math.random() < 0.6) this.boxW(R, 'wood', [0.7, 0.55, 0.6], [cx + sx * 0.1, 1.22, cz + sz * 0.05], false, [0, rnd(-0.3, 0.3), 0]);
           if (Math.random() < 0.5) b.add(extra.cone, new THREE.ConeGeometry(0.16, 0.5, 10), [cx + sx * 1.0, 0.25, cz + sz * 0.3]);
         } else {
           // Bin + a potted plant or a water cooler.
-          this.cyl(R, 'gunmetal', 0.22, 0.55, [cx, 0.275, cz], true, [0, 0, 0], 10);
+          this.cylW(R, 'gunmetal', 0.22, 0.55, [cx, 0.275, cz], true, [0, 0, 0], 10);
           if (Math.random() < 0.5) {
-            this.cyl(R, 'white', 0.3, 0.6, [cx + sx * 0.9, 0.3, cz + sz * 0.1], true, [0, 0, 0], 12);
+            this.cylW(R, 'white', 0.3, 0.6, [cx + sx * 0.9, 0.3, cz + sz * 0.1], true, [0, 0, 0], 12);
             b.add(mat('leaf'), new THREE.IcosahedronGeometry(0.45, 1), [cx + sx * 0.9, 0.95, cz + sz * 0.1]);
           } else {
-            this.box(R, 'white', [0.36, 1.0, 0.36], [cx + sx * 0.9, 0.5, cz + sz * 0.1], true);
+            this.boxW(R, 'white', [0.36, 1.0, 0.36], [cx + sx * 0.9, 0.5, cz + sz * 0.1], true);
             b.cylinder(this.mats.glass, 0.15, 0.4, [cx + sx * 0.9, 1.2, cz + sz * 0.1], [0, 0, 0], 10);
           }
         }
@@ -1166,14 +1265,17 @@ export class Site9 implements GameMap {
     const t = new THREE.CanvasTexture(c);
     t.colorSpace = THREE.SRGBColorSpace;
     const logo = new THREE.Mesh(new THREE.PlaneGeometry(12, 3), new THREE.MeshStandardMaterial({ map: t, roughness: 0.6 }));
-    logo.position.set(0, 5.1, 83.82);
+    logo.position.set(...this.at('lobby', [0, 5.1, 83.82]));
     logo.rotation.y = Math.PI;
     this.room('lobby').group.add(logo);
   }
 
   private placeProps(): void {
     const p = this.props;
-    const v = (x: number, y: number, z: number) => new THREE.Vector3(x, y, z);
+    const v = (x: number, y: number, z: number) => {
+      const [wx, wz] = Wp(x, z);
+      return new THREE.Vector3(wx, y, wz);
+    };
     p.stack(v(-96, 0, 8), 4, 0.6);
     p.barrel(v(-62, 0.45, 10));
     p.barrel(v(-61, 0.45, 11), true);

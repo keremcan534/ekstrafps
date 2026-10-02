@@ -32,6 +32,7 @@ export class AudioSystem {
   private listenerRight = new THREE.Vector3(1, 0, 0);
   private tmp = new THREE.Vector3();
   ready = false;
+  private lastPick = new WeakMap<object, number>();
   /** 0 = small room (short tails) … 1 = huge hall (long tails, more reverb). Set by the game. */
   space = 0.5;
 
@@ -225,7 +226,15 @@ export class AudioSystem {
       else if (layer.range === 'farthest') band = farthest;
       if (band < 0.02) continue;
       if (layer.tail) band *= 0.45 + 0.9 * this.space;
-      const pickFile = layer.files?.length ? layer.files[(Math.random() * layer.files.length) | 0] : layer.file;
+      let pickFile = layer.file;
+      if (layer.files?.length) {
+        // Never the same variation twice in a row (repetition is what you notice first).
+        const last = this.lastPick.get(layer) ?? -1;
+        let i = (Math.random() * layer.files.length) | 0;
+        if (i === last && layer.files.length > 1) i = (i + 1 + ((Math.random() * (layer.files.length - 1)) | 0)) % layer.files.length;
+        this.lastPick.set(layer, i);
+        pickFile = layer.files[i];
+      }
       const buf = (pickFile && this.fileBuffers.get(pickFile)) || this.pickSynth(layer.synth);
       if (!buf) continue;
       const src = this.ctx.createBufferSource();

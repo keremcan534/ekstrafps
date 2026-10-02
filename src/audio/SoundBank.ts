@@ -201,7 +201,7 @@ export const SOUND_BANK: Record<string, SoundEvent> = {
   'robot.death': { layers: [{ synth: 'robot_death', gain: 0.6 }], pitchVariance: 0.08, maxDist: 32, maxVoices: 3 },
   'robot.fall': { reverb: 0.25, layers: [{ file: 'audio/guns/metal_clang.wav', gain: 0.55 }, { synth: 'body_fall', gain: 0.35 }], pitchVariance: 0.05, maxDist: 24, maxVoices: 4 },
   // Footsteps: gear / clothing rustle on every step (yours and nearby operators').
-  'foley.step': { layers: [{ files: ['audio/guns/gear0.wav', 'audio/guns/gear1.wav', 'audio/guns/gear2.wav', 'audio/guns/gear3.wav', 'audio/guns/gear4.wav', 'audio/guns/gear5.wav', 'audio/guns/gear6.wav', 'audio/guns/gear7.wav'], gain: 0.5 }], pitchVariance: 0.05, maxDist: 14, maxVoices: 6 },
+  'foley.step': { layers: [{ files: ['audio/guns/gear0.wav', 'audio/guns/gear1.wav', 'audio/guns/gear2.wav', 'audio/guns/gear3.wav', 'audio/guns/gear4.wav', 'audio/guns/gear5.wav', 'audio/guns/gear6.wav', 'audio/guns/gear7.wav'], gain: 0.32 }], pitchVariance: 0.09, maxDist: 14, maxVoices: 6 },
   // Layered under every shot you fire (not other people's).
   'self.kick': { layers: [{ synth: 'chest_kick', gain: 0.75 }], maxVoices: 3, bus: 'ui' },
   'robot.stagger': { layers: [{ synth: 'servo_strain', gain: 0.5 }], pitchVariance: 0.1, maxDist: 20, maxVoices: 2 },

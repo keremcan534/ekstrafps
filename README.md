@@ -138,7 +138,7 @@ The graybox test range plus the Black Division container yard.
 
 ### Site-9 (Survival)
 
-Vanta Dynamics' research campus, single level, about 220 × 170 m.
+Vanta Dynamics' research campus, single level, about 176 × 138 m (built at 0.8 of the design layout: less running through empty halls).
 
 **Layout.** 16 rooms are generated from rectangles by `world/LayoutBuilder.ts`. It builds walls where rooms meet, door openings, per-room materials, contact shadows along wall bases, and light pools under lamps.
 

@@ -1099,7 +1099,7 @@ export class Game {
       const stride = pl.sprinting ? 1.1 : pl.crouching ? 0.6 : 0.8;
       if (this.stepDist >= stride) {
         this.stepDist = 0;
-        this.audio.play('foley.step', { volume: pl.sprinting ? 0.75 : pl.crouching ? 0.25 : 0.45 });
+        this.audio.play('foley.step', { volume: (pl.sprinting ? 0.5 : pl.crouching ? 0.14 : 0.28) * (0.8 + Math.random() * 0.4) });
       }
     } else this.stepDist = 0.5;
     if (this.arena instanceof Site9) {
