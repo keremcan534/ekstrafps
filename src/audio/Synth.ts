@@ -415,6 +415,12 @@ export const RECIPES: Record<string, Recipe> = {
       tone(c, { t: i * 2.0 + 1.0, dur: 1.0, f0: 520, f1: 330, sweep: 0.9, type: 'sawtooth', gain: 0.1 });
     }
   } },
+  // Your own shot in your chest: a sub drop + chest punch (driven so small speakers still feel it).
+  chest_kick: { dur: 0.3, drive: 1.8, render: (c) => {
+    tone(c, { dur: 0.24, f0: 72, f1: 36, gain: 1.0 });
+    tone(c, { dur: 0.09, f0: 135, f1: 62, gain: 0.55 });
+    burst(c, { dur: 0.05, freq: 220, type: 'lowpass', gain: 0.6 });
+  } },
   radio_click: { dur: 0.25, render: (c) => {
     burst(c, { dur: 0.012, freq: 3000, q: 2, gain: 0.8 });
     burst(c, { t: 0.01, dur: 0.16, attack: 0.005, freq: 2200, q: 0.7, gain: 0.18 });

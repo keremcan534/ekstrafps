@@ -140,6 +140,7 @@ export class Soldier {
   private maxReserve = Infinity;
   /** Mag and reserve both empty. */
   onDry: (() => void) | null = null;
+  private lastStep = 0;
   /** Marksmanship multiplier (1 = Black Division standard). */
   skill = 1;
   /** Holding a handgun: pushed out at arm's length to aim, tucked to the chest otherwise. */
@@ -544,6 +545,12 @@ export class Soldier {
     // Walk cycle: phase advances with distance; sideways share from local velocity.
     const strideLen = v > 3 ? 2.3 : 1.55;
     this.stride += (v * dt * Math.PI * 2) / strideLen;
+    // A footfall every half stride: gear rustle (only heard up close).
+    const step = Math.floor(this.stride / Math.PI);
+    if (step !== this.lastStep) {
+      this.lastStep = step;
+      if (v > 0.8) this.deps.audio.play('foley.step', { position: this.pos, volume: v > 3 ? 0.9 : v > 1.8 ? 0.65 : 0.45 });
+    }
     this.strideAmount += (clamp(v / 1.6, 0, v > 3 ? 1.25 : 1) - this.strideAmount) * Math.min(1, dt * 8);
     const sin = Math.sin(this.yaw);
     const cos = Math.cos(this.yaw);

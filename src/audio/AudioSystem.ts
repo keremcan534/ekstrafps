@@ -23,6 +23,8 @@ export class AudioSystem {
   private master: GainNode;
   /** Shared room reverb: concrete hall impulse response, fed by per-event sends. */
   private reverbIn: GainNode;
+  /** Everything with a position (the world) goes through here, so your shots can duck it. */
+  private world: GainNode;
   private synthBuffers = new Map<string, AudioBuffer[]>();
   private fileBuffers = new Map<string, AudioBuffer>();
   private voices = new Map<string, number>();
@@ -45,6 +47,8 @@ export class AudioSystem {
     this.master = this.ctx.createGain();
     this.master.gain.value = feel.masterVolume;
     this.master.connect(comp).connect(this.ctx.destination);
+    this.world = this.ctx.createGain();
+    this.world.connect(this.master);
 
     const convolver = this.ctx.createConvolver();
     convolver.buffer = this.buildRoomImpulse(1.9);
@@ -180,11 +184,24 @@ export class AudioSystem {
     const pitch = (opts?.pitch ?? 1) * (1 + (Math.random() * 2 - 1) * (ev.pitchVariance ?? 0));
     const now = this.ctx.currentTime;
     let longest = 0;
-    let out: AudioNode = this.master;
+    // Your own gunshot (no position, has distance bands): louder, a chest kick under it,
+    // and the rest of the world ducks for a moment so the shot owns the mix.
+    const self = !opts?.position && ev.layers.some((l) => l.range === 'far');
+    if (self) {
+      gain *= 1.2;
+      const w = this.world.gain;
+      w.cancelScheduledValues(now);
+      w.setValueAtTime(w.value, now);
+      w.linearRampToValueAtTime(0.5, now + 0.008);
+      w.setTargetAtTime(1, now + 0.06, 0.12);
+      this.play('self.kick');
+    }
+    const bus = opts?.position ? this.world : this.master;
+    let out: AudioNode = bus;
     if (pan !== 0) {
       const p = this.ctx.createStereoPanner();
       p.pan.value = pan;
-      p.connect(this.master);
+      p.connect(bus);
       out = p;
     }
     // Room reverb send (distant sounds are relatively wetter).

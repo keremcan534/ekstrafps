@@ -186,9 +186,9 @@ export const SOUND_BANK: Record<string, SoundEvent> = {
   'reload.shotgun.shell': { layers: [{ synth: 'shell_insert', gain: 0.7 }], pitchVariance: 0.02, maxDist: 14 },
 
   'impact.concrete': { reverb: 0.22, layers: [{ synth: 'impact_concrete', gain: 0.35 }], pitchVariance: 0.12, maxVoices: 8, maxDist: 24 },
-  'impact.metal': { reverb: 0.22, layers: [{ synth: 'impact_metal', gain: 0.4 }], pitchVariance: 0.04, maxVoices: 6, maxDist: 20 },
-  'impact.robot': { reverb: 0.22, layers: [{ synth: 'impact_robot', gain: 0.45 }], pitchVariance: 0.03, maxDist: 22, maxVoices: 6 },
-  'impact.robotweak': { reverb: 0.22, layers: [{ synth: 'impact_robotweak', gain: 0.5 }], pitchVariance: 0.06, maxDist: 22, maxVoices: 4 },
+  'impact.metal': { reverb: 0.22, layers: [{ file: 'audio/guns/metal_light.wav', synth: 'impact_metal', gain: 0.45 }], pitchVariance: 0.04, maxVoices: 6, maxDist: 20 },
+  'impact.robot': { reverb: 0.22, layers: [{ files: ['audio/guns/metal_hit0.wav', 'audio/guns/metal_hit1.wav', 'audio/guns/metal_hit2.wav'], synth: 'impact_robot', gain: 0.5 }], pitchVariance: 0.03, maxDist: 22, maxVoices: 6 },
+  'impact.robotweak': { reverb: 0.22, layers: [{ files: ['audio/guns/metal_hit0.wav', 'audio/guns/metal_hit1.wav', 'audio/guns/metal_hit2.wav'], synth: 'impact_robotweak', gain: 0.55 }, { synth: 'impact_robotweak', gain: 0.25 }], pitchVariance: 0.03, maxDist: 22, maxVoices: 4 },
   'impact.prop': { layers: [{ synth: 'prop_hit', gain: 0.4 }], pitchVariance: 0.15, maxVoices: 6, maxDist: 18 },
   'shell.brass': { layers: [{ synth: 'shell_brass', gain: 0.1 }], pitchVariance: 0.03, maxVoices: 4 },
   'shell.plastic': { layers: [{ synth: 'shell_plastic', gain: 0.2 }], pitchVariance: 0.15, maxVoices: 3 },
@@ -199,7 +199,11 @@ export const SOUND_BANK: Record<string, SoundEvent> = {
   'ui.crit': { layers: [{ synth: 'hit_crit', gain: 0.4 }], pitchVariance: 0, maxVoices: 3, bus: 'ui' },
   'ui.kill': { layers: [{ synth: 'kill', gain: 0.55 }], maxVoices: 2, bus: 'ui' },
   'robot.death': { layers: [{ synth: 'robot_death', gain: 0.6 }], pitchVariance: 0.08, maxDist: 32, maxVoices: 3 },
-  'robot.fall': { reverb: 0.25, layers: [{ synth: 'body_fall', gain: 0.55 }], pitchVariance: 0.12, maxDist: 24, maxVoices: 4 },
+  'robot.fall': { reverb: 0.25, layers: [{ file: 'audio/guns/metal_clang.wav', gain: 0.55 }, { synth: 'body_fall', gain: 0.35 }], pitchVariance: 0.05, maxDist: 24, maxVoices: 4 },
+  // Footsteps: gear / clothing rustle on every step (yours and nearby operators').
+  'foley.step': { layers: [{ files: ['audio/guns/gear0.wav', 'audio/guns/gear1.wav', 'audio/guns/gear2.wav', 'audio/guns/gear3.wav', 'audio/guns/gear4.wav', 'audio/guns/gear5.wav', 'audio/guns/gear6.wav', 'audio/guns/gear7.wav'], gain: 0.5 }], pitchVariance: 0.05, maxDist: 14, maxVoices: 6 },
+  // Layered under every shot you fire (not other people's).
+  'self.kick': { layers: [{ synth: 'chest_kick', gain: 0.75 }], maxVoices: 3, bus: 'ui' },
   'robot.stagger': { layers: [{ synth: 'servo_strain', gain: 0.5 }], pitchVariance: 0.1, maxDist: 20, maxVoices: 2 },
   // ---------- Black Division ----------
   'bd.fire': {

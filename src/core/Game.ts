@@ -115,6 +115,7 @@ export class Game {
   /** free: your operators farm, buy and open doors on their own (staying within reach); follow: they stick to you. */
   squadMode: 'free' | 'follow' = new URLSearchParams(location.search).get('mode') === 'solo' ? 'follow' : 'free';
   private planTimer = 1;
+  private stepDist = 0;
   private squadBtn: HTMLButtonElement | null = null;
   /** Your operators' shared priority target. */
   private squadFocus = { focus: null as Combatant | null, focusTime: 0 };
@@ -1090,6 +1091,17 @@ export class Game {
     this.impacts.update(dt);
     this.right.set(1, 0, 0).applyQuaternion(this.camera.camera.quaternion);
     this.audio.setListener(this.camera.camera.position, this.right);
+    // Your footsteps: gear rustle every stride.
+    const pl = this.player;
+    const spd = pl.horizontalSpeed;
+    if (pl.grounded && spd > 0.6 && !this.health.dead && !this.health.downed) {
+      this.stepDist += spd * dt;
+      const stride = pl.sprinting ? 1.1 : pl.crouching ? 0.6 : 0.8;
+      if (this.stepDist >= stride) {
+        this.stepDist = 0;
+        this.audio.play('foley.step', { volume: pl.sprinting ? 0.75 : pl.crouching ? 0.25 : 0.45 });
+      }
+    } else this.stepDist = 0.5;
     if (this.arena instanceof Site9) {
       // Tails and reverb follow the room you're in: offices are tight, the hangar rolls on.
       const f = this.player.feet;
