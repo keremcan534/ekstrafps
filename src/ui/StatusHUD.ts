@@ -22,6 +22,8 @@ export class StatusHUD {
   private hpFill: HTMLDivElement;
   private hpText: HTMLDivElement;
   private hpBox: HTMLDivElement;
+  private armorFill: HTMLDivElement;
+  private lastArmor = -1;
   private dmg: HTMLDivElement;
   private supp: HTMLDivElement;
   private comms: HTMLDivElement;
@@ -42,6 +44,8 @@ export class StatusHUD {
     const bar = div('hp-bar', this.hpBox);
     this.hpFill = div('hp-fill', bar);
     this.hpText = div('hp-text', this.hpBox);
+    const ab = div('armor-bar', this.hpBox);
+    this.armorFill = div('armor-fill', ab);
     this.comms = div('comms', parent);
     this.squad = div('squad-line', parent);
     for (let i = 0; i < 6; i++) this.indicators.push({ el: div('hit-ind', parent), from: new THREE.Vector3(), life: 0 });
@@ -81,6 +85,15 @@ export class StatusHUD {
     }
     this.downed.classList.add('show');
     this.downed.innerHTML = `<div class="downed-title">DOWNED</div><div class="downed-sub">${revive > 0 ? 'Being revived…' : 'Hold on, help is coming'} · ${Math.ceil(seconds)}s</div><div class="downed-bar"><i style="transform:scaleX(${revive.toFixed(3)})"></i></div>`;
+  }
+
+  /** Armor plates left, 0..1 (hidden at 0). */
+  setArmor(k: number): void {
+    const v = Math.round(k * 100);
+    if (v === this.lastArmor) return;
+    this.lastArmor = v;
+    this.armorFill.parentElement!.style.display = v > 0 ? '' : 'none';
+    this.armorFill.style.transform = `scaleX(${k})`;
   }
 
   setDead(dead: boolean): void {

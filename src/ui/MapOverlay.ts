@@ -1,6 +1,7 @@
 import type * as THREE from 'three';
 import type { RoomDef, WallRun, DoorSlot } from '../world/LayoutBuilder';
 import type { WallBuy, Terminal } from '../world/Site9';
+import type { UtilityMarker } from '../game/Utilities';
 
 export interface MapData {
   rooms: RoomDef[];
@@ -18,7 +19,19 @@ export interface MapState {
   robots: { x: number; z: number }[];
   allies: { x: number; z: number }[];
   enemies: { x: number; z: number }[];
+  /** Stations, breakers, crate, sentries, ammo. */
+  utilities?: UtilityMarker[];
+  lightsOut?: () => boolean;
 }
+
+const UTIL: Record<UtilityMarker['kind'], { color: string; glyph: string; name: string }> = {
+  med: { color: '#2bdc6a', glyph: '+', name: 'MEDICAL' },
+  armor: { color: '#9fc4ff', glyph: 'A', name: 'ARMOR' },
+  breaker: { color: '#ffd25a', glyph: 'ϟ', name: 'POWER' },
+  crate: { color: '#c890ff', glyph: '?', name: 'SUPPLY' },
+  turret: { color: '#ff8a5c', glyph: 'T', name: 'SENTRY' },
+  ammo: { color: '#b9c46a', glyph: 'a', name: 'AMMO' },
+};
 
 const ROOM_COLORS: Record<string, string> = {
   lobby: '#cfc7b8', cafe: '#c79a6b', security: '#9aa3ad', garden: '#6f9a55', medical: '#9ccfc2', atrium: '#d8d4cc',
@@ -52,7 +65,8 @@ export class MapOverlay {
     legend.className = 'map-legend';
     legend.innerHTML =
       '<span><i class="lg you"></i>You</span><span><i class="lg ally"></i>Allies</span><span><i class="lg door"></i>Shutter (price)</span>' +
-      '<span><i class="lg buy"></i>Weapon</span><span><i class="lg term"></i>Hire terminal</span><span><i class="lg bot"></i>Robots</span><span class="lg-key">M close</span>';
+      '<span><i class="lg buy"></i>Weapon</span><span><i class="lg term"></i>Hire terminal</span><span><i class="lg bot"></i>Robots</span><span><i class="lg foe"></i>Enemy (firing)</span>' +
+      '<span><b style="color:#2bdc6a">+</b> Medical</span><span><b style="color:#9fc4ff">A</b> Armor</span><span><b style="color:#ffd25a">ϟ</b> Power breaker</span><span><b style="color:#c890ff">?</b> Supply crate</span><span><b style="color:#ff8a5c">T</b> Sentry</span><span class="lg-key">M close</span>';
     this.full.appendChild(legend);
     parent.appendChild(this.full);
     this.mini = document.createElement('canvas');
@@ -173,6 +187,31 @@ export class MapOverlay {
       g.fillStyle = '#4fb8ff';
       g.fillRect(x - 7 / scale, z - 7 / scale, 14 / scale, 14 / scale);
     }
+    for (const u of state.utilities ?? []) {
+      const [x, z] = this.toCanvas(u.x, u.z);
+      const k = UTIL[u.kind];
+      const r = 9 / scale;
+      g.fillStyle = '#101214';
+      g.strokeStyle = u.kind === 'breaker' && state.lightsOut?.() ? '#ff3b2f' : u.on ? '#ff3b2f' : k.color;
+      g.lineWidth = 2.5 / scale;
+      g.beginPath();
+      g.arc(x, z, r, 0, Math.PI * 2);
+      g.fill();
+      g.stroke();
+      g.fillStyle = k.color;
+      g.font = `800 ${13 / scale}px system-ui, sans-serif`;
+      g.textAlign = 'center';
+      g.textBaseline = 'middle';
+      g.fillText(k.glyph, x, z + 0.5 / scale);
+      if (labels && u.kind !== 'ammo') {
+        g.font = `600 ${12 / scale}px system-ui, sans-serif`;
+        g.strokeStyle = '#000';
+        g.lineWidth = 3 / scale;
+        g.strokeText(k.name, x, z + 18 / scale);
+        g.fillText(k.name, x, z + 18 / scale);
+      }
+    }
+    g.textBaseline = 'alphabetic';
     const dot = (p: { x: number; z: number }, color: string, r: number) => {
       const [x, z] = this.toCanvas(p.x, p.z);
       g.fillStyle = color;

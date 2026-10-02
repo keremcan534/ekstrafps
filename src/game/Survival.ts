@@ -14,6 +14,10 @@ import type { LinkDef } from '../world/LayoutBuilder';
 import { RogueRobot, type MeleeTarget } from '../enemies/RogueRobot';
 import type { SurvivalHUD } from '../ui/SurvivalHUD';
 import type { DamageInfo } from '../targets/Humanoid';
+import type { Lighting } from './Lighting';
+import type { Combatant } from './TeamAgent';
+import { Utilities } from './Utilities';
+import type { WallSpot } from '../world/Site9';
 
 export interface SurvivalDeps {
   map: Site9;
@@ -44,6 +48,12 @@ export interface SurvivalDeps {
   members?: (team: string) => Wallet[];
   /** Whose wallet a shooter is (player controller / soldier). */
   walletOf?: (owner: object) => Wallet | null;
+  /** Facility power + flashlight (breakers). */
+  lighting?: Lighting | null;
+  /** Everyone fighting this frame (sentries pick targets from it). */
+  world?: () => Combatant[];
+  toast?: (text: string) => void;
+  onPowerRestored?: () => void;
 }
 
 /** Personal money: the player and every operator earn and spend their own. */
@@ -66,7 +76,7 @@ interface Door {
   lift: number;
 }
 
-interface Interactable {
+export interface Interactable {
   pos: THREE.Vector3;
   radius: number;
   label(): string;
@@ -196,6 +206,10 @@ export class Survival {
   private wakeQueue: { r: RogueRobot; t: number }[] = [];
   private playerTarget: MeleeTarget;
   extraTargets: MeleeTarget[] = [];
+  /** Shown instead of the nearest interactable (e.g. "Revive Kato"); F does that instead. */
+  overridePrompt: string | null = null;
+  /** Stations, breakers, supply crate, sentries. */
+  utilities: Utilities | null = null;
   private navRefresh: { x0: number; z0: number; x1: number; z1: number; frames: number }[] = [];
   private tmp = new THREE.Vector3();
   private eye = new THREE.Vector3();
@@ -211,9 +225,13 @@ export class Survival {
       hit: (d, from) => deps.hurtPlayer(d, from),
     };
     for (const slot of map.doors) this.buildDoor(slot);
+    // Random content on free wall spots: extra weapons now, stations etc. below.
+    const spots = this.pickSpots();
+    for (const s of spots.weapon) map.addWallBuy(s);
     for (const wb of map.wallBuys) this.buildWallBuy(wb);
     this.placeAmmo(map.ammoSpots);
     this.placeHazards(map.hazardSpots);
+    this.utilities = new Utilities(this, deps, spots);
     for (const t of map.terminals) {
       this.interactables.push({
         pos: t.pos.clone(),
@@ -235,7 +253,8 @@ export class Survival {
         },
       });
     }
-    const pool = mobile ? 14 : 24;
+    // Four teams farm robots: the facility needs a lot more of them.
+    const pool = deps.mode === 'teams' ? (mobile ? 22 : 40) : mobile ? 14 : 24;
     for (let i = 0; i < pool; i++) {
       this.robots.push(
         new RogueRobot(physics, scene, nav, {
@@ -258,7 +277,10 @@ export class Survival {
       );
     }
     if (mobile) for (const r of this.robots) r.body.setCastShadow(false);
-    for (const z of deps.startZones ?? []) this.unlocked.add(z);
+    for (const z of deps.startZones ?? []) {
+      this.unlocked.add(z);
+      this.populateZone(z, 3); // something to farm from the first minute
+    }
     if (deps.mode === 'teams') this.phaseTimer = 14;
     deps.weapons.infiniteReserve.add('heavy_pistol');
     deps.weapons.startLoadout('heavy_pistol');
@@ -273,7 +295,16 @@ export class Survival {
     this.deps.hud.setPoints(this.points, n);
   }
 
-  private spend(n: number): boolean {
+  addInteractable(it: Interactable): void {
+    this.interactables.push(it);
+  }
+
+  /** Something solid was placed after the nav grid was baked: re-scan around it. */
+  carveNav(at: THREE.Vector3, r: number): void {
+    this.navRefresh.push({ x0: at.x - r, z0: at.z - r, x1: at.x + r, z1: at.z + r, frames: 2 });
+  }
+
+  spend(n: number): boolean {
     if (this.points < n) {
       this.deps.audio.play('dry_fire');
       this.deps.hud.flashPrompt();
@@ -329,6 +360,9 @@ export class Survival {
     const door: Door = {
       slot, cost: link.cost ?? 0, zones: [ra.zone, rb.zone], to: [ra.name, rb.name], open: false, collider, shutter, lift: 0,
     };
+    // The nav grid was baked before the shutters existed: closed ones must block paths.
+    const r = w / 2 + 1;
+    this.navRefresh.push({ x0: slot.center.x - r, z0: slot.center.z - r, x1: slot.center.x + r, z1: slot.center.z + r, frames: 2 });
     this.doors.push(door);
     this.interactables.push({
       pos: slot.center.clone().setY(1.2),
@@ -348,6 +382,7 @@ export class Survival {
 
   openDoor(door: Door): void {
     door.open = true;
+    this.reachVersion++;
     this.deps.physics.world.removeCollider(door.collider, true);
     const fresh = door.zones.filter((z) => !this.unlocked.has(z));
     for (const z of door.zones) this.unlocked.add(z);
@@ -357,7 +392,37 @@ export class Survival {
     const r = door.slot.width / 2 + 1;
     // The nav grid sees the opening after the next physics step.
     this.navRefresh.push({ x0: c.x - r, z0: c.z - r, x1: c.x + r, z1: c.z + r, frames: 2 });
-    for (const z of fresh) this.populateZone(z, 3 + ((Math.random() * (2 + this.threat)) | 0));
+    for (const z of fresh) this.populateZone(z, (this.deps.mode === 'teams' ? 5 : 3) + ((Math.random() * (2 + this.threat)) | 0));
+  }
+
+  private reachVersion = 0;
+  private reachCache = new Map<string, { v: number; set: Set<string> }>();
+
+  /**
+   * Zones you can actually walk to from `zone` (archways + opened shutters).
+   * "Unlocked" is global (any team opens doors); this is what matters to a squad.
+   */
+  reachable(zone: string | null): Set<string> {
+    if (!zone) return this.unlocked;
+    const c = this.reachCache.get(zone);
+    if (c && c.v === this.reachVersion) return c.set;
+    const { map } = this.deps;
+    const roomZone = new Map(map.rooms.map((r) => [r.id, r.zone]));
+    const set = new Set<string>([zone]);
+    let grew = true;
+    while (grew) {
+      grew = false;
+      for (const l of map.links) {
+        const za = roomZone.get(l.a)!;
+        const zb = roomZone.get(l.b)!;
+        if (set.has(za) === set.has(zb)) continue;
+        if (l.kind === 'buy' && !this.isLinkOpen(l)) continue;
+        set.add(set.has(za) ? zb : za);
+        grew = true;
+      }
+    }
+    this.reachCache.set(zone, { v: this.reachVersion, set });
+    return set;
   }
 
   isLinkOpen(link: LinkDef): boolean {
@@ -441,6 +506,7 @@ export class Survival {
     g.add(crate, lid, label);
     map.roomGroupAt(spot.pos.x, spot.pos.z).add(g);
     this.deps.physics.addStaticBox(spot.pos.clone().setY(0.34), new THREE.Vector3(0.55, 0.34, 0.31), new THREE.Quaternion().setFromEuler(new THREE.Euler(0, spot.yaw, 0)));
+    this.navRefresh.push({ x0: spot.pos.x - 1.2, z0: spot.pos.z - 1.2, x1: spot.pos.x + 1.2, z1: spot.pos.z + 1.2, frames: 2 });
     this.ammoCaches.push(spot.pos.clone().add(new THREE.Vector3(Math.sin(spot.yaw) * 1.1, 0, Math.cos(spot.yaw) * 1.1)).setY(0));
     this.interactables.push({
       pos: spot.pos.clone().setY(0.6),
@@ -454,6 +520,44 @@ export class Survival {
         return true;
       },
     });
+  }
+
+  /**
+   * Validate the map's free wall spots (room to stand in front, not blocked by
+   * furniture) and deal them out, spreading each kind over different rooms.
+   */
+  private pickSpots(): Record<'weapon' | 'med' | 'armor' | 'breaker' | 'crate' | 'turret', WallSpot[]> {
+    const { map, nav } = this.deps;
+    const ok = map.wallSpots.filter((s) => {
+      const fx = Math.sin(s.yaw);
+      const fz = Math.cos(s.yaw);
+      return nav.walkable(s.pos.x + fx * 1.4, s.pos.z + fz * 1.4) && nav.walkable(s.pos.x + fx * 2.2, s.pos.z + fz * 2.2);
+    });
+    ok.sort(() => Math.random() - 0.5);
+    const used = new Set<WallSpot>();
+    const take = (n: number, prefer?: (s: WallSpot) => boolean): WallSpot[] => {
+      const out: WallSpot[] = [];
+      const rooms = new Set<string>();
+      for (const pass of [0, 1, 2]) {
+        for (const s of ok) {
+          if (out.length >= n) break;
+          if (used.has(s) || (pass === 0 && prefer && !prefer(s)) || (pass < 2 && rooms.has(s.room))) continue;
+          used.add(s);
+          rooms.add(s.room);
+          out.push(s);
+        }
+      }
+      return out;
+    };
+    const breaker = take(3, (s) => s.room === 'power');
+    return {
+      breaker,
+      weapon: take(10, (s) => s.room !== 'lobby'),
+      med: take(5),
+      armor: take(3, (s) => s.zone !== 'start'),
+      turret: take(5),
+      crate: take(5, (s) => s.zone !== 'start'),
+    };
   }
 
   // ---------------------------------------------------------------- hazards
@@ -550,6 +654,11 @@ export class Survival {
   }
 
   private updateFocus(): void {
+    if (this.overridePrompt) {
+      this.focus = null;
+      this.deps.hud.setPrompt(this.overridePrompt, 0, true);
+      return;
+    }
     const p = this.deps.player;
     const eye = this.tmp.set(p.feet.x, p.feet.y + p.eyeHeight, p.feet.z);
     const fx = -Math.sin(p.yaw);
@@ -596,7 +705,7 @@ export class Survival {
   private pickMobSpawn(): SpawnPoint | null {
     // Most mobs come for the player; in team games some go for the AI teams.
     const foci = this.deps.focusProvider?.() ?? [];
-    const p = foci.length && Math.random() < 0.45 ? foci[(Math.random() * foci.length) | 0] : this.deps.player.feet;
+    const p = foci.length && Math.random() < foci.length / (foci.length + 1) ? foci[(Math.random() * foci.length) | 0] : this.deps.player.feet;
     const me = this.deps.player.feet;
     // Lifts are natural entrances (doors open, they step out), so they only need
     // some distance; bays and hatches must be out of sight.
@@ -674,20 +783,21 @@ export class Survival {
     }
 
     this.phaseTimer -= dt;
-    const cap = this.deps.mobile ? 10 : 18;
+    const teams = this.deps.mode === 'teams';
+    const cap = teams ? (this.deps.mobile ? 16 : 30) : this.deps.mobile ? 10 : 18;
     // Between mobs the pressure never fully stops: lone hunters trickle in.
     if (this.phase === 'relax' || this.phase === 'fade') {
       this.trickleTimer -= dt;
       if (this.trickleTimer <= 0) {
-        this.trickleTimer = Math.max(3, 9 - this.threat * 0.8) * (0.7 + Math.random() * 0.6);
-        if (aggro < 2 + this.threat) this.queueMobSpawn();
+        this.trickleTimer = Math.max(3, 9 - this.threat * 0.8) * (0.7 + Math.random() * 0.6) * (teams ? 0.5 : 1);
+        if (aggro < (2 + this.threat) * (teams ? 2.5 : 1)) this.queueMobSpawn();
       }
     }
     switch (this.phase) {
       case 'relax':
         if (this.phaseTimer <= 0) {
           this.phase = 'buildup';
-          this.mobLeft = Math.max(4, Math.min(45, Math.round((4 + this.threat * 2.6) * this.skill)));
+          this.mobLeft = Math.max(4, Math.min(teams ? 70 : 45, Math.round((4 + this.threat * 2.6) * this.skill * (teams ? 1.8 : 1))));
           this.spawnTimer = 0.5;
           this.deps.hud.horde();
           this.deps.audio.play('director.horde');
@@ -708,15 +818,15 @@ export class Survival {
         if (this.phaseTimer <= 0) this.phase = this.mobLeft > 0 ? 'buildup' : 'fade';
         break;
       case 'fade':
-        if (aggro <= 1 && this.intensity < 0.35) {
+        if (aggro <= (teams ? 6 : 1) && this.intensity < 0.35) {
           this.phase = 'relax';
           this.phaseTimer = Math.max(8, 24 - this.threat * 2.5);
           // Top up the wanderers in opened zones while it is quiet.
           let idle = 0;
           for (const r of this.robots) if (r.dormant) idle++;
-          if (idle < 6) {
+          if (idle < (teams ? 14 : 6)) {
             const zones = [...this.unlocked].filter((z) => z !== 'start');
-            if (zones.length) this.populateZone(zones[(Math.random() * zones.length) | 0], 2);
+            for (let i = 0; i < (teams ? 3 : 1) && zones.length; i++) this.populateZone(zones[(Math.random() * zones.length) | 0], teams ? 3 : 2);
           }
         }
         break;
@@ -755,6 +865,7 @@ export class Survival {
     }
     if (!this.over) this.updateFocus();
     else this.deps.hud.setPrompt('', 0, false);
+    this.utilities?.update(dt, this.deps.world?.() ?? []);
 
     // Arrivals (lift doors take a moment), lift lights fade.
     for (let i = this.pending.length - 1; i >= 0; i--) {

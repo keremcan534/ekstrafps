@@ -15,7 +15,25 @@ export interface SoundLayer {
   delay?: number;
   /** Keep this layer out of the room reverb (mechanical clicks). */
   dry?: boolean;
+  /** Sample variations: one is picked per play. */
+  files?: string[];
+  /**
+   * Distance band (sounds with a position): near = the close blast / punch / mechanism
+   * (fades out by ~50 m), far = the distant report (20-120 m), farthest = beyond ~70 m.
+   * No band: always.
+   */
+  range?: 'near' | 'far' | 'farthest';
+  /** Room tail: louder in big halls, smaller in offices (AudioSystem.space). */
+  tail?: boolean;
 }
+
+/** Close-shot variations cut from the recorded gunshots (public/audio/guns). */
+const shots = (key: string, n: number) => Array.from({ length: n }, (_, i) => `audio/guns/${key}_close${i}.wav`);
+/** Distant report: the same crack-and-roll heard from far off (darker further away). */
+const distant = (k: number): SoundLayer[] => [
+  { file: 'audio/guns/distant.wav', gain: 0.65 * k, range: 'far' },
+  { file: 'audio/guns/distant_far.wav', gain: 0.6 * k, range: 'farthest' },
+];
 
 export interface SoundEvent {
   layers: SoundLayer[];
@@ -30,52 +48,53 @@ export interface SoundEvent {
 }
 
 export const SOUND_BANK: Record<string, SoundEvent> = {
-  // Layered gunshots: mechanical · shot · low-frequency punch · environment tail
+  // Layered gunshots: recorded close blast (variations) · synth low-end punch ·
+  // mechanical action · room tail (scaled by room size) · distant report.
   'ar.fire': {
     layers: [
-      { synth: 'crack', gain: 0.55 },
-      { synth: 'ar_mech', gain: 0.35 },
-      { synth: 'ar_shot', gain: 0.75 },
-      { synth: 'ar_punch', gain: 0.8 },
-      { synth: 'ar_tail', gain: 0.27 },
+      { files: shots('ar', 4), gain: 0.85, range: 'near' },
+      { synth: 'ar_punch', gain: 0.6, range: 'near' },
+      { synth: 'ar_mech', gain: 0.3, range: 'near', dry: true },
+      { file: 'audio/guns/ar_tail.wav', gain: 0.4, tail: true },
+      ...distant(1.0),
     ],
-    reverb: 0.55,
-    pitchVariance: 0.035,
+    reverb: 0.5,
+    pitchVariance: 0.03,
     maxVoices: 16,
   },
   'ak.fire': {
     layers: [
-      { synth: 'crack', gain: 0.6 },
-      { synth: 'ak_mech', gain: 0.4 },
-      { synth: 'ak_shot', gain: 0.85 },
-      { synth: 'ak_punch', gain: 0.95 },
-      { synth: 'ak_tail', gain: 0.33 },
+      { files: shots('ak', 4), gain: 0.9, range: 'near' },
+      { synth: 'ak_punch', gain: 0.7, range: 'near' },
+      { synth: 'ak_mech', gain: 0.35, range: 'near', dry: true },
+      { file: 'audio/guns/ak_tail.wav', gain: 0.45, tail: true },
+      ...distant(1.0),
     ],
-    reverb: 0.6,
+    reverb: 0.55,
     pitchVariance: 0.03,
     maxVoices: 16,
   },
   'mk47.fire': {
     layers: [
-      { synth: 'crack', gain: 0.6 },
-      { synth: 'ar_mech', gain: 0.35 },
-      { synth: 'ak_shot', gain: 0.8 },
-      { synth: 'ak_punch', gain: 0.9 },
-      { synth: 'ar_tail', gain: 0.3 },
+      { files: shots('heavy', 4), gain: 0.8, range: 'near' },
+      { synth: 'ak_punch', gain: 0.6, range: 'near' },
+      { synth: 'ar_mech', gain: 0.3, range: 'near', dry: true },
+      { file: 'audio/guns/heavy_tail.wav', gain: 0.35, tail: true },
+      ...distant(1.0),
     ],
-    reverb: 0.6,
+    reverb: 0.55,
     pitchVariance: 0.03,
     maxVoices: 16,
   },
   'rd704.fire': {
     layers: [
-      { synth: 'crack', gain: 0.65 },
-      { synth: 'ak_mech', gain: 0.4 },
-      { synth: 'ak_shot', gain: 0.9 },
-      { synth: 'ak_punch', gain: 1.05 },
-      { synth: 'ak_tail', gain: 0.36 },
+      { files: shots('mg', 4), gain: 0.9, range: 'near' },
+      { synth: 'ak_punch', gain: 0.8, range: 'near' },
+      { synth: 'ak_mech', gain: 0.35, range: 'near', dry: true },
+      { file: 'audio/guns/mg_tail.wav', gain: 0.4, tail: true },
+      ...distant(1.1),
     ],
-    reverb: 0.6,
+    reverb: 0.55,
     pitchVariance: 0.025,
     maxVoices: 16,
   },
@@ -92,60 +111,66 @@ export const SOUND_BANK: Record<string, SoundEvent> = {
   },
   'ppsh.fire': {
     layers: [
-      { synth: 'crack', gain: 0.35 },
-      { synth: 'ar_mech', gain: 0.3 },
-      { synth: 'ppsh_shot', gain: 0.7 },
-      { synth: 'ar_punch', gain: 0.6 },
-      { synth: 'ar_tail', gain: 0.24 },
+      { files: shots('smg', 3), gain: 0.75, range: 'near' },
+      { synth: 'ar_punch', gain: 0.4, range: 'near' },
+      { synth: 'ar_mech', gain: 0.3, range: 'near', dry: true },
+      { file: 'audio/guns/smg_tail.wav', gain: 0.35, tail: true },
+      ...distant(0.7),
     ],
-    reverb: 0.5,
+    reverb: 0.45,
     pitchVariance: 0.04,
     maxVoices: 20,
   },
   'pistol.fire': {
     layers: [
-      { synth: 'crack', gain: 0.45 },
-      { synth: 'pistol_mech', gain: 0.45 },
-      { synth: 'pistol_shot', gain: 0.9 },
-      { synth: 'pistol_punch', gain: 1.0 },
-      { synth: 'pistol_tail', gain: 0.36 },
+      { files: shots('pistol', 3), gain: 0.85, range: 'near' },
+      { synth: 'pistol_punch', gain: 0.7, range: 'near' },
+      { synth: 'pistol_mech', gain: 0.4, range: 'near', dry: true },
+      { file: 'audio/guns/pistol_tail.wav', gain: 0.4, tail: true },
+      { synth: 'pistol_tail', gain: 0.22, tail: true },
+      ...distant(0.6),
     ],
-    reverb: 0.6,
+    reverb: 0.55,
     pitchVariance: 0.03,
     maxVoices: 8,
   },
   'shotgun.fire': {
     layers: [
-      { synth: 'shotgun_shot', gain: 1.0 },
-      { synth: 'shotgun_punch', gain: 1.1 },
-      { synth: 'shotgun_tail', gain: 0.42 },
+      { files: shots('boom', 1), gain: 0.95, range: 'near' },
+      { synth: 'shotgun_punch', gain: 1.0, range: 'near' },
+      { synth: 'shotgun_shot', gain: 0.35, range: 'near', dry: true },
+      { file: 'audio/guns/boom_tail.wav', gain: 0.45, tail: true },
+      { synth: 'shotgun_tail', gain: 0.25, tail: true },
+      ...distant(1.0),
     ],
-    reverb: 0.7,
-    pitchVariance: 0.03,
+    reverb: 0.65,
+    pitchVariance: 0.04,
     maxVoices: 6,
   },
   // Bolt actions: N-wave crack, saturated body, deep boom, big room.
   'mosin.fire': {
     layers: [
-      { synth: 'crack_heavy', gain: 0.85 },
-      { synth: 'rifle_body', gain: 1.0 },
-      { synth: 'rifle_boom', gain: 1.15 },
-      { synth: 'ak_mech', gain: 0.25, dry: true },
-      { synth: 'ak_tail', gain: 0.35 },
+      { files: shots('heavy', 4), gain: 0.85, range: 'near' },
+      { synth: 'rifle_boom', gain: 1.0, range: 'near' },
+      { synth: 'ak_mech', gain: 0.25, range: 'near', dry: true },
+      { file: 'audio/guns/heavy_tail.wav', gain: 0.45, tail: true },
+      { synth: 'crack_heavy', gain: 0.5, range: 'near' },
+      ...distant(1.3),
     ],
-    reverb: 0.75,
+    reverb: 0.7,
     pitchVariance: 0.02,
     maxVoices: 4,
   },
   'kar98.fire': {
     layers: [
-      { synth: 'crack_heavy', gain: 0.8 },
-      { synth: 'kar_body', gain: 1.0 },
-      { synth: 'rifle_boom', gain: 1.2 },
-      { synth: 'ak_mech', gain: 0.22, dry: true },
-      { synth: 'ak_tail', gain: 0.35 },
+      { files: shots('heavy', 4), gain: 0.85, range: 'near' },
+      { synth: 'rifle_boom', gain: 1.05, range: 'near' },
+      { synth: 'ak_mech', gain: 0.22, range: 'near', dry: true },
+      { file: 'audio/guns/heavy_tail.wav', gain: 0.45, tail: true },
+      { synth: 'kar_body', gain: 0.5, range: 'near' },
+      ...distant(1.3),
     ],
-    reverb: 0.75,
+    reverb: 0.7,
     pitchVariance: 0.02,
     maxVoices: 4,
   },
@@ -193,12 +218,13 @@ export const SOUND_BANK: Record<string, SoundEvent> = {
   // ---------- Black Division ----------
   'bd.fire': {
     layers: [
-      { synth: 'crack', gain: 0.6 },
-      { synth: 'ak_shot', gain: 0.8 },
-      { synth: 'ak_punch', gain: 0.9 },
-      { synth: 'ak_tail', gain: 0.4 },
+      { files: shots('ak', 4), gain: 0.85, range: 'near' },
+      { synth: 'ak_punch', gain: 0.8, range: 'near' },
+      { synth: 'ak_mech', gain: 0.3, range: 'near', dry: true },
+      { file: 'audio/guns/ak_tail.wav', gain: 0.5, tail: true },
+      ...distant(1.0),
     ],
-    reverb: 0.85,
+    reverb: 0.8,
     pitchVariance: 0.04,
     maxVoices: 12,
   },

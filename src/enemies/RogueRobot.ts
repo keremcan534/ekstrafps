@@ -236,7 +236,11 @@ export class RogueRobot {
         this.path = null;
         if (dist > 1.1) desired.set(best.pos.x - this.pos.x, 0, best.pos.z - this.pos.z).normalize().multiplyScalar(this.speed);
       } else {
-        if (this.repath <= 0) {
+        if (this.repath <= 0 && dist > 70) {
+          // Far-off target: no whole-map search; wait and look again (mobs spawn near their target anyway).
+          this.path = null;
+          this.repath = 1.5 + Math.random();
+        } else if (this.repath <= 0) {
           this.path = this.nav.findPath(this.pos, best.pos, 4000);
           this.pathIndex = 0;
           this.repath = this.path ? 0.7 + Math.random() * 0.4 : 1.2 + Math.random() * 0.8;

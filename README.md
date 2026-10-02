@@ -169,8 +169,13 @@ Vanta Dynamics' research campus, single level, about 220 × 170 m.
 - Everyone has their own wallet and plays the same economy: AI operators buy wall weapons, restock at ammo caches, open shutters and hire contractors with their own money. Every point a teammate earns also pays each other member 5%.
 - Bought guns run dry; the starting pistol never does. With every gun empty you draw it automatically.
 - Downed teammates get revived; give up with **X** (or the GIVE UP button). You redeploy after 7 s next to a standing teammate, or somewhere random with your squad if everyone is down. Fallen squadmates rejoin after a minute.
-- AI behaviour: picks targets it can see, goes for the head on calm targets, backs off from robots while shooting, falls back when badly hurt, retreats when swarmed, farms a spot when there's nothing worth buying, keeps watch over its own sector while following, and calls things out on the radio.
-- Raids at 6000 / 14000 / 22000 team score: the power dies (flashlight on) and two Black Division squads storm in, hostile to everyone. First team to 20000 wins.
+- AI plans like a player: each operator picks the gun they want, farms for it (hunting awake robots or watching a lift), chips in with teammates to open the shutter in the way, buys it, and once well armed pushes teams it heard firing. Between fights they restock, heal, try the supply crate or switch on sentries with their own money.
+- In a fight: the squad shares a focus target, goes for the head on calm targets, backs off from robots while shooting, falls back when badly hurt and retreats when swarmed. Getting shot alerts everyone nearby: they turn to the shooter, hold the angle or push it, and the squad goes after you. Nobody revives a teammate while a hostile is in view or they're under fire.
+- Your squad: **Y** (SQUAD on touch) switches between free roam (default: they farm, buy and open doors on their own within ~55 m of you) and follow me. **F** next to a downed operator revives them (3 s). They call out on the radio.
+- Running AI carry their weapon low ready or high port; handguns are pushed out to aim and tucked in otherwise. Firing on the move scatters (hip fire most, aimed a little, mid-air a lot).
+- Raids at 6000 / 14000 / 22000 team score: the power dies and two Black Division squads land far from you, out of sight, hostile to everyone. A power breaker restores the lights ($750). First team to 20000 wins.
+
+**Facility extras (random spots each game, on the map).** Medical stations ($400, full heal), armor lockers ($1000, plates soak 60% of damage), power breakers (cut the lights / restore power), a supply crate ($950, random weapon, moves after a few uses), sentry turrets ($1500, 60 s for whoever paid), plus ten extra wall weapons. **L** toggles your flashlight (it switches on when the power dies). Enemy operators who fire show up on the minimap for a moment.
 
 **Map.** **M** opens the full map: zones, shutter prices, weapons, terminal, you, allies, robots. A rotating minimap sits in the corner. **F** (or **USE** on touch) buys or uses whatever you are looking at.
 
@@ -248,6 +253,10 @@ Dead soldiers ragdoll and drop their rifle as a physics object. The squad calls 
 
 - Voice lines are placeholders made from offline TTS that was pitched down and run through mask and radio processing (`public/audio/voice/`). Drop in real recordings with the same names to replace them.
 - Tuning: *Black Division* folder in the panel. It covers AI on/off, god mode, enemy damage scale, enemy accuracy and regeneration.
+
+## Sound
+
+Gunshots are layered: a recorded close blast (several variations per weapon), synth low-end punch and mechanical action, a room tail that grows with the size of the room you're in, and a distant report that takes over from ~20 m and darkens past ~70 m. The recorded shots were cut from Pixabay sound effects (Pixabay Content License) by freesound_community, pwlpl, haruudu, sovetsky_rastov72, capaholiczsfx and u_2n07b18i8q; the cuts live in `public/audio/guns`.
 
 ## Where tuning lives
 

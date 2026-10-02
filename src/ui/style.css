@@ -302,3 +302,13 @@ canvas { display: block; touch-action: none; }
 .sq-row.dead { opacity: 0.4; border-left-color: #555; }
 .is-touch .squad-panel { left: 12px; bottom: auto; top: 106px; transform: scale(0.85); transform-origin: top left; }
 .comms-tag.friendly { color: #6cc0ff; }
+.armor-bar { position: absolute; left: 0; top: 100%; width: 180px; height: 4px; margin-top: 4px; background: rgba(255,255,255,0.12); overflow: hidden; }
+.armor-fill { position: absolute; inset: 0; background: #9fc4ff; transform-origin: left; }
+.revive-bar { position: absolute; left: 50%; top: 60%; transform: translateX(-50%); display: none; width: 220px; padding: 6px 10px 10px; background: rgba(6,10,16,0.7); border: 1px solid #4fa8ff; color: #cfe6ff; font: 700 11px ui-monospace, Consolas, monospace; letter-spacing: 0.16em; text-align: center; pointer-events: none; }
+.revive-bar.show { display: block; }
+.revive-bar i { position: absolute; left: 10px; right: 10px; bottom: 4px; height: 3px; background: #4fa8ff; transform-origin: left; }
+.flash-btn { position: absolute; right: 150px; top: 100px; width: 48px; height: 48px; border-radius: 50%; border: 1px solid rgba(255,255,255,0.35); background: rgba(10,12,14,0.45); font-size: 20px; pointer-events: auto; }
+.flash-btn.on { border-color: #ffe9a8; box-shadow: 0 0 12px rgba(255,233,168,0.6); }
+.lg.foe { background: #ff8a1f; border-radius: 50%; }
+.squad-btn { position: absolute; right: 206px; top: 100px; height: 48px; padding: 0 12px; border-radius: 24px; border: 1px solid rgba(255,255,255,0.35); background: rgba(10,12,14,0.45); color: #cfe6ff; font: 700 11px ui-monospace, Consolas, monospace; letter-spacing: 0.12em; pointer-events: auto; }
+.squad-btn.on { border-color: #4fa8ff; box-shadow: 0 0 10px rgba(79,168,255,0.5); }

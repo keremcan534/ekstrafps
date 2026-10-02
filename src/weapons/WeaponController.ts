@@ -391,10 +391,14 @@ export class WeaponController implements WeaponListener {
     this.up.crossVectors(this.muzzleDir, this.right).normalize();
 
     // Mechanical dispersion (MOA cone) plus a little extra while the gun is still
-    // moving from previous shots. No hip-fire bloom: aim comes from the weapon itself.
+    // moving from previous shots. Standing still there is no hip-fire bloom: aim
+    // comes from the weapon itself. On the move you can't hold it steady: running
+    // and gunning from the hip scatters, aimed fire on the move a little, mid-air a lot.
     const rd = vm.recoilDeg;
     const recoilEnergy = Math.min(1, Math.hypot(rd.x, rd.y) / Math.max(0.5, d.recoil.vertical * 2));
-    const coneRad = (this.handling.dispersionDeg * 0.5 + d.recoil.dispersion * recoilEnergy) * DEG;
+    const moving = Math.min(1, Math.max(0, (this.deps.player.horizontalSpeed - 0.6) / 4));
+    const moveDeg = moving * (2.2 - 1.5 * this.adsAmount) + (this.deps.player.grounded ? 0 : 3);
+    const coneRad = (this.handling.dispersionDeg * 0.5 + d.recoil.dispersion * recoilEnergy + moveDeg) * DEG;
     const v0 = muzzleVelocity(ammo, d.barrelLength);
     this.lastMuzzleVelocity = v0;
     const pellets = Math.max(1, ammo.pellets);

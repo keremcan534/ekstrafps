@@ -30,12 +30,16 @@ import { BlackDivision } from '../enemies/BlackDivision';
 import type { PlayerTarget, SoldierDeps } from '../enemies/Soldier';
 import { TeamAgent, agentBySoldier, randomPersonality, type Combatant } from '../game/TeamAgent';
 import { SIDEARM, planErrand } from '../game/Errands';
+import { planFor } from '../game/Plans';
 import { assignRevives } from '../game/AITeam';
 import { TeamMatch } from '../game/TeamMatch';
 import type { RogueRobot } from '../enemies/RogueRobot';
 import { Survival } from '../game/Survival';
 import { SurvivalHUD } from '../ui/SurvivalHUD';
 import { MapOverlay, type MapState } from '../ui/MapOverlay';
+import { MuzzleLights } from '../fx/MuzzleLights';
+import { Lighting } from '../game/Lighting';
+import { buildWeaponModel } from '../weapons/WeaponModels';
 
 const FIXED_DT = 1 / 120;
 
@@ -103,6 +107,17 @@ export class Game {
     downed: false,
   };
   private giveUpBtn: HTMLButtonElement | null = null;
+  /** Facility power + flashlight (Site-9). */
+  lighting: Lighting | null = null;
+  /** You picking a downed operator up. */
+  private reviving: { a: TeamAgent; t: number } | null = null;
+  private reviveBar: HTMLDivElement | null = null;
+  /** free: your operators farm, buy and open doors on their own (staying within reach); follow: they stick to you. */
+  squadMode: 'free' | 'follow' = new URLSearchParams(location.search).get('mode') === 'solo' ? 'follow' : 'free';
+  private planTimer = 1;
+  private squadBtn: HTMLButtonElement | null = null;
+  /** Your operators' shared priority target. */
+  private squadFocus = { focus: null as Combatant | null, focusTime: 0 };
   /** Your squad: name, role, money, weapon. */
   private squadEl: HTMLDivElement | null = null;
   private squadTimer = 0;
@@ -111,6 +126,7 @@ export class Game {
   private core: TeamAgent[] = [];
   private coreDeadTime = new Map<TeamAgent, number>();
   private soldierDeps!: SoldierDeps;
+  private muzzleLights!: MuzzleLights;
   mapOverlay: MapOverlay | null = null;
   private mapState: MapState | null = null;
   private target: PlayerTarget = {
@@ -261,7 +277,7 @@ export class Game {
         onRays: () => this.toggleRays(),
         onLaser: () => this.toggleLaser(),
         onFireMode: () => this.weapons.cycleFireMode(),
-        onUse: this.survival ? () => this.survival?.interact() : undefined,
+        onUse: this.survival ? () => this.useAction() : undefined,
         onMap: this.mapOverlay ? () => this.mapOverlay?.toggle() : undefined,
       }, !!this.survival);
       this.mapOverlay?.onMiniTap(() => this.mapOverlay?.toggle());
@@ -282,7 +298,27 @@ export class Game {
 
     // Compile all shaders up front so the first shot never hitches.
     onProgress('Compiling shaders…');
+    // Every weapon model an AI might buy, compiled now instead of on the first purchase.
+    const warm = new THREE.Group();
+    for (const w of this.weapons.weapons) warm.add(buildWeaponModel(w.data.model).root);
+    warm.position.copy(this.camera.eye).y -= 50;
+    this.scene.add(warm);
+    // compile() skips invisible objects: pooled robots, muzzle flashes and culled
+    // rooms would otherwise compile on first sight (a visible hitch mid-fight).
+    const hidden: THREE.Object3D[] = [];
+    this.scene.traverse((o) => {
+      if (!o.visible) {
+        hidden.push(o);
+        o.visible = true;
+      }
+    });
     this.renderer.compile(this.scene, this.camera.camera);
+    // compile() doesn't build the shadow-map (depth) programs or the final lit
+    // variants with shadows: one real render while everything is visible does.
+    this.camera.camera.updateMatrixWorld();
+    this.renderer.render(this.scene, this.camera.camera);
+    for (const o of hidden) o.visible = false;
+    this.scene.remove(warm);
     this.renderer.compile(this.weapons.viewmodel.scene, this.weapons.viewmodel.camera);
     (window as unknown as { __lab: Game }).__lab = this;
   }
@@ -292,7 +328,11 @@ export class Game {
     const [x0, z0, x1, z1] = this.arena.navBounds;
     const blockers = this.arena.robotSpawns.filter((r) => !r.rail && r.position.y < 0.5).map((r) => ({ pos: r.position, radius: 0.45 }));
     this.nav = new NavGrid(this.physics, x0, z0, x1, z1, 0.5, 0.32, blockers);
+    this.muzzleLights = new MuzzleLights(this.mobile ? 0 : 2);
+    this.scene.add(this.muzzleLights.group);
     this.soldierDeps = {
+      muzzleLights: this.muzzleLights,
+      listener: this.camera.eye,
       physics: this.physics,
       nav: this.nav,
       projectiles: this.weapons.projectiles,
@@ -315,6 +355,7 @@ export class Game {
     this.weapons.onPlayerShot = (pos, suppressed) => {
       if (feel.enemyAI && !this.health.dead) for (const s of this.squads) s.hearShot(pos, suppressed);
       this.survival?.hearShot(pos, suppressed);
+      if (!suppressed) this.match?.playerShot(pos);
     };
 
     // The player's capsule takes enemy rounds.
@@ -403,7 +444,12 @@ export class Game {
       downed: false,
       hit: (d, from) => this.hurtPlayer(d, from),
     };
+    this.lighting = new Lighting(this.scene, map, this.camera.eye, (out) => this.camera.getAimDirection(this.player, out), () => !this.health.dead);
     this.survival = new Survival({
+      lighting: this.lighting,
+      world: () => this.world,
+      toast: (t) => this.hud.toast(t, 2.2),
+      onPowerRestored: () => this.match?.powerRestored(),
       map,
       physics: this.physics,
       scene: this.scene,
@@ -459,6 +505,7 @@ export class Game {
           : (this.match?.respawnPoint() ?? this.arena.spawn);
         this.player.teleport(at.clone().setY(at.y + 0.2), Math.random() * Math.PI * 2);
         this.weapons.refillAll();
+        this.health.armor = 0;
         // The core squad comes back with you (bought guns are lost, money is kept).
         this.allies = this.allies.filter((a) => a.alive || this.core.includes(a));
         this.core.forEach((a, i) => {
@@ -481,7 +528,7 @@ export class Game {
         hud: this.hud,
         svHud: hud,
         eye: this.camera.eye,
-        lookDir: (out) => this.camera.getAimDirection(this.player, out),
+        lighting: this.lighting,
         allies: () => this.allies,
         playerAlive: () => !this.health.dead,
         playerPos: this.player.feet,
@@ -521,7 +568,53 @@ export class Game {
       robots: [],
       allies: [],
       enemies: [],
+      utilities: survival.utilities?.markers ?? [],
+      lightsOut: () => this.lighting?.dark ?? false,
     };
+    this.reviveBar = document.createElement('div');
+    this.reviveBar.className = 'revive-bar';
+    ui.appendChild(this.reviveBar);
+    if (this.mobile) {
+      const fl = document.createElement('button');
+      fl.className = 'flash-btn';
+      fl.textContent = '🔦';
+      fl.addEventListener('pointerdown', (e) => {
+        e.stopPropagation();
+        fl.classList.toggle('on', this.lighting?.toggleFlashlight() ?? false);
+      });
+      ui.appendChild(fl);
+      this.squadBtn = document.createElement('button');
+      this.squadBtn.className = 'squad-btn';
+      this.squadBtn.textContent = 'SQUAD';
+      this.squadBtn.classList.toggle('on', this.squadMode === 'free');
+      this.squadBtn.addEventListener('pointerdown', (e) => {
+        e.stopPropagation();
+        this.toggleSquadMode();
+      });
+      ui.appendChild(this.squadBtn);
+    }
+  }
+
+  toggleSquadMode(): void {
+    this.squadMode = this.squadMode === 'free' ? 'follow' : 'free';
+    for (const a of this.allies) a.plan = null;
+    this.hud.toast(this.squadMode === 'free' ? 'Squad: free roam (they farm, buy and open doors on their own)' : 'Squad: follow me', 2.2);
+    this.squadBtn?.classList.toggle('on', this.squadMode === 'free');
+  }
+
+  /** F / USE: pick up a downed squadmate if one is right here, else buy / use. */
+  private useAction(): void {
+    const a = this.downedAllyNear();
+    if (a && !this.health.downed && !this.health.dead) {
+      this.reviving = { a, t: 0 };
+      return;
+    }
+    this.survival?.interact();
+  }
+
+  private downedAllyNear(): TeamAgent | null {
+    for (const a of this.allies) if (a.alive && a.downed && a.distTo(this.player.feet) < 2.2) return a;
+    return null;
   }
 
   /** Robots as combatants (cached per pooled robot). */
@@ -563,6 +656,10 @@ export class Game {
     this.match?.pushCombatants(w);
     for (const r of sv.robots) if (r.alive) w.push(this.robotCombatant(r));
 
+    const sf = this.squadFocus;
+    sf.focusTime -= dt;
+    if (sf.focusTime <= 0 || (sf.focus && (!sf.focus.alive || sf.focus.downed))) sf.focus = null;
+
     // Downed: the nearest standing ally comes to pick you up; allies pick each other up too.
     const rv = this.playerRevive;
     rv.pos.copy(this.player.feet);
@@ -582,6 +679,23 @@ export class Game {
       if (reviver) reviver.reviveTarget = rv;
     }
     assignRevives(this.allies);
+    // You reviving someone: stay close for 3 s.
+    const rvg = this.reviving;
+    if (rvg && (!rvg.a.alive || !rvg.a.downed || rvg.a.distTo(this.player.feet) > 2.6 || this.health.downed || this.health.dead)) this.reviving = null;
+    if (this.reviving) {
+      this.reviving.t += dt;
+      if (this.reviving.t >= 3) {
+        this.reviving.a.soldier.body.revive();
+        this.hud.toast(`${this.reviving.a.personality.name} is back up`, 1.5);
+        this.reviving = null;
+      }
+    }
+    if (this.reviveBar) {
+      this.reviveBar.classList.toggle('show', !!this.reviving);
+      if (this.reviving) this.reviveBar.innerHTML = `REVIVING ${this.reviving.a.personality.name.toUpperCase()}<i style="transform:scaleX(${(this.reviving.t / 3).toFixed(3)})"></i>`;
+    }
+    const near = !this.reviving && !this.health.downed ? this.downedAllyNear() : null;
+    sv.overridePrompt = near ? `Revive ${near.personality.name}` : null;
     if (this.health.downed) this.status.setDowned(this.health.bleed, reviver ? Math.min(1, reviver.reviveTime / 4) : 0);
     this.giveUpBtn?.classList.toggle('show', this.health.downed);
 
@@ -593,6 +707,22 @@ export class Game {
         if (a.target || a.reviveTarget || this.health.downed) continue;
         const e = planErrand(a, sv, this.arena, { maxDist: 40, doorsNear: this.player.feet, doorDist: 45, doorKeep: 250 });
         if (e) a.errand = e;
+      }
+    }
+    // Free roam: each operator works toward their own goal (gun, door, farm, push), within reach of you.
+    this.planTimer -= dt;
+    if (this.planTimer <= 0 && this.arena instanceof Site9) {
+      this.planTimer = 2.5;
+      for (const a of this.allies) {
+        if (this.squadMode === 'follow') {
+          a.plan = null;
+          continue;
+        }
+        if (!a.alive || a.downed || a.plan || a.errand || a.target || a.reviveTarget || this.health.downed) continue;
+        a.plan = planFor(a, {
+          sv, map: this.arena, robots: sv.robots, pool: this.allies, intel: this.match?.intel('alpha') ?? [],
+          anchor: this.player.feet, leash: 55,
+        });
       }
     }
     const mates = this.allies.map((a) => a.soldier);
@@ -654,12 +784,20 @@ export class Game {
   private addAlly(at: THREE.Vector3, hired: boolean): TeamAgent {
     const p = randomPersonality(0);
     const ally = new TeamAgent(this.soldierDeps, 'alpha', 10 + this.allies.length, p, 'vanta', {
-      onHit: (_a, info, killed) => this.survival?.onSoldierHit('alpha', info, killed),
+      onHit: (a, info, killed) => {
+        this.survival?.onSoldierHit('alpha', info, killed);
+        const h = info.hit;
+        if (h.team && h.team !== 'robots' && h.weaponId !== 'melee' && h.weaponId !== 'bleed') {
+          const from = new THREE.Vector3().copy(h.point).addScaledVector(h.direction, -Math.max(2, h.distance)).setY(0);
+          for (const m of this.allies) if (m.alive && !m.downed && m.distTo(a.soldier.pos) < 45) m.alert(from, m === a);
+        }
+      },
       onKilled: () => this.audio.play('bd.man_down', { pitch: 1.12 }),
     });
     ally.soldier.body.friendly = true;
     ally.soldier.body.canGoDown = () => !this.health.dead || this.allies.some((a) => a !== ally && a.alive && !a.downed);
     ally.armory = (id) => this.weapons.weapons.find((w) => w.data.id === id)?.data;
+    ally.squad = this.squadFocus;
     ally.points = hired ? 0 : 500;
     ally.spawn(at, this.player.yaw);
     // Contractors arrive armed; the starting squad has pistols like you.
@@ -678,7 +816,7 @@ export class Game {
     const short = (id: string) => this.weapons.weapons.find((w) => w.data.id === id)?.data.short ?? id;
     this.squadEl.innerHTML = this.allies
       .map((a) => {
-        const st = !a.alive ? 'dead' : a.downed ? 'down' : a.errand ? a.errand.kind : '';
+        const st = !a.alive ? 'dead' : a.downed ? 'down' : a.errand ? a.errand.kind : a.plan ? a.plan.status : a.target ? 'fighting' : '';
         return `<div class="sq-row ${a.alive ? '' : 'dead'}"><b>${a.personality.name}</b><i>${a.personality.role}</i><span>${a.alive ? short(a.soldier.weaponId) : '✕'}</span><em>${a.points}</em>${st && a.alive ? `<u>${st === 'down' ? 'DOWN' : st}</u>` : ''}</div>`;
       })
       .join('');
@@ -727,7 +865,8 @@ export class Game {
         this.hud.toast(`Aim rays ${this.toggleRays() ? 'on' : 'off'}`);
         break;
       case 'KeyL':
-        this.hud.toast(`Laser ${this.toggleLaser() ? 'on' : 'off'}`);
+        if (this.lighting) this.hud.toast(`Flashlight ${this.lighting.toggleFlashlight() ? 'on' : 'off'}`, 1);
+        else this.hud.toast(`Laser ${this.toggleLaser() ? 'on' : 'off'}`);
         break;
       case 'KeyJ':
         feel.debugCrosshair = !feel.debugCrosshair;
@@ -769,7 +908,10 @@ export class Game {
         this.gotoStation(this.stationIndex + 1);
         break;
       case 'KeyF':
-        this.survival?.interact();
+        this.useAction();
+        break;
+      case 'KeyY':
+        if (this.survival) this.toggleSquadMode();
         break;
       case 'KeyX':
         if (this.health.downed) this.health.giveUp();
@@ -903,6 +1045,7 @@ export class Game {
     // --- World ---
     this.nav.beginFrame();
     this.arena.update(dt, this.player.feet);
+    this.lighting?.update(dt);
     if (this.arena instanceof Site9) {
       const map = this.arena;
       const s = this.survival;
@@ -936,13 +1079,23 @@ export class Game {
       if (this.match) for (const t of this.match.raiders) for (const a of t.agents) if (a.alive) ms.enemies.push({ x: a.soldier.pos.x, z: a.soldier.pos.z });
       ms.allies.length = 0;
       for (const a of this.allies) if (a.alive) ms.allies.push({ x: a.soldier.pos.x, z: a.soldier.pos.z });
+      // Gunfire gives enemy operators away for a moment.
+      this.match?.loud(ms.enemies, 'alpha');
       this.mapOverlay.update(realDt, ms);
     }
     this.health.update(dt);
+    this.muzzleLights.update(dt);
     this.shells.update(dt);
     this.impacts.update(dt);
     this.right.set(1, 0, 0).applyQuaternion(this.camera.camera.quaternion);
     this.audio.setListener(this.camera.camera.position, this.right);
+    if (this.arena instanceof Site9) {
+      // Tails and reverb follow the room you're in: offices are tight, the hangar rolls on.
+      const f = this.player.feet;
+      const room = this.arena.rooms.find((r) => f.x >= r.rect[0] && f.x <= r.rect[2] && f.z >= r.rect[1] && f.z <= r.rect[3]);
+      const want = room ? Math.min(1, Math.max(0, (room.h - 5) / 11)) : 0.5;
+      this.audio.space += (want - this.audio.space) * Math.min(1, dt * 2);
+    }
 
     // --- UI ---
     const cw = this.weapons.current;
@@ -951,6 +1104,7 @@ export class Game {
     this.hud.updateCrosshair(this.weapons.handling.dispersionDeg * 0.5, this.camera.currentFov, this.weapons.adsAmount, cw.state !== 'ready' || this.player.sprinting);
     this.hud.update(realDt, this.camera.camera);
     this.status.update(realDt, this.health.health, this.health.max, this.camera.camera);
+    this.status.setArmor(this.health.armor / this.health.maxArmor);
     this.status.setSquadLine(this.squadStatus());
     this.tuning.syncWeapon();
     this.touch?.sync(input.adsHeld, this.weapons.currentIndex, this.weapons.owned);

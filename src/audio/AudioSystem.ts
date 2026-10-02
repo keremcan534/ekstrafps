@@ -30,6 +30,8 @@ export class AudioSystem {
   private listenerRight = new THREE.Vector3(1, 0, 0);
   private tmp = new THREE.Vector3();
   ready = false;
+  /** 0 = small room (short tails) … 1 = huge hall (long tails, more reverb). Set by the game. */
+  space = 0.5;
 
   constructor() {
     this.ctx = new AudioContext({ latencyHint: 'interactive' });
@@ -94,6 +96,7 @@ export class AudioSystem {
       for (const l of ev.layers) {
         if (l.synth) needed.add(l.synth);
         if (l.file) files.add(l.file);
+        for (const f of l.files ?? []) files.add(f);
       }
     }
     const jobs: Promise<void>[] = [];
@@ -154,9 +157,10 @@ export class AudioSystem {
 
     let gain = opts?.volume ?? 1;
     let pan = 0;
+    let dist = 0;
     if (opts?.position && ev.bus !== 'ui') {
       const d = this.tmp.subVectors(opts.position, this.listenerPos);
-      const dist = d.length();
+      dist = d.length();
       gain *= 1 / (1 + dist * 0.06);
       if (dist > 0.01) pan = Math.max(-0.8, Math.min(0.8, d.dot(this.listenerRight) / dist));
     }
@@ -176,17 +180,31 @@ export class AudioSystem {
     let send: GainNode | null = null;
     if (ev.reverb) {
       send = this.ctx.createGain();
-      send.gain.value = ev.reverb * Math.min(1.5, (opts?.volume ?? 1) * 0.6 + 0.4 + (1 - gain) * 0.5);
+      send.gain.value = ev.reverb * Math.min(1.5, (opts?.volume ?? 1) * 0.6 + 0.4 + (1 - gain) * 0.5) * (0.7 + 0.6 * this.space);
       send.connect(this.reverbIn);
     }
+    // Distance bands: the close blast gives way to the distant report.
+    const smooth = (a0: number, a1: number, x: number) => {
+      const t = Math.min(1, Math.max(0, (x - a0) / (a1 - a0)));
+      return t * t * (3 - 2 * t);
+    };
+    const far = smooth(18, 50, dist);
+    const farthest = smooth(70, 120, dist);
     for (const layer of ev.layers) {
-      const buf = (layer.file && this.fileBuffers.get(layer.file)) || this.pickSynth(layer.synth);
+      let band = 1;
+      if (layer.range === 'near') band = 1 - far;
+      else if (layer.range === 'far') band = far * (1 - farthest);
+      else if (layer.range === 'farthest') band = farthest;
+      if (band < 0.02) continue;
+      if (layer.tail) band *= 0.45 + 0.9 * this.space;
+      const pickFile = layer.files?.length ? layer.files[(Math.random() * layer.files.length) | 0] : layer.file;
+      const buf = (pickFile && this.fileBuffers.get(pickFile)) || this.pickSynth(layer.synth);
       if (!buf) continue;
       const src = this.ctx.createBufferSource();
       src.buffer = buf;
       src.playbackRate.value = pitch;
       const g = this.ctx.createGain();
-      g.gain.value = layer.gain * gain;
+      g.gain.value = layer.gain * gain * band;
       src.connect(g).connect(out);
       if (send && !layer.dry) g.connect(send);
       src.start(now + (layer.delay ?? 0));

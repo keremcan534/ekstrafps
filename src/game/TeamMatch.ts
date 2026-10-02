@@ -11,6 +11,8 @@ import type { StatusHUD } from '../ui/StatusHUD';
 import type { HUD } from '../ui/HUD';
 import type { SurvivalHUD } from '../ui/SurvivalHUD';
 import type { DamageInfo } from '../targets/Humanoid';
+import type { Lighting } from './Lighting';
+import { GROUPS } from '../core/Physics';
 
 export const TEAM_ROWS: TeamRow[] = [
   { id: 'alpha', name: 'VANTA', color: '#4fa8ff' },
@@ -35,9 +37,9 @@ export interface MatchDeps {
   status: StatusHUD;
   hud: HUD;
   svHud: SurvivalHUD;
-  /** The player's eye and look direction (flashlight). */
+  /** The player's eye (raid landings stay out of its sight). */
   eye: THREE.Vector3;
-  lookDir(out: THREE.Vector3): THREE.Vector3;
+  lighting: Lighting;
   /** Everyone on the player's team that isn't the player (hired contractors). */
   allies(): TeamAgent[];
   playerAlive(): boolean;
@@ -58,15 +60,13 @@ export class TeamMatch {
   private board: Scoreboard;
   private alive = new Map<string, number>();
   private raidTime = -1;
-  private blackout = 0;
-  private flicker = 0;
-  private flashlight: THREE.SpotLight;
-  private sky: THREE.Color;
-  private skyBase: THREE.Color;
-  private fogBase: THREE.Color | null;
-  private envBase: number;
-  private dir = new THREE.Vector3();
   private finished = false;
+  /** Rounds in each AI soldier's magazine last frame (to notice shots). */
+  private lastAmmo = new Map<TeamAgent, number>();
+  /** When each AI soldier last fired (minimap: gunfire gives you away). */
+  private lastShot = new Map<TeamAgent, number>();
+  private time = 0;
+  private probe = new THREE.Vector3();
   /** Called when the match ends (release the mouse etc.). */
   onEnd: (() => void) | null = null;
 
@@ -80,6 +80,7 @@ export class TeamMatch {
       robots: () => d.survival.robots,
       respawnPoint: () => this.respawnPoint(),
       onKill: (victim, info) => this.feedKill(victim.team, victim.personality.name, info),
+      intel: (team) => this.intel(team),
     };
     const defs: TeamDef[] = [
       { id: 'bravo', name: 'Bravo', color: COLOR.bravo, palette: 'bravo', style: 'disciplined', start: this.startOf('bravo'), economy: true },
@@ -91,15 +92,30 @@ export class TeamMatch {
       this.teams.push(new AITeam(def, this.ctx));
     }
     this.board = new Scoreboard(d.ui, TEAM_ROWS);
+  }
 
-    // Flashlight: always in the scene (adding a light later would recompile every shader).
-    this.flashlight = new THREE.SpotLight(0xfff1dc, 0, 32, 0.5, 0.6, 1.4);
-    this.flashlight.castShadow = false;
-    d.scene.add(this.flashlight, this.flashlight.target);
-    this.sky = d.scene.background as THREE.Color;
-    this.skyBase = this.sky.clone();
-    this.fogBase = d.scene.fog ? (d.scene.fog as THREE.Fog).color.clone() : null;
-    this.envBase = d.scene.environmentIntensity;
+  private heardPlayer: { pos: THREE.Vector3; t: number } | null = null;
+
+  /** The player fired (AI teams hear it). */
+  playerShot(pos: THREE.Vector3): void {
+    if (!this.heardPlayer) this.heardPlayer = { pos: new THREE.Vector3(), t: 0 };
+    this.heardPlayer.pos.copy(pos);
+    this.heardPlayer.t = this.time;
+  }
+
+  /** Where other teams' operators were heard in the last 20 s. */
+  intel(team: string): { team: string; pos: THREE.Vector3 }[] {
+    const out: { team: string; pos: THREE.Vector3 }[] = [];
+    for (const [a, t] of this.lastShot) if (this.time - t < 20 && a.alive && a.team !== team && a.team !== 'bd') out.push({ team: a.team, pos: a.soldier.pos.clone() });
+    if (team !== 'alpha' && this.heardPlayer && this.time - this.heardPlayer.t < 20) out.push({ team: 'alpha', pos: this.heardPlayer.pos.clone() });
+    return out;
+  }
+
+  /** Enemy soldiers that fired in the last few seconds (minimap). */
+  loud(out: { x: number; z: number }[], team: string): void {
+    for (const [a, t] of this.lastShot) {
+      if (this.time - t < 2.5 && a.alive && a.team !== team) out.push({ x: a.soldier.pos.x, z: a.soldier.pos.z });
+    }
   }
 
   private startOf(team: string): THREE.Vector3 {
@@ -160,24 +176,26 @@ export class TeamMatch {
   startRaid(team: string): void {
     if (this.raidActive || this.finished) return;
     this.raidTime = 0;
-    this.flicker = 0;
+    this.d.lighting.setRaid(true);
     this.d.audio.play('power.down');
     this.d.svHud.showBanner('POWER FAILURE', 'raid');
     this.d.status.radio(`${NAME[team] ?? team} tripped the grid. Lights out.`);
     setTimeout(() => {
       if (!this.raidActive) return;
       this.d.audio.play('raid.siren');
+      const where = this.deployRaiders(team);
       this.d.svHud.showBanner('BLACK DIVISION INCOMING', 'raid');
-      this.d.status.radio('Black Division breach. They kill everyone.');
-      this.deployRaiders(team);
+      this.d.status.radio(`Black Division breach: ${where}. They kill everyone. Breakers restore power.`);
     }, 4500);
   }
 
-  private deployRaiders(leader: string): void {
-    // One squad lands far from everyone, one goes in on the team that tripped the alarm.
+  /** Returns where they landed (radio). */
+  private deployRaiders(leader: string): string {
+    // One squad lands far from everyone, one goes in on the team that tripped the
+    // alarm. Never on top of anyone and never in your sight.
     const targetTeam = leader === 'alpha' ? null : this.teams.find((t) => t.def.id === leader);
     const near = targetTeam?.leader?.soldier.pos ?? this.d.playerPos;
-    const points = [this.respawnPoint(), this.pointNear(near, 22, 40)];
+    const points = [this.raidPoint(null), this.raidPoint(near)];
     points.forEach((at, i) => {
       if (this.raiders[i]) this.raiders[i].redeploy(at);
       else {
@@ -185,22 +203,55 @@ export class TeamMatch {
         this.raiders.push(new AITeam(def, this.ctx, 4));
       }
     });
+    const rooms = points.map((p) => this.d.map.rooms.find((r) => p.x >= r.rect[0] && p.x <= r.rect[2] && p.z >= r.rect[1] && p.z <= r.rect[3])?.name ?? 'unknown');
+    return [...new Set(rooms)].join(' and ');
   }
 
-  private pointNear(p: THREE.Vector3, min: number, max: number): THREE.Vector3 {
+  /**
+   * Raid landing zone: an opened room at least 40 m from you and your squad,
+   * 22 m from any other soldier, out of your line of sight. With `near`, prefer
+   * 30-60 m from that point (going in on that team).
+   */
+  private raidPoint(near: THREE.Vector3 | null): THREE.Vector3 {
+    const sv = this.d.survival;
     const nav = this.d.soldierDeps.nav;
-    for (let i = 0; i < 30; i++) {
-      const a = Math.random() * Math.PI * 2;
-      const r = min + Math.random() * (max - min);
-      const x = p.x + Math.cos(a) * r;
-      const z = p.z + Math.sin(a) * r;
-      if (nav.walkable(x, z) && this.d.survival.unlocked.has(this.d.map.zoneAt(x, z) ?? '')) return new THREE.Vector3(x, 0, z);
+    const phys = this.d.soldierDeps.physics;
+    const rooms = this.d.map.rooms.filter((r) => sv.unlocked.has(r.zone));
+    const people = this.worldRef().filter((c) => c.kind !== 'robot' && c.alive);
+    let best: THREE.Vector3 | null = null;
+    let bestScore = -Infinity;
+    for (let i = 0; i < 60; i++) {
+      const r = rooms[(Math.random() * rooms.length) | 0];
+      const x = r.rect[0] + 2.5 + Math.random() * (r.rect[2] - r.rect[0] - 5);
+      const z = r.rect[1] + 2.5 + Math.random() * (r.rect[3] - r.rect[1] - 5);
+      if (!nav.walkable(x, z)) continue;
+      let ok = true;
+      let nearest = Infinity;
+      for (const c of people) {
+        const d = Math.hypot(c.pos.x - x, c.pos.z - z);
+        nearest = Math.min(nearest, d);
+        if (d < (c.team === 'alpha' ? 40 : 22)) ok = false;
+      }
+      if (!ok) continue;
+      this.probe.set(x, 1.5, z);
+      if (phys.lineOfSight(this.d.eye, this.probe, GROUPS.sight)) continue;
+      const score = near ? -Math.abs(Math.hypot(near.x - x, near.z - z) - 42) : nearest;
+      if (score > bestScore) {
+        bestScore = score;
+        best = new THREE.Vector3(x, 0, z);
+      }
     }
-    return this.respawnPoint();
+    return best ?? this.respawnPoint();
+  }
+
+  /** A breaker brought the lights back early. */
+  powerRestored(): void {
+    this.d.status.radio('Power restored at a breaker. Black Division is still in here.');
   }
 
   private endRaid(): void {
     this.raidTime = -1;
+    this.d.lighting.setRaid(false);
     this.d.audio.play('lift.arrive', { volume: 0.4 });
     this.d.status.radio('Power restored.');
   }
@@ -229,8 +280,15 @@ export class TeamMatch {
   // ---------------------------------------------------------------- frame
 
   update(dt: number, world: Combatant[]): void {
+    this.time += dt;
     for (const t of this.teams) t.update(dt, world);
     for (const t of this.raiders) t.update(dt, world);
+    for (const a of [...this.agents(), ...this.d.allies()]) {
+      const ammo = a.soldier.ammo;
+      const prev = this.lastAmmo.get(a);
+      if (prev !== undefined && ammo < prev) this.lastShot.set(a, this.time);
+      this.lastAmmo.set(a, ammo);
+    }
 
     // Raid clock: ends when Black Division is wiped or time runs out.
     if (this.raidActive) {
@@ -238,7 +296,6 @@ export class TeamMatch {
       const deployed = this.raiders.length > 0 && this.raidTime > 6;
       if (this.raidTime > RAID_TIME || (deployed && this.raiders.every((t) => t.aliveCount === 0))) this.endRaid();
     }
-    this.updateLights(dt);
 
     // Scoreboard.
     const sv = this.d.survival;
@@ -253,36 +310,5 @@ export class TeamMatch {
       }
     }
     this.board.update(sv.score, this.alive, sv.nextRaid, leader);
-  }
-
-  /** Blackout: flickering power-down, dark facility, red emergency strips, your flashlight. */
-  private updateLights(dt: number): void {
-    const target = this.raidActive ? 1 : 0;
-    let k: number;
-    if (target > this.blackout) {
-      // Power-down: a few hard flickers, then out.
-      this.flicker += dt;
-      const f = this.flicker;
-      const flick = f < 1.6 ? (Math.sin(f * 37) > 0.2 ? 0.15 : 0.9) : 1;
-      this.blackout = Math.min(1, this.blackout + dt * 0.55);
-      k = Math.max(this.blackout, f < 1.6 ? flick * Math.min(1, f) : this.blackout);
-    } else {
-      this.blackout = Math.max(0, this.blackout - dt * 0.35);
-      k = this.blackout;
-    }
-    this.d.map.setBlackout(k);
-    this.sky.copy(this.skyBase).multiplyScalar(1 - 0.92 * k);
-    // Image-based ambient is most of the indoor fill: it has to go dark too.
-    this.d.scene.environmentIntensity = this.envBase * (1 - 0.9 * k);
-    if (this.fogBase) (this.d.scene.fog as THREE.Fog).color.copy(this.fogBase).multiplyScalar(1 - 0.92 * k);
-
-    const fl = this.flashlight;
-    fl.intensity = this.d.playerAlive() ? 8 * Math.min(1, k * 1.4) : 0;
-    if (fl.intensity > 0) {
-      const dir = this.d.lookDir(this.dir);
-      fl.position.copy(this.d.eye).addScaledVector(dir, 0.3).y -= 0.12;
-      fl.target.position.copy(this.d.eye).addScaledVector(dir, 10);
-      fl.target.updateMatrixWorld();
-    }
   }
 }

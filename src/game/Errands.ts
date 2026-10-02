@@ -2,10 +2,11 @@ import * as THREE from 'three';
 import { WEAPON_PRICES, type Site9 } from '../world/Site9';
 import type { Survival } from './Survival';
 import type { TeamAgent } from './TeamAgent';
+import { PRICES } from './Utilities';
 
 /** A short trip an operator makes with their own money: buy a gun, restock, open a door. */
 export interface Errand {
-  kind: 'weapon' | 'ammo' | 'door';
+  kind: 'weapon' | 'ammo' | 'door' | 'heal' | 'crate' | 'sentry';
   /** What the operator says on the radio when setting off. */
   label: string;
   at: THREE.Vector3;
@@ -39,7 +40,25 @@ export function planErrand(a: TeamAgent, sv: Survival, map: Site9, o: ErrandOpti
   if (!a.alive || a.downed || a.errand) return null;
   const s = a.soldier;
   const pos = s.pos;
-  const zoneOk = (p: THREE.Vector3) => sv.unlocked.has(map.zoneAt(p.x, p.z) ?? '');
+  const reach = sv.reachable(map.zoneAt(pos.x, pos.z));
+  const zoneOk = (p: THREE.Vector3) => reach.has(map.zoneAt(p.x, p.z) ?? '');
+
+  const util = sv.utilities;
+  // 0) Hurt and there's a medical station in reach: patch up.
+  if (util && a.hp < 0.5 && a.points >= PRICES.med) {
+    const st = util.stations.filter((x) => x.kind === 'med' && zoneOk(x.at) && flat(x.at, pos) < o.maxDist).sort((x, y) => flat(x.at, pos) - flat(y.at, pos))[0];
+    if (st) {
+      return {
+        kind: 'heal', at: st.at, time: 0, label: 'Patching up at the med station.',
+        run: () => {
+          if (a.points >= PRICES.med) {
+            a.points -= PRICES.med;
+            a.soldier.body.health.health = a.soldier.body.health.maxHealth;
+          }
+        },
+      };
+    }
+  }
 
   // 1) A better weapon (best tier we can afford, nearest of those).
   let wb: { at: THREE.Vector3; cost: number; id: string } | null = null;
@@ -60,6 +79,36 @@ export function planErrand(a: TeamAgent, sv: Survival, map: Site9, o: ErrandOpti
         }
       },
     };
+  }
+
+  // 1b) Feeling lucky: the supply crate, when it's close and we're still on a weak gun.
+  const crate = util?.crateStand;
+  if (util && crate && tier(s.weaponId) < 1400 && a.points >= PRICES.crate + 200 && zoneOk(crate) && flat(crate, pos) < o.maxDist && Math.random() < 0.5) {
+    return {
+      kind: 'crate', at: crate, time: 0, label: 'Trying my luck at the supply crate.',
+      run: () => {
+        if (a.points < PRICES.crate) return;
+        a.points -= PRICES.crate;
+        const id = util.rollCrate();
+        if (tier(id) > tier(a.soldier.weaponId)) a.arm(id);
+        util.usedCrate();
+      },
+    };
+  }
+  // 1c) Rich: switch on a sentry nearby (it fights for us for a minute).
+  if (util && a.points > 2800) {
+    const t = util.turrets.find((x) => x.time <= 0 && zoneOk(x.at) && flat(x.at, pos) < o.maxDist);
+    if (t) {
+      return {
+        kind: 'sentry', at: t.at, time: 0, label: 'Powering up a sentry here.',
+        run: () => {
+          if (t.time <= 0 && a.points >= PRICES.turret) {
+            a.points -= PRICES.turret;
+            util.activate(t, a.team, a.soldier);
+          }
+        },
+      };
+    }
   }
 
   // 2) Restock when the bought gun is running dry.
@@ -85,7 +134,7 @@ export function planErrand(a: TeamAgent, sv: Survival, map: Site9, o: ErrandOpti
     let pick: { at: THREE.Vector3; d: (typeof sv.doors)[number]; dist: number } | null = null;
     for (const d of sv.doors) {
       if (d.open || d.cost > a.points - o.doorKeep) continue;
-      if (sv.unlocked.has(d.zones[0]) === sv.unlocked.has(d.zones[1])) continue;
+      if (reach.has(d.zones[0]) === reach.has(d.zones[1])) continue;
       const n = d.slot.alongX ? new THREE.Vector3(0, 0, 1) : new THREE.Vector3(1, 0, 0);
       const side = d.slot.center.clone().addScaledVector(n, 1.6);
       const at = zoneOk(side) ? side : d.slot.center.clone().addScaledVector(n, -1.6);

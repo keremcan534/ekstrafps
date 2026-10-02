@@ -29,8 +29,13 @@ export class PlayerHealth {
   /** Returns the damage actually taken. */
   damage(amount: number): number {
     if (this.dead || feel.godMode) return 0;
-    const scaled = amount * feel.enemyDamageScale;
+    let scaled = amount * feel.enemyDamageScale;
     this.sinceDamage = 0;
+    if (this.armor > 0 && !this.downed) {
+      const soak = Math.min(this.armor, scaled * 0.6);
+      this.armor -= soak;
+      scaled -= soak;
+    }
     if (this.downed) {
       // Hits while down shorten the bleed-out.
       this.bleed -= scaled * 0.15;
@@ -49,6 +54,10 @@ export class PlayerHealth {
     }
     return dealt;
   }
+
+  /** Armor plates: soak 60% of incoming damage until they're used up. */
+  armor = 0;
+  readonly maxArmor = 100;
 
   /** Seconds on the floor before an automatic respawn. */
   respawnDelay = 3.5;

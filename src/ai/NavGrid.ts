@@ -186,7 +186,8 @@ export class NavGrid {
   }
 
   findPath(from: THREE.Vector3, to: THREE.Vector3, maxNodes = 6000): THREE.Vector3[] | null {
-    if (this.frameUsed > this.frameBudget) return null;
+    // Budget spent this frame: short searches still go through (nearby moves never starve).
+    if (this.frameUsed > this.frameBudget) maxNodes = Math.min(maxNodes, 700);
     const start = this.nearestWalkable(from.x, from.z, new THREE.Vector3(), 2);
     const goal = this.nearestWalkable(to.x, to.z, new THREE.Vector3(), 4);
     if (!start || !goal) return null;
@@ -254,7 +255,8 @@ export class NavGrid {
     let k = 0;
     while (k < pts.length - 1) {
       let far = k + 1;
-      for (let j = pts.length - 1; j > k + 1; j--) {
+      // Look ahead at most ~20 m: full-length scans are quadratic on long paths.
+      for (let j = Math.min(pts.length - 1, k + 40); j > k + 1; j--) {
         if (this.clearLine(anchor.x, anchor.z, pts[j].x, pts[j].z)) {
           far = j;
           break;

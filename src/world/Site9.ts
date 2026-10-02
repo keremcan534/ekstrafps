@@ -29,6 +29,16 @@ export interface AmmoSpot {
   zone: string;
 }
 
+/** Free wall spot for random content (extra wall weapons, stations, breakers, crates, sentries). */
+export interface WallSpot {
+  /** On the wall face. */
+  pos: THREE.Vector3;
+  /** Faces into the room. */
+  yaw: number;
+  room: string;
+  zone: string;
+}
+
 /** Candidate area for a random hazard (electrified floor, gas leak, fire). */
 export interface HazardSpot {
   rect: [number, number, number, number];
@@ -166,6 +176,10 @@ export class Site9 implements GameMap {
   readonly spawnPoints: SpawnPoint[] = [];
   readonly ammoSpots: AmmoSpot[] = [];
   readonly hazardSpots: HazardSpot[] = [];
+  /** Room connections (archways always open; shutters when bought). */
+  readonly links = LINKS;
+  /** Free wall spots (Survival validates them against furniture and fills a random subset). */
+  readonly wallSpots: WallSpot[] = [];
   readonly rooms = ROOMS;
 
   private mats: Record<string, THREE.Material>;
@@ -261,6 +275,7 @@ export class Site9 implements GameMap {
     this.buildBarracks();
     this.buildPower();
     this.buildRandomSlots();
+    this.collectWallSpots();
     this.buildDetails();
     this.buildSigns();
     this.layout.build(this.group);
@@ -461,6 +476,59 @@ export class Site9 implements GameMap {
     this.hazard('medbay', 50, 36, 56, 42);
     this.hazard('barracks', 84, 40, 92, 48);
     this.hazard('atrium', -30, 0, -24, 6);
+  }
+
+  /** Wall-mounted weapon added at runtime on a free wall spot (weapon rolled at random). */
+  addWallBuy(spot: WallSpot): WallBuy {
+    const weapon = RANDOM_WEAPONS[(Math.random() * RANDOM_WEAPONS.length) | 0];
+    const wb: WallBuy = { weapon, cost: WEAPON_PRICES[weapon], pos: spot.pos.clone().setY(1.6), yaw: spot.yaw, room: spot.room };
+    this.wallBuys.push(wb);
+    return wb;
+  }
+
+  /**
+   * Up to four free spots per room along its walls, clear of doors, lifts and
+   * everything already placed. Reserved, so the decoration pass leaves them bare.
+   */
+  private collectWallSpots(): void {
+    for (const room of ROOMS) {
+      const R = room.id;
+      const [x0, z0, x1, z1] = room.rect;
+      const doorPts: THREE.Vector3[] = [];
+      for (const l of LINKS) {
+        if (l.a !== R && l.b !== R) continue;
+        const o = ROOMS.find((r) => r.id === (l.a === R ? l.b : l.a))!;
+        const vertical = room.rect[2] === o.rect[0] || room.rect[0] === o.rect[2];
+        if (vertical) doorPts.push(new THREE.Vector3(room.rect[2] === o.rect[0] ? x1 : x0, 0, l.at));
+        else doorPts.push(new THREE.Vector3(l.at, 0, room.rect[3] === o.rect[1] ? z1 : z0));
+      }
+      const clear = (x: number, z: number) => {
+        for (const p of doorPts) if (Math.hypot(p.x - x, p.z - z) < 4) return false;
+        for (const p of this.reserved) if (Math.hypot(p.x - x, p.z - z) < 3) return false;
+        for (const sp of this.spawnPoints) if (Math.hypot(sp.pos.x - x, sp.pos.z - z) < 3) return false;
+        return true;
+      };
+      const walls: [number, number, number, number, number, number][] = [
+        [x0, z0, x1, z0, 0, 1], [x0, z1, x1, z1, 0, -1], [x0, z0, x0, z1, 1, 0], [x1, z0, x1, z1, -1, 0],
+      ];
+      const found: WallSpot[] = [];
+      for (const [ax, az, cx, cz, nx, nz] of walls) {
+        const len = Math.hypot(cx - ax, cz - az);
+        const dx = (cx - ax) / len;
+        const dz = (cz - az) / len;
+        for (let s = 4 + Math.random() * 3; s < len - 4; s += 8 + Math.random() * 4) {
+          const x = ax + dx * s + nx * 0.18;
+          const z = az + dz * s + nz * 0.18;
+          if (!clear(x, z)) continue;
+          found.push({ pos: new THREE.Vector3(x, 0, z), yaw: Math.atan2(nx, nz), room: R, zone: room.zone });
+        }
+      }
+      found.sort(() => Math.random() - 0.5);
+      for (const sp of found.slice(0, 4)) {
+        this.wallSpots.push(sp);
+        this.reserved.push(sp.pos.clone());
+      }
+    }
   }
 
   private spawnAt(zone: string, pts: [number, number][], kind: SpawnPoint['kind'] = 'bay'): void {

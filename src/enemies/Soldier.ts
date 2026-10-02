@@ -8,6 +8,7 @@ import { Humanoid, defaultPose, type DamageInfo } from '../targets/Humanoid';
 import { buildEnemyRifle, buildWeaponModel, type WeaponRig } from '../weapons/WeaponModels';
 import type { WeaponData } from '../weapons/WeaponData';
 import { getAmmo, type AmmoData } from '../weapons/AmmoData';
+import type { MuzzleLights } from '../fx/MuzzleLights';
 import { MuzzleFlash } from '../fx/MuzzleFlash';
 import type { ProjectileSystem } from '../weapons/Ballistics';
 import type { ImpactSystem } from '../fx/ImpactSystem';
@@ -39,7 +40,14 @@ export interface SoldierDeps {
   lowSpec?: boolean;
   /** Weapon definitions (for soldiers that buy weapons). */
   weaponData?: (id: string) => WeaponData | undefined;
+  /** Shared muzzle-flash lights (no light per soldier: light count changes recompile every shader). */
+  muzzleLights?: MuzzleLights;
+  /** Camera position (flash lights only near the viewer). */
+  listener?: THREE.Vector3;
 }
+
+/** How the weapon is held: low ready / high port (moving), ready, aiming. */
+export type AimMode = 'low' | 'high' | 'ready' | 'aim';
 
 export type Role = 'anchor' | 'flankL' | 'flankR' | 'push';
 export type BrainState = 'patrol' | 'alert' | 'combat' | 'search' | 'dead';
@@ -134,6 +142,10 @@ export class Soldier {
   onDry: (() => void) | null = null;
   /** Marksmanship multiplier (1 = Black Division standard). */
   skill = 1;
+  /** Holding a handgun: pushed out at arm's length to aim, tucked to the chest otherwise. */
+  private pistol = false;
+  private hold = new THREE.Vector3();
+  private holdWant = new THREE.Vector3();
   /** A friendly player to keep out of the way of (allies). */
   avoid: THREE.Vector3 | null = null;
   private flinch = 0;
@@ -184,7 +196,7 @@ export class Soldier {
     this.errNoise = new Noise1D(index * 17 + 3);
     this.errNoise2 = new Noise1D(index * 29 + 11);
     this.ammoData = getAmmo('762x39_ps');
-    this.flash = new MuzzleFlash(2.6, !deps.lowSpec);
+    this.flash = new MuzzleFlash(2.6, false);
     this.body = new Humanoid(deps.physics, deps.scene, soldierSkin(team === 'bd' ? 160 : 200, palette), {
       onDamage: (info) => this.onDamaged(info),
       onDeath: (info) => this.onKilled(info),
@@ -242,6 +254,7 @@ export class Soldier {
     this.rig = rig;
     this.mountRig();
     this.weaponId = data.id;
+    this.pistol = data.category === 'pistol';
     this.ammoData = getAmmo(data.ammo);
     this.magSize = data.magazineSize;
     const manual = data.fireModes.includes('bolt') || data.fireModes.includes('pump');
@@ -397,7 +410,7 @@ export class Soldier {
    * @param faceTarget world point to face/aim at (null = face movement)
    * @param aimMode 'low' (patrol carry), 'ready', 'aim'
    */
-  update(dt: number, player: PlayerTarget, mates: Soldier[], faceTarget: THREE.Vector3 | null, aimMode: 'low' | 'ready' | 'aim', wantFire: boolean): void {
+  update(dt: number, player: PlayerTarget, mates: Soldier[], faceTarget: THREE.Vector3 | null, aimMode: AimMode, wantFire: boolean): void {
     this.time += dt;
     if (!this.alive) {
       this.body.update(dt, this.pose);
@@ -439,7 +452,7 @@ export class Soldier {
     p.strideAmount = this.strideAmount;
     p.strideSide = this.strideSide;
     p.spineY = 0.32; // bladed stance: support shoulder forward
-    p.spineX = aimMode === 'low' ? 0.04 : 0.1;
+    p.spineX = aimMode === 'low' || aimMode === 'high' ? 0.04 : 0.1;
     const scan = this.state === 'patrol' ? Math.sin(this.time * 0.55 + this.index) * 0.45 : 0;
     p.headY = scan - 0.32; // face the target over the bladed torso
     p.headX = aimMode === 'aim' ? 0.18 : 0.05;
@@ -538,10 +551,14 @@ export class Soldier {
     this.strideSide += (side - this.strideSide) * Math.min(1, dt * 6);
   }
 
-  private aim(dt: number, faceTarget: THREE.Vector3 | null, mode: 'low' | 'ready' | 'aim', player: PlayerTarget): void {
+  private aim(dt: number, faceTarget: THREE.Vector3 | null, mode: AimMode, player: PlayerTarget): void {
     let yaw: number;
     let pitch: number;
-    if (mode === 'low' || !faceTarget) {
+    if (mode === 'high') {
+      // High port: muzzle up, gun diagonal across the chest (moving fast, ready to snap down).
+      yaw = -0.85;
+      pitch = 0.88;
+    } else if (mode === 'low' || !faceTarget) {
       // Patrol carry: muzzle down and across the body.
       yaw = -0.62;
       pitch = -0.62;
@@ -567,15 +584,27 @@ export class Soldier {
         pitch += this.errNoise2.sample(this.time * 0.9) * sigma * 1.1;
       }
     }
-    const rate = (mode === 'aim' ? 4 : 2.5) * dt;
+    const rate = (mode === 'aim' ? 4 : mode === 'high' || mode === 'low' ? 4.5 : 2.5) * dt;
     this.aimYaw += clamp(yaw - this.aimYaw, -rate, rate);
     this.aimPitch += clamp(pitch - this.aimPitch, -rate, rate);
     this.recoilPitch.update(dt);
     this.recoilYaw.update(dt);
     // The body's own lean (crouch, spine) is part of the parent chain.
     // Cancel the animated spine lean (not the hit reactions: those throw the aim off).
-    const lean = (mode === 'low' ? 0.04 : 0.1) + this.crouch * 0.85 * 0.18;
+    const lean = (mode === 'low' || mode === 'high' ? 0.04 : 0.1) + this.crouch * 0.85 * 0.18;
     this.aimNode.rotation.set(-(this.aimPitch + this.recoilPitch.value) - lean, this.aimYaw + this.recoilYaw.value, 0);
+    // Where the gun sits in the hands. Handguns: two-handed out in front to aim
+    // (centred under the eyes), compressed at the chest at the ready, low while
+    // running. Long guns stay shouldered (the holder origin is the shoulder pocket).
+    if (this.pistol) {
+      if (mode === 'aim') this.holdWant.set(-0.1, 0.06, 0.34);
+      else if (mode === 'ready') this.holdWant.set(-0.08, -0.08, 0.2);
+      else if (mode === 'high') this.holdWant.set(-0.1, 0.02, 0.14);
+      else this.holdWant.set(-0.06, -0.2, 0.12);
+    } else if (mode === 'high') this.holdWant.set(-0.06, -0.2, 0.14);
+    else this.holdWant.set(0, 0, 0);
+    this.hold.lerp(this.holdWant, Math.min(1, dt * 9));
+    if (this.rifleRoot.parent === this.aimNode) this.rifleRoot.position.copy(this.hold);
   }
 
   // ------------------------------------------------------------ weapon
@@ -665,6 +694,7 @@ export class Soldier {
       this.deps.projectiles.fire(this.muzzle, d, this.ammoData.muzzleVelocity * (0.985 + Math.random() * 0.03), this.ammoData, 0, tracer && i === 0, i < 2, this, hostile, ally, this.team);
     }
     this.flash.trigger(1.3);
+    if (this.deps.muzzleLights) this.deps.muzzleLights.flash(this.muzzle, this.deps.listener ?? this.muzzle);
     this.deps.impacts.muzzleBlast(this.muzzle, this.dir, 1.1);
     this.deps.impacts.muzzleSmoke(this.muzzle, this.dir, 0.6);
     this.deps.audio.play(this.fireSound, { position: this.muzzle });

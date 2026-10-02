@@ -8,6 +8,7 @@ import type { RogueRobot } from '../enemies/RogueRobot';
 import { TeamAgent, randomPersonality, type Combatant } from './TeamAgent';
 import type { DamageInfo } from '../targets/Humanoid';
 import { SIDEARM, planErrand } from './Errands';
+import { payPooled, planFor, type Intel, type PlanContext } from './Plans';
 
 export interface TeamDef {
   id: string;
@@ -33,6 +34,8 @@ export interface TeamContext {
   respawnPoint(): THREE.Vector3;
   /** A member of this team was killed (kill feed). */
   onKill?(victim: TeamAgent, info: DamageInfo): void;
+  /** Enemy operators heard recently (gunfire). */
+  intel?(team: string): Intel[];
 }
 
 /** Each downed member gets the nearest standing teammate (one rescuer each). */
@@ -88,6 +91,8 @@ let agentIndex = 0;
  */
 export class AITeam {
   readonly agents: TeamAgent[] = [];
+  /** Focus fire: the squad's current priority target. */
+  private shared = { focus: null as Combatant | null, focusTime: 0 };
   respawnTimer = -1;
   private goal: Goal | null = null;
   private thinkTimer = Math.random();
@@ -118,10 +123,12 @@ export class AITeam {
       onHit: (a, info, killed) => {
         this.ctx.survival.onSoldierHit(this.def.id, info, killed);
         if (killed) this.ctx.onKill?.(a, info);
+        this.underFire(a, info);
       },
     });
+    agent.squad = this.shared;
     agent.armory = (id) => this.ctx.weaponData(id);
-    agent.soldier.skill = this.def.style === 'hunter' ? 1.1 : 1.15;
+    agent.soldier.skill = this.def.style === 'hunter' ? 0.95 : 1.15;
     agent.points = this.def.economy ? points : 0;
     // Go down (revivable) while a teammate is still standing. Raiders just die.
     agent.soldier.body.canGoDown = () => this.def.style !== 'hunter' && this.agents.some((a) => a !== agent && a.alive && !a.downed);
@@ -132,7 +139,28 @@ export class AITeam {
     return agent;
   }
 
+  /**
+   * A member was hit (or downed): everyone near turns toward the shooter, and a
+   * squad that isn't busy goes after them instead of walking into the same angle.
+   */
+  private underFire(a: TeamAgent, info: DamageInfo): void {
+    const h = info.hit;
+    if (h.team === 'robots' || !h.team || h.weaponId === 'melee' || h.weaponId === 'bleed') return;
+    const from = new THREE.Vector3().copy(h.point).addScaledVector(h.direction, -Math.max(2, h.distance));
+    from.y = 0;
+    for (const m of this.agents) if (m.alive && !m.downed && m.distTo(a.soldier.pos) < 45) m.alert(from, m === a);
+    if (this.def.style === 'hunter') return;
+    const busy = this.goal && (this.goal.kind === 'retreat' || this.goal.kind === 'hire');
+    if (!busy && this.aliveCount >= 2) {
+      this.goal = { kind: 'hunt', at: from, time: 20 };
+      const L = this.leader;
+      if (L) L.plan = null;
+    }
+  }
+
   update(dt: number, world: Combatant[]): void {
+    this.shared.focusTime -= dt;
+    if (this.shared.focusTime <= 0 || (this.shared.focus && (!this.shared.focus.alive || this.shared.focus.downed))) this.shared.focus = null;
     const mates = this.agents.map((a) => a.soldier);
     for (const a of this.agents) {
       a.refreshSelf();
@@ -201,13 +229,7 @@ export class AITeam {
       if (a === L || !a.alive || a.downed) continue;
       // Lone wolves sometimes wander after their own target.
       if (a.order.kind === 'goto' && a.distTo(a.order.at) > 1.5 && Math.random() > 0.002) continue;
-      if (Math.random() < a.personality.loner * 0.01) {
-        const p = this.randomUnlockedPoint();
-        if (p) {
-          a.order = { kind: 'goto', at: p, speed: 2.2 };
-          continue;
-        }
-      }
+      if (a.plan) continue;
       a.order = { kind: 'follow', leader: () => (L.alive && !L.downed ? { pos: L.soldier.pos, yaw: L.soldier.yaw, speed: Math.hypot(L.soldier.vel.x, L.soldier.vel.z) } : null) };
     }
   }
@@ -228,23 +250,30 @@ export class AITeam {
         const away = this.pointAway(L.soldier.pos, c, 14);
         if (away) {
           this.goal = { kind: 'retreat', at: away, time: 0 };
+          L.plan = null;
           return;
         }
       }
     }
     if (this.goal) return;
     if (this.def.style === 'hunter') return this.hunt(L);
+    // Lone wolves go after their own plan now and then.
+    for (const a of this.agents) {
+      if (a === L || !a.alive || a.downed || a.plan || a.target) continue;
+      if (Math.random() < a.personality.loner * 0.25) a.plan = planFor(a, this.planContext());
+    }
     // The leader is out shopping: the squad waits for them.
     if (L.errand) return;
     const sv = this.ctx.survival;
     const map = this.ctx.map;
     const rich = this.richest();
     if (!rich) return;
+    const reach = sv.reachable(map.zoneAt(L.soldier.pos.x, L.soldier.pos.z));
 
     // 1) Hire a contractor when short-handed and someone is rich.
     if (rich.points > 2600 && this.aliveCount < MAX_SQUAD) {
       const term = map.terminals
-        .filter((t) => sv.unlocked.has(map.zoneAt(t.pos.x, t.pos.z) ?? ''))
+        .filter((t) => reach.has(map.zoneAt(t.pos.x, t.pos.z) ?? ''))
         .sort((a, b) => L.distTo(a.pos) - L.distTo(b.pos))[0];
       if (term && L.distTo(term.pos) < 60) {
         const at = term.pos.clone().add(new THREE.Vector3(Math.sin(term.yaw) * 1.3, -term.pos.y, Math.cos(term.yaw) * 1.3));
@@ -261,14 +290,22 @@ export class AITeam {
       }
     }
 
-    // 2) Open a shutter into unexplored space (cheapest/closest first), paid by whoever is richest.
+    // 2) The leader's plan: the gun they want (buy / open the way / farm for it), or a push on a team we heard.
+    if (L.plan) return;
+    const plan = planFor(L, this.planContext());
+    if (plan) {
+      L.plan = plan;
+      return;
+    }
+
+    // 3) Nothing to aim for: open a shutter into unexplored space (cheapest/closest first), the squad chips in.
     const doors = sv.doors
-      .filter((d) => !d.open && d.cost <= rich.points - 50 && sv.unlocked.has(d.zones[0]) !== sv.unlocked.has(d.zones[1]))
+      .filter((d) => !d.open && d.cost <= this.agents.reduce((s, a) => s + (a.alive ? a.points : 0), 0) - 200 && reach.has(d.zones[0]) !== reach.has(d.zones[1]))
       .map((d) => {
         const n = d.slot.alongX ? new THREE.Vector3(0, 0, 1) : new THREE.Vector3(1, 0, 0);
         const side = this.tmp.copy(d.slot.center).addScaledVector(n, 1.6);
         const zoneA = map.zoneAt(side.x, side.z);
-        const at = (zoneA && sv.unlocked.has(zoneA) ? side.clone() : d.slot.center.clone().addScaledVector(n, -1.6)).setY(0);
+        const at = (zoneA && reach.has(zoneA) ? side.clone() : d.slot.center.clone().addScaledVector(n, -1.6)).setY(0);
         return { d, at, score: L.distTo(at) + d.cost * 0.01 };
       })
       .sort((a, b) => a.score - b.score);
@@ -278,10 +315,7 @@ export class AITeam {
         kind: 'door', at: pick.at, time: 0,
         run: () => {
           const payer = this.richest();
-          if (!pick.d.open && payer && payer.points >= pick.d.cost) {
-            payer.points -= pick.d.cost;
-            sv.openDoor(pick.d);
-          }
+          if (!pick.d.open && payer && payPooled(payer, this.agents, pick.d.cost)) sv.openDoor(pick.d);
         },
       };
       return;
@@ -313,6 +347,16 @@ export class AITeam {
     if (best) this.goal = { kind: 'hunt', at: best.pos.clone(), time: 30 };
   }
 
+  private planContext(): PlanContext {
+    return {
+      sv: this.ctx.survival,
+      map: this.ctx.map,
+      robots: this.ctx.robots(),
+      pool: this.agents,
+      intel: this.ctx.intel?.(this.def.id) ?? [],
+    };
+  }
+
   /** A reachable point `dist` m from `from`, away from `threat` (tries angled escapes). */
   private pointAway(from: THREE.Vector3, threat: THREE.Vector3, dist: number): THREE.Vector3 | null {
     const nav = this.ctx.deps.nav;
@@ -332,7 +376,9 @@ export class AITeam {
 
   private randomUnlockedPoint(): THREE.Vector3 | null {
     const sv = this.ctx.survival;
-    const rooms = this.ctx.map.rooms.filter((r) => sv.unlocked.has(r.zone));
+    const L = this.leader;
+    const reach = L ? sv.reachable(this.ctx.map.zoneAt(L.soldier.pos.x, L.soldier.pos.z)) : sv.unlocked;
+    const rooms = this.ctx.map.rooms.filter((r) => reach.has(r.zone));
     if (!rooms.length) return null;
     for (let i = 0; i < 12; i++) {
       const r = rooms[(Math.random() * rooms.length) | 0];

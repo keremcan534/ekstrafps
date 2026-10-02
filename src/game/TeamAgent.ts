@@ -5,6 +5,7 @@ import type { SoldierPalette } from '../enemies/SoldierSkin';
 import type { DamageInfo } from '../targets/Humanoid';
 import type { WeaponData } from '../weapons/WeaponData';
 import { SIDEARM, type Errand } from './Errands';
+import type { Plan } from './Plans';
 
 /** Soldier → its operator (whose wallet a bullet's points go to). */
 export const agentBySoldier = new WeakMap<object, TeamAgent>();
@@ -103,12 +104,24 @@ export class TeamAgent {
   points = 500;
   /** Current shopping trip (weapon / ammo / door). */
   errand: Errand | null = null;
+  /** Longer-term intention (save for a gun, open the way, farm, push a team). */
+  plan: Plan | null = null;
+  private planHold = 0;
   /** Weapon lookup (set by the owner). */
   armory: ((id: string) => WeaponData | undefined) | null = null;
   /** Radio chatter (only wired up for your own squad). */
   onSay: ((a: TeamAgent, text: string) => void) | null = null;
   /** Falling back / kiting right now (HUD, brain). */
   retreating = false;
+  /** Shared by the squad: the operator everyone shoots first (focus fire). */
+  squad: { focus: Combatant | null; focusTime: number } | null = null;
+  /** How this operator carries the gun on the move. */
+  readonly carry: 'low' | 'high';
+  /** Shot at from here, recently (turn to it, hold the angle, push or wait). */
+  private alertPos = new THREE.Vector3();
+  private alertTime = 0;
+  /** Seconds since last hurt (nobody kneels to revive under fire). */
+  private hurtAgo = 99;
   private tgt: PlayerTarget = {
     feet: new THREE.Vector3(), head: new THREE.Vector3(), chest: new THREE.Vector3(), velocity: new THREE.Vector3(),
     sprinting: false, crouching: false, alive: false,
@@ -150,6 +163,7 @@ export class TeamAgent {
       onThud: (at, s) => deps.audio.play('robot.fall', { position: at, volume: 0.25 + 0.5 * s }),
     }, team, palette);
     this.soldier.state = 'combat';
+    this.carry = personality.aggression > 0.5 ? (Math.random() < 0.7 ? 'high' : 'low') : Math.random() < 0.3 ? 'high' : 'low';
     agentBySoldier.set(this.soldier, this);
     this.soldier.onDry = () => this.arm(SIDEARM);
     const soldier = this.soldier;
@@ -194,12 +208,25 @@ export class TeamAgent {
     this.reviveTarget = null;
     this.reviveTime = 0;
     this.errand = null;
+    this.plan = null;
     this.retreating = false;
     this.following = false;
   }
 
   add(n: number): void {
     this.points += n;
+  }
+
+  /** Taking fire from `from` (or a teammate is): turn to it, rescan now. */
+  alert(from: THREE.Vector3, self = false): void {
+    this.alertPos.copy(from);
+    this.alertTime = 7;
+    this.scanTimer = 0;
+    if (self) this.hurtAgo = 0;
+  }
+
+  get alerted(): boolean {
+    return this.alertTime > 0;
   }
 
   /** Radio line, rate-limited so the squad doesn't talk over itself. */
@@ -233,6 +260,8 @@ export class TeamAgent {
   update(dt: number, world: Combatant[], mates: Soldier[]): void {
     const s = this.soldier;
     this.sayTimer -= dt;
+    this.alertTime -= dt;
+    this.hurtAgo += dt;
     if (!s.alive || s.downed) {
       this.retreating = false;
       s.update(dt, this.tgt, mates, null, 'low', false);
@@ -246,14 +275,26 @@ export class TeamAgent {
       this.scanTimer = 0.25;
       this.eye.copy(s.headPos).y += 0.1;
       let best: Combatant | null = null;
-      let bd = this.range * this.range;
+      const range = this.alertTime > 0 ? Math.max(this.range, 55) : this.range;
+      let bd = Infinity;
+      const focus = this.squad?.focus;
       for (const c of world) {
         if (c.team === this.team || !c.alive || c.downed) continue;
         const d = c.pos.distanceToSquared(s.pos);
-        if (d > bd) continue;
-        if (!this.deps.physics.lineOfSight(this.eye, c.aim, GROUPS.sight)) continue;
-        bd = d;
+        if (d > range * range) continue;
+        // Weighting: the squad's focus target and whoever is shooting at us come first.
+        let score = d;
+        if (c === focus) score *= 0.45;
+        if (this.alertTime > 0 && c.pos.distanceToSquared(this.alertPos) < 64) score *= 0.35;
+        if (c.kind === 'robot' && this.alertTime > 0) score *= 1.6;
+        if (score >= bd) continue;
+        if (!this.deps.physics.lineOfSight(this.eye, c.aim, GROUPS.sight) && !this.deps.physics.lineOfSight(this.eye, c.head, GROUPS.sight)) continue;
+        bd = score;
         best = c;
+      }
+      if (best && best.kind !== 'robot' && this.squad) {
+        this.squad.focus = best;
+        this.squad.focusTime = 6;
       }
       if (best && best !== this.target) {
         s.onAcquire();
@@ -275,7 +316,10 @@ export class TeamAgent {
 
     // --- Revive a teammate (unless something is right on top of us).
     const rv = this.reviveTarget;
-    if (rv && rv.downed && !(t && t.pos.distanceTo(s.pos) < 7)) {
+    // Nobody kneels next to a body while being shot at or with a hostile in view:
+    // clear the threat first (that's how revives get baited).
+    const safe = !t && this.alertTime <= 0 && this.hurtAgo > 4;
+    if (rv && rv.downed && safe) {
       this.retreating = false;
       const d = Math.hypot(rv.pos.x - s.pos.x, rv.pos.z - s.pos.z);
       this.repath -= dt;
@@ -378,6 +422,20 @@ export class TeamAgent {
     }
     this.retreating = false;
 
+    // --- Shot at from somewhere we can't see: aim that way. Pushers close in, the rest hold the angle.
+    if (this.alertTime > 0) {
+      this.aimPt.copy(this.alertPos).setY(1.3);
+      if (this.personality.aggression > 0.6 && this.distTo(this.alertPos) > 6) {
+        s.crouchTarget = 0;
+        this.moveTo(this.alertPos, 4, JOG);
+      } else {
+        s.stop();
+        s.crouchTarget = this.personality.aggression < 0.4 ? 1 : 0;
+      }
+      s.update(dt, this.tgt, mates, this.aimPt, 'aim', false);
+      return;
+    }
+
     // --- No contact: top up the mag, shopping trip, otherwise follow orders.
     s.crouchTarget = 0;
     if (s.ammo < s.magSize * 0.5 && s.reserve > 0 && s.startReload() && s.ammo < s.magSize * 0.25) this.say(pick(RELOAD));
@@ -393,6 +451,36 @@ export class TeamAgent {
         this.errand = null;
       } else if (e.time > 30) this.errand = null;
       else this.moveTo(e.at, 0.6, JOG);
+    } else if (this.plan && this.plan.valid && !this.plan.valid()) {
+      this.plan = null;
+    } else if (this.plan) {
+      const pl = this.plan;
+      if (pl.time === 0) {
+        this.say(pl.label, true);
+        this.planHold = 0;
+      }
+      pl.time += dt;
+      const d = this.distTo(pl.at);
+      if (d < 1.8 || (pl.hold && d < 4)) {
+        if (pl.run) {
+          pl.run();
+          pl.run = undefined;
+        }
+        this.planHold += dt;
+        if (!pl.hold || this.planHold > pl.hold) this.plan = null;
+        else {
+          // Farming a spot: hold and scan around.
+          s.stop();
+          this.watchTimer -= dt;
+          if (this.watchTimer <= 0) {
+            this.watchTimer = 2 + Math.random() * 2.5;
+            this.watchAngle = Math.random() * Math.PI * 2;
+          }
+          this.watchPt.set(s.pos.x + Math.sin(this.watchAngle) * 10, 1.3, s.pos.z + Math.cos(this.watchAngle) * 10);
+          look = this.watchPt;
+        }
+      } else if (pl.time > 75) this.plan = null;
+      else this.moveTo(pl.at, 1.2, pl.kind === 'regroup' || pl.kind === 'hunt' ? RUN : JOG);
     } else if (o.kind === 'follow') {
       const l = o.leader();
       if (l) {
@@ -436,7 +524,8 @@ export class TeamAgent {
       }
     } else if (o.kind === 'goto') this.moveTo(o.at, 0.8, o.speed);
     else s.stop();
-    s.update(dt, this.tgt, mates, look, 'ready', false);
+    const running = Math.hypot(s.vel.x, s.vel.z) > 3;
+    s.update(dt, this.tgt, mates, running ? null : look, running ? this.carry : 'ready', false);
   }
 
   /** Path / steer toward a point; stop within `arrive` metres. */
