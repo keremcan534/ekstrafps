@@ -86,6 +86,7 @@ export class TuningPanel {
     feelF.add(feel, 'armStamina').name('Arm stamina');
     feelF.add(feel, 'impactForceScale', 0, 5, 0.1).name('Impact force scale');
     feelF.add(feel, 'hitReactionScale', 0, 3, 0.05).name('Robot reaction scale');
+    feelF.add(feel, 'ragdollForce', 0, 4, 0.05).name('Ragdoll death force');
     feelF.add(feel, 'hitmarkerScale', 0.5, 2, 0.05).name('Hitmarker scale');
     feelF.add(feel, 'muzzleFlash');
     feelF.add(feel, 'tracers');

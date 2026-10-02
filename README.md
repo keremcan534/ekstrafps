@@ -83,6 +83,44 @@ The camera and the weapon are separate bodies. The camera responds instantly. Th
   - Mechanical accuracy is MOA × the ammo's accuracy modifier. There is no hip-fire bloom.
 - **Mechanism.** Magazine plus chamber: a tactical reload gives mag+1. The PPSh fires from an open bolt and the shotgun uses a pump. Fire modes are selectable. Malfunctions, attachments and optics have hooks in the data and architecture.
 
+## Robot hit reactions and ragdolls
+
+`targets/RobotTarget.ts`. Each robot is 11 body parts: pelvis, torso, head, upper and lower arms, thighs and shins.
+
+- **Alive.**
+  - Every part is a kinematic hitbox that follows the animated pose, so what you see is what you hit.
+  - Zones and damage:
+
+    | Zone | Damage multiplier |
+    | --- | --- |
+    | head | round's crit multiplier |
+    | thorax | ×1 |
+    | stomach | ×0.9 |
+    | arms | ×0.6 |
+    | legs | ×0.7 |
+
+  - Hits push spring reactions sized by the round's momentum:
+
+    | Hit | Reaction |
+    | --- | --- |
+    | head | snaps back |
+    | chest | driven back; arms and head whip |
+    | gut | folds forward |
+    | arm | thrown back; torso spins |
+    | leg | buckles; heavy rounds drop the robot to one knee |
+
+  - Heavy rounds knock it back a step. Repeated hits build stagger: bigger reactions and an unsteady sway.
+  - Wounds show: low health gives a hunch and a flickering visor; leg damage gives a limp.
+- **Dead.**
+  - The same bodies turn dynamic and are jointed into a ragdoll:
+    - revolute waist, neck, elbows and knees, with limits
+    - spherical hips and shoulders, with weak muscle tone
+  - It inherits the animated velocity, plus the killing round's momentum at the exact hit point.
+  - The knees buckle for a moment.
+  - A headshot snaps the head back and the body falls backward.
+  - Corpses still take bullet impulses. Body falls play a metal thud.
+- **Tuning.** `feel.hitReactionScale`, `feel.ragdollForce`, `feel.robotRespawnTime`.
+
 ## Where tuning lives
 
 All of these are editable live in the tuning panel. **Save to source** writes them back to disk (dev server only).

@@ -188,6 +188,8 @@ export const SOUND_BANK: Record<string, SoundEvent> = {
   'ui.crit': { layers: [{ synth: 'hit_crit', gain: 0.4 }], pitchVariance: 0.03, maxVoices: 3, bus: 'ui' },
   'ui.kill': { layers: [{ synth: 'kill', gain: 0.55 }], maxVoices: 2, bus: 'ui' },
   'robot.death': { layers: [{ synth: 'robot_death', gain: 0.6 }], pitchVariance: 0.08, maxVoices: 3 },
+  'robot.fall': { reverb: 0.25, layers: [{ synth: 'body_fall', gain: 0.55 }], pitchVariance: 0.12, maxVoices: 4 },
+  'robot.stagger': { layers: [{ synth: 'servo_strain', gain: 0.5 }], pitchVariance: 0.1, maxVoices: 2 },
   'robot.boot': { layers: [{ synth: 'robot_boot', gain: 0.35 }], pitchVariance: 0.08, maxVoices: 3 },
   'player.land': { layers: [{ synth: 'land', gain: 0.5 }], pitchVariance: 0.08, bus: 'ui' },
   'player.jump': { layers: [{ synth: 'jump', gain: 0.4 }], pitchVariance: 0.1, bus: 'ui' },

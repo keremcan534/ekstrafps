@@ -24,6 +24,8 @@ export const GROUPS = {
   shell: groups(G.SHELL, G.WORLD | G.PROP | G.DEBRIS),
   hitbox: groups(G.HITBOX, G.PROP | G.PLAYER | G.DEBRIS | G.RAY),
   debris: groups(G.DEBRIS, G.WORLD | G.PROP | G.SHELL | G.DEBRIS | G.HITBOX | G.RAY),
+  /** Robot ragdoll parts: like debris, but ragdolls never collide with each other or themselves. */
+  ragdoll: groups(G.DEBRIS, G.WORLD | G.PROP | G.SHELL | G.HITBOX | G.RAY),
   /** Query groups for bullets. */
   bullet: groups(G.RAY, G.WORLD | G.PROP | G.HITBOX | G.DEBRIS),
   /** Query groups for the character controller. */
@@ -60,6 +62,8 @@ export interface HitReceiver {
   /** Object decals get attached to (so marks move with props). Null = static world. */
   decalParent?: THREE.Object3D | null;
   allowDecals?: boolean;
+  /** Multiplier on the bullet momentum pushed into `body` (ragdolls read better a bit livelier). */
+  impulseScale?: number;
   onBulletHit?(hit: BulletHit, out: HitResult): void;
 }
 

@@ -337,6 +337,17 @@ export const RECIPES: Record<string, Recipe> = {
     metal(c, 0.05, 520, 0.4, 0.35, [1, 2.3, 3.9]);
     tone(c, { dur: 0.25, f0: 70, f1: 35, gain: 1.0 });
   } },
+  body_fall: { dur: 0.5, drive: 1.6, render: (c) => {
+    tone(c, { dur: 0.14, f0: r(85, 100), f1: 38, gain: 1.1 });
+    burst(c, { dur: 0.1, freq: 700, freqEnd: 160, type: 'lowpass', gain: 1.2 });
+    metal(c, 0.005, r(240, 320), 0.28, 0.32, [1, 2.2, 3.7, 5.3]);
+    burst(c, { t: 0.04, dur: 0.06, freq: 2600, type: 'bandpass', q: 3, gain: 0.25 });
+  } },
+  servo_strain: { dur: 0.5, render: (c) => {
+    tone(c, { dur: 0.35, f0: r(520, 600), f1: 230, sweep: 0.3, type: 'sawtooth', gain: 0.07 });
+    tone(c, { dur: 0.3, f0: r(780, 860), f1: 340, sweep: 0.28, type: 'square', gain: 0.035 });
+    metal(c, 0, r(900, 1100), 0.12, 0.12);
+  } },
   robot_boot: { dur: 0.5, render: (c) => {
     tone(c, { dur: 0.3, f0: 300, f1: 900, sweep: 0.25, type: 'square', gain: 0.06 });
     metal(c, 0.25, 700, 0.2, 0.2);

@@ -119,6 +119,8 @@ export class Game {
             this.camera.addShake(Math.max(0, 0.25 - dist * 0.01));
           },
           onRespawn: (r) => this.audio.play('robot.boot', { position: r.root.position }),
+          onThud: (at, strength) => this.audio.play('robot.fall', { position: at, volume: 0.35 + 0.65 * strength }),
+          onStagger: (at, strength) => this.audio.play('robot.stagger', { position: at, volume: 0.5 + 0.5 * strength }),
         }),
       );
     }

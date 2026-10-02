@@ -220,7 +220,7 @@ export class ProjectileSystem {
     const body = recv?.body;
     const momentum = (p.ammo.projectileMass / 1000) * speed * p.ammo.impactBoost;
     if (body && body.isDynamic()) {
-      this.impulse.copy(this.dir).multiplyScalar(momentum * feel.impactForceScale);
+      this.impulse.copy(this.dir).multiplyScalar(momentum * feel.impactForceScale * (recv?.impulseScale ?? 1));
       body.applyImpulseAtPoint(this.impulse, point, true);
     }
 
