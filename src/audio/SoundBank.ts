@@ -45,6 +45,8 @@ export interface SoundEvent {
   bus?: 'sfx' | 'ui';
   /** Send level into the room reverb (gunshots ~0.6, impacts ~0.25). */
   reverb?: number;
+  /** Positional non-gunfire sounds: not heard beyond this (m, default 30). */
+  maxDist?: number;
 }
 
 export const SOUND_BANK: Record<string, SoundEvent> = {
@@ -52,10 +54,10 @@ export const SOUND_BANK: Record<string, SoundEvent> = {
   // mechanical action · room tail (scaled by room size) · distant report.
   'ar.fire': {
     layers: [
-      { files: shots('ar', 4), gain: 0.85, range: 'near' },
-      { synth: 'ar_punch', gain: 0.6, range: 'near' },
+      { files: shots('ar', 4), gain: 1.15, range: 'near' },
+      { synth: 'ar_punch', gain: 0.81, range: 'near' },
       { synth: 'ar_mech', gain: 0.3, range: 'near', dry: true },
-      { file: 'audio/guns/ar_tail.wav', gain: 0.4, tail: true },
+      { file: 'audio/guns/ar_tail.wav', gain: 0.46, tail: true },
       ...distant(1.0),
     ],
     reverb: 0.5,
@@ -64,10 +66,10 @@ export const SOUND_BANK: Record<string, SoundEvent> = {
   },
   'ak.fire': {
     layers: [
-      { files: shots('ak', 4), gain: 0.9, range: 'near' },
-      { synth: 'ak_punch', gain: 0.7, range: 'near' },
+      { files: shots('ak', 4), gain: 1.22, range: 'near' },
+      { synth: 'ak_punch', gain: 0.94, range: 'near' },
       { synth: 'ak_mech', gain: 0.35, range: 'near', dry: true },
-      { file: 'audio/guns/ak_tail.wav', gain: 0.45, tail: true },
+      { file: 'audio/guns/ak_tail.wav', gain: 0.52, tail: true },
       ...distant(1.0),
     ],
     reverb: 0.55,
@@ -76,10 +78,10 @@ export const SOUND_BANK: Record<string, SoundEvent> = {
   },
   'mk47.fire': {
     layers: [
-      { files: shots('heavy', 4), gain: 0.8, range: 'near' },
-      { synth: 'ak_punch', gain: 0.6, range: 'near' },
+      { files: shots('heavy', 4), gain: 1.08, range: 'near' },
+      { synth: 'ak_punch', gain: 0.81, range: 'near' },
       { synth: 'ar_mech', gain: 0.3, range: 'near', dry: true },
-      { file: 'audio/guns/heavy_tail.wav', gain: 0.35, tail: true },
+      { file: 'audio/guns/heavy_tail.wav', gain: 0.4, tail: true },
       ...distant(1.0),
     ],
     reverb: 0.55,
@@ -88,10 +90,10 @@ export const SOUND_BANK: Record<string, SoundEvent> = {
   },
   'rd704.fire': {
     layers: [
-      { files: shots('mg', 4), gain: 0.9, range: 'near' },
-      { synth: 'ak_punch', gain: 0.8, range: 'near' },
+      { files: shots('mg', 4), gain: 1.22, range: 'near' },
+      { synth: 'ak_punch', gain: 1.08, range: 'near' },
       { synth: 'ak_mech', gain: 0.35, range: 'near', dry: true },
-      { file: 'audio/guns/mg_tail.wav', gain: 0.4, tail: true },
+      { file: 'audio/guns/mg_tail.wav', gain: 0.46, tail: true },
       ...distant(1.1),
     ],
     reverb: 0.55,
@@ -111,10 +113,10 @@ export const SOUND_BANK: Record<string, SoundEvent> = {
   },
   'ppsh.fire': {
     layers: [
-      { files: shots('smg', 3), gain: 0.75, range: 'near' },
-      { synth: 'ar_punch', gain: 0.4, range: 'near' },
+      { files: shots('smg', 3), gain: 1.01, range: 'near' },
+      { synth: 'ar_punch', gain: 0.54, range: 'near' },
       { synth: 'ar_mech', gain: 0.3, range: 'near', dry: true },
-      { file: 'audio/guns/smg_tail.wav', gain: 0.35, tail: true },
+      { file: 'audio/guns/smg_tail.wav', gain: 0.4, tail: true },
       ...distant(0.7),
     ],
     reverb: 0.45,
@@ -123,10 +125,10 @@ export const SOUND_BANK: Record<string, SoundEvent> = {
   },
   'pistol.fire': {
     layers: [
-      { files: shots('pistol', 3), gain: 0.85, range: 'near' },
-      { synth: 'pistol_punch', gain: 0.7, range: 'near' },
+      { files: shots('pistol', 3), gain: 1.15, range: 'near' },
+      { synth: 'pistol_punch', gain: 0.94, range: 'near' },
       { synth: 'pistol_mech', gain: 0.4, range: 'near', dry: true },
-      { file: 'audio/guns/pistol_tail.wav', gain: 0.4, tail: true },
+      { file: 'audio/guns/pistol_tail.wav', gain: 0.46, tail: true },
       { synth: 'pistol_tail', gain: 0.22, tail: true },
       ...distant(0.6),
     ],
@@ -136,10 +138,10 @@ export const SOUND_BANK: Record<string, SoundEvent> = {
   },
   'shotgun.fire': {
     layers: [
-      { files: shots('boom', 1), gain: 0.95, range: 'near' },
-      { synth: 'shotgun_punch', gain: 1.0, range: 'near' },
+      { files: shots('boom', 1), gain: 1.28, range: 'near' },
+      { synth: 'shotgun_punch', gain: 1.35, range: 'near' },
       { synth: 'shotgun_shot', gain: 0.35, range: 'near', dry: true },
-      { file: 'audio/guns/boom_tail.wav', gain: 0.45, tail: true },
+      { file: 'audio/guns/boom_tail.wav', gain: 0.52, tail: true },
       { synth: 'shotgun_tail', gain: 0.25, tail: true },
       ...distant(1.0),
     ],
@@ -150,10 +152,10 @@ export const SOUND_BANK: Record<string, SoundEvent> = {
   // Bolt actions: N-wave crack, saturated body, deep boom, big room.
   'mosin.fire': {
     layers: [
-      { files: shots('heavy', 4), gain: 0.85, range: 'near' },
-      { synth: 'rifle_boom', gain: 1.0, range: 'near' },
+      { files: shots('heavy', 4), gain: 1.15, range: 'near' },
+      { synth: 'rifle_boom', gain: 1.35, range: 'near' },
       { synth: 'ak_mech', gain: 0.25, range: 'near', dry: true },
-      { file: 'audio/guns/heavy_tail.wav', gain: 0.45, tail: true },
+      { file: 'audio/guns/heavy_tail.wav', gain: 0.52, tail: true },
       { synth: 'crack_heavy', gain: 0.5, range: 'near' },
       ...distant(1.3),
     ],
@@ -163,10 +165,10 @@ export const SOUND_BANK: Record<string, SoundEvent> = {
   },
   'kar98.fire': {
     layers: [
-      { files: shots('heavy', 4), gain: 0.85, range: 'near' },
-      { synth: 'rifle_boom', gain: 1.05, range: 'near' },
+      { files: shots('heavy', 4), gain: 1.15, range: 'near' },
+      { synth: 'rifle_boom', gain: 1.42, range: 'near' },
       { synth: 'ak_mech', gain: 0.22, range: 'near', dry: true },
-      { file: 'audio/guns/heavy_tail.wav', gain: 0.45, tail: true },
+      { file: 'audio/guns/heavy_tail.wav', gain: 0.52, tail: true },
       { synth: 'kar_body', gain: 0.5, range: 'near' },
       ...distant(1.3),
     ],
@@ -176,52 +178,52 @@ export const SOUND_BANK: Record<string, SoundEvent> = {
   },
   'bolt.open': { layers: [{ synth: 'bolt_up', gain: 0.6 }, { synth: 'bolt_slide_back', gain: 0.65, delay: 0.05 }], reverb: 0.15, pitchVariance: 0.04 },
   'bolt.close': { layers: [{ synth: 'bolt_slide_fwd', gain: 0.75 }], reverb: 0.15, pitchVariance: 0.04 },
-  'reload.bolt.start': { layers: [{ synth: 'cloth', gain: 0.45 }] },
-  'reload.bolt.round': { layers: [{ synth: 'round_insert', gain: 0.7 }], pitchVariance: 0.06 },
+  'reload.bolt.start': { layers: [{ synth: 'cloth', gain: 0.45 }], maxDist: 14 },
+  'reload.bolt.round': { layers: [{ synth: 'round_insert', gain: 0.7 }], pitchVariance: 0.06, maxDist: 14 },
   'impact.heavy': { layers: [{ synth: 'impact_heavy', gain: 0.6 }], reverb: 0.3, pitchVariance: 0.08, maxVoices: 4 },
   'shotgun.pump': { layers: [{ synth: 'shotgun_pump', gain: 0.7 }], pitchVariance: 0.03 },
 
   dry_fire: { layers: [{ synth: 'dry_fire', gain: 0.6 }] },
-  'equip.rifle': { layers: [{ synth: 'equip', gain: 0.5 }] },
-  'equip.pistol': { layers: [{ synth: 'equip', gain: 0.45 }], pitchVariance: 0.05 },
-  'equip.shotgun': { layers: [{ synth: 'equip', gain: 0.55 }, { synth: 'shotgun_pump', gain: 0.25, delay: 0.18 }] },
+  'equip.rifle': { layers: [{ synth: 'equip', gain: 0.5 }], maxDist: 14 },
+  'equip.pistol': { layers: [{ synth: 'equip', gain: 0.45 }], pitchVariance: 0.05, maxDist: 14 },
+  'equip.shotgun': { layers: [{ synth: 'equip', gain: 0.55 }, { synth: 'shotgun_pump', gain: 0.25, delay: 0.18 }], maxDist: 14 },
 
-  'reload.rifle.start': { layers: [{ synth: 'cloth', gain: 0.5 }] },
-  'reload.rifle.magout': { layers: [{ synth: 'mag_out', gain: 0.6 }] },
-  'reload.rifle.magin': { layers: [{ synth: 'mag_in', gain: 0.75 }] },
-  'reload.rifle.boltback': { layers: [{ synth: 'bolt_back', gain: 0.6 }] },
-  'reload.rifle.boltforward': { layers: [{ synth: 'bolt_forward', gain: 0.75 }] },
-  'reload.pistol.start': { layers: [{ synth: 'cloth', gain: 0.4 }] },
-  'reload.pistol.magout': { layers: [{ synth: 'mag_out', gain: 0.5 }], pitchVariance: 0.08 },
-  'reload.pistol.magin': { layers: [{ synth: 'mag_in', gain: 0.65 }], pitchVariance: 0.06 },
-  'reload.pistol.slideback': { layers: [{ synth: 'bolt_back', gain: 0.5 }] },
-  'reload.pistol.slideforward': { layers: [{ synth: 'bolt_forward', gain: 0.7 }], pitchVariance: 0.05 },
-  'reload.shotgun.start': { layers: [{ synth: 'cloth', gain: 0.5 }] },
-  'reload.shotgun.shell': { layers: [{ synth: 'shell_insert', gain: 0.7 }], pitchVariance: 0.05 },
+  'reload.rifle.start': { layers: [{ synth: 'cloth', gain: 0.5 }], maxDist: 14 },
+  'reload.rifle.magout': { layers: [{ synth: 'mag_out', gain: 0.6 }], maxDist: 14 },
+  'reload.rifle.magin': { layers: [{ synth: 'mag_in', gain: 0.75 }], maxDist: 14 },
+  'reload.rifle.boltback': { layers: [{ synth: 'bolt_back', gain: 0.6 }], maxDist: 14 },
+  'reload.rifle.boltforward': { layers: [{ synth: 'bolt_forward', gain: 0.75 }], maxDist: 14 },
+  'reload.pistol.start': { layers: [{ synth: 'cloth', gain: 0.4 }], maxDist: 14 },
+  'reload.pistol.magout': { layers: [{ synth: 'mag_out', gain: 0.5 }], pitchVariance: 0.08, maxDist: 14 },
+  'reload.pistol.magin': { layers: [{ synth: 'mag_in', gain: 0.65 }], pitchVariance: 0.06, maxDist: 14 },
+  'reload.pistol.slideback': { layers: [{ synth: 'bolt_back', gain: 0.5 }], maxDist: 14 },
+  'reload.pistol.slideforward': { layers: [{ synth: 'bolt_forward', gain: 0.7 }], pitchVariance: 0.05, maxDist: 14 },
+  'reload.shotgun.start': { layers: [{ synth: 'cloth', gain: 0.5 }], maxDist: 14 },
+  'reload.shotgun.shell': { layers: [{ synth: 'shell_insert', gain: 0.7 }], pitchVariance: 0.05, maxDist: 14 },
 
-  'impact.concrete': { reverb: 0.22, layers: [{ synth: 'impact_concrete', gain: 0.35 }], pitchVariance: 0.12, maxVoices: 8 },
-  'impact.metal': { reverb: 0.22, layers: [{ synth: 'impact_metal', gain: 0.4 }], pitchVariance: 0.1, maxVoices: 6 },
-  'impact.robot': { reverb: 0.22, layers: [{ synth: 'impact_robot', gain: 0.45 }], pitchVariance: 0.1, maxVoices: 6 },
-  'impact.robotweak': { reverb: 0.22, layers: [{ synth: 'impact_robotweak', gain: 0.5 }], pitchVariance: 0.06, maxVoices: 4 },
-  'impact.prop': { layers: [{ synth: 'prop_hit', gain: 0.4 }], pitchVariance: 0.15, maxVoices: 6 },
+  'impact.concrete': { reverb: 0.22, layers: [{ synth: 'impact_concrete', gain: 0.35 }], pitchVariance: 0.12, maxVoices: 8, maxDist: 24 },
+  'impact.metal': { reverb: 0.22, layers: [{ synth: 'impact_metal', gain: 0.4 }], pitchVariance: 0.1, maxVoices: 6, maxDist: 20 },
+  'impact.robot': { reverb: 0.22, layers: [{ synth: 'impact_robot', gain: 0.45 }], pitchVariance: 0.1, maxDist: 22, maxVoices: 6 },
+  'impact.robotweak': { reverb: 0.22, layers: [{ synth: 'impact_robotweak', gain: 0.5 }], pitchVariance: 0.06, maxDist: 22, maxVoices: 4 },
+  'impact.prop': { layers: [{ synth: 'prop_hit', gain: 0.4 }], pitchVariance: 0.15, maxVoices: 6, maxDist: 18 },
   'shell.brass': { layers: [{ synth: 'shell_brass', gain: 0.12 }], pitchVariance: 0.15, maxVoices: 4 },
   'shell.plastic': { layers: [{ synth: 'shell_plastic', gain: 0.2 }], pitchVariance: 0.15, maxVoices: 3 },
 
   'ui.firemode': { layers: [{ synth: 'firemode_click', gain: 0.5 }], bus: 'ui' },
-  'impact.ricochet': { layers: [{ synth: 'ricochet', gain: 0.35 }], pitchVariance: 0.2, maxVoices: 4 },
+  'impact.ricochet': { layers: [{ synth: 'ricochet', gain: 0.35 }], pitchVariance: 0.2, maxVoices: 4, maxDist: 15 },
   'ui.hit': { layers: [{ synth: 'hit_tick', gain: 0.35 }], pitchVariance: 0.04, maxVoices: 3, bus: 'ui' },
   'ui.crit': { layers: [{ synth: 'hit_crit', gain: 0.4 }], pitchVariance: 0.03, maxVoices: 3, bus: 'ui' },
   'ui.kill': { layers: [{ synth: 'kill', gain: 0.55 }], maxVoices: 2, bus: 'ui' },
-  'robot.death': { layers: [{ synth: 'robot_death', gain: 0.6 }], pitchVariance: 0.08, maxVoices: 3 },
-  'robot.fall': { reverb: 0.25, layers: [{ synth: 'body_fall', gain: 0.55 }], pitchVariance: 0.12, maxVoices: 4 },
-  'robot.stagger': { layers: [{ synth: 'servo_strain', gain: 0.5 }], pitchVariance: 0.1, maxVoices: 2 },
+  'robot.death': { layers: [{ synth: 'robot_death', gain: 0.6 }], pitchVariance: 0.08, maxDist: 32, maxVoices: 3 },
+  'robot.fall': { reverb: 0.25, layers: [{ synth: 'body_fall', gain: 0.55 }], pitchVariance: 0.12, maxDist: 24, maxVoices: 4 },
+  'robot.stagger': { layers: [{ synth: 'servo_strain', gain: 0.5 }], pitchVariance: 0.1, maxDist: 20, maxVoices: 2 },
   // ---------- Black Division ----------
   'bd.fire': {
     layers: [
-      { files: shots('ak', 4), gain: 0.85, range: 'near' },
-      { synth: 'ak_punch', gain: 0.8, range: 'near' },
+      { files: shots('ak', 4), gain: 1.15, range: 'near' },
+      { synth: 'ak_punch', gain: 1.08, range: 'near' },
       { synth: 'ak_mech', gain: 0.3, range: 'near', dry: true },
-      { file: 'audio/guns/ak_tail.wav', gain: 0.5, tail: true },
+      { file: 'audio/guns/ak_tail.wav', gain: 0.57, tail: true },
       ...distant(1.0),
     ],
     reverb: 0.8,
@@ -245,15 +247,15 @@ export const SOUND_BANK: Record<string, SoundEvent> = {
   'impact.helmet': { reverb: 0.2, layers: [{ synth: 'impact_helmet', gain: 0.55 }], pitchVariance: 0.08, maxVoices: 4 },
   'player.hurt': { layers: [{ synth: 'player_hit', gain: 0.8 }], pitchVariance: 0.08, maxVoices: 3, bus: 'ui' },
   'player.death': { layers: [{ synth: 'player_death', gain: 0.9 }], maxVoices: 1, bus: 'ui' },
-  'hazard.zap': { reverb: 0.2, layers: [{ synth: 'hazard_zap', gain: 0.45 }], pitchVariance: 0.2, maxVoices: 3 },
-  'hazard.fire': { reverb: 0.2, layers: [{ synth: 'hazard_fire', gain: 0.5 }], pitchVariance: 0.15, maxVoices: 3 },
-  'hazard.gas': { reverb: 0.2, layers: [{ synth: 'hazard_gas', gain: 0.45 }], pitchVariance: 0.1, maxVoices: 3 },
-  'lift.arrive': { reverb: 0.4, layers: [{ synth: 'lift_ding', gain: 0.7 }, { synth: 'lift_doors', gain: 0.6, delay: 0.5 }], maxVoices: 3 },
-  'robot.wake': { reverb: 0.3, layers: [{ synth: 'robot_wake', gain: 0.7 }], pitchVariance: 0.12, maxVoices: 4 },
+  'hazard.zap': { reverb: 0.2, layers: [{ synth: 'hazard_zap', gain: 0.45 }], pitchVariance: 0.2, maxDist: 16, maxVoices: 3 },
+  'hazard.fire': { reverb: 0.2, layers: [{ synth: 'hazard_fire', gain: 0.5 }], pitchVariance: 0.15, maxDist: 16, maxVoices: 3 },
+  'hazard.gas': { reverb: 0.2, layers: [{ synth: 'hazard_gas', gain: 0.45 }], pitchVariance: 0.1, maxDist: 16, maxVoices: 3 },
+  'lift.arrive': { reverb: 0.4, layers: [{ synth: 'lift_ding', gain: 0.7 }, { synth: 'lift_doors', gain: 0.6, delay: 0.5 }], maxDist: 26, maxVoices: 3 },
+  'robot.wake': { reverb: 0.3, layers: [{ synth: 'robot_wake', gain: 0.7 }], pitchVariance: 0.12, maxDist: 28, maxVoices: 4 },
   'power.down': { reverb: 0.7, layers: [{ synth: 'power_down', gain: 0.8 }], maxVoices: 1, bus: 'ui' },
   'raid.siren': { reverb: 0.8, layers: [{ synth: 'raid_siren', gain: 0.6 }], maxVoices: 1, bus: 'ui' },
   'director.horde': { reverb: 0.6, layers: [{ synth: 'horde_alarm', gain: 0.6 }], maxVoices: 1, bus: 'ui' },
-  'robot.boot': { layers: [{ synth: 'robot_boot', gain: 0.35 }], pitchVariance: 0.08, maxVoices: 3 },
+  'robot.boot': { layers: [{ synth: 'robot_boot', gain: 0.35 }], pitchVariance: 0.08, maxDist: 18, maxVoices: 3 },
   'player.land': { layers: [{ synth: 'land', gain: 0.5 }], pitchVariance: 0.08, bus: 'ui' },
   'player.jump': { layers: [{ synth: 'jump', gain: 0.4 }], pitchVariance: 0.1, bus: 'ui' },
 };

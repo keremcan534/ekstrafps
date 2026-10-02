@@ -36,9 +36,10 @@ export class AudioSystem {
   constructor() {
     this.ctx = new AudioContext({ latencyHint: 'interactive' });
     const comp = this.ctx.createDynamicsCompressor();
-    comp.threshold.value = -12;
-    comp.knee.value = 8;
-    comp.ratio.value = 4;
+    // Gentle bus compression: shots keep their transient (the punch) instead of being squashed.
+    comp.threshold.value = -8;
+    comp.knee.value = 6;
+    comp.ratio.value = 3;
     comp.attack.value = 0.002;
     comp.release.value = 0.12;
     this.master = this.ctx.createGain();
@@ -161,7 +162,17 @@ export class AudioSystem {
     if (opts?.position && ev.bus !== 'ui') {
       const d = this.tmp.subVectors(opts.position, this.listenerPos);
       dist = d.length();
-      gain *= 1 / (1 + dist * 0.06);
+      // Gunfire carries (it has its own distant layers). Everything else — impacts,
+      // footfalls, robots, lifts, hazards — is local: it fades fast and is cut at
+      // its range, so fights across the map don't fill your ears with clinks.
+      const gunfire = ev.layers.some((l) => l.range === 'far');
+      if (gunfire) gain *= 1 / (1 + dist * 0.06);
+      else {
+        const maxDist = ev.maxDist ?? 30;
+        if (dist > maxDist) return;
+        const k = dist / maxDist;
+        gain *= (1 - k * k) / (1 + dist * 0.12);
+      }
       if (dist > 0.01) pan = Math.max(-0.8, Math.min(0.8, d.dot(this.listenerRight) / dist));
     }
     if (gain < 0.01) return;
