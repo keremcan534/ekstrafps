@@ -3,9 +3,10 @@ import * as THREE from 'three';
 const CAPACITY = 3000;
 
 /**
- * Fading bullet trails: every projectile leaves a short-lived glowing line
- * along the path it actually flew, so drop, drift and ricochets are visible.
- * Ring buffer of line segments, additive (dead segments are simply black).
+ * Bullet streaks: short, bright, gone in a few frames (a glimpse of the round,
+ * not a laser line). Each segment can fade to black at its tail, so a streak is
+ * a hot head with a soft tail. Ring buffer of line segments, additive (dead
+ * segments are simply black).
  */
 export class Trails {
   readonly mesh: THREE.LineSegments;
@@ -14,6 +15,8 @@ export class Trails {
   private base = new Float32Array(CAPACITY * 3);
   private life = new Float32Array(CAPACITY);
   private maxLife = new Float32Array(CAPACITY);
+  /** 1 = the start vertex fades to black (streak tail). */
+  private fadeTail = new Uint8Array(CAPACITY);
   private next = 0;
   private alive = 0;
   private posAttr: THREE.BufferAttribute;
@@ -33,7 +36,7 @@ export class Trails {
     this.mesh.renderOrder = 4;
   }
 
-  add(a: THREE.Vector3, b: THREE.Vector3, r: number, g: number, bl: number, life: number): void {
+  add(a: THREE.Vector3, b: THREE.Vector3, r: number, g: number, bl: number, life: number, fadeTail = false): void {
     const i = this.next;
     this.next = (this.next + 1) % CAPACITY;
     const i6 = i * 6;
@@ -49,6 +52,7 @@ export class Trails {
     if (this.life[i] <= 0) this.alive++;
     this.life[i] = life;
     this.maxLife[i] = life;
+    this.fadeTail[i] = fadeTail ? 1 : 0;
   }
 
   update(dt: number): void {
@@ -68,9 +72,10 @@ export class Trails {
       const r = this.base[i * 3] * f;
       const g = this.base[i * 3 + 1] * f;
       const b = this.base[i * 3 + 2] * f;
-      this.colors[i6] = r;
-      this.colors[i6 + 1] = g;
-      this.colors[i6 + 2] = b;
+      const t = this.fadeTail[i] ? 0 : 1;
+      this.colors[i6] = r * t;
+      this.colors[i6 + 1] = g * t;
+      this.colors[i6 + 2] = b * t;
       // The newer end of the segment is a little brighter: gives the trail direction.
       this.colors[i6 + 3] = Math.min(1, r * 1.3);
       this.colors[i6 + 4] = Math.min(1, g * 1.3);

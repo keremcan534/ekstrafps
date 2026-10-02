@@ -67,6 +67,7 @@ export class ProjectileSystem {
   private impulse = new THREE.Vector3();
   private frameStart = new THREE.Vector3();
   private trailStart = new THREE.Vector3();
+  private streakTail = new THREE.Vector3();
   private tracerSpawn: ParticleSpawn = spawnParams();
   private hit: BulletHit = {
     point: new THREE.Vector3(),
@@ -201,12 +202,19 @@ export class ProjectileSystem {
     this.frameStart.copy(end);
   }
 
-  /** Visible air trail along the real flight path (shows drop and ricochets). */
+  /**
+   * Short bright streak behind the round: only the last few metres of this frame's
+   * flight, hot at the head and fading to nothing at the tail, gone in a few frames.
+   * (Full trajectories are still available with the debug rays, G.)
+   */
   private trail(p: Projectile, end: THREE.Vector3): void {
     if (!feel.bulletTrails && !p.tracer) return;
-    if (p.tracer) this.trails.add(this.trailStart, end, 1, p.hostile ? 0.18 : 0.55, p.hostile ? 0.12 : 0.22, 0.7);
-    else if (p.hostile) this.trails.add(this.trailStart, end, 0.5, 0.2, 0.16, 0.45);
-    else this.trails.add(this.trailStart, end, 0.42, 0.38, 0.3, 0.45);
+    const len = p.tracer ? 4.5 : 2.4;
+    const d = this.trailStart.distanceTo(end);
+    const tail = d > len ? this.streakTail.subVectors(this.trailStart, end).multiplyScalar(len / d).add(end) : this.trailStart;
+    if (p.tracer) this.trails.add(tail, end, 1, p.hostile ? 0.22 : 0.62, p.hostile ? 0.14 : 0.25, 0.075, true);
+    else if (p.hostile) this.trails.add(tail, end, 0.95, 0.42, 0.32, 0.045, true);
+    else this.trails.add(tail, end, 1, 0.9, 0.72, 0.045, true);
     this.trailStart.copy(end);
   }
 
