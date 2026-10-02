@@ -34,6 +34,8 @@ export interface SoldierDeps {
   shells: Shells;
   audio: AudioSystem;
   scene: THREE.Object3D;
+  /** Phones: no dynamic light per enemy muzzle flash. */
+  lowSpec?: boolean;
 }
 
 export type Role = 'anchor' | 'flankL' | 'flankR' | 'push';
@@ -100,7 +102,7 @@ export class Soldier {
   // Aim / fire
   private aimNode = new THREE.Group();
   private rifleRoot: THREE.Group;
-  private flash = new MuzzleFlash(2.6);
+  private flash: MuzzleFlash;
   private aimYaw = 0;
   private aimPitch = -0.5;
   private recoilPitch = new Spring(120, 14);
@@ -156,6 +158,7 @@ export class Soldier {
     this.errNoise = new Noise1D(index * 17 + 3);
     this.errNoise2 = new Noise1D(index * 29 + 11);
     this.ammoData = getAmmo('762x39_ps');
+    this.flash = new MuzzleFlash(2.6, !deps.lowSpec);
     this.body = new Humanoid(deps.physics, deps.scene, soldierSkin(160), {
       onDamage: (info) => this.onDamaged(info),
       onDeath: (info) => this.onKilled(info),

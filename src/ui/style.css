@@ -169,3 +169,9 @@ canvas { display: block; touch-action: none; }
 .death-hint { margin-top: 26px; font-size: 12px; letter-spacing: 0.2em; color: #777; }
 .is-touch .hp { left: 16px; bottom: auto; top: 12px; }
 .is-touch .hp-bar { width: 110px; }
+
+/* ---------- Map picker ---------- */
+.maps { margin: 14px 0 4px; font-size: 12px; letter-spacing: 0.14em; text-transform: uppercase; opacity: 0.9; }
+.maps button { margin-left: 8px; padding: 6px 12px; background: transparent; color: #ddd; border: 1px solid #555; font: inherit; letter-spacing: 0.08em; cursor: pointer; }
+.maps button.active { border-color: var(--accent); color: var(--accent); }
+.maps button:hover { border-color: #aaa; }

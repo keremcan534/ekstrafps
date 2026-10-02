@@ -3,11 +3,13 @@ import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment
 import { Physics } from './Physics';
 import { Input } from './Input';
 import { DEG, hfovToVfov, isTouchDevice } from './math';
-import { HELP_TEXT, STATIONS, loadSettings, saveSettings, stationPosition } from './LabTools';
+import { HELP_TEXT, loadSettings, saveSettings } from './LabTools';
 import { playerConfig } from '../player/PlayerConfig';
 import { PlayerController } from '../player/PlayerController';
 import { PlayerCamera } from '../player/PlayerCamera';
 import { Arena } from '../world/Arena';
+import { Site9 } from '../world/Site9';
+import type { GameMap } from '../world/GameMap';
 import { RobotTarget } from '../targets/RobotTarget';
 import { AudioSystem } from '../audio/AudioSystem';
 import { ImpactSystem } from '../fx/ImpactSystem';
@@ -46,7 +48,8 @@ export class Game {
   input!: Input;
   player!: PlayerController;
   camera!: PlayerCamera;
-  arena!: Arena;
+  /** The loaded map (?map=site9 → Site-9, default: Weapon Lab arena). */
+  arena!: GameMap;
   robots: RobotTarget[] = [];
   audio!: AudioSystem;
   impacts!: ImpactSystem;
@@ -59,7 +62,7 @@ export class Game {
   health = new PlayerHealth();
   status!: StatusHUD;
   nav!: NavGrid;
-  squad!: BlackDivision;
+  squads: BlackDivision[] = [];
   private target: PlayerTarget = {
     feet: new THREE.Vector3(), head: new THREE.Vector3(), chest: new THREE.Vector3(), velocity: new THREE.Vector3(),
     sprinting: false, crouching: false, alive: true,
@@ -102,16 +105,17 @@ export class Game {
     this.physics = await Physics.create(FIXED_DT);
     this.input = new Input(this.renderer.domElement);
 
-    this.scene.background = new THREE.Color(0x15171a);
-    this.scene.fog = new THREE.Fog(0x15171a, 90, 200);
     const pmrem = new THREE.PMREMGenerator(this.renderer);
     const env = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
     this.scene.environment = env;
     this.scene.environmentIntensity = 0.35;
 
-    onProgress('Building arena…');
-    this.arena = new Arena(this.physics, this.mobile);
+    onProgress('Building map…');
+    const mapId = new URLSearchParams(location.search).get('map');
+    this.arena = mapId === 'site9' ? new Site9(this.physics, this.mobile) : new Arena(this.physics, this.mobile);
     this.scene.add(this.arena.group);
+    this.scene.background = new THREE.Color(this.arena.skyColor);
+    this.scene.fog = new THREE.Fog(this.arena.skyColor, 90, 200);
 
     onProgress('Rendering placeholder audio…');
     this.audio = new AudioSystem();
@@ -139,7 +143,7 @@ export class Game {
       );
     }
 
-    this.player = new PlayerController(this.physics, this.arena.spawn, 0);
+    this.player = new PlayerController(this.physics, this.arena.spawn, this.arena.spawnYaw);
     this.camera = new PlayerCamera(window.innerWidth / window.innerHeight);
     this.player.onLand = (speed) => {
       this.camera.landingImpact(speed);
@@ -223,23 +227,27 @@ export class Game {
     const [x0, z0, x1, z1] = this.arena.navBounds;
     const blockers = this.arena.robotSpawns.filter((r) => !r.rail && r.position.y < 0.5).map((r) => ({ pos: r.position, radius: 0.45 }));
     this.nav = new NavGrid(this.physics, x0, z0, x1, z1, 0.5, 0.32, blockers);
-    this.squad = new BlackDivision(
-      {
-        physics: this.physics,
-        nav: this.nav,
-        projectiles: this.weapons.projectiles,
-        impacts: this.impacts,
-        shells: this.shells,
-        audio: this.audio,
-        scene: this.scene,
-      },
-      this.arena.patrolRoute,
-      this.arena.squadSpawnIndex,
-      () => this.camera.eye,
-    );
-    this.squad.onRadio = (text) => this.status.radio(text);
+    for (const spawn of this.arena.squads) {
+      const squad = new BlackDivision(
+        {
+          physics: this.physics,
+          nav: this.nav,
+          projectiles: this.weapons.projectiles,
+          impacts: this.impacts,
+          shells: this.shells,
+          audio: this.audio,
+          scene: this.scene,
+          lowSpec: this.mobile,
+        },
+        spawn.route,
+        spawn.spawnIndex,
+        () => this.camera.eye,
+      );
+      squad.onRadio = (text) => this.status.radio(text);
+      this.squads.push(squad);
+    }
     this.weapons.onPlayerShot = (pos, suppressed) => {
-      if (feel.enemyAI && !this.health.dead) this.squad.hearShot(pos, suppressed);
+      if (feel.enemyAI && !this.health.dead) for (const s of this.squads) s.hearShot(pos, suppressed);
     };
 
     // The player's capsule takes enemy rounds.
@@ -278,13 +286,26 @@ export class Game {
       this.audio.play('player.death');
       this.status.setDead(true);
       this.camera.addShake(0.6);
-      this.squad.onPlayerKilled();
+      for (const s of this.squads) s.onPlayerKilled();
     };
     this.health.onRespawn = () => {
       this.status.setDead(false);
-      this.player.teleport(this.arena.spawn, 0);
+      this.player.teleport(this.arena.spawn, this.arena.spawnYaw);
       this.weapons.refillAll();
     };
+  }
+
+  /** One HUD line for all squads: operators alive and the most alert state. */
+  private squadStatus(): string {
+    if (!this.squads.length) return '';
+    let alive = 0;
+    let total = 0;
+    for (const s of this.squads) {
+      alive += s.aliveCount;
+      total += s.soldiers.length;
+    }
+    const state = this.squads.some((s) => s.state === 'combat') ? 'COMBAT' : this.squads.some((s) => s.state === 'search') ? 'SEARCH' : 'PATROL';
+    return `BLACK DIVISION ${alive}/${total} · ${state}`;
   }
 
   /** Called from the start overlay click/tap/Enter (a user gesture). */
@@ -368,8 +389,8 @@ export class Game {
         this.gotoStation(this.stationIndex + 1);
         break;
       case 'KeyY':
-        this.squad.spawn();
-        this.hud.toast('Black Division squad respawned (yard)');
+        for (const s of this.squads) s.spawn();
+        this.hud.toast('Black Division respawned');
         break;
       case 'KeyO':
         feel.godMode = !feel.godMode;
@@ -384,9 +405,10 @@ export class Game {
   }
 
   gotoStation(i: number): void {
-    this.stationIndex = ((i % STATIONS.length) + STATIONS.length) % STATIONS.length;
-    const st = STATIONS[this.stationIndex];
-    this.player.teleport(stationPosition(this.stationIndex), st.yaw);
+    const stations = this.arena.stations;
+    this.stationIndex = ((i % stations.length) + stations.length) % stations.length;
+    const st = stations[this.stationIndex];
+    this.player.teleport(new THREE.Vector3(...st.pos), st.yaw);
     this.hud.toast(`Station: ${st.name}`);
   }
 
@@ -487,7 +509,7 @@ export class Game {
     this.weapons.updateFire(dt, input);
 
     // --- World ---
-    this.arena.update();
+    this.arena.update(dt);
     for (const r of this.robots) r.update(dt);
     const t = this.target;
     t.feet.copy(this.player.feet);
@@ -497,7 +519,7 @@ export class Game {
     t.sprinting = this.player.sprinting;
     t.crouching = this.player.crouching;
     t.alive = !this.health.dead;
-    this.squad.update(dt, t, feel.enemyAI);
+    for (const s of this.squads) s.update(dt, t, feel.enemyAI);
     this.health.update(dt);
     this.shells.update(dt);
     this.impacts.update(dt);
@@ -511,7 +533,7 @@ export class Game {
     this.hud.updateCrosshair(this.weapons.handling.dispersionDeg * 0.5, this.camera.currentFov, this.weapons.adsAmount, cw.state !== 'ready' || this.player.sprinting);
     this.hud.update(realDt, this.camera.camera);
     this.status.update(realDt, this.health.health, this.health.max, this.camera.camera);
-    this.status.setSquadLine(this.squad.statusText);
+    this.status.setSquadLine(this.squadStatus());
     this.tuning.syncWeapon();
     this.touch?.sync(input.adsHeld, this.weapons.currentIndex);
 
@@ -582,7 +604,7 @@ export class Game {
     let best = 0;
     const points: THREE.Vector3[] = [];
     for (const r of this.robots) if (r.alive) points.push(r.chestPoint.getWorldPosition(new THREE.Vector3()));
-    for (const s of this.squad.soldiers) if (s.alive) points.push(s.chestPos.clone());
+    for (const sq of this.squads) for (const s of sq.soldiers) if (s.alive) points.push(s.chestPos.clone());
     for (const p of points) {
       this.tmp.copy(p);
       const toTarget = this.tmp2.subVectors(this.tmp, eye);

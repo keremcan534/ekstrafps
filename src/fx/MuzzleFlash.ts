@@ -21,7 +21,7 @@ export class MuzzleFlash {
   private scale = 1;
 
   /** @param lightDistance reach of the flash light (world-space flashes light up more). */
-  constructor(lightDistance = 1.6) {
+  constructor(lightDistance = 1.6, private withLight = true) {
     const additive = (tex: THREE.Texture) =>
       new THREE.MeshBasicMaterial({
         map: tex,
@@ -54,7 +54,7 @@ export class MuzzleFlash {
 
   attachTo(muzzle: THREE.Object3D): void {
     muzzle.add(this.group);
-    muzzle.add(this.light);
+    if (this.withLight) muzzle.add(this.light);
   }
 
   trigger(scale: number): void {
@@ -72,7 +72,7 @@ export class MuzzleFlash {
     (this.front.material as THREE.MeshBasicMaterial).opacity = 1;
     (this.glow.material as THREE.MeshBasicMaterial).opacity = 0.6;
     for (const side of this.sides) (side.material as THREE.MeshBasicMaterial).opacity = 1;
-    this.light.intensity = 5 * s;
+    this.light.intensity = this.withLight ? 5 * s : 0;
     this.group.visible = true;
   }
 
@@ -89,6 +89,6 @@ export class MuzzleFlash {
     (this.front.material as THREE.MeshBasicMaterial).opacity = k;
     (this.glow.material as THREE.MeshBasicMaterial).opacity = 0.6 * k2;
     for (const s of this.sides) (s.material as THREE.MeshBasicMaterial).opacity = k2;
-    this.light.intensity = 5 * k * this.scale;
+    this.light.intensity = this.withLight ? 5 * k * this.scale : 0;
   }
 }

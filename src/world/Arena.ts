@@ -4,6 +4,8 @@ import { MeshBuilder } from './MeshBuilder';
 import { PhysicsProps } from './PhysicsProps';
 import { corrugatedTexture, gridTexture } from '../fx/Textures';
 import type { RobotOptions } from '../targets/RobotTarget';
+import type { GameMap, SquadSpawn, Station } from './GameMap';
+import { STATIONS } from '../core/LabTools';
 
 const METAL: HitReceiver = { surface: 'metal', allowDecals: true };
 
@@ -20,7 +22,12 @@ type V3 = [number, number, number];
  *   Black Division yard (z < -65, through two doors in the back wall): open-air
  *   container yard where the enemy squad patrols.
  */
-export class Arena {
+export class Arena implements GameMap {
+  readonly name = 'Weapon Lab';
+  readonly spawnYaw = 0;
+  readonly skyColor = 0x15171a;
+  readonly stations: Station[] = STATIONS;
+  readonly squads: SquadSpawn[];
   readonly group = new THREE.Group();
   readonly props: PhysicsProps;
   readonly spawn = new THREE.Vector3(0, 0, 4);
@@ -70,6 +77,7 @@ export class Arena {
     this.group.add(this.props.group);
     this.placeProps();
     this.placeRobots();
+    this.squads = [{ route: this.patrolRoute, spawnIndex: this.squadSpawnIndex }];
 
     // --- Lighting ---
     this.group.add(new THREE.HemisphereLight(0xc8d6ff, 0x3a3631, 1.0));
@@ -369,7 +377,7 @@ export class Arena {
     add(14, 0, -44);
   }
 
-  update(): void {
+  update(_dt: number): void {
     this.props.update();
   }
 }

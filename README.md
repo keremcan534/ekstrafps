@@ -128,6 +128,31 @@ The camera and the weapon are separate bodies. The camera responds instantly. Th
   - Corpses still take bullet impulses. Body falls play a metal thud.
 - **Tuning.** `feel.hitReactionScale`, `feel.ragdollForce`, `feel.robotRespawnTime`.
 
+## Maps
+
+Pick a map on the start screen. A map can also be opened directly with `?map=site9`.
+
+### Weapon Lab
+
+The graybox test range plus the Black Division container yard.
+
+### Site-9
+
+Vanta Dynamics' single-level underground robotics facility (`world/Site9.ts`, about 112 × 84 m).
+
+| Area | What's there |
+| --- | --- |
+| Centre | Assembly hall, 9 m tall. Conveyor lines with dormant robots and gantries. A raised glass control booth reached by stairs. |
+| Around the hall | A ring corridor. |
+| North | Lift lobby (spawn), security checkpoint, canteen, Black Division barracks. |
+| East | R&D offices, server hall, clean lab, director's office. |
+| South | Robot test cells, generator room. |
+| West | Garage, warehouse. |
+
+Two Black Division squads patrol the map: one walks the ring, the other sweeps the wings.
+
+**M** cycles through the map's stations.
+
 ## Black Division
 
 The enemy faction: four all-black operators in plate carriers and high-cut helmets with glowing quad night vision. They are faceless on purpose. They patrol the container yard behind the range. To get there, press **M** and pick the yard door station, or walk through either door in the back wall. Code: `enemies/`, `ai/NavGrid.ts`.

@@ -13,12 +13,13 @@ overlay.innerHTML = `
       <div><b>LMB</b> fire · <b>RMB</b> aim · <b>R</b> reload · <b>B</b> fire mode · <b>V</b> shoulder · <b>T</b> inspect · <b>1-0</b> weapons</div>
       <div><b>G</b> aim rays · <b>L</b> laser · <b>Z</b> slow-mo · <b>I</b> inf. ammo · <b>K</b> reset robots · <b>M</b> test stations</div>
       <div><b>Tab</b> tuning · <b>H</b> debug HUD · <b>F1</b> help · <b>Esc</b> release mouse</div>
-      <div>Black Division squad patrols the yard behind the range (<b>M</b> → yard door) · <b>Y</b> respawn squad · <b>O</b> god mode · <b>U</b> AI on/off</div>
+      <div>Black Division patrols both maps (Weapon Lab: the yard behind the range) · <b>Y</b> respawn squads · <b>O</b> god mode · <b>U</b> AI on/off</div>
     </div>
     <div class="controls touch-only">
       <div>Left side: move (push to top = sprint) · Right side: look · LEAN buttons hold</div>
       <div>FIRE buttons also aim while held · ADS toggles · ⚙ tuning · DBG debug · RAY aim rays · LSR laser</div>
     </div>
+    <div class="maps">Map <button data-map="lab">Weapon Lab</button><button data-map="site9">Site-9 (facility)</button></div>
     <button class="start" disabled>Loading…</button>
   </div>`;
 app.appendChild(overlay);
@@ -27,6 +28,20 @@ const rotateHint = document.createElement('div');
 rotateHint.className = 'rotate-hint';
 rotateHint.textContent = 'Rotate your device to landscape';
 app.appendChild(rotateHint);
+
+// Map picker: reloads with ?map=… (other URL flags are kept).
+const currentMap = new URLSearchParams(location.search).get('map') === 'site9' ? 'site9' : 'lab';
+overlay.querySelectorAll<HTMLButtonElement>('.maps button').forEach((btn) => {
+  btn.classList.toggle('active', btn.dataset.map === currentMap);
+  btn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (btn.dataset.map === currentMap) return;
+    const params = new URLSearchParams(location.search);
+    if (btn.dataset.map === 'site9') params.set('map', 'site9');
+    else params.delete('map');
+    location.search = params.toString();
+  });
+});
 
 const status = overlay.querySelector('.status') as HTMLParagraphElement;
 const button = overlay.querySelector('.start') as HTMLButtonElement;
