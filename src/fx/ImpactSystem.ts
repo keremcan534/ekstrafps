@@ -231,6 +231,31 @@ export class ImpactSystem {
     }
   }
 
+  /** Breaching charge / explosion: fireball flash, fragments, a rolling column of smoke. */
+  explosion(point: THREE.Vector3): void {
+    this.burstSparks(point, 70, 16, 1.0, 0.6, 0.2, 0.9);
+    this.burstSparks(point, 30, 10, 1.0, 0.85, 0.5, 0.6);
+    this.flash(point, this.tmp.set(0, 1, 0), 2.6, 1, 0.7, 0.35);
+    const p = this.sp;
+    for (let i = 0; i < 26; i++) {
+      p.x = point.x + rand(-0.6, 0.6);
+      p.y = point.y + rand(-0.2, 0.8);
+      p.z = point.z + rand(-0.6, 0.6);
+      p.vx = rand(-2.5, 2.5);
+      p.vy = rand(0.6, 3.2);
+      p.vz = rand(-2.5, 2.5);
+      p.life = rand(2.2, 4.0);
+      p.size = rand(0.4, 0.8);
+      p.sizeEnd = rand(2.2, 3.6);
+      p.stretch = 0;
+      p.r = p.g = p.b = rand(0.08, 0.2);
+      p.alpha = 0.55;
+      p.gravity = -0.35;
+      p.drag = 1.4;
+      this.dust.spawn(p);
+    }
+  }
+
   /** Big electric burst when a robot dies. */
   robotDeath(point: THREE.Vector3): void {
     this.burstSparks(point, 40, 9, 1.0, 0.7, 0.25, 0.6);

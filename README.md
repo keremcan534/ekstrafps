@@ -173,7 +173,7 @@ Vanta Dynamics' research campus, single level, about 220 × 170 m.
 - In a fight: the squad shares a focus target, goes for the head on calm targets, backs off from robots while shooting, falls back when badly hurt and retreats when swarmed. Getting shot alerts everyone nearby: they turn to the shooter, hold the angle or push it, and the squad goes after you. Nobody revives a teammate while a hostile is in view or they're under fire.
 - Your squad: **Y** (SQUAD on touch) switches between free roam (default: they farm, buy and open doors on their own within ~55 m of you) and follow me. **F** next to a downed operator revives them (3 s). They call out on the radio.
 - Running AI carry their weapon low ready or high port; handguns are pushed out to aim and tucked in otherwise. Firing on the move scatters (hip fire most, aimed a little, mid-air a lot).
-- Raids at 6000 / 14000 / 22000 team score: the power dies and two Black Division squads land far from you, out of sight, hostile to everyone. A power breaker restores the lights ($750). First team to 20000 wins.
+- Raids at 6000 / 14000 / 22000 team score: the power dies and two Black Division squads blow their way in (breaching charges you hear across the facility) far from you, out of sight, hostile to everyone. A power breaker restores the lights ($750). First team to 20000 wins.
 
 **Facility extras (random spots each game, on the map).** Medical stations ($400, full heal), armor lockers ($1000, plates soak 60% of damage), power breakers (cut the lights / restore power), a supply crate ($950, random weapon, moves after a few uses), sentry turrets ($1500, 60 s for whoever paid), plus ten extra wall weapons. **L** toggles your flashlight (it switches on when the power dies). Enemy operators who fire show up on the minimap for a moment.
 
@@ -256,7 +256,7 @@ Dead soldiers ragdoll and drop their rifle as a physics object. The squad calls 
 
 ## Sound
 
-Gunshots are layered: a recorded close blast (several variations per weapon), synth low-end punch and mechanical action, a room tail that grows with the size of the room you're in, and a distant report that takes over from ~20 m and darkens past ~70 m. The recorded shots were cut from Pixabay sound effects (Pixabay Content License) by freesound_community, pwlpl, haruudu, sovetsky_rastov72 and u_2n07b18i8q (the M4/M16 reload recording by freesound_community drives the magazine and charging-handle sounds; the power-cut slam and the Black Division encounter sting are by universfield, the raid arrival impact by black_kumizhi); the cuts live in `public/audio/guns`.
+Gunshots are layered: a recorded close blast (several variations per weapon), synth low-end punch and mechanical action, a room tail that grows with the size of the room you're in, and a distant report that takes over from ~20 m and darkens past ~70 m. The recorded shots were cut from Pixabay sound effects (Pixabay Content License) by freesound_community, pwlpl, haruudu, sovetsky_rastov72 and u_2n07b18i8q (the M4/M16 reload recording by freesound_community drives the magazine and charging-handle sounds; the power-cut slam and the Black Division encounter sting are by universfield, the raid arrival impact by black_kumizhi, the breaching-charge explosion by freesound_community); the cuts live in `public/audio/guns`.
 
 ## Where tuning lives
 

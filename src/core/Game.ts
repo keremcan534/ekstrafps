@@ -529,6 +529,7 @@ export class Game {
         svHud: hud,
         eye: this.camera.eye,
         lighting: this.lighting,
+        shake: (at) => this.camera.addShake(Math.max(0, 1 - at.distanceTo(this.player.feet) / 60) * 0.9),
         allies: () => this.allies,
         playerAlive: () => !this.health.dead,
         playerPos: this.player.feet,

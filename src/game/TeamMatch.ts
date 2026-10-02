@@ -39,6 +39,8 @@ export interface MatchDeps {
   svHud: SurvivalHUD;
   /** The player's eye (raid landings stay out of its sight). */
   eye: THREE.Vector3;
+  /** Camera shake from a blast at `at` (scaled by distance). */
+  shake?(at: THREE.Vector3): void;
   lighting: Lighting;
   /** Everyone on the player's team that isn't the player (hired contractors). */
   allies(): TeamAgent[];
@@ -205,6 +207,11 @@ export class TeamMatch {
     const near = targetTeam?.leader?.soldier.pos ?? this.d.playerPos;
     const points = [this.raidPoint(null), this.raidPoint(near)];
     points.forEach((at, i) => {
+      // They blow their way in: breaching charge where each squad lands.
+      const blast = at.clone().setY(1);
+      this.d.audio.play('explosion', { position: blast });
+      this.d.soldierDeps.impacts.explosion(blast);
+      this.d.shake?.(blast);
       if (this.raiders[i]) this.raiders[i].redeploy(at);
       else {
         const def: TeamDef = { id: 'bd', name: 'Black Division', color: COLOR.bd, palette: 'bd', style: 'hunter', start: at, economy: false };

@@ -238,6 +238,8 @@ export const SOUND_BANK: Record<string, SoundEvent> = {
   'power.down': { reverb: 0.7, layers: [{ file: 'audio/guns/power_out.wav', gain: 1.0 }, { synth: 'power_down', gain: 0.3, delay: 0.12 }], maxVoices: 1, bus: 'ui' },
   'bd.encounter': { layers: [{ files: ['audio/guns/bd_encounter.wav', 'audio/guns/bd_encounter2.wav'], gain: 0.9 }], maxVoices: 1, bus: 'ui' },
   'bd.arrival': { layers: [{ file: 'audio/guns/bd_encounter2.wav', gain: 1.0 }], maxVoices: 1, bus: 'ui' },
+  // Explosions carry like gunfire: the full blast up close, a dull low rumble far off.
+  'explosion': { reverb: 0.6, layers: [{ file: 'audio/guns/explosion.wav', gain: 1.25, range: 'near' }, { file: 'audio/guns/explosion_far.wav', gain: 1.1, range: 'far' }, { file: 'audio/guns/explosion_far.wav', gain: 0.9, range: 'farthest' }], maxVoices: 3 },
   'raid.siren': { reverb: 0.8, layers: [{ synth: 'raid_siren', gain: 0.6 }], maxVoices: 1, bus: 'ui' },
   'director.horde': { reverb: 0.6, layers: [{ synth: 'horde_alarm', gain: 0.6 }], maxVoices: 1, bus: 'ui' },
   'robot.boot': { layers: [{ synth: 'robot_boot', gain: 0.35 }], pitchVariance: 0.08, maxDist: 18, maxVoices: 3 },
