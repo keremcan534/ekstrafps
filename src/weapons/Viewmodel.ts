@@ -62,6 +62,9 @@ export interface RecoilKick {
 /** How much of the aimed recoil goes rearward instead of flipping the muzzle (0..1). */
 export const rearwardShare = (ads: number): number => feel.adsRecoilRearward * ads * ads;
 
+/** Roll of the weapon at the hip (rad): canted toward the centre like a relaxed low-ready grip. */
+const HIP_CANT = 0.12;
+
 export class Viewmodel {
   readonly scene = new THREE.Scene();
   readonly camera: THREE.PerspectiveCamera;
@@ -414,7 +417,9 @@ export class Viewmodel {
     this.euler.set(
       alignPitch + iner.x + swayX + bobPitch + landPitch + sp.rot[0] * sb + this.pose.rot.x + jr.x - 0.9 * equipDown + raise * 0.95,
       alignYaw + iner.y + swayY + bobYaw + (sp.rot[1] * sb + this.pose.rot.y) * sideSign + jr.y + 0.15 * equipDown * sideSign - linP.x * 0.4,
-      iner.y * 0.6 + iner.z + bobRoll + (sp.rot[2] * sb + this.pose.rot.z) * sideSign + jr.z + 0.35 * equipDown * sideSign + raise * 0.25 * sideV,
+      iner.y * 0.6 + iner.z + bobRoll + (sp.rot[2] * sb + this.pose.rot.z) * sideSign + jr.z + 0.35 * equipDown * sideSign + raise * 0.25 * sideV +
+        // Hip carry: the gun sits canted, top toward the centre (gone when aimed or sprinting).
+        HIP_CANT * (1 - adsEase) * (1 - sb) * sideSign,
     );
     this.pivot.quaternion.setFromEuler(this.euler);
     // The shoulder stops the gun: rearward travel is capped (less when aimed, where the
