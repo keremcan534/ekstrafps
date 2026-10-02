@@ -286,9 +286,10 @@ export const RECIPES: Record<string, Recipe> = {
     burst(c, { dur: 0.01, freq: 4200, q: 8, gain: 0.8 });
     burst(c, { t: 0.025, dur: 0.008, freq: 3000, q: 6, gain: 0.5 });
   } },
-  ricochet: { dur: 0.5, render: (c) => {
-    tone(c, { dur: 0.35, f0: r(3200, 4200), f1: r(900, 1400), sweep: 0.3, type: 'sine', gain: 0.35 });
-    burst(c, { dur: 0.02, freq: 4000, type: 'highpass', gain: 0.5 });
+  ricochet: { dur: 0.3, render: (c) => {
+    // A short noisy zip, not a pitched whine.
+    burst(c, { dur: 0.18, attack: 0.005, freq: 3200, freqEnd: 900, q: 1.4, gain: 0.45 });
+    burst(c, { dur: 0.015, freq: 4000, type: 'highpass', gain: 0.4 });
   } },
 
   // ---------- Impacts ----------
@@ -296,10 +297,11 @@ export const RECIPES: Record<string, Recipe> = {
     burst(c, { dur: 0.07, freq: r(1600, 2200), freqEnd: 500, type: 'lowpass', gain: 0.9 });
     burst(c, { dur: 0.015, freq: 3000, type: 'highpass', gain: 0.5 });
   } },
-  impact_metal: { dur: 0.2, render: (c) => {
-    burst(c, { dur: 0.04, freq: 2400, q: 1.2, gain: 0.7 });
-    burst(c, { dur: 0.012, freq: 4000, type: 'highpass', gain: 0.6 });
-    metal(c, 0, r(1500, 2600), 0.05, 0.12);
+  impact_metal: { dur: 0.15, render: (c) => {
+    // Dull "tock" off steel props: no ring.
+    burst(c, { dur: 0.035, freq: 1300, q: 1.0, gain: 0.8 });
+    burst(c, { dur: 0.008, freq: 4500, type: 'highpass', gain: 0.4 });
+    burst(c, { dur: 0.05, freq: 300, type: 'lowpass', gain: 0.5 });
   } },
   impact_robot: { dur: 0.2, render: (c) => {
     burst(c, { dur: 0.05, freq: 900, q: 1.2, gain: 0.8 });
@@ -352,15 +354,15 @@ export const RECIPES: Record<string, Recipe> = {
     tone(c, { dur: 0.08, f0: 130, f1: 55, gain: 0.7 });
     burst(c, { dur: 0.03, freq: 1800, q: 1.5, gain: 0.25 });
   } },
-  impact_armor: { dur: 0.4, drive: 1.5, render: (c) => {
+  impact_armor: { dur: 0.3, drive: 1.5, render: (c) => {
     tone(c, { dur: 0.09, f0: 160, f1: 70, gain: 0.9 });
     burst(c, { dur: 0.05, freq: 900, freqEnd: 300, type: 'lowpass', gain: 1.0 });
-    metal(c, 0, r(780, 900), 0.16, 0.3, [1, 2.1, 3.4]);
+    burst(c, { dur: 0.03, freq: 1600, q: 1.0, gain: 0.4 });
   } },
-  impact_helmet: { dur: 0.45, render: (c) => {
-    metal(c, 0, r(1600, 1900), 0.3, 0.45, [1, 2.4, 3.9]);
-    burst(c, { dur: 0.02, freq: 5000, type: 'highpass', gain: 0.5 });
-    tone(c, { dur: 0.05, f0: 220, f1: 90, gain: 0.5 });
+  impact_helmet: { dur: 0.25, drive: 1.3, render: (c) => {
+    burst(c, { dur: 0.012, freq: 5000, type: 'highpass', gain: 0.6 });
+    burst(c, { dur: 0.05, freq: 1800, q: 1.2, gain: 0.8 });
+    burst(c, { dur: 0.07, freq: 350, type: 'lowpass', gain: 0.7 });
   } },
   player_hit: { dur: 1.4, drive: 1.4, render: (c) => {
     tone(c, { dur: 0.16, f0: 95, f1: 38, gain: 1.4 });
@@ -384,14 +386,15 @@ export const RECIPES: Record<string, Recipe> = {
   hazard_gas: { dur: 1.4, render: (c) => {
     burst(c, { dur: 1.1, attack: 0.15, freq: 2600, q: 0.8, gain: 0.35 });
   } },
-  lift_ding: { dur: 1.2, render: (c) => {
-    tone(c, { dur: 0.9, f0: 1318, gain: 0.35 });
-    tone(c, { t: 0.32, dur: 0.9, f0: 1046, gain: 0.35 });
-    tone(c, { dur: 0.9, f0: 2636, gain: 0.05 });
+  lift_ding: { dur: 0.6, render: (c) => {
+    // Car arriving: a heavy mechanical clunk (no chime).
+    burst(c, { dur: 0.08, freq: 220, type: 'lowpass', gain: 1.1 });
+    burst(c, { dur: 0.012, freq: 2500, q: 1, gain: 0.35 });
+    burst(c, { t: 0.05, dur: 0.25, attack: 0.02, freq: 160, type: 'lowpass', gain: 0.5 });
   } },
   lift_doors: { dur: 0.9, render: (c) => {
     burst(c, { dur: 0.7, attack: 0.08, freq: 500, type: 'lowpass', gain: 0.45 });
-    metal(c, 0.65, 380, 0.15, 0.25, [1, 2.3]);
+    burst(c, { t: 0.65, dur: 0.06, freq: 260, type: 'lowpass', gain: 0.5 });
   } },
   robot_wake: { dur: 0.9, drive: 1.3, render: (c) => {
     tone(c, { dur: 0.6, f0: 120, f1: 620, sweep: 0.5, type: 'sawtooth', gain: 0.12 });
@@ -436,9 +439,10 @@ export const RECIPES: Record<string, Recipe> = {
     tone(c, { dur: 0.3, f0: r(780, 860), f1: 340, sweep: 0.28, type: 'square', gain: 0.035 });
     metal(c, 0, r(900, 1100), 0.12, 0.12);
   } },
-  robot_boot: { dur: 0.5, render: (c) => {
-    tone(c, { dur: 0.3, f0: 300, f1: 900, sweep: 0.25, type: 'square', gain: 0.06 });
-    metal(c, 0.25, 700, 0.2, 0.2);
+  robot_boot: { dur: 0.4, render: (c) => {
+    // Servos spinning up: filtered noise, no beep.
+    burst(c, { dur: 0.3, attack: 0.05, freq: 600, freqEnd: 1800, q: 2, gain: 0.35 });
+    burst(c, { t: 0.28, dur: 0.05, freq: 300, type: 'lowpass', gain: 0.4 });
   } },
   land: { dur: 0.2, render: (c) => {
     tone(c, { dur: 0.1, f0: 85, f1: 40, gain: 0.7 });

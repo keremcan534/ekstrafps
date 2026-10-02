@@ -251,7 +251,7 @@ Dead soldiers ragdoll and drop their rifle as a physics object. The squad calls 
 
 ### Voice and tuning
 
-- Voice lines are placeholders made from offline TTS that was pitched down and run through mask and radio processing (`public/audio/voice/`). Drop in real recordings with the same names to replace them.
+- Voice lines are generated offline with the Piper neural TTS (voice: en_US ryan, high) and processed as a masked operator on a radio in a concrete facility: slightly lower and slower, gas-mask muffle and cavity resonance, radio band and grit, squelch, slapback and hall reverb (`public/audio/voice/`). Drop in real recordings with the same names to replace them.
 - Tuning: *Black Division* folder in the panel. It covers AI on/off, god mode, enemy damage scale, enemy accuracy and regeneration.
 
 ## Sound

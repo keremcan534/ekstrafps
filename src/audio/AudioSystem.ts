@@ -52,10 +52,10 @@ export class AudioSystem {
     this.world.connect(this.master);
 
     const convolver = this.ctx.createConvolver();
-    convolver.buffer = this.buildRoomImpulse(1.9);
+    convolver.buffer = this.buildRoomImpulse(2.3);
     this.reverbIn = this.ctx.createGain();
     const wet = this.ctx.createGain();
-    wet.gain.value = 0.55;
+    wet.gain.value = 0.68;
     this.reverbIn.connect(convolver).connect(wet).connect(this.master);
   }
 
