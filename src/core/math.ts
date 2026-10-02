@@ -41,6 +41,16 @@ export const hfovToVfov = (hfovDeg: number): number =>
  * device with ANY fine pointer (mouse/trackpad) is treated as a PC; `?mouse`
  * forces PC mode, `?touch` forces touch mode (handled by the caller).
  */
+/** Player's control choice from the start menu: 'auto' (detect), 'pc' or 'mobile'. */
+export function controlPreference(): 'auto' | 'pc' | 'mobile' {
+  try {
+    const v = localStorage.getItem('weaponlab.controls');
+    return v === 'pc' || v === 'mobile' ? v : 'auto';
+  } catch {
+    return 'auto';
+  }
+}
+
 export const isTouchDevice = (): boolean => {
   if (typeof window === 'undefined') return false;
   if (new URLSearchParams(location.search).has('mouse')) return false;

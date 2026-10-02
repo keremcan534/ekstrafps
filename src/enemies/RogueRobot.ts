@@ -104,6 +104,10 @@ export class RogueRobot {
     this.hooks.onWake(this);
   }
   private wakeTime = 0;
+  /** Idle wanderers shuffle between nearby spots instead of standing still. */
+  wanders = false;
+  private wanderTimer = 0;
+  private wanderTo: THREE.Vector3 | null = null;
 
   /**
    * @param mode 'rise' climbs out of the floor, 'step' walks straight out (lift/bay),
@@ -119,6 +123,9 @@ export class RogueRobot {
     this.attackTime = -1;
     this.cooldown = 0.6;
     this.state = mode === 'idle' ? 'idle' : mode === 'rise' ? 'rising' : 'chase';
+    this.wanders = mode === 'idle' && Math.random() < 0.5;
+    this.wanderTo = null;
+    this.wanderTimer = Math.random() * 4;
     this.body.health.maxHealth = health;
     this.body.root.position.copy(this.pos);
     this.body.root.rotation.y = this.yaw;
@@ -153,7 +160,37 @@ export class RogueRobot {
         this.materials.visor.emissiveIntensity = 0.35 + (1 - k) * 2.6 + (this.wakeTime < 0.3 ? Math.random() * 2 : 0);
         if (this.wakeTime >= 0.7) this.state = 'chase';
       }
-      p.strideAmount = 0;
+      // Wanderers drift around at a slumped shuffle.
+      let shuffle = 0;
+      if (this.state === 'idle' && this.wanders) {
+        this.wanderTimer -= dt;
+        if (!this.wanderTo && this.wanderTimer <= 0) {
+          const a = Math.random() * Math.PI * 2;
+          const r = 2 + Math.random() * 4;
+          const tx = this.pos.x + Math.cos(a) * r;
+          const tz = this.pos.z + Math.sin(a) * r;
+          if (this.nav.walkable(tx, tz) && this.nav.clearLine(this.pos.x, this.pos.z, tx, tz)) this.wanderTo = new THREE.Vector3(tx, 0, tz);
+          else this.wanderTimer = 1;
+        }
+        if (this.wanderTo) {
+          const dx = this.wanderTo.x - this.pos.x;
+          const dz = this.wanderTo.z - this.pos.z;
+          const d = Math.hypot(dx, dz);
+          if (d < 0.3) {
+            this.wanderTo = null;
+            this.wanderTimer = 3 + Math.random() * 5;
+          } else {
+            this.pos.x += (dx / d) * 0.55 * dt;
+            this.pos.z += (dz / d) * 0.55 * dt;
+            const want = Math.atan2(dx, dz);
+            this.yaw += clamp(Math.atan2(Math.sin(want - this.yaw), Math.cos(want - this.yaw)), -2 * dt, 2 * dt);
+            shuffle = 0.55;
+            this.stride += (0.55 * dt * Math.PI * 2) / 1.1;
+          }
+        }
+      }
+      p.stridePhase = this.stride;
+      p.strideAmount = shuffle * k;
       p.spineX = 0.55 * k + 0.12 * (1 - k) + Math.sin(performance.now() * 0.0007 + this.pos.x) * 0.03 * k;
       p.headX = 0.6 * k;
       p.armL = 0.1 * k - 0.9 * (1 - k);

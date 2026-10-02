@@ -265,6 +265,9 @@ export class LayoutBuilder {
         const rot: [number, number, number] = alongX ? [0, side === a ? Math.PI : 0, 0] : [0, side === a ? -Math.PI / 2 : Math.PI / 2, 0];
         const p = pos(mid, 0.275, face);
         r.clear.add(this.shared.ao, g, [p.x, p.y, p.z], rot);
+        // Baseboard: a dark trim along the wall foot (breaks the clean CG edge).
+        const bb = pos(mid, 0.07, side === a ? -T / 2 - 0.015 : T / 2 + 0.015);
+        r.b.box(this.shared.trim, size(len, 0.14, 0.03), [bb.x, bb.y, bb.z]);
       }
     }
   }

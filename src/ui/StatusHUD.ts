@@ -27,6 +27,7 @@ export class StatusHUD {
   private comms: HTMLDivElement;
   private squad: HTMLDivElement;
   private death: HTMLDivElement;
+  private downed: HTMLDivElement;
   private indicators: Indicator[] = [];
   private dmgLevel = 0;
   private suppLevel = 0;
@@ -44,6 +45,7 @@ export class StatusHUD {
     this.comms = div('comms', parent);
     this.squad = div('squad-line', parent);
     for (let i = 0; i < 6; i++) this.indicators.push({ el: div('hit-ind', parent), from: new THREE.Vector3(), life: 0 });
+    this.downed = div('downed', parent);
     this.death = div('death-screen', parent);
     this.death.innerHTML = '<div class="death-title">K.I.A.</div><div class="death-sub">BLACK DIVISION</div><div class="death-hint">respawning…</div>';
   }
@@ -69,6 +71,16 @@ export class StatusHUD {
 
   setSquadLine(text: string): void {
     if (this.squad.textContent !== text) this.squad.textContent = text;
+  }
+
+  /** Last stand: bleed-out seconds and revive progress (0..1); seconds < 0 hides it. */
+  setDowned(seconds: number, revive = 0): void {
+    if (seconds < 0) {
+      this.downed.classList.remove('show');
+      return;
+    }
+    this.downed.classList.add('show');
+    this.downed.innerHTML = `<div class="downed-title">DOWNED</div><div class="downed-sub">${revive > 0 ? 'Being revived…' : 'Hold on, help is coming'} · ${Math.ceil(seconds)}s</div><div class="downed-bar"><i style="transform:scaleX(${revive.toFixed(3)})"></i></div>`;
   }
 
   setDead(dead: boolean): void {

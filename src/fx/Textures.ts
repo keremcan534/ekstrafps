@@ -98,33 +98,118 @@ export const metalDentTexture = (): THREE.Texture =>
     }),
   );
 
-/** Graybox grid: 1 texture repeat = 1 metre. Helps read speed and distance. */
+/**
+ * Worn panel grid: 1 tile = 1 metre (helps read speed and distance). The texture
+ * holds 2×2 slightly different tiles (spans 2 m) with grime blotches, scuffs and
+ * speckle, so large surfaces don't read as clean plastic.
+ */
 export const gridTexture = (base: string, line: string, accent: string): THREE.Texture =>
   cached(`grid_${base}_${line}`, () => {
-    const t = canvasTexture(256, (ctx, s) => {
+    const t = canvasTexture(512, (ctx, s) => {
+      const h = s / 2;
       ctx.fillStyle = base;
       ctx.fillRect(0, 0, s, s);
-      // subtle noise so surfaces aren't flat
-      for (let i = 0; i < 1400; i++) {
-        const v = Math.random() * 18 - 9;
+      // Per-tile tone shift.
+      for (let i = 0; i < 4; i++) {
+        const v = (Math.random() - 0.5) * 14;
+        ctx.fillStyle = v > 0 ? `rgba(255,255,255,${v / 255})` : `rgba(0,0,0,${-v / 255})`;
+        ctx.fillRect((i % 2) * h, Math.floor(i / 2) * h, h, h);
+      }
+      // Low-frequency grime blotches.
+      for (let i = 0; i < 26; i++) {
+        const x = Math.random() * s;
+        const y = Math.random() * s;
+        const r = 20 + Math.random() * 90;
+        const g = ctx.createRadialGradient(x, y, 0, x, y, r);
+        const a = 0.03 + Math.random() * 0.06;
+        g.addColorStop(0, `rgba(40,34,28,${a})`);
+        g.addColorStop(1, 'rgba(40,34,28,0)');
+        ctx.fillStyle = g;
+        ctx.fillRect(x - r, y - r, r * 2, r * 2);
+      }
+      // Speckle.
+      for (let i = 0; i < 5200; i++) {
+        const v = Math.random() * 26 - 13;
         ctx.fillStyle = v > 0 ? `rgba(255,255,255,${v / 255})` : `rgba(0,0,0,${-v / 255})`;
         ctx.fillRect(Math.random() * s, Math.random() * s, 2, 2);
       }
-      ctx.strokeStyle = line;
-      ctx.lineWidth = 2;
-      ctx.strokeRect(1, 1, s - 2, s - 2);
+      // Scuffs and scratches.
+      ctx.lineCap = 'round';
+      for (let i = 0; i < 34; i++) {
+        const x = Math.random() * s;
+        const y = Math.random() * s;
+        const a = Math.random() * Math.PI;
+        const l = 8 + Math.random() * 46;
+        ctx.strokeStyle = Math.random() < 0.7 ? `rgba(0,0,0,${0.05 + Math.random() * 0.08})` : `rgba(255,255,255,${0.04 + Math.random() * 0.06})`;
+        ctx.lineWidth = 1 + Math.random() * 2;
+        ctx.beginPath();
+        ctx.moveTo(x, y);
+        ctx.lineTo(x + Math.cos(a) * l, y + Math.sin(a) * l);
+        ctx.stroke();
+      }
+      // Panel seams: dark line + a thin highlight (reads as a bevel).
+      for (const o of [0, h]) {
+        ctx.strokeStyle = line;
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.moveTo(o + 1, 0);
+        ctx.lineTo(o + 1, s);
+        ctx.moveTo(0, o + 1);
+        ctx.lineTo(s, o + 1);
+        ctx.stroke();
+        ctx.strokeStyle = 'rgba(255,255,255,0.10)';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(o + 3.5, 0);
+        ctx.lineTo(o + 3.5, s);
+        ctx.moveTo(0, o + 3.5);
+        ctx.lineTo(s, o + 3.5);
+        ctx.stroke();
+      }
       ctx.strokeStyle = accent;
       ctx.lineWidth = 1;
       ctx.beginPath();
-      ctx.moveTo(s / 2, 0);
-      ctx.lineTo(s / 2, s);
-      ctx.moveTo(0, s / 2);
-      ctx.lineTo(s, s / 2);
+      for (const o of [h / 2, h * 1.5]) {
+        ctx.moveTo(o, 0);
+        ctx.lineTo(o, s);
+        ctx.moveTo(0, o);
+        ctx.lineTo(s, o);
+      }
       ctx.stroke();
     });
     t.wrapS = t.wrapT = THREE.RepeatWrapping;
+    t.repeat.set(0.5, 0.5);
     t.generateMipmaps = true;
     t.minFilter = THREE.LinearMipmapLinearFilter;
+    t.anisotropy = 8;
+    return t;
+  });
+
+/** Roughness variation (spans 4 m): smudges and wear break up uniform specular highlights. */
+export const grimeRoughness = (): THREE.Texture =>
+  cached('grimeRough', () => {
+    const t = canvasTexture(256, (ctx, s) => {
+      ctx.fillStyle = '#c8c8c8';
+      ctx.fillRect(0, 0, s, s);
+      for (let i = 0; i < 70; i++) {
+        const x = Math.random() * s;
+        const y = Math.random() * s;
+        const r = 8 + Math.random() * 50;
+        const g = ctx.createRadialGradient(x, y, 0, x, y, r);
+        const v = Math.random() < 0.5 ? 255 : 120;
+        g.addColorStop(0, `rgba(${v},${v},${v},${0.15 + Math.random() * 0.25})`);
+        g.addColorStop(1, `rgba(${v},${v},${v},0)`);
+        ctx.fillStyle = g;
+        ctx.fillRect(x - r, y - r, r * 2, r * 2);
+      }
+      for (let i = 0; i < 3000; i++) {
+        const v = 150 + Math.random() * 105;
+        ctx.fillStyle = `rgba(${v},${v},${v},0.35)`;
+        ctx.fillRect(Math.random() * s, Math.random() * s, 1.5, 1.5);
+      }
+    }, false);
+    t.wrapS = t.wrapT = THREE.RepeatWrapping;
+    t.repeat.set(0.25, 0.25);
     return t;
   });
 

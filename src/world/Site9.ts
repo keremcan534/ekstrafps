@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import type { HitReceiver, Physics } from '../core/Physics';
 import { PhysicsProps } from './PhysicsProps';
-import { corrugatedTexture, glowTexture, gridTexture, woodTexture } from '../fx/Textures';
+import { corrugatedTexture, glowTexture, grimeRoughness, gridTexture, woodTexture } from '../fx/Textures';
 import type { RobotOptions } from '../targets/RobotTarget';
 import type { GameMap, SquadSpawn, Station } from './GameMap';
 import { LayoutBuilder, type BuiltRoom, type DoorSlot, type LinkDef, type RoomDef, type RoomStyle } from './LayoutBuilder';
@@ -21,6 +21,25 @@ export interface WallBuy {
   yaw: number;
   room: string;
 }
+
+/** Ammo cache spot (Survival activates a random subset each game). */
+export interface AmmoSpot {
+  pos: THREE.Vector3;
+  yaw: number;
+  zone: string;
+}
+
+/** Candidate area for a random hazard (electrified floor, gas leak, fire). */
+export interface HazardSpot {
+  rect: [number, number, number, number];
+  zone: string;
+}
+
+/** Prices of the wall weapons; positions get a random weapon each game (lobby excepted). */
+export const WEAPON_PRICES: Record<string, number> = {
+  heavy_pistol: 300, kar98: 600, pump_shotgun: 900, mosin: 1000, ppsh: 1200, ak47: 1400, asval: 1600, m4a1: 1800, mk47: 2000, rd704: 2250,
+};
+const RANDOM_WEAPONS = ['pump_shotgun', 'mosin', 'ppsh', 'ak47', 'asval', 'm4a1', 'mk47', 'rd704', 'pump_shotgun', 'ppsh', 'ak47'];
 
 export interface Terminal {
   kind: 'ally';
@@ -121,6 +140,7 @@ export class Site9 implements GameMap {
   readonly navBounds: [number, number, number, number];
   readonly sun: THREE.DirectionalLight;
   readonly skyColor = 0xa9bccd;
+  readonly exposure = 0.88;
   readonly stations: Station[] = [
     { name: 'Arrival Lobby (start)', pos: [0, 0, 78], yaw: 0 },
     { name: 'Atrium', pos: [0, 0, 40], yaw: 0 },
@@ -136,6 +156,8 @@ export class Site9 implements GameMap {
   readonly wallBuys: WallBuy[] = [];
   readonly terminals: Terminal[] = [];
   readonly spawnPoints: SpawnPoint[] = [];
+  readonly ammoSpots: AmmoSpot[] = [];
+  readonly hazardSpots: HazardSpot[] = [];
   readonly rooms = ROOMS;
 
   private mats: Record<string, THREE.Material>;
@@ -148,7 +170,8 @@ export class Site9 implements GameMap {
   constructor(private physics: Physics, mobile: boolean) {
     this.mobile = mobile;
     const std = (o: THREE.MeshStandardMaterialParameters) => new THREE.MeshStandardMaterial(o);
-    const grid = (a: string, b: string, c: string, rough = 0.8, metal = 0.05) => std({ map: gridTexture(a, b, c), roughness: rough, metalness: metal });
+    const rough = grimeRoughness();
+    const grid = (a: string, b: string, c: string, r = 0.8, metal = 0.05) => std({ map: gridTexture(a, b, c), roughnessMap: rough, roughness: Math.min(1, r + 0.12), metalness: metal });
     this.serverLeds = std({ color: 0x000000, emissive: 0x38ff8a, emissiveIntensity: 2 });
     this.coreGlow = std({ color: 0x000000, emissive: 0x4fd2ff, emissiveIntensity: 3 });
     const wood = woodTexture();
@@ -187,15 +210,15 @@ export class Site9 implements GameMap {
     };
     const m = this.mats;
     const styles: Record<string, RoomStyle> = {
-      lobby: { floor: grid('#d8d2c7', '#c3bcb0', '#cfc8bc', 0.35, 0.05), wall: grid('#eceef0', '#d9dcdf', '#e4e6e8', 0.7), ceiling: m.white, lamp: m.lampWarm, lampSpacing: 6, glow: 0xffe8c8 },
+      lobby: { floor: grid('#c9c2b6', '#ada597', '#bdb6aa', 0.35, 0.05), wall: grid('#d9dbdc', '#bfc3c6', '#cfd2d4', 0.7), ceiling: m.white, lamp: m.lampWarm, lampSpacing: 6, glow: 0xffe8c8 },
       cafe: { floor: std({ color: 0xa87a4f, map: wood, roughness: 0.55 }), wall: grid('#efe7da', '#ddd3c4', '#e7dece', 0.8), ceiling: m.offwhite, lamp: m.lampWarm, lampSpacing: 6, glow: 0xffd9a8 },
       security: { floor: grid('#9aa0a7', '#868c93', '#939920', 0.6), wall: grid('#d2d7dc', '#bcc2c8', '#c8cdd3', 0.75), ceiling: m.offwhite, lamp: m.lampCool, lampSpacing: 5, glow: 0xeef4ff },
       garden: { floor: grid('#5c8a45', '#557f40', '#598643', 1), wall: grid('#8a877f', '#77746d', '#83807a', 0.95), ceiling: m.offwhite, lamp: null, lampSpacing: 0, glow: 0 },
-      medical: { floor: grid('#e3ebea', '#cfdad8', '#dae3e2', 0.4), wall: grid('#f1f6f5', '#dce6e4', '#e8efee', 0.7), ceiling: m.white, lamp: m.lampCool, lampSpacing: 5, glow: 0xeafff8 },
-      atrium: { floor: grid('#cdc8bf', '#b9b3a9', '#c4bfb5', 0.3, 0.05), wall: grid('#e2e4e6', '#cfd2d5', '#d9dbde', 0.7), ceiling: m.white, lamp: null, lampSpacing: 0, glow: 0 },
+      medical: { floor: grid('#d3dcdb', '#b7c4c2', '#c9d3d1', 0.4), wall: grid('#e2e9e8', '#c7d3d1', '#d9e1e0', 0.7), ceiling: m.white, lamp: m.lampCool, lampSpacing: 5, glow: 0xeafff8 },
+      atrium: { floor: grid('#bdb7ad', '#a39c91', '#b2aca2', 0.3, 0.05), wall: grid('#d2d4d6', '#b8bbbe', '#c8cacc', 0.7), ceiling: m.white, lamp: null, lampSpacing: 0, glow: 0 },
       factory: { floor: grid('#7c8086', '#6b6f75', '#767a80', 0.75, 0.1), wall: grid('#a2a6ac', '#8d9197', '#9a9ea4', 0.85), ceiling: m.grey, lamp: m.lampWarm, lampSpacing: 10, glow: 0xffe2b8 },
       hangar: { floor: grid('#8a8d90', '#787b7e', '#838689', 0.75, 0.1), wall: grid('#b5b9bd', '#a0a4a8', '#acb0b4', 0.85), ceiling: m.grey, lamp: m.lampCool, lampSpacing: 11, glow: 0xeef4ff },
-      labs: { floor: grid('#eef1f3', '#dbe0e4', '#e6eaed', 0.35), wall: grid('#f6f8f9', '#e2e7ea', '#eef1f3', 0.7), ceiling: m.white, lamp: m.lampCool, lampSpacing: 5, glow: 0xf0f6ff },
+      labs: { floor: grid('#dfe3e6', '#c4cace', '#d5d9dc', 0.35), wall: grid('#e6e9eb', '#cdd2d6', '#dde0e3', 0.7), ceiling: m.white, lamp: m.lampCool, lampSpacing: 5, glow: 0xf0f6ff },
       servers: { floor: grid('#3a3f46', '#30353b', '#363b41', 0.5, 0.2), wall: grid('#4a5059', '#3e434b', '#464c54', 0.7), ceiling: m.dark, lamp: m.lampBlue, lampSpacing: 7, glow: 0x9fd0ff },
       barracks: { floor: grid('#5d625c', '#50554f', '#585d57', 0.7), wall: grid('#7a7f78', '#6a6f68', '#747972', 0.8), ceiling: m.grey, lamp: m.lampWarm, lampSpacing: 6, glow: 0xffd8a8 },
     };
@@ -222,6 +245,7 @@ export class Site9 implements GameMap {
     this.buildServers();
     this.buildBarracks();
     this.buildPower();
+    this.buildRandomSlots();
     this.buildSigns();
     this.layout.build(this.group);
 
@@ -232,8 +256,8 @@ export class Site9 implements GameMap {
     // --- Lighting: bright daylight through the skylights + soft fill everywhere.
     // Ceilings don't cast shadows, so the key light reads as "light from above";
     // its shadow camera follows the player (crisp shadows nearby, cheap).
-    this.group.add(new THREE.HemisphereLight(0xeef3f8, 0x6b645c, 1.55));
-    const sun = new THREE.DirectionalLight(0xfff4e6, 2.0);
+    this.group.add(new THREE.HemisphereLight(0xe6edf5, 0x5a534b, 1.2));
+    const sun = new THREE.DirectionalLight(0xfff1e0, 1.9);
     sun.castShadow = true;
     sun.shadow.mapSize.set(mobile ? 1024 : 2048, mobile ? 1024 : 2048);
     const cam = sun.shadow.camera;
@@ -342,8 +366,71 @@ export class Site9 implements GameMap {
     this.box(room, mat, [x1 - x0, h, d], [(x0 + x1) / 2, h / 2, z], true, undefined, METAL);
   }
 
+  /** Wall weapon slot. Outside the lobby the weapon is rolled at random each game. */
   private wallBuy(room: string, weapon: string, cost: number, pos: V3, yaw: number): void {
+    if (room !== 'lobby') {
+      weapon = RANDOM_WEAPONS[(Math.random() * RANDOM_WEAPONS.length) | 0];
+      cost = WEAPON_PRICES[weapon];
+    }
     this.wallBuys.push({ weapon, cost, pos: new THREE.Vector3(...pos), yaw, room });
+  }
+
+  private ammo(room: string, x: number, z: number, yaw: number): void {
+    this.ammoSpots.push({ pos: new THREE.Vector3(x, 0, z), yaw, zone: ROOMS.find((r) => r.id === room)!.zone });
+  }
+
+  private hazard(room: string, x0: number, z0: number, x1: number, z1: number): void {
+    this.hazardSpots.push({ rect: [x0, z0, x1, z1], zone: ROOMS.find((r) => r.id === room)!.zone });
+  }
+
+  private terminal(room: string, x: number, z: number, yaw: number): void {
+    const n = new THREE.Vector3(Math.sin(yaw), 0, Math.cos(yaw));
+    this.terminals.push({ kind: 'ally', cost: 1500, pos: new THREE.Vector3(x + n.x * 0.3, 1.3, z + n.z * 0.3), yaw, room });
+    const along = Math.abs(n.z) > 0.5;
+    this.box(room, 'gunmetal', along ? [2.2, 2.6, 0.4] : [0.4, 2.6, 2.2], [x, 1.3, z], false);
+    this.box(room, 'screen', along ? [1.6, 1.0, 0.05] : [0.05, 1.0, 1.6], [x + n.x * 0.23, 1.7, z + n.z * 0.23], false);
+    this.box(room, 'vanta', along ? [2.2, 0.15, 0.42] : [0.42, 0.15, 2.2], [x, 2.65, z], false);
+  }
+
+  /** Extra random content candidates around the campus. */
+  private buildRandomSlots(): void {
+    // More wall-weapon slots (weapon rolled each game).
+    this.wallBuy('hangar', '', 0, [-109.82, 1.6, 22], Math.PI / 2);
+    this.wallBuy('barracks', '', 0, [109.82, 1.6, 66], -Math.PI / 2);
+    this.wallBuy('cooling', '', 0, [60, 1.6, -85.82], 0);
+    this.wallBuy('power', '', 0, [-30, 1.6, -85.82], 0);
+    this.wallBuy('warehouse', '', 0, [-109.82, 1.6, -76], Math.PI / 2);
+    this.wallBuy('cleanroom', '', 0, [-39.82, 1.6, -60], Math.PI / 2);
+    this.wallBuy('prototypes', '', 0, [39.82, 1.6, -42], -Math.PI / 2);
+    // More contractor terminals (other teams will use these too).
+    this.terminal('hangar', -66.2, 76, -Math.PI / 2);
+    this.terminal('atrium', -39.8, 44, Math.PI / 2);
+    this.terminal('servers', 109.8, -20, -Math.PI / 2);
+    this.terminal('barracks', 66.2, 80, Math.PI / 2);
+    // Ammo cache spots.
+    const ammo: [string, number, number, number][] = [
+      ['lobby', -16.5, 74, Math.PI / 2], ['cafeteria', -40, 53.3, 0], ['security', 64.6, 76, -Math.PI / 2], ['garden', -41.3, 40, -Math.PI / 2],
+      ['medbay', 46, 15.3, 0], ['atrium', 38.6, 10, -Math.PI / 2], ['atrium', -38.6, 24, Math.PI / 2], ['assembly', -70, 12.6, Math.PI],
+      ['assembly', -108.6, -40, Math.PI / 2], ['warehouse', -60, -84.6, 0], ['hangar', -70, 60, -Math.PI / 2], ['labs', 12, -7.4, Math.PI],
+      ['cleanroom', -32, -64.6, 0], ['prototypes', 38.6, -60, -Math.PI / 2], ['servers', 72, -2, 0], ['cooling', 84, -67.4, Math.PI],
+      ['barracks', 96, 16, 0], ['power', 36, -72, -Math.PI / 2],
+    ];
+    for (const [r, x, z, y] of ammo) this.ammo(r, x, z, y);
+    // Hazard candidate areas.
+    this.hazard('assembly', -80, -20, -72, -12);
+    this.hazard('assembly', -100, -60, -92, -52);
+    this.hazard('warehouse', -88, -80, -82, -72);
+    this.hazard('hangar', -100, 70, -92, 78);
+    this.hazard('labs', -6, -32, 6, -26);
+    this.hazard('cleanroom', -30, -52, -22, -46);
+    this.hazard('prototypes', 26, -56, 34, -48);
+    this.hazard('servers', 70, -44, 78, -36);
+    this.hazard('cooling', 60, -82, 68, -74);
+    this.hazard('power', -14, -84, -6, -80);
+    this.hazard('garden', -60, 26, -55, 30);
+    this.hazard('medbay', 50, 36, 56, 42);
+    this.hazard('barracks', 84, 40, 92, 48);
+    this.hazard('atrium', -30, 0, -24, 6);
   }
 
   private spawnAt(zone: string, pts: [number, number][], kind: SpawnPoint['kind'] = 'bay'): void {

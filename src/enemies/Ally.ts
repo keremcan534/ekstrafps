@@ -17,6 +17,10 @@ export class Ally {
     feet: new THREE.Vector3(), head: new THREE.Vector3(), chest: new THREE.Vector3(), velocity: new THREE.Vector3(),
     sprinting: false, crouching: false, alive: false,
   };
+  /** Set by the game: go and pick the player up. */
+  reviving = false;
+  /** Seconds spent reviving (4 s to get them up). */
+  reviveTime = 0;
   private scanTimer = 0;
   private repath = 0;
   private slot = new THREE.Vector3();
@@ -51,11 +55,41 @@ export class Ally {
     this.soldier.state = 'combat';
   }
 
-  update(dt: number, player: { feet: THREE.Vector3; yaw: number }, robots: RogueRobot[], mates: Soldier[]): void {
+  /** Returns true the frame the revive completes. */
+  update(dt: number, player: { feet: THREE.Vector3; yaw: number }, robots: RogueRobot[], mates: Soldier[]): boolean {
     const s = this.soldier;
     if (!s.alive) {
+      this.reviving = false;
       s.update(dt, this.tgt, mates, null, 'low', false);
-      return;
+      return false;
+    }
+    if (this.reviving) {
+      // Run to the player, kneel, hands on them for 4 s (no shooting while doing it).
+      const d = Math.hypot(player.feet.x - s.pos.x, player.feet.z - s.pos.z);
+      this.repath -= dt;
+      if (d > 1.3) {
+        this.reviveTime = 0;
+        s.crouchTarget = 0;
+        if (this.repath <= 0 || s.pathDone) {
+          if (this.deps.nav.clearLine(s.pos.x, s.pos.z, player.feet.x, player.feet.z)) s.steerTo(player.feet, RUN);
+          else s.setPath(player.feet, RUN);
+          this.repath = 0.6;
+        }
+        s.update(dt, this.tgt, mates, null, 'ready', false);
+        return false;
+      }
+      s.stop();
+      s.crouchTarget = 1;
+      this.reviveTime += dt;
+      this.aim.copy(player.feet).y += 0.3;
+      s.update(dt, this.tgt, mates, this.aim, 'low', false);
+      if (this.reviveTime >= 4) {
+        this.reviving = false;
+        this.reviveTime = 0;
+        s.crouchTarget = 0;
+        return true;
+      }
+      return false;
     }
     // Target: the nearest awake robot it can actually see.
     this.scanTimer -= dt;
@@ -112,5 +146,6 @@ export class Ally {
     if (!t && s.ammo < 15) s.startReload();
     s.crouchTarget = 0;
     s.update(dt, this.tgt, mates, t ? this.tgt.chest : null, t ? 'aim' : 'ready', !!t);
+    return false;
   }
 }

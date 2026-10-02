@@ -16,10 +16,11 @@ overlay.innerHTML = `
       <div>Site-9: <b>F</b> buy doors / weapons / contractors · <b>M</b> map · Weapon Lab: Black Division in the yard · <b>O</b> god mode · <b>U</b> AI on/off</div>
     </div>
     <div class="controls touch-only">
-      <div>Left side: move (push to top = sprint) · Right side: look · LEAN buttons hold</div>
-      <div>FIRE buttons also aim while held · ADS toggles · ⚙ tuning · DBG debug · RAY aim rays · LSR laser</div>
+      <div>Left side: move (drag up onto ⇧ to lock sprint) · Right side: look · FIRE also aims while held</div>
+      <div>◎ aim · ↻ reload · tap the weapon card to swap · USE appears when you can buy · tap the minimap for the map</div>
     </div>
     <div class="maps">Map <button data-map="lab">Weapon Lab</button><button data-map="site9">Site-9 (facility)</button></div>
+    <div class="maps controls-pick">Controls <button data-ctl="auto">Auto</button><button data-ctl="pc">PC</button><button data-ctl="mobile">Mobile</button></div>
     <button class="start" disabled>Loading…</button>
   </div>`;
 app.appendChild(overlay);
@@ -39,6 +40,31 @@ overlay.querySelectorAll<HTMLButtonElement>('.maps button').forEach((btn) => {
     const params = new URLSearchParams(location.search);
     if (btn.dataset.map === 'site9') params.set('map', 'site9');
     else params.delete('map');
+    location.search = params.toString();
+  });
+});
+
+// Controls picker (PC keyboard+mouse / mobile touch), remembered; reloads to apply.
+const ctl = (() => {
+  try {
+    return localStorage.getItem('weaponlab.controls') ?? 'auto';
+  } catch {
+    return 'auto';
+  }
+})();
+overlay.querySelectorAll<HTMLButtonElement>('.controls-pick button').forEach((btn) => {
+  btn.classList.toggle('active', btn.dataset.ctl === ctl);
+  btn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (btn.dataset.ctl === ctl) return;
+    try {
+      localStorage.setItem('weaponlab.controls', btn.dataset.ctl!);
+    } catch {
+      /* storage blocked: nothing to remember */
+    }
+    const params = new URLSearchParams(location.search);
+    params.delete('touch');
+    params.delete('mouse');
     location.search = params.toString();
   });
 });

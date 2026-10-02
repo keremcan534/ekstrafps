@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import type { Physics, RAPIER } from '../core/Physics';
-import type { Site9, SpawnPoint, WallBuy } from '../world/Site9';
+import type { Site9, SpawnPoint, WallBuy, AmmoSpot, HazardSpot } from '../world/Site9';
+import type { ImpactSystem } from '../fx/ImpactSystem';
 import type { DoorSlot } from '../world/LayoutBuilder';
 import type { NavGrid } from '../ai/NavGrid';
 import type { WeaponController } from '../weapons/WeaponController';
@@ -20,6 +21,7 @@ export interface SurvivalDeps {
   player: PlayerController;
   health: PlayerHealth;
   audio: AudioSystem;
+  impacts: ImpactSystem;
   hud: SurvivalHUD;
   mobile: boolean;
   /** Damage the player (with all hit feedback). */
@@ -48,6 +50,17 @@ interface Interactable {
 }
 
 type DirectorPhase = 'relax' | 'buildup' | 'peak' | 'fade';
+
+interface Hazard {
+  spot: HazardSpot;
+  kind: 'electric' | 'gas' | 'fire';
+  emit: number;
+  sound: number;
+  tick: number;
+  glow: THREE.MeshBasicMaterial;
+}
+
+const HAZARD_DPS = { electric: 70, gas: 26, fire: 80 };
 
 const START_POINTS = 500;
 const POINTS = { hit: 10, kill: 60, headKill: 100 };
@@ -78,7 +91,11 @@ export class Survival {
   private elapsed = 0;
   // Director
   private phase: DirectorPhase = 'relax';
-  private phaseTimer = 18; // a calm start
+  private phaseTimer = 9; // a short calm start
+  private trickleTimer = 12;
+  private hazards: Hazard[] = [];
+  /** Allied bodies hazards can hurt. */
+  allyBodies: { pos: THREE.Vector3; hit(d: number, from: THREE.Vector3): void; alive: boolean }[] = [];
   intensity = 0;
   skill = 1;
   private skillTimer = 0;
@@ -105,6 +122,8 @@ export class Survival {
     };
     for (const slot of map.doors) this.buildDoor(slot);
     for (const wb of map.wallBuys) this.buildWallBuy(wb);
+    this.placeAmmo(map.ammoSpots);
+    this.placeHazards(map.hazardSpots);
     for (const t of map.terminals) {
       this.interactables.push({
         pos: t.pos.clone(),
@@ -247,7 +266,7 @@ export class Survival {
     const r = door.slot.width / 2 + 1;
     // The nav grid sees the opening after the next physics step.
     this.navRefresh.push({ x0: c.x - r, z0: c.z - r, x1: c.x + r, z1: c.z + r, frames: 2 });
-    for (const z of fresh) this.populateZone(z, 2 + ((Math.random() * 3) | 0));
+    for (const z of fresh) this.populateZone(z, 3 + ((Math.random() * (2 + this.threat)) | 0));
   }
 
   isDoorOpen(slot: DoorSlot): boolean {
@@ -294,7 +313,138 @@ export class Survival {
     });
   }
 
+  // ---------------------------------------------------------------- ammo caches
+
+  /** Roughly one cache per zone, at a random one of its spots (always one in the lobby). */
+  private placeAmmo(spots: AmmoSpot[]): void {
+    const byZone = new Map<string, AmmoSpot[]>();
+    for (const s of spots) byZone.set(s.zone, [...(byZone.get(s.zone) ?? []), s]);
+    for (const [zone, list] of byZone) {
+      if (zone !== 'start' && Math.random() < 0.25) continue;
+      this.buildAmmo(list[(Math.random() * list.length) | 0]);
+    }
+  }
+
+  private buildAmmo(spot: AmmoSpot): void {
+    const { map, weapons } = this.deps;
+    const g = new THREE.Group();
+    g.position.copy(spot.pos);
+    g.rotation.y = spot.yaw;
+    const olive = new THREE.MeshStandardMaterial({ color: 0x4b5532, roughness: 0.8 });
+    const dark = new THREE.MeshStandardMaterial({ color: 0x23251c, roughness: 0.7, metalness: 0.4 });
+    const crate = new THREE.Mesh(new THREE.BoxGeometry(1.1, 0.62, 0.62), olive);
+    crate.position.y = 0.31;
+    const lid = new THREE.Mesh(new THREE.BoxGeometry(1.14, 0.08, 0.66), dark);
+    lid.position.y = 0.64;
+    const label = new THREE.Mesh(new THREE.PlaneGeometry(0.8, 0.22), new THREE.MeshBasicMaterial({ map: stencilTexture('AMMO $400'), toneMapped: false }));
+    label.position.set(0, 0.36, 0.315);
+    for (const m of [crate, lid]) {
+      m.castShadow = true;
+      m.receiveShadow = true;
+    }
+    g.add(crate, lid, label);
+    map.group.add(g);
+    this.deps.physics.addStaticBox(spot.pos.clone().setY(0.34), new THREE.Vector3(0.55, 0.34, 0.31), new THREE.Quaternion().setFromEuler(new THREE.Euler(0, spot.yaw, 0)));
+    this.interactables.push({
+      pos: spot.pos.clone().setY(0.6),
+      radius: 2.0,
+      label: () => 'Ammo cache: refill both weapons',
+      cost: () => 400,
+      use: () => {
+        if (!this.spend(400)) return false;
+        for (const i of weapons.owned ?? []) weapons.weapons[i].reserve = weapons.weapons[i].maxReserve;
+        this.deps.audio.play('reload.rifle.magin');
+        return true;
+      },
+    });
+  }
+
+  // ---------------------------------------------------------------- hazards
+
+  /** 4 random hazards per game, in different zones beyond the start. */
+  private placeHazards(spots: HazardSpot[]): void {
+    const pool = spots.filter((s) => !['start', 'lounge', 'security'].includes(s.zone)).sort(() => Math.random() - 0.5);
+    const used = new Set<string>();
+    const kinds: Hazard['kind'][] = ['electric', 'gas', 'fire'];
+    for (const s of pool) {
+      if (this.hazards.length >= 4 || used.has(s.zone)) continue;
+      used.add(s.zone);
+      this.buildHazard(s, kinds[(Math.random() * kinds.length) | 0]);
+    }
+  }
+
+  private buildHazard(spot: HazardSpot, kind: Hazard['kind']): void {
+    const [x0, z0, x1, z1] = spot.rect;
+    const w = x1 - x0;
+    const d = z1 - z0;
+    const color = kind === 'electric' ? 0x3aa0ff : kind === 'gas' ? 0x6ad04a : 0xff7a1a;
+    const g = new THREE.Group();
+    g.position.set((x0 + x1) / 2, 0, (z0 + z1) / 2);
+    const floor = new THREE.Mesh(
+      new THREE.PlaneGeometry(w, d),
+      new THREE.MeshStandardMaterial({ color: kind === 'fire' ? 0x161210 : kind === 'gas' ? 0x2e3a22 : 0x1c2026, roughness: 0.9 }),
+    );
+    floor.rotation.x = -Math.PI / 2;
+    floor.position.y = 0.025;
+    floor.receiveShadow = true;
+    const glow = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.25, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false });
+    const glowPlane = new THREE.Mesh(new THREE.PlaneGeometry(w * 0.95, d * 0.95), glow);
+    glowPlane.rotation.x = -Math.PI / 2;
+    glowPlane.position.y = 0.035;
+    // Hazard tape border.
+    const tape = new THREE.MeshStandardMaterial({ map: tapeTexture(), roughness: 0.6 });
+    for (const [bw, bd, bx, bz] of [[w, 0.18, 0, -d / 2], [w, 0.18, 0, d / 2], [0.18, d, -w / 2, 0], [0.18, d, w / 2, 0]] as const) {
+      const b = new THREE.Mesh(new THREE.BoxGeometry(bw, 0.02, bd), tape);
+      b.position.set(bx, 0.03, bz);
+      g.add(b);
+    }
+    g.add(floor, glowPlane);
+    this.deps.map.group.add(g);
+    this.hazards.push({ spot, kind, emit: 0, sound: Math.random(), tick: 0, glow });
+  }
+
+  private updateHazards(dt: number): void {
+    const p = this.deps.player.feet;
+    for (const h of this.hazards) {
+      const [x0, z0, x1, z1] = h.spot.rect;
+      const cx = (x0 + x1) / 2;
+      const cz = (z0 + z1) / 2;
+      const near = Math.hypot(p.x - cx, p.z - cz);
+      if (near > 60) continue;
+      // Effects.
+      h.emit -= dt;
+      if (h.emit <= 0) {
+        h.emit = h.kind === 'electric' ? 0.12 + Math.random() * 0.35 : h.kind === 'fire' ? 0.03 : 0.05;
+        h.spot && this.deps.impacts.hazard(h.kind, x0 + Math.random() * (x1 - x0), z0 + Math.random() * (z1 - z0));
+      }
+      h.glow.opacity = h.kind === 'electric' ? (Math.random() < 0.15 ? 0.55 : 0.12) : h.kind === 'fire' ? 0.3 + Math.random() * 0.15 : 0.06;
+      h.sound -= dt;
+      if (near < 22 && h.sound <= 0) {
+        h.sound = h.kind === 'electric' ? 0.5 + Math.random() * 0.9 : h.kind === 'fire' ? 0.6 : 1.2;
+        this.tmp.set(cx, 0.5, cz);
+        this.deps.audio.play(`hazard.${h.kind === 'electric' ? 'zap' : h.kind}`, { position: this.tmp });
+      }
+      // Damage ticks (player, allies and robots alike).
+      h.tick -= dt;
+      if (h.tick > 0) continue;
+      h.tick = 0.25;
+      const dmg = HAZARD_DPS[h.kind] * 0.25;
+      this.tmp.set(cx, 0, cz);
+      const inside = (v: THREE.Vector3) => v.x > x0 && v.x < x1 && v.z > z0 && v.z < z1;
+      if (inside(p) && !this.deps.health.dead) this.deps.hurtPlayer(dmg, this.tmp);
+      for (const a of this.allyBodies) if (a.alive && inside(a.pos)) a.hit(dmg * 0.5, this.tmp);
+      for (const r of this.robots) if (r.alive && inside(r.pos)) r.body.meleeHit(dmg, this.tmp, 0.15);
+    }
+  }
+
   // ---------------------------------------------------------------- interaction
+
+  /** What USE would do right now (for the touch button). */
+  get prompt(): { label: string; cost: number; affordable: boolean } | null {
+    if (this.over || !this.focus) return null;
+    const cost = this.focus.cost();
+    return { label: this.focus.label(), cost, affordable: this.points >= cost };
+  }
 
   /** F / USE. */
   interact(): void {
@@ -331,7 +481,7 @@ export class Survival {
 
   /** 1 at the start; grows with time and with how much of Site-9 is open. */
   get threat(): number {
-    return 1 + this.elapsed / 150 + (this.unlocked.size - 1) * 0.4;
+    return 1 + this.elapsed / 100 + (this.unlocked.size - 1) * 0.45;
   }
 
   /** The player cannot see this point (and it is not right next to them). */
@@ -425,11 +575,19 @@ export class Survival {
 
     this.phaseTimer -= dt;
     const cap = this.deps.mobile ? 10 : 18;
+    // Between mobs the pressure never fully stops: lone hunters trickle in.
+    if (this.phase === 'relax' || this.phase === 'fade') {
+      this.trickleTimer -= dt;
+      if (this.trickleTimer <= 0) {
+        this.trickleTimer = Math.max(3, 9 - this.threat * 0.8) * (0.7 + Math.random() * 0.6);
+        if (aggro < 2 + this.threat) this.queueMobSpawn();
+      }
+    }
     switch (this.phase) {
       case 'relax':
         if (this.phaseTimer <= 0) {
           this.phase = 'buildup';
-          this.mobLeft = Math.max(3, Math.min(40, Math.round((3 + this.threat * 2.2) * this.skill)));
+          this.mobLeft = Math.max(4, Math.min(45, Math.round((4 + this.threat * 2.6) * this.skill)));
           this.spawnTimer = 0.5;
           this.deps.hud.horde();
           this.deps.audio.play('director.horde');
@@ -452,7 +610,7 @@ export class Survival {
       case 'fade':
         if (aggro <= 1 && this.intensity < 0.35) {
           this.phase = 'relax';
-          this.phaseTimer = Math.max(14, 36 - this.threat * 3);
+          this.phaseTimer = Math.max(8, 24 - this.threat * 2.5);
           // Top up the wanderers in opened zones while it is quiet.
           let idle = 0;
           for (const r of this.robots) if (r.dormant) idle++;
@@ -536,6 +694,7 @@ export class Survival {
       }
     }
 
+    this.updateHazards(dt);
     const targets = [this.playerTarget, ...this.extraTargets];
     for (const r of this.robots) r.update(dt, targets, this.robots);
     if (!this.over) this.updateDirector(dt);
@@ -580,6 +739,39 @@ function shutterTexture(): THREE.Texture {
     g.fillRect(0, 222, 128, 4);
   });
   return shutterTex;
+}
+
+let tapeTex: THREE.Texture | null = null;
+function tapeTexture(): THREE.Texture {
+  if (tapeTex) return tapeTex;
+  tapeTex = canvas(128, 16, (g) => {
+    g.fillStyle = '#1b1d20';
+    g.fillRect(0, 0, 128, 16);
+    g.fillStyle = '#e0a51c';
+    for (let x = -16; x < 128; x += 16) {
+      g.beginPath();
+      g.moveTo(x, 16);
+      g.lineTo(x + 8, 16);
+      g.lineTo(x + 16, 0);
+      g.lineTo(x + 8, 0);
+      g.fill();
+    }
+  });
+  tapeTex.wrapS = THREE.RepeatWrapping;
+  tapeTex.repeat.set(4, 1);
+  return tapeTex;
+}
+
+function stencilTexture(text: string): THREE.Texture {
+  return canvas(256, 72, (g) => {
+    g.fillStyle = 'rgba(0,0,0,0)';
+    g.clearRect(0, 0, 256, 72);
+    g.fillStyle = '#e8d38a';
+    g.font = '800 40px system-ui, sans-serif';
+    g.textAlign = 'center';
+    g.textBaseline = 'middle';
+    g.fillText(text, 128, 38);
+  });
 }
 
 function priceTexture(cost: number): THREE.Texture {

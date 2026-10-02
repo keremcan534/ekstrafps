@@ -100,6 +100,64 @@ export class ImpactSystem {
     }
   }
 
+  /** Hazard area emitters: electric arcs, rising flames + smoke, drifting toxic gas. */
+  hazard(kind: 'electric' | 'gas' | 'fire', x: number, z: number): void {
+    const p = this.sp;
+    if (kind === 'electric') {
+      this.tmp.set(x, 0.05, z);
+      this.burstSparks(this.tmp, 6, 4.5, 0.55, 0.82, 1.0, 0.22);
+      return;
+    }
+    if (kind === 'fire') {
+      p.x = x + rand(-0.2, 0.2);
+      p.y = 0.1;
+      p.z = z + rand(-0.2, 0.2);
+      p.vx = rand(-0.3, 0.3);
+      p.vy = rand(1.4, 2.8);
+      p.vz = rand(-0.3, 0.3);
+      p.life = rand(0.35, 0.75);
+      p.size = rand(0.14, 0.24);
+      p.sizeEnd = 0.03;
+      p.stretch = 0;
+      p.r = 1;
+      p.g = rand(0.42, 0.62);
+      p.b = 0.12;
+      p.alpha = 0.9;
+      p.gravity = -1.5;
+      p.drag = 1;
+      this.sparks.spawn(p);
+      if (Math.random() < 0.35) {
+        p.vy = rand(0.6, 1.2);
+        p.life = rand(1.6, 2.6);
+        p.size = 0.3;
+        p.sizeEnd = rand(1.0, 1.6);
+        p.r = p.g = p.b = 0.16;
+        p.alpha = 0.22;
+        p.gravity = -0.3;
+        p.drag = 0.6;
+        this.dust.spawn(p);
+      }
+      return;
+    }
+    p.x = x + rand(-0.3, 0.3);
+    p.y = rand(0.2, 0.9);
+    p.z = z + rand(-0.3, 0.3);
+    p.vx = rand(-0.25, 0.25);
+    p.vy = rand(0.05, 0.25);
+    p.vz = rand(-0.25, 0.25);
+    p.life = rand(2.4, 3.6);
+    p.size = 0.8;
+    p.sizeEnd = rand(2.4, 3.4);
+    p.stretch = 0;
+    p.r = 0.5;
+    p.g = 0.78;
+    p.b = 0.32;
+    p.alpha = 0.3;
+    p.gravity = -0.03;
+    p.drag = 0.5;
+    this.dust.spawn(p);
+  }
+
   /** Bullet skipping off a hard surface: bright streak of sparks + whine. */
   ricochet(point: THREE.Vector3, normal: THREE.Vector3, dir: THREE.Vector3): void {
     this.refl.copy(dir).addScaledVector(normal, -2 * dir.dot(normal)).normalize();

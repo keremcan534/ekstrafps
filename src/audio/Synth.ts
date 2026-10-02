@@ -368,6 +368,18 @@ export const RECIPES: Record<string, Recipe> = {
     burst(c, { dur: 0.5, freq: 400, freqEnd: 60, type: 'lowpass', gain: 1.2 });
     tone(c, { t: 0.05, dur: 2, f0: 2900, gain: 0.07, attack: 0.1 });
   } },
+  hazard_zap: { dur: 0.4, drive: 2, render: (c) => {
+    burst(c, { dur: 0.05, freq: 3200, type: 'highpass', gain: 0.8 });
+    tone(c, { dur: 0.25, f0: 90, type: 'sawtooth', gain: 0.25 });
+    burst(c, { t: 0.06, dur: 0.04, freq: 4200, type: 'highpass', gain: 0.6 });
+  } },
+  hazard_fire: { dur: 0.7, render: (c) => {
+    burst(c, { dur: 0.5, attack: 0.05, freq: 500, type: 'lowpass', gain: 0.5 });
+    for (let i = 0; i < 5; i++) burst(c, { t: Math.random() * 0.5, dur: 0.015, freq: 2400, q: 2, gain: 0.35 });
+  } },
+  hazard_gas: { dur: 1.4, render: (c) => {
+    burst(c, { dur: 1.1, attack: 0.15, freq: 2600, q: 0.8, gain: 0.35 });
+  } },
   lift_ding: { dur: 1.2, render: (c) => {
     tone(c, { dur: 0.9, f0: 1318, gain: 0.35 });
     tone(c, { t: 0.32, dur: 0.9, f0: 1046, gain: 0.35 });

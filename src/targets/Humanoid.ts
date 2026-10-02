@@ -305,13 +305,13 @@ export class Humanoid {
   }
 
   /** Melee blow (rogue robot swing): body damage + a hard shove. */
-  meleeHit(damage: number, from: THREE.Vector3): void {
+  meleeHit(damage: number, from: THREE.Vector3, impulse = 1.8): void {
     if (!this.alive) return;
     const torso = this.part('torso');
     torso.group.getWorldPosition(this.tmp);
     const dir = this.tmp2.copy(this.tmp).sub(from).setY(0).normalize();
     const hit: BulletHit = {
-      point: this.tmp.clone(), normal: dir.clone().negate(), direction: dir.clone(), distance: 1, damage, impulse: 1.8,
+      point: this.tmp.clone(), normal: dir.clone().negate(), direction: dir.clone(), distance: 1, damage, impulse,
       critMultiplier: 1, weaponId: 'melee', penetration: 0, hostile: true, ally: false,
     };
     this.health.applyDamage(damage);

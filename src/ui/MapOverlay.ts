@@ -62,6 +62,21 @@ export class MapOverlay {
     document.body.classList.add('has-minimap');
   }
 
+  /** Touch: tapping the minimap opens the full map (and tapping the map closes it). */
+  onMiniTap(cb: () => void): void {
+    this.mini.style.pointerEvents = 'auto';
+    this.mini.addEventListener('pointerdown', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      cb();
+    });
+    this.full.addEventListener('pointerdown', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      cb();
+    });
+  }
+
   toggle(): boolean {
     this.visible = !this.visible;
     this.full.classList.toggle('show', this.visible);

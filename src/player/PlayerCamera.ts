@@ -59,6 +59,24 @@ export class PlayerCamera {
     if (fallSpeed > 9) this.addShake(0.15);
   }
 
+  /** 1 while downed (last stand): head near the floor. */
+  downedTarget = 0;
+  private downedBlend = 0;
+  /** Seconds since death (-1 = alive): the camera drops to the floor and rolls onto its side. */
+  deadTime = -1;
+  private deathSide = 1;
+
+  die(): void {
+    this.deadTime = 0;
+    this.deathSide = Math.random() < 0.5 ? -1 : 1;
+    this.addShake(0.5);
+  }
+
+  revive(): void {
+    this.deadTime = -1;
+    this.downedTarget = 0;
+  }
+
   update(dt: number, alpha: number, player: PlayerController, adsAmount: number, adsFov: number): void {
     this.punch.update(dt);
     this.fovPunch.update(dt);
@@ -87,6 +105,25 @@ export class PlayerCamera {
     this.eye.y += leanY;
     this.eye.z += rightZ * leanX;
 
+    // Downed / dead: the body drops (gravity-like ease-in) and the head rolls to the side.
+    this.downedBlend += (this.downedTarget - this.downedBlend) * damp(5, dt);
+    let drop = this.downedBlend * (player.eyeHeight - 0.55);
+    let deathRoll = 0;
+    let deathPitch = 0;
+    if (this.deadTime >= 0) {
+      this.deadTime += dt;
+      const k = Math.min(1, this.deadTime / 0.8);
+      const fall = k * k;
+      const settle = this.deadTime > 0.8 ? Math.sin(Math.min(1, (this.deadTime - 0.8) / 0.25) * Math.PI) * 0.04 : 0;
+      drop = Math.max(drop, fall * (player.eyeHeight - 0.2) - settle);
+      deathRoll = fall * 1.3 * this.deathSide;
+      deathPitch = fall * 0.12;
+      this.camera.position.x += right * fall * 0.3 * this.deathSide;
+      this.camera.position.z += rightZ * fall * 0.3 * this.deathSide;
+    }
+    this.camera.position.y -= drop;
+    this.eye.y -= drop;
+
     // --- Shake (smooth pseudo-noise) ---
     this.trauma = Math.max(0, this.trauma - dt * 1.8);
     this.shakeTime += dt * 28;
@@ -103,9 +140,9 @@ export class PlayerCamera {
 
     // --- Rotation ---
     this.euler.set(
-      player.pitch + this.aimPitch + this.punch.value.x + this.landingPitch.value + shakePitch,
+      player.pitch + this.aimPitch + this.punch.value.x + this.landingPitch.value + shakePitch + deathPitch,
       player.yaw + this.aimYaw + this.punch.value.y + shakeYaw,
-      this.punch.value.z + this.roll + shakeRoll - leanA * 0.9,
+      this.punch.value.z + this.roll + shakeRoll - leanA * 0.9 + deathRoll + this.downedBlend * 0.18,
     );
     this.camera.quaternion.setFromEuler(this.euler);
 

@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import { Physics } from './Physics';
 import { Input } from './Input';
-import { DEG, hfovToVfov, isTouchDevice } from './math';
+import { DEG, controlPreference, hfovToVfov, isTouchDevice } from './math';
 import { HELP_TEXT, loadSettings, saveSettings } from './LabTools';
 import { playerConfig } from '../player/PlayerConfig';
 import { PlayerController } from '../player/PlayerController';
@@ -34,6 +34,21 @@ import { SurvivalHUD } from '../ui/SurvivalHUD';
 import { MapOverlay, type MapState } from '../ui/MapOverlay';
 
 const FIXED_DT = 1 / 120;
+
+/** Small tileable monochrome noise for the film-grain overlay. */
+function grainDataUrl(): string {
+  const c = document.createElement('canvas');
+  c.width = c.height = 128;
+  const g = c.getContext('2d')!;
+  const img = g.createImageData(128, 128);
+  for (let i = 0; i < img.data.length; i += 4) {
+    const v = Math.random() * 255;
+    img.data[i] = img.data[i + 1] = img.data[i + 2] = v;
+    img.data[i + 3] = 255;
+  }
+  g.putImageData(img, 0, 0);
+  return c.toDataURL();
+}
 const MAX_STEPS = 6;
 
 /**
@@ -95,7 +110,9 @@ export class Game {
   private aimDir = new THREE.Vector3();
 
   constructor(private container: HTMLElement) {
-    this.mobile = isTouchDevice() || new URLSearchParams(location.search).has('touch');
+    const pref = controlPreference();
+    const params = new URLSearchParams(location.search);
+    this.mobile = params.has('touch') || (!params.has('mouse') && (pref === 'mobile' || (pref === 'auto' && isTouchDevice())));
     this.quality = { pixelRatio: Math.min(window.devicePixelRatio, this.mobile ? 1.5 : 2), shadows: true };
     this.renderer = new THREE.WebGLRenderer({ antialias: !this.mobile, powerPreference: 'high-performance' });
     this.renderer.setPixelRatio(this.quality.pixelRatio);
@@ -124,6 +141,7 @@ export class Game {
     this.arena = mapId === 'site9' ? new Site9(this.physics, this.mobile) : new Arena(this.physics, this.mobile);
     this.scene.add(this.arena.group);
     this.scene.background = new THREE.Color(this.arena.skyColor);
+    this.renderer.toneMappingExposure = this.arena.exposure ?? 1.05;
     this.scene.fog = new THREE.Fog(this.arena.skyColor, 90, 200);
 
     onProgress('Rendering placeholder audio…');
@@ -164,6 +182,14 @@ export class Game {
       this.audio.play('player.jump');
     };
 
+    // Subtle camera look: vignette + animated film grain (pure CSS, no post pass).
+    const post = document.createElement('div');
+    post.className = 'post-fx';
+    post.style.backgroundImage = `url(${grainDataUrl()})`;
+    this.container.appendChild(post);
+    const vignette = document.createElement('div');
+    vignette.className = 'post-vignette';
+    this.container.appendChild(vignette);
     const ui = document.createElement('div');
     ui.className = 'ui-layer';
     this.container.appendChild(ui);
@@ -209,9 +235,10 @@ export class Game {
         onRays: () => this.toggleRays(),
         onLaser: () => this.toggleLaser(),
         onFireMode: () => this.weapons.cycleFireMode(),
-        onUse: () => this.survival?.interact(),
-        onMap: () => this.mapOverlay?.toggle(),
-      });
+        onUse: this.survival ? () => this.survival?.interact() : undefined,
+        onMap: this.mapOverlay ? () => this.mapOverlay?.toggle() : undefined,
+      }, !!this.survival);
+      this.mapOverlay?.onMiniTap(() => this.mapOverlay?.toggle());
     }
 
     // Restore lab conveniences from the last session.
@@ -288,11 +315,13 @@ export class Game {
     this.health.onDeath = () => {
       this.audio.play('player.death');
       this.status.setDead(true);
-      this.camera.addShake(0.6);
+      this.status.setDowned(-1);
+      this.camera.die();
       for (const s of this.squads) s.onPlayerKilled();
     };
     this.health.onRespawn = () => {
       this.status.setDead(false);
+      this.camera.revive();
       this.player.teleport(this.arena.spawn, this.arena.spawnYaw);
       this.weapons.refillAll();
     };
@@ -340,6 +369,7 @@ export class Game {
       player: this.player,
       health: this.health,
       audio: this.audio,
+      impacts: this.impacts,
       hud,
       mobile: this.mobile,
       hurtPlayer: (d, from) => this.hurtPlayer(d, from),
@@ -350,6 +380,19 @@ export class Game {
     this.health.onDeath = () => {
       onDeath?.();
       this.survival?.onPlayerDeath();
+    };
+    // Last stand: with a living teammate you go down instead of dying.
+    this.health.canGoDown = () => this.allies.some((a) => a.alive);
+    this.health.onDowned = () => {
+      this.camera.downedTarget = 1;
+      this.audio.play('player.death', { volume: 0.6 });
+      this.hud.toast('DOWNED: your squad is coming', 2.5);
+    };
+    this.health.onRevived = () => {
+      this.camera.downedTarget = 0;
+      this.status.setDowned(-1);
+      this.audio.play('bd.contact', { pitch: 1.12 });
+      this.hud.toast('Back on your feet', 1.6);
     };
     this.mapOverlay = new MapOverlay(ui, {
       rooms: map.rooms, walls: map.layout.wallRuns, doors: map.doors, wallBuys: map.wallBuys, terminals: map.terminals, bounds: map.layout.bounds,
@@ -546,6 +589,12 @@ export class Game {
     const input = this.input;
     input.mouseSensitivity = playerConfig.mouseSensitivity;
     input.beginFrame();
+    if (this.health.downed) {
+      // On the floor: look and shoot (last stand), no moving.
+      input.moveX = input.moveY = 0;
+      input.jumpPressed = false;
+      input.sprintHeld = false;
+    }
     if (this.isPaused || (this.input.lockFailed && this.tuning.visible) || this.health.dead) {
       // Mouse released (Esc / tuning panel): freeze the player, keep the world simulating.
       input.moveX = input.moveY = 0;
@@ -601,8 +650,26 @@ export class Game {
     for (const s of this.squads) s.update(dt, t, feel.enemyAI);
     if (this.survival) {
       const mates = this.allies.map((a) => a.soldier);
-      for (const a of this.allies) a.update(dt, this.player, this.survival.robots, mates);
+      // Downed: the nearest living ally comes to pick you up.
+      let reviver: Ally | null = null;
+      if (this.health.downed) {
+        let best = Infinity;
+        for (const a of this.allies) {
+          if (!a.alive) continue;
+          const d = a.soldier.pos.distanceTo(this.player.feet);
+          if (d < best) {
+            best = d;
+            reviver = a;
+          }
+        }
+        this.status.setDowned(this.health.bleed, reviver ? reviver.reviveTime / 4 : 0);
+      }
+      for (const a of this.allies) {
+        a.reviving = a === reviver;
+        if (a.update(dt, this.player, this.survival.robots, mates)) this.health.revive();
+      }
       this.survival.extraTargets = this.allies.filter((a) => a.alive).map((a) => a.melee);
+      this.survival.allyBodies = this.survival.extraTargets;
     }
     this.survival?.update(dt);
     if (this.mapOverlay && this.mapState && this.survival) {
@@ -634,13 +701,17 @@ export class Game {
     this.status.setSquadLine(this.squadStatus());
     this.tuning.syncWeapon();
     this.touch?.sync(input.adsHeld, this.weapons.currentIndex, this.weapons.owned);
+    if (this.touch && this.survival) {
+      const p = this.survival.prompt;
+      this.touch.setUse(p ? p.label : null, p?.cost ?? 0, p?.affordable ?? true);
+    }
 
     // --- Render: world, then the weapon on top, then debug lines over everything ---
     this.renderer.info.reset();
     this.renderer.clear();
     this.renderer.render(this.scene, this.camera.camera);
     this.renderer.clearDepth();
-    this.renderer.render(this.weapons.viewmodel.scene, this.weapons.viewmodel.camera);
+    if (!this.health.dead) this.renderer.render(this.weapons.viewmodel.scene, this.weapons.viewmodel.camera);
     this.debugDraw.flush(realDt);
     if (this.debugDraw.enabled) this.renderer.render(this.debugDraw.scene, this.camera.camera);
 
