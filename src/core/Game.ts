@@ -37,6 +37,7 @@ import type { RogueRobot } from '../enemies/RogueRobot';
 import { Survival } from '../game/Survival';
 import { SurvivalHUD } from '../ui/SurvivalHUD';
 import { MapOverlay, type MapState } from '../ui/MapOverlay';
+import { ScreenGrade } from '../fx/ScreenGrade';
 import { MuzzleLights } from '../fx/MuzzleLights';
 import { Lighting } from '../game/Lighting';
 import { buildWeaponModel } from '../weapons/WeaponModels';
@@ -128,6 +129,7 @@ export class Game {
   private coreDeadTime = new Map<TeamAgent, number>();
   private soldierDeps!: SoldierDeps;
   private muzzleLights!: MuzzleLights;
+  private grade: ScreenGrade | null = null;
   mapOverlay: MapOverlay | null = null;
   private mapState: MapState | null = null;
   private target: PlayerTarget = {
@@ -449,7 +451,9 @@ export class Game {
       downed: false,
       hit: (d, from) => this.hurtPlayer(d, from),
     };
-    this.lighting = new Lighting(this.scene, map, this.camera.eye, (out) => this.camera.getAimDirection(this.player, out), () => !this.health.dead);
+    this.lighting = new Lighting(this.scene, map, this.camera.eye, (out) => this.camera.getAimDirection(this.player, out), () => !this.health.dead, this.mobile ? 1 : 4);
+    // Desktop: colour grade pass (cold shadows, reds kept, redder and moodier in a blackout).
+    if (!this.mobile) this.grade = new ScreenGrade(this.renderer);
     this.survival = new Survival({
       lighting: this.lighting,
       world: () => this.world,
@@ -999,6 +1003,7 @@ export class Game {
   private setQuality(pixelRatio: number, shadows: boolean): void {
     this.renderer.setPixelRatio(pixelRatio);
     this.renderer.setSize(window.innerWidth, window.innerHeight);
+    this.grade?.resize();
     this.renderer.shadowMap.enabled = shadows;
     this.arena.sun.castShadow = shadows;
     this.scene.traverse((o) => {
@@ -1011,6 +1016,7 @@ export class Game {
     const w = window.innerWidth;
     const h = window.innerHeight;
     this.renderer.setSize(w, h);
+    this.grade?.resize();
     this.camera.camera.aspect = w / h;
     this.camera.camera.updateProjectionMatrix();
     this.weapons.viewmodel.setAspect(w / h);
@@ -1168,12 +1174,17 @@ export class Game {
 
     // --- Render: world, then the weapon on top, then debug lines over everything ---
     this.renderer.info.reset();
+    if (this.grade) {
+      this.grade.mood = this.lighting?.darkness ?? 0;
+      this.grade.begin();
+    }
     this.renderer.clear();
     this.renderer.render(this.scene, this.camera.camera);
     this.renderer.clearDepth();
     if (!this.health.dead) this.renderer.render(this.weapons.viewmodel.scene, this.weapons.viewmodel.camera);
     this.debugDraw.flush(realDt);
     if (this.debugDraw.enabled) this.renderer.render(this.debugDraw.scene, this.camera.camera);
+    this.grade?.end();
 
     if (this.debug.visible) {
       const h = cw.data.handling;

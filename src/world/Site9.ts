@@ -241,6 +241,8 @@ export class Site9 implements GameMap {
   private hemi!: THREE.HemisphereLight;
   /** Coloured accent lights (reactor, data core) with their full intensity. */
   private accents: [THREE.PointLight, number][] = [];
+  /** Emergency strip positions (the red lights during a blackout come from these). */
+  readonly emergencySpots: THREE.Vector3[] = [];
   private emergency = new THREE.MeshStandardMaterial({ color: 0x200000, emissive: 0xff1a0a, emissiveIntensity: 0.01 }); // non-zero: keeps it out of the vertex-colour merge
   private lampBase = new Map<THREE.MeshStandardMaterial, number>();
   private blackout = 0;
@@ -1270,6 +1272,9 @@ export class Site9 implements GameMap {
       // Emergency lights (dark until the power fails).
       for (const z of [z0 + 0.2, z1 - 0.2]) b.box(this.emergency, [1.2, 0.1, 0.08], [(x0 + x1) / 2, h - 0.35, z]);
       for (const x of [x0 + 0.2, x1 - 0.2]) b.box(this.emergency, [0.08, 0.1, 1.2], [x, h - 0.35, (z0 + z1) / 2]);
+      // Where the red emergency light pools come from (a little in from each strip).
+      for (const z of [z0 + 0.9, z1 - 0.9]) this.emergencySpots.push(new THREE.Vector3((x0 + x1) / 2, h - 0.6, z));
+      for (const x of [x0 + 0.9, x1 - 0.9]) this.emergencySpots.push(new THREE.Vector3(x, h - 0.6, (z0 + z1) / 2));
       // Ceiling services.
       const longX = x1 - x0 >= z1 - z0;
       if (ind && !room.skylight) {
@@ -1470,7 +1475,7 @@ export class Site9 implements GameMap {
    */
   setBlackout(k: number): void {
     this.blackout = k;
-    this.hemi.intensity = 1.2 + (0.09 - 1.2) * k;
+    this.hemi.intensity = 1.2 + (0.13 - 1.2) * k;
     this.hemi.color.setRGB(0.9 + 0.1 * k, 0.93 - 0.75 * k, 0.96 - 0.8 * k);
     this.hemi.groundColor.setRGB(0.35 - 0.25 * k, 0.33 - 0.3 * k, 0.29 - 0.27 * k);
     this.sun.intensity = 1.9 * (1 - k);
@@ -1478,6 +1483,11 @@ export class Site9 implements GameMap {
     for (const p of this.pools.values()) (p as THREE.MeshBasicMaterial).opacity = 0.32 * (1 - k);
     // The reactor and the data core run on their own supply: dimmed, not dead.
     for (const [l, base] of this.accents) l.intensity = base * (1 - 0.7 * k);
+  }
+
+  /** Emergency lamp pulse 0.06..1 (strips and their lights beat together). */
+  get emergencyPulse(): number {
+    return 0.53 + 0.47 * Math.sin(this.time * 4);
   }
 
   /** Zone of the room containing (x, z). */
@@ -1490,7 +1500,7 @@ export class Site9 implements GameMap {
     this.time += dt;
     this.serverLeds.emissiveIntensity = 1.4 + Math.sin(this.time * 9) * Math.sin(this.time * 23.7) * 0.9;
     this.coreGlow.emissiveIntensity = 2.6 + Math.sin(this.time * 1.7) * 0.6;
-    this.emergency.emissiveIntensity = this.blackout > 0.05 ? this.blackout * (1.6 + Math.sin(this.time * 4) * 1.4) : 0;
+    this.emergency.emissiveIntensity = this.blackout > 0.05 ? this.blackout * 3 * this.emergencyPulse : 0;
     // Shadow camera follows the player (texel-snapped so shadows don't swim).
     if (focus) {
       const r = this.mobile ? 26 : 38;
