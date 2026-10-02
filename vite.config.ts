@@ -43,7 +43,10 @@ function tuningSavePlugin(): Plugin {
   };
 }
 
-export default defineConfig({
+export default defineConfig(({ command }) => ({
+  // Relative asset paths in builds, so the game works under any sub-path
+  // (GitHub Pages serves it at /ekstrafps/).
+  base: command === 'build' ? './' : '/',
   plugins: [tuningSavePlugin()],
   server: {
     host: true, // expose on LAN so phones on the same Wi-Fi can open the lab
@@ -53,4 +56,4 @@ export default defineConfig({
     target: 'es2022',
     chunkSizeWarningLimit: 4000,
   },
-});
+}));
