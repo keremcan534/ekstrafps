@@ -129,7 +129,9 @@ function insigniaTexture(): THREE.Texture {
   return t;
 }
 
-const rb = (w: number, h: number, d: number) => new RoundedBoxGeometry(w, h, d, 2, Math.min(w, h, d) * 0.28);
+/** Phones: plain boxes instead of rounded ones (~10× fewer triangles per soldier to skin). */
+export const skinDetail = { low: false };
+const rb = (w: number, h: number, d: number) => (skinDetail.low ? new THREE.BoxGeometry(w, h, d) : new RoundedBoxGeometry(w, h, d, 2, Math.min(w, h, d) * 0.28));
 /** Rounded box with the MeshBuilder's (material, size, position, rotation) signature. */
 const rbox = (b: MeshBuilder, m: THREE.Material, size: V3, pos: V3, rot: V3 = [0, 0, 0]) => b.add(m, rb(...size), pos, rot);
 

@@ -34,6 +34,8 @@ import { planFor } from '../game/Plans';
 import { assignRevives } from '../game/AITeam';
 import { TeamMatch } from '../game/TeamMatch';
 import { RogueRobot } from '../enemies/RogueRobot';
+import { AI_TUNING } from '../ai/Tuning';
+import { skinDetail } from '../enemies/SoldierSkin';
 import { aiWorld } from '../ai/World';
 import { SquadBrain } from '../ai/Squad';
 import { AIDebug } from '../ai/AIDebug';
@@ -145,6 +147,10 @@ export class Game {
   aiTest: AITest | null = null;
   /** Spectating an AI test: free camera, no weapon. */
   spectator = false;
+  /** Physics step (120 Hz; 60 Hz on phones). */
+  private fixedDt = FIXED_DT;
+  /** Phones: dynamic resolution (fraction of the quality preset's pixel ratio). */
+  private dyn = { t: 0, acc: 0, n: 0, cooldown: 2, scale: 1 };
   private prevWeaponState = '';
   private lastImpactShare = 0;
   /** Your squad: name, role, money, weapon. */
@@ -194,6 +200,15 @@ export class Game {
     // Phones: no realtime sun shadows by default (the shadow pass costs a draw per caster;
     // contact shadows still ground everything). Tuning panel can turn them back on.
     this.quality = { pixelRatio: Math.min(window.devicePixelRatio, this.mobile ? 1.5 : 2), shadows: !this.mobile };
+    if (this.mobile) {
+      // Phones: cheaper characters, 60 Hz physics, a lighter AI schedule.
+      skinDetail.low = true;
+      this.fixedDt = 1 / 60;
+      AI_TUNING.rayBudgetPerFrame = 40;
+      AI_TUNING.perceptionInterval = 0.15;
+      AI_TUNING.decisionInterval = 0.28;
+      AI_TUNING.squadInterval = 0.6;
+    }
     this.renderer = new THREE.WebGLRenderer({ antialias: !this.mobile, powerPreference: 'high-performance', preserveDrawingBuffer: params.has('trailer') });
     this.renderer.setPixelRatio(this.quality.pixelRatio);
     this.renderer.setSize(window.innerWidth, window.innerHeight);
@@ -208,7 +223,7 @@ export class Game {
 
   async init(onProgress: (msg: string) => void): Promise<void> {
     onProgress('Starting physics…');
-    this.physics = await Physics.create(FIXED_DT);
+    this.physics = await Physics.create(this.fixedDt);
     this.input = new Input(this.renderer.domElement);
 
     const pmrem = new THREE.PMREMGenerator(this.renderer);
@@ -1134,7 +1149,9 @@ export class Game {
   }
 
   setQuality(pixelRatio: number, shadows: boolean): void {
-    this.renderer.setPixelRatio(pixelRatio);
+    this.quality.pixelRatio = pixelRatio;
+    this.quality.shadows = shadows;
+    this.renderer.setPixelRatio(pixelRatio * this.dyn.scale);
     this.renderer.setSize(window.innerWidth, window.innerHeight);
     this.grade?.resize();
     this.renderer.shadowMap.enabled = shadows;
@@ -1143,6 +1160,33 @@ export class Game {
       const m = (o as THREE.Mesh).material as THREE.Material | undefined;
       if (m) m.needsUpdate = true;
     });
+  }
+
+  /**
+   * Phones: keep ~45+ fps by trading resolution. Every second, if frames ran slower
+   * than ~42 fps the render scale drops 12% (down to 55%); if they had headroom
+   * (~57+ fps) it creeps back up toward the preset. Hysteresis + cooldown: no pumping.
+   */
+  private dynamicResolution(rawDt: number): void {
+    const d = this.dyn;
+    if (rawDt > 0.25) return; // tab switch / hitch: not a measurement
+    d.acc += rawDt;
+    d.n++;
+    d.t += rawDt;
+    d.cooldown -= rawDt;
+    if (d.t < 1) return;
+    const avg = d.acc / d.n;
+    d.t = d.acc = d.n = 0;
+    if (d.cooldown > 0) return;
+    let s = d.scale;
+    if (avg > 1 / 42) s = Math.max(0.55, s * 0.88);
+    else if (avg < 1 / 57) s = Math.min(1, s * 1.06);
+    if (Math.abs(s - d.scale) < 0.01) return;
+    d.scale = s;
+    d.cooldown = 1.5;
+    this.renderer.setPixelRatio(this.quality.pixelRatio * s);
+    this.renderer.setSize(window.innerWidth, window.innerHeight);
+    this.grade?.resize();
   }
 
   private onResize(): void {
@@ -1171,6 +1215,7 @@ export class Game {
     const realDt = Math.min(Math.max(rawDt, 0), 0.1);
     const dt = realDt * this.timeScale;
     this.fps += (1 / Math.max(rawDt, 1e-4) - this.fps) * 0.05;
+    if (this.mobile && !this.trailer) this.dynamicResolution(rawDt);
     this.frameMs += (rawDt * 1000 - this.frameMs) * 0.05;
 
     const input = this.input;
@@ -1204,15 +1249,15 @@ export class Game {
     let steps = 0;
     // Small tolerance: at 60 fps two 120 Hz steps fit exactly; float error must not
     // turn that into an alternating 1-step / 3-step pattern (visible micro-stutter).
-    while (this.accumulator >= FIXED_DT - 1e-6 && steps < MAX_STEPS) {
-      this.player.fixedUpdate(FIXED_DT, input);
-      for (const r of this.robots) r.fixedUpdate(FIXED_DT);
+    while (this.accumulator >= this.fixedDt - 1e-6 && steps < MAX_STEPS) {
+      this.player.fixedUpdate(this.fixedDt, input);
+      for (const r of this.robots) r.fixedUpdate(this.fixedDt);
       this.physics.step();
-      this.accumulator -= FIXED_DT;
+      this.accumulator -= this.fixedDt;
       steps++;
     }
     if (steps === MAX_STEPS) this.accumulator = 0;
-    const alpha = Math.min(1, Math.max(0, this.accumulator / FIXED_DT));
+    const alpha = Math.min(1, Math.max(0, this.accumulator / this.fixedDt));
     this.physics.syncObjects();
 
     // --- Camera first, then aim the physical weapon, then fire from its muzzle ---

@@ -186,7 +186,8 @@ Vanta Dynamics' research campus, single level, about 176 × 138 m (built at 0.8 
 **Performance.**
 - Room geometry is merged per room, so whole rooms are culled.
 - The shadow camera follows the player.
-- On phones: no point lights, no robot shadows, smaller pools.
+- Third-person weapons are baked: every static part merged into one vertex-coloured mesh plus the magazine (~100 parts → 2 draw calls per soldier).
+- On phones: low-detail weapons and soldiers (plain boxes, ~2k instead of ~26k triangles each), 60 Hz physics, a lighter AI schedule (fewer rays and decisions per second), no film-grain blend layer, few lights, no robot shadows, smaller pools, and dynamic resolution (the render scale drops when frames slip under ~42 fps and creeps back with headroom).
 
 ## Black Division
 

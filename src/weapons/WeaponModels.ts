@@ -80,9 +80,20 @@ const mat = {
 };
 
 type V3 = [number, number, number];
-const cylGeo = new THREE.CylinderGeometry(1, 1, 1, 18);
+const cylHi = new THREE.CylinderGeometry(1, 1, 1, 18);
+const cylLo = new THREE.CylinderGeometry(1, 1, 1, 6);
 const sphereGeo = new THREE.SphereGeometry(1, 8, 6);
-const torusGeo = new THREE.TorusGeometry(1, 0.22, 6, 18);
+const torusHi = new THREE.TorusGeometry(1, 0.22, 6, 18);
+const torusLo = new THREE.TorusGeometry(1, 0.22, 3, 6);
+
+/**
+ * Low-detail build (third-person weapons on phones): plain boxes, 6-sided
+ * cylinders, no rivets / rail teeth / slots / sling loops. Set only while a
+ * builder runs (buildWeaponModel(model, true)).
+ */
+let LOW = false;
+const cyl = () => (LOW ? cylLo : cylHi);
+const torus = () => (LOW ? torusLo : torusHi);
 
 /**
  * Rounded boxes (no sharp CG edges) with UVs projected in metres, so textures
@@ -90,11 +101,11 @@ const torusGeo = new THREE.TorusGeometry(1, 0.22, 6, 18);
  */
 const boxCache = new Map<string, THREE.BufferGeometry>();
 function roundedBox(w: number, h: number, d: number): THREE.BufferGeometry {
-  const key = `${w.toFixed(4)}|${h.toFixed(4)}|${d.toFixed(4)}`;
+  const key = `${LOW ? 'L' : ''}${w.toFixed(4)}|${h.toFixed(4)}|${d.toFixed(4)}`;
   let g = boxCache.get(key);
   if (!g) {
     const radius = Math.min(Math.min(w, h, d) * 0.22, 0.008);
-    g = new RoundedBoxGeometry(w, h, d, 2, radius);
+    g = LOW ? new THREE.BoxGeometry(w, h, d) : new RoundedBoxGeometry(w, h, d, 2, radius);
     const pos = g.getAttribute('position');
     const nor = g.getAttribute('normal');
     const uv = g.getAttribute('uv');
@@ -126,7 +137,7 @@ function box(parent: THREE.Object3D, material: THREE.Material, size: V3, pos: V3
 
 /** Cylinder aligned with Z (barrels, tubes). */
 function tube(parent: THREE.Object3D, material: THREE.Material, radius: number, length: number, pos: V3): THREE.Mesh {
-  const m = new THREE.Mesh(cylGeo, material);
+  const m = new THREE.Mesh(cyl(), material);
   m.scale.set(radius, length, radius);
   m.rotation.x = Math.PI / 2;
   m.position.set(...pos);
@@ -155,7 +166,7 @@ function hand(parent: THREE.Object3D, pos: V3, elbow: V3, size: V3): THREE.Group
   box(g, mat.gloveKnuckle, [size[0] * 1.02, size[1] * 0.3, size[2] * 0.5], [0, size[1] * 0.25, -size[2] * 0.2]);
   const to = new THREE.Vector3(...elbow).sub(new THREE.Vector3(...pos));
   const len = to.length();
-  const arm = new THREE.Mesh(cylGeo, mat.sleeve);
+  const arm = new THREE.Mesh(cyl(), mat.sleeve);
   arm.scale.set(0.034, len, 0.034);
   arm.position.copy(to).multiplyScalar(0.5);
   arm.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), to.clone().normalize());
@@ -211,8 +222,8 @@ function ironFront(root: THREE.Object3D, z: number, line: number, base: number):
  */
 function profile(parent: THREE.Object3D, material: THREE.Material, pts: [number, number][], thick: number, x = 0): THREE.Mesh {
   const shape = new THREE.Shape(pts.map(([z, y]) => new THREE.Vector2(z, y)));
-  const bevel = Math.min(0.004, thick * 0.18);
-  const geo = new THREE.ExtrudeGeometry(shape, { depth: thick - bevel * 2, bevelEnabled: true, bevelThickness: bevel, bevelSize: bevel * 0.8, bevelSegments: 2, curveSegments: 4 });
+  const bevel = LOW ? 0 : Math.min(0.004, thick * 0.18);
+  const geo = new THREE.ExtrudeGeometry(shape, { depth: thick - bevel * 2, bevelEnabled: !LOW, bevelThickness: bevel, bevelSize: bevel * 0.8, bevelSegments: 2, curveSegments: LOW ? 2 : 4 });
   geo.rotateY(-Math.PI / 2);
   geo.translate((thick - bevel * 2) / 2 + x, 0, 0);
   // UVs in metres along the part (grain runs along the stock).
@@ -228,6 +239,7 @@ function profile(parent: THREE.Object3D, material: THREE.Material, pts: [number,
 
 /** Rivet / screw heads (tiny spheres). */
 function rivets(parent: THREE.Object3D, material: THREE.Material, pts: V3[], r = 0.0028): void {
+  if (LOW) return;
   for (const p of pts) {
     const m = new THREE.Mesh(sphereGeo, material);
     m.scale.set(r, r, r);
@@ -238,7 +250,7 @@ function rivets(parent: THREE.Object3D, material: THREE.Material, pts: V3[], r =
 
 /** Ring around the Z axis (barrel bands, castle nuts, suppressor rings). */
 function ringZ(parent: THREE.Object3D, material: THREE.Material, radius: number, thick: number, pos: V3): THREE.Mesh {
-  const m = new THREE.Mesh(torusGeo, material);
+  const m = new THREE.Mesh(torus(), material);
   m.scale.set(radius, radius, thick / 0.22);
   m.position.set(...pos);
   parent.add(m);
@@ -247,7 +259,8 @@ function ringZ(parent: THREE.Object3D, material: THREE.Material, radius: number,
 
 /** Sling loop (ring standing in the YZ plane). */
 function slingLoop(parent: THREE.Object3D, pos: V3, r = 0.009): void {
-  const m = new THREE.Mesh(torusGeo, mat.steel);
+  if (LOW) return;
+  const m = new THREE.Mesh(torusHi, mat.steel);
   m.scale.set(r, r, r);
   m.rotation.y = Math.PI / 2;
   m.position.set(...pos);
@@ -256,11 +269,13 @@ function slingLoop(parent: THREE.Object3D, pos: V3, r = 0.009): void {
 
 /** Row of identical small boxes (rail slots, serrations, ribs, vents). */
 function row(parent: THREE.Object3D, material: THREE.Material, n: number, size: V3, start: V3, step: V3): void {
+  if (LOW) return;
   for (let i = 0; i < n; i++) box(parent, material, size, [start[0] + step[0] * i, start[1] + step[1] * i, start[2] + step[2] * i]);
 }
 
 /** Picatinny top rail teeth along Z on top of a rail at height `top`. */
 function railTeeth(parent: THREE.Object3D, z0: number, z1: number, top: number, w = 0.022): void {
+  if (LOW) return;
   for (let z = z0; z > z1; z -= 0.01) box(parent, mat.black, [w, 0.004, 0.005], [0, top + 0.002, z]);
 }
 
@@ -719,14 +734,14 @@ function buildPPSh(): WeaponRig {
   box(R, mat.blued, [0.008, 0.024, 0.05], [0, -0.03, -0.03]);
   const mag = group(R, [0, -0.005, -0.12]);
   box(mag, mat.blued, [0.03, 0.03, 0.04], [0, -0.012, 0]);
-  const drum = new THREE.Mesh(cylGeo, mat.blued);
+  const drum = new THREE.Mesh(cyl(), mat.blued);
   drum.scale.set(0.072, 0.048, 0.072);
   drum.rotation.z = Math.PI / 2;
   drum.position.set(0, -0.085, -0.01);
   mag.add(drum);
   tube(mag, mat.gunmetal, 0.074, 0.006, [0, -0.085, -0.01]).rotation.set(0, 0, Math.PI / 2);
   tube(mag, mat.gunmetal, 0.074, 0.006, [0, -0.085, -0.01]).position.x = 0.022;
-  const drumKey = new THREE.Mesh(cylGeo, mat.steel);
+  const drumKey = new THREE.Mesh(cyl(), mat.steel);
   drumKey.scale.set(0.012, 0.02, 0.012);
   drumKey.rotation.z = Math.PI / 2;
   drumKey.position.set(0.032, -0.085, -0.01);
@@ -918,12 +933,87 @@ const BUILDERS: Record<ModelKey, () => WeaponRig> = {
   shotgun: buildShotgun,
 };
 
-export function buildWeaponModel(model: ModelKey): WeaponRig {
-  const r = BUILDERS[model]();
-  r.root.traverse((o) => {
-    o.frustumCulled = false;
+export function buildWeaponModel(model: ModelKey, low = false): WeaponRig {
+  LOW = low;
+  try {
+    const r = BUILDERS[model]();
+    r.root.traverse((o) => {
+      o.frustumCulled = false;
+    });
+    return r;
+  } finally {
+    LOW = false;
+  }
+}
+
+/** One material for every baked third-person rig (colours live in the vertices). */
+const bakedMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.55, metalness: 0.35 });
+
+/**
+ * Third-person weapon: every static part merged into ONE mesh (material colours
+ * baked into vertex colours), the magazine into another (it hides during
+ * reloads). ~100 parts → 2 draw calls per soldier. Glass and reticles are dropped
+ * (invisible at that range); hands stay as IK points.
+ */
+export function bakeRig(rig: WeaponRig): void {
+  const root = rig.root;
+  root.updateMatrixWorld(true);
+  const rootInv = new THREE.Matrix4().copy(root.matrixWorld).invert();
+  const mag = rig.mag ?? null;
+  const magInv = mag ? new THREE.Matrix4().copy(mag.matrixWorld).invert() : null;
+  const under = (o: THREE.Object3D, anc: THREE.Object3D | null) => {
+    for (let p: THREE.Object3D | null = o; p; p = p.parent) if (p === anc) return true;
+    return false;
+  };
+  const meshes: THREE.Mesh[] = [];
+  root.traverse((o) => {
+    if ((o as THREE.Mesh).isMesh) meshes.push(o as THREE.Mesh);
   });
-  return r;
+  const statics: THREE.BufferGeometry[] = [];
+  const mags: THREE.BufferGeometry[] = [];
+  const m4 = new THREE.Matrix4();
+  for (const m of meshes) {
+    if (under(m, rig.leftHand) || under(m, rig.rightHand)) continue;
+    const mt = (Array.isArray(m.material) ? m.material[0] : m.material) as THREE.MeshStandardMaterial;
+    const inMag = !!mag && under(m, mag);
+    if (m !== mag) m.removeFromParent();
+    if (mt.transparent || !m.visible) continue;
+    let g = m.geometry.index ? m.geometry.toNonIndexed() : m.geometry.clone();
+    for (const name of Object.keys(g.attributes)) if (name !== 'position' && name !== 'normal') g.deleteAttribute(name);
+    g.applyMatrix4(m4.multiplyMatrices(inMag ? magInv! : rootInv, m.matrixWorld));
+    const glow = mt.emissive && mt.emissiveIntensity > 0.5;
+    const c = glow ? mt.emissive : (mt.color ?? new THREE.Color(1, 1, 1));
+    const n = g.getAttribute('position').count;
+    const col = new Float32Array(n * 3);
+    for (let i = 0; i < n; i++) {
+      col[i * 3] = c.r;
+      col[i * 3 + 1] = c.g;
+      col[i * 3 + 2] = c.b;
+    }
+    g.setAttribute('color', new THREE.BufferAttribute(col, 3));
+    (inMag ? mags : statics).push(g);
+  }
+  if (statics.length) {
+    const merged = mergeGeometries(statics, false);
+    if (merged) {
+      const mesh = new THREE.Mesh(merged, bakedMat);
+      mesh.frustumCulled = false;
+      root.add(mesh);
+    }
+  }
+  if (mag && mags.length) {
+    const merged = mergeGeometries(mags, false);
+    if (merged) {
+      if ((mag as THREE.Mesh).isMesh) {
+        (mag as THREE.Mesh).geometry = merged;
+        (mag as THREE.Mesh).material = bakedMat;
+      } else {
+        const mesh = new THREE.Mesh(merged, bakedMat);
+        mesh.frustumCulled = false;
+        mag.add(mesh);
+      }
+    }
+  }
 }
 
 /**
@@ -967,14 +1057,21 @@ export const shellMaterials = { brass: mat.brass, red: mat.shellRed };
  * Black Division carbine for the AI: an all-black MK47-pattern rifle, hands
  * hidden (their positions stay as IK grip points), casting shadows in the world.
  */
-export function buildEnemyRifle(): WeaponRig {
-  const r = buildMK47();
-  compactRig(r);
+export function buildEnemyRifle(low = false): WeaponRig {
+  LOW = low;
+  let r: WeaponRig;
+  try {
+    r = buildMK47();
+  } finally {
+    LOW = false;
+  }
   r.root.traverse((o) => {
     const m = o as THREE.Mesh;
-    if (!m.isMesh) return;
-    if (m.material === mat.tan) m.material = mat.black;
-    m.castShadow = true;
+    if (m.isMesh && m.material === mat.tan) m.material = mat.black;
+  });
+  bakeRig(r);
+  r.root.traverse((o) => {
+    if ((o as THREE.Mesh).isMesh) (o as THREE.Mesh).castShadow = true;
   });
   r.leftHand.visible = false;
   r.rightHand.visible = false;

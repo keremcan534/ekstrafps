@@ -342,3 +342,6 @@ canvas { display: block; touch-action: none; }
 .ai-test-panel { position: fixed; left: 10px; bottom: 10px; z-index: 40; max-width: 760px; padding: 8px 12px; background: rgba(8,10,14,0.82); color: #d8e4f0; font: 600 11px/1.45 ui-monospace, Consolas, monospace; border: 1px solid rgba(255,255,255,0.15); border-radius: 6px; pointer-events: none; }
 .ai-test-panel i { color: #9dff4a; font-style: normal; }
 .ai-test-panel small { color: #8fa3b8; }
+
+/* Phones: the animated film grain is a full-screen blend layer (costly on mobile compositors). */
+.is-touch .post-fx { display: none; }

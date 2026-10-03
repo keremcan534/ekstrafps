@@ -5,7 +5,7 @@ import { Noise1D } from '../core/Noise';
 import { clamp, DEG } from '../core/math';
 import { feel } from '../config/Feel';
 import { Humanoid, defaultPose, type DamageInfo } from '../targets/Humanoid';
-import { buildEnemyRifle, buildWeaponModel, compactRig, type WeaponRig } from '../weapons/WeaponModels';
+import { bakeRig, buildEnemyRifle, buildWeaponModel, type WeaponRig } from '../weapons/WeaponModels';
 import type { WeaponData } from '../weapons/WeaponData';
 import { getAmmo, type AmmoData } from '../weapons/AmmoData';
 import type { MuzzleLights } from '../fx/MuzzleLights';
@@ -238,7 +238,7 @@ export class Soldier implements LightSource {
     torso.add(this.aimNode);
     this.body.team = team;
     if (deps.lowSpec) this.body.setCastShadow(false);
-    this.rig = buildEnemyRifle();
+    this.rig = buildEnemyRifle(!!deps.lowSpec);
     if (deps.lowSpec) this.rig.root.traverse((o) => ((o as THREE.Mesh).isMesh && ((o as THREE.Mesh).castShadow = false)));
     this.mountRig();
     this.aimNode.add(this.rifleRoot);
@@ -307,8 +307,9 @@ export class Soldier implements LightSource {
   setWeapon(data: WeaponData, reserve = Infinity): void {
     this.reserve = this.maxReserve = reserve;
     this.rifleRoot.remove(this.rig.root);
-    const rig = buildWeaponModel(data.model);
-    compactRig(rig);
+    // Third person: a low-detail build on phones, always baked to ~2 draw calls.
+    const rig = buildWeaponModel(data.model, !!this.deps.lowSpec);
+    bakeRig(rig);
     rig.leftHand.visible = false;
     rig.rightHand.visible = false;
     rig.root.traverse((o) => ((o as THREE.Mesh).isMesh && ((o as THREE.Mesh).castShadow = !this.deps.lowSpec)));
