@@ -22,6 +22,7 @@ export class PhysicsProps {
   private ropes: { mesh: THREE.Mesh; anchor: THREE.Vector3; body: RAPIER.RigidBody; local: THREE.Vector3 }[] = [];
   private tmp = new THREE.Vector3();
   private tmpQ = new THREE.Quaternion();
+  private tmpT = new THREE.Vector3();
   private up = new THREE.Vector3(0, 1, 0);
 
   constructor(private physics: Physics) {}
@@ -121,9 +122,8 @@ export class PhysicsProps {
   /** Update rope meshes to stretch between anchor and the swinging body. */
   update(): void {
     for (const r of this.ropes) {
-      const t = r.body.translation();
-      const q = r.body.rotation();
-      this.tmpQ.set(q.x, q.y, q.z, q.w);
+      const t = r.body.translation(this.tmpT);
+      r.body.rotation(this.tmpQ);
       // World-space attach point on the swinging body.
       this.tmp.copy(r.local).applyQuaternion(this.tmpQ);
       this.tmp.x += t.x;

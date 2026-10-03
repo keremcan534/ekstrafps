@@ -34,6 +34,7 @@ export class Shells {
   private q = new THREE.Quaternion();
   private p = new THREE.Vector3();
   private one = new THREE.Vector3(1, 1, 1);
+  private vel = new THREE.Vector3();
   private zero = new THREE.Matrix4().makeScale(0, 0, 0);
 
   /** Called the first time a shell lands, with its position (for clink audio). */
@@ -98,16 +99,15 @@ export class Shells {
           mesh.setMatrixAt(s.index, this.zero);
           continue;
         }
-        const t = s.body.translation();
-        const r = s.body.rotation();
-        this.p.set(t.x, t.y, t.z);
-        this.q.set(r.x, r.y, r.z, r.w);
+        // Into the scratch vectors (Rapier allocates a new one per call otherwise).
+        s.body.translation(this.p);
+        s.body.rotation(this.q);
         // Shrink away during the last 0.3s instead of popping.
         const fade = Math.min(1, (LIFETIME - s.age) / 0.3);
         this.m.compose(this.p, this.q, this.one.setScalar(fade));
         mesh.setMatrixAt(s.index, this.m);
         if (!s.clinked && s.age > 0.12) {
-          const v = s.body.linvel();
+          const v = s.body.linvel(this.vel);
           if (v.y > -0.5 && Math.abs(v.y) < 1.5 && s.age > 0.25) {
             s.clinked = true;
             this.onClink?.(type, this.p);

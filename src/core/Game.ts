@@ -53,6 +53,7 @@ import { buildWeaponModel } from '../weapons/WeaponModels';
 import { WeaponLights, weaponLight } from '../fx/WeaponLights';
 import { AUTO_TIERS, MOBILE_ANISOTROPY, VIEW_DISTANCE, loadAutoTier, loadGraphics, noGlass, presetSettings, type GraphicsSettings } from '../config/Graphics';
 import { AutoQuality } from './AutoQuality';
+import { humanoidView } from '../targets/Humanoid';
 import { skipHiddenMatrices } from './VisibleMatrices';
 import { setTextureAnisotropy } from '../fx/Textures';
 import { DustMotes } from '../fx/DustMotes';
@@ -1717,9 +1718,10 @@ export class Game {
     this.fps += (1 / Math.max(rawDt, 1e-4) - this.fps) * 0.05;
     if (this.gfx.dynamicResolution && !this.trailer && !this.resOverride && !(this.bench && !this.bench.done)) this.dynamicResolution(rawDt);
     if (this.autoQ && !this.trailer && !this.resOverride && !(this.bench && !this.bench.done)) {
-      // Hold 60 (or the cap, or the screen's own rate when that is lower).
+      // Hold the frame cap (60 by default; 90 / 120 when picked: then quality gives way to
+      // frame rate), or the screen's own rate when that is lower.
       const v = Math.min(this.dyn.minCur, this.dyn.minPrev);
-      this.autoQ.frame(rawDt, Math.min(this.fpsCap || 60, 60, v < Infinity ? Math.max(45, 1 / v) : 60), this.dyn.scale);
+      this.autoQ.frame(rawDt, Math.min(this.fpsCap || 60, v < Infinity ? Math.max(45, 1 / v) : 60), this.dyn.scale);
     }
     if (this.benchIn > 0 && (this.benchIn -= rawDt) <= 0) this.startBench();
     this.bench?.frame(rawDt, this.workMs);
@@ -1854,6 +1856,7 @@ export class Game {
     const sim = !this.benchFlags.noSim;
     if (sim) for (const s of this.squads) s.update(dt, t, feel.enemyAI);
     this.aiTest?.update(dt);
+    humanoidView.copy(this.camera.eye);
     if (this.survival && sim) this.updateTeams(dt);
     if (sim) this.survival?.update(dt);
     if (this.mapOverlay && this.mapState && this.survival) {

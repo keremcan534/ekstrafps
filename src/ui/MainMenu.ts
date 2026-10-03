@@ -421,7 +421,7 @@ export class MainMenu {
         this.renderGraphics(box);
       });
     }
-    if (g.preset === 'auto') el('div', 'panel-note', box, 'AUTO raises the quality while your phone holds 60 fps and lowers it when it can’t. It remembers what your phone handles.');
+    if (g.preset === 'auto') el('div', 'panel-note', box, 'AUTO raises the quality while your phone holds the frame rate limit (60 by default) and lowers it when it can’t. Pick 120 below for a 120 Hz screen: AUTO then keeps 120 fps first. It remembers what your phone handles.');
 
     // Resolution: shows the real render size.
     const maxR = maxResolution(this.opts.mobile);

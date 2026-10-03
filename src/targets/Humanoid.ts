@@ -120,6 +120,10 @@ const MAX_TILT = 24 * DEG;
 const ONE = new THREE.Vector3(1, 1, 1);
 /** Phones (cheap characters): hidden bodies pose less often, corpses keep fewer CCD bodies. */
 const lowSpec = (): boolean => skinDetail.low;
+/** Where the player's view is (Game sets it each frame): phones pose far bodies less often. */
+export const humanoidView = new THREE.Vector3(0, -1e5, 0);
+/** Phones: visible bodies beyond this (m²) pose every other frame. */
+const FAR_SQ = 30 * 30;
 const speedSq = (v: { x: number; y: number; z: number }): number => v.x * v.x + v.y * v.y + v.z * v.z;
 
 /**
@@ -786,7 +790,16 @@ export class Humanoid {
       return;
     }
     this.lastPose = pose;
-    if (lowSpec() && !this.root.visible && !this.teleport) {
+    const far = lowSpec() && this.root.visible && this.root.position.distanceToSquared(humanoidView) > FAR_SQ;
+    if (far && !this.teleport) {
+      // Phones, visible but far (30 m+): pose every other frame over the time of both
+      // (at that size 30 Hz motion doesn't show; the hitboxes trail by one frame at most).
+      this.setFrozen(false);
+      this.lodDt += dt;
+      if (++this.lodSkip < 2) return;
+      this.lodSkip = 0;
+      dt = this.lodDt;
+    } else if (lowSpec() && !this.root.visible && !this.teleport) {
       if (still && this.root.position.equals(this.lastRootPos) && this.root.quaternion.equals(this.lastRootQuat)) {
         // Hidden and standing still: the hitboxes already sit where the pose put them.
         this.lodDt = 0;
