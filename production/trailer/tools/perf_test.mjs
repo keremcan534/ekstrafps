@@ -23,5 +23,5 @@ for (let i = 0; i < 3; i++) {
   await sleep(2000);
 }
 const r = await send('Page.captureScreenshot', { format: 'jpeg', quality: 75 });
-fs.writeFileSync('C:/Users/Kerem/Documents/ekstrafps/trailer/build/perf_site9.jpg', Buffer.from(r.data, 'base64'));
+fs.writeFileSync('C:/Users/Kerem/Documents/ekstrafps/production/trailer/build/perf_site9.jpg', Buffer.from(r.data, 'base64'));
 process.exit(0);

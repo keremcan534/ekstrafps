@@ -46,12 +46,12 @@ function tuningSavePlugin(): Plugin {
 /**
  * Dev-only trailer frame sink. The capture director POSTs each rendered frame:
  * POST /__trailer/frame?shot=A03&i=12 (body: image/jpeg or image/png)
- * writes trailer/frames/A03/00012.jpg. POST /__trailer/clear?shot=A03 empties the folder.
+ * writes production/trailer/frames/A03/00012.jpg. POST /__trailer/clear?shot=A03 empties the folder.
  * POST /__trailer/file?name=events/A03.json writes sidecar files (sound-event logs).
  */
 function trailerFramesPlugin(): Plugin {
-  const framesDir = path.resolve(root, 'trailer/frames');
-  const buildDir = path.resolve(root, 'trailer/build');
+  const framesDir = path.resolve(root, 'production/trailer/frames');
+  const buildDir = path.resolve(root, 'production/trailer/build');
   const safe = (v: string | null) => (v && /^[A-Za-z0-9_-]+$/.test(v) ? v : null);
   return {
     name: 'trailer-frames',
@@ -109,8 +109,15 @@ export default defineConfig(({ command }) => ({
     port: 5173,
     // The trailer capture server (port 5180) must never reload a page mid-capture.
     hmr: process.argv.includes('5180') ? false : undefined,
-    // Captured trailer frames and renders are not source.
-    watch: { ignored: (p: string) => p.replace(/\\/g, '/').startsWith(path.resolve(root, 'trailer').replace(/\\/g, '/') + '/') },
+    // Trailer production files (frames, renders, music, tools) are not game source;
+    // its capture code (production/trailer/capture) is.
+    watch: {
+      ignored: (p: string) => {
+        const f = p.replace(/\\/g, '/');
+        const t = path.resolve(root, 'production/trailer').replace(/\\/g, '/') + '/';
+        return f.startsWith(t) && !f.startsWith(t + 'capture/');
+      },
+    },
   },
   build: {
     target: 'es2022',

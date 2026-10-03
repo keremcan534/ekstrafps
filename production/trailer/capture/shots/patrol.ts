@@ -1,9 +1,9 @@
 import * as THREE from 'three';
 import type { CameraState, Shot, ShotCtx } from '../Director';
-import type { Game } from '../../core/Game';
-import type { RogueRobot } from '../../enemies/RogueRobot';
-import type { TeamAgent } from '../../game/TeamAgent';
-import { feel } from '../../config/Feel';
+import type { Game } from '../../../../src/core/Game';
+import type { RogueRobot } from '../../../../src/enemies/RogueRobot';
+import type { TeamAgent } from '../../../../src/game/TeamAgent';
+import { feel } from '../../../../src/config/Feel';
 import { handheld } from '../stage';
 import { NIGHT_POST, aimAt, chest, survival, trigger } from './site9';
 

@@ -4,7 +4,7 @@ import fs from 'node:fs';
 
 const port = process.argv[2];
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-const out = 'C:/Users/Kerem/Documents/ekstrafps/trailer/build';
+const out = 'C:/Users/Kerem/Documents/ekstrafps/production/trailer/build';
 const list = await (await fetch(`http://127.0.0.1:${port}/json/list`)).json();
 const ws = new WebSocket(list.find((p) => p.type === 'page').webSocketDebuggerUrl);
 let id = 0;

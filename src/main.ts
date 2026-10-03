@@ -1,4 +1,4 @@
-import { trailerMode } from './trailer/determinism';
+import { trailerMode } from '../production/trailer/capture/determinism';
 import { Game } from './core/Game';
 import { MainMenu } from './ui/MainMenu';
 import './ui/glass.css';
@@ -35,7 +35,7 @@ if (trailerMode) menu.close();
 game
   .init((msg) => menu.setStatus(msg))
   .then(() => {
-    if (trailerMode) return import('./trailer/Director').then((m) => m.runTrailer(game));
+    if (trailerMode) return import('../production/trailer/capture/Director').then((m) => m.runTrailer(game));
     menu.setReady(game);
     // Lock refused (Chromium blocks a re-lock right after Esc): stay paused, the next click retries.
     game.input.onLockRefused = () => {

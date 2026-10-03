@@ -1,7 +1,7 @@
 import * as THREE from 'three';
-import type { Game } from '../core/Game';
-import { feel } from '../config/Feel';
-import { smoothstep } from '../core/math';
+import type { Game } from '../../../src/core/Game';
+import { feel } from '../../../src/config/Feel';
+import { smoothstep } from '../../../src/core/math';
 
 /** Keyframe helpers for camera moves: [t, value] pairs, smoothstep between keys. */
 export function ease(t: number, keys: [number, number][]): number {

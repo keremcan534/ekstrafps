@@ -1,9 +1,9 @@
 import * as THREE from 'three';
-import type { FrameDirector, Game } from '../core/Game';
-import type { Input } from '../core/Input';
+import type { FrameDirector, Game } from '../../../src/core/Game';
+import type { Input } from '../../../src/core/Input';
 import { Post, type PostSettings } from './Post';
 import { setVirtualTime } from './determinism';
-import edl from '../../trailer/edl.json';
+import edl from '../edl.json';
 import { SHOTS } from './shots';
 
 /**

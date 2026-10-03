@@ -19,7 +19,7 @@ from PIL import Image, ImageDraw, ImageFilter, ImageFont
 from scipy.signal import butter, lfilter, resample_poly
 
 ROOT = Path(__file__).resolve().parents[1]
-GAME = ROOT.parent
+GAME = ROOT.parents[1]
 SR = 48000
 FPS = 30
 W, H = (int(sys.argv[1]), int(sys.argv[2])) if len(sys.argv) > 2 else (1280, 720)

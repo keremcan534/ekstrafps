@@ -16,7 +16,7 @@ from scipy.signal import resample_poly
 import imageio_ffmpeg
 
 ROOT = Path(__file__).resolve().parents[1]
-GAME_AUDIO = ROOT.parent / "public" / "audio" / "guns"
+GAME_AUDIO = ROOT.parents[1] / "public" / "audio" / "guns"
 SR = 48000
 W, H, FPS = 1280, 720, 30
 FONT = "C:/Windows/Fonts/bahnschrift.ttf"

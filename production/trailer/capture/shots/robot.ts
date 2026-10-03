@@ -1,8 +1,8 @@
 import * as THREE from 'three';
 import type { Shot } from '../Director';
-import { RogueRobot, type MeleeTarget } from '../../enemies/RogueRobot';
+import { RogueRobot, type MeleeTarget } from '../../../../src/enemies/RogueRobot';
 import { blackStage, dust, handheld } from '../stage';
-import { metalTexture } from '../../fx/Textures';
+import { metalTexture } from '../../../../src/fx/Textures';
 
 /**
  * Robot close-ups on a dark steel deck (real Site-9 rogue robot, real dormant →

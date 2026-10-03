@@ -1,9 +1,9 @@
 import * as THREE from 'three';
 import { lensToVfov, type Shot, type ShotCtx } from '../Director';
 import { blackStage, dust, ease, handheld, lerpV } from '../stage';
-import { buildWeaponModel, type WeaponRig } from '../../weapons/WeaponModels';
-import { WeaponAnimator, type PoseOffset } from '../../weapons/WeaponAnimator';
-import type { Weapon } from '../../weapons/Weapon';
+import { buildWeaponModel, type WeaponRig } from '../../../../src/weapons/WeaponModels';
+import { WeaponAnimator, type PoseOffset } from '../../../../src/weapons/WeaponAnimator';
+import type { Weapon } from '../../../../src/weapons/Weapon';
 
 /**
  * Act I macro set: the M4A1 rig (real model, real glove hands) held in the dark,

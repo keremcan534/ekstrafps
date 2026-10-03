@@ -5,8 +5,8 @@ dist/
 .vite/
 
 # Trailer: source music (third-party, never commit), renders, captured frames
-trailer/music/*.wav
-trailer/music/*.mp3
-trailer/build/
-trailer/frames/
+production/trailer/music/*.wav
+production/trailer/music/*.mp3
+production/trailer/build/
+production/trailer/frames/
 release/

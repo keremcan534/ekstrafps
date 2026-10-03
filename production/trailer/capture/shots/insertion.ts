@@ -1,9 +1,9 @@
 import * as THREE from 'three';
 import type { CameraState, Shot } from '../Director';
-import { Soldier, type PlayerTarget, type SoldierDeps } from '../../enemies/Soldier';
+import { Soldier, type PlayerTarget, type SoldierDeps } from '../../../../src/enemies/Soldier';
 import { blackStage, dust, ease, handheld, lerpV } from '../stage';
-import { metalTexture } from '../../fx/Textures';
-import { smoothstep } from '../../core/math';
+import { metalTexture } from '../../../../src/fx/Textures';
+import { smoothstep } from '../../../../src/core/math';
 
 /**
  * Act II insertion on a night landing deck: two operators walk in through rotor

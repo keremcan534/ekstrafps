@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import type { CameraState, Shot } from '../Director';
-import { Soldier, type PlayerTarget, type SoldierDeps } from '../../enemies/Soldier';
+import { Soldier, type PlayerTarget, type SoldierDeps } from '../../../../src/enemies/Soldier';
 import { handheld } from '../stage';
 import { AISLE_Z, NIGHT_POST, aimAt, ally, pulse, stage, trigger, type S9 } from './site9';
 
