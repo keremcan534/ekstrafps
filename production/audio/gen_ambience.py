@@ -80,31 +80,32 @@ N = int(13.5 * SR)
 
 
 def room():
-    y = lp(brown(N), 380) + 0.05 * bp(rng.standard_normal(N), 2000, 5000)
+    # Only the low air of a big building: nothing above ~200 Hz (broadband hiss reads as running water).
+    y = lp(lp(brown(N), 180, 3), 180, 3)
     return loop(y * slow(N, 0.4, 0.15, 1))
 
 
 def hvac():
-    y = bp(rng.standard_normal(N), 140, 900) * slow(N, 0.8, 0.25, 2) + 0.4 * lp(brown(N), 200)
-    return loop(y)
+    # A low duct drone, not a rush: 60-260 Hz, steep slopes.
+    y = bp(rng.standard_normal(N), 60, 260, 3) * slow(N, 0.5, 0.15, 2) + 0.5 * lp(brown(N), 120, 3)
+    return loop(lp(y, 300, 3))
 
 
 def servers():
     n = N
     t = np.arange(n) / SR
-    fans = bp(rng.standard_normal(n), 900, 5200) * slow(n, 1.5, 0.08, 3)
+    fans = bp(rng.standard_normal(n), 300, 1400, 3) * slow(n, 1.5, 0.08, 3)
     # Hum from noise: a narrow band at 120 Hz, wavering (it never rings like a sine).
     hum = bp(rng.standard_normal(n), 112, 128, 2) * 6
-    whir = bp(rng.standard_normal(n), 2600, 3400, 2) * (1 + 0.15 * np.sin(2 * np.pi * 0.31 * t))
-    return loop(fans * 0.7 + hum * 0.5 + whir * 0.25 + 0.3 * lp(brown(n), 150))
+    return loop(fans * 0.45 + hum * 0.6 + 0.4 * lp(brown(n), 150))
 
 
 def power():
     n = N
     t = np.arange(n) / SR
     rumble = lp(brown(n), 90, 3) * slow(n, 0.5, 0.2, 4)
-    buzz = bp(rng.standard_normal(n), 200, 2400) * (0.55 + 0.45 * np.abs(np.sin(2 * np.pi * 50 * t))) ** 3
-    return loop(rumble * 1.0 + buzz * 0.18)
+    buzz = bp(rng.standard_normal(n), 90, 600, 3) * (0.55 + 0.45 * np.abs(np.sin(2 * np.pi * 50 * t))) ** 3
+    return loop(rumble * 1.0 + buzz * 0.12)
 
 
 def wind():
@@ -112,13 +113,12 @@ def wind():
     gust = slow(n, 0.35, 0.7, 5) ** 2
     center = slow(n, 0.25, 0.5, 6)
     lo = bp(rng.standard_normal(n), 200, 700) * gust
-    hi = bp(rng.standard_normal(n), 700, 2200) * gust * center * 0.5
-    whistle = bp(rng.standard_normal(n), 1100, 1300, 2) * np.clip(gust - 1.2, 0, None) * 0.6
-    return loop(lo + hi + whistle)
+    hi = bp(rng.standard_normal(n), 500, 1100, 3) * gust * center * 0.25
+    return loop(lp(lo + hi, 1200, 3))
 
 
 def dark():
-    y = lp(brown(N), 60, 3) * slow(N, 0.2, 0.3, 7) + 0.03 * bp(rng.standard_normal(N), 300, 1500) * slow(N, 0.6, 0.6, 8)
+    y = lp(brown(N), 60, 3) * slow(N, 0.2, 0.3, 7)
     return loop(y)
 
 

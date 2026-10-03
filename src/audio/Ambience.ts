@@ -14,7 +14,7 @@ export interface AmbienceSpot {
 
 const OFFICE = new Set(['lobby', 'cafe', 'security', 'medical', 'labs', 'barracks']);
 /** Overall bed level (ambience sits under everything). */
-const LEVEL = 0.55;
+const LEVEL = 0.38;
 
 /**
  * Site-9's room tone: looping beds mixed by the room you're in — ducts in the
@@ -39,7 +39,7 @@ export class Ambience {
   }
 
   update(dt: number, spot: AmbienceSpot | null, darkness: number, listener: THREE.Vector3): void {
-    const want: Record<Bed, number> = { room: 0.45, hvac: 0, servers: 0, power: 0, wind: 0, dark: 0 };
+    const want: Record<Bed, number> = { room: 0.35, hvac: 0, servers: 0, power: 0, wind: 0, dark: 0 };
     const id = spot?.id ?? '';
     const style = spot?.style ?? 'lab';
     if (OFFICE.has(style) || style === 'lab') want.hvac = 0.5;
