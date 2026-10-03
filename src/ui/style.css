@@ -347,3 +347,40 @@ canvas { display: block; touch-action: none; }
 
 /* Phones: the animated film grain is a full-screen blend layer (costly on mobile compositors). */
 .is-touch .post-fx { display: none; }
+
+/* Phones: everything sized for ~640 px of height scales down to the real screen
+   (a phone in landscape is ~400 px tall), and no frosted glass: each blurred panel
+   re-blurs the moving 3D view under it every frame, which phone GPUs can't afford. */
+.is-touch .ui-layer { zoom: var(--ui-zoom, 1); }
+.is-touch .ui-layer *, .is-touch .menu * { -webkit-backdrop-filter: none !important; backdrop-filter: none !important; }
+.is-touch .menu-panel, .is-touch .gbtn { background-color: rgba(14, 16, 20, 0.82); }
+.btn-lean-l::before { content: '◀'; }
+.btn-lean-r::after { content: '▶'; }
+.btn-lean-l, .btn-lean-r { width: 46px; height: 46px; font-size: 18px; }
+.btn-lean-l { right: calc(9vw + 168px + env(safe-area-inset-right)); }
+.btn-lean-r { right: calc(9vw + 112px + env(safe-area-inset-right)); }
+.is-touch .menu { zoom: var(--ui-zoom, 1); }
+/* Zoomed HUD: viewport-relative spots stay where they belong on screen. */
+.is-touch .joy-base.idle { transform: translate(calc((14vw + env(safe-area-inset-left)) / var(--ui-zoom, 1)), calc(70vh / var(--ui-zoom, 1))); }
+
+/* FPS readout graph + on-device benchmark. */
+.fps-meter { display: flex; align-items: center; gap: 8px; }
+.fps-meter canvas { width: 120px; height: 28px; border-radius: 3px; background: rgba(0, 0, 0, 0.35); }
+.bench-btn { width: 100%; margin-top: 16px; }
+.bench { position: absolute; left: 50%; top: 12px; transform: translateX(-50%); z-index: 60; width: min(420px, 80vw); padding: 10px 14px; border-radius: 12px; background: rgba(8, 10, 13, 0.88); color: #fff; font: 600 12px ui-monospace, Menlo, Consolas, monospace; pointer-events: none; }
+.bench b { display: block; font-size: 13px; letter-spacing: 0.08em; color: #ffb05a; }
+.bench span { display: block; margin-top: 4px; color: rgba(255, 255, 255, 0.7); font-size: 11px; }
+.bench > i { display: block; margin-top: 8px; height: 4px; border-radius: 4px; background: linear-gradient(90deg, #ff5a2a var(--p), rgba(255, 255, 255, 0.12) var(--p)); }
+.bench.done { top: 50%; transform: translate(-50%, -50%); width: min(560px, 92vw); max-height: 92vh; overflow: auto; pointer-events: auto; padding: 14px 18px; }
+.bench h4 { margin: 12px 0 6px; font-size: 11px; letter-spacing: 0.14em; color: #9fc4ff; }
+.bench h4 em { font-style: normal; color: rgba(255, 255, 255, 0.45); letter-spacing: 0.02em; }
+.bench-row { display: grid; grid-template-columns: 9.5em 1fr 5em 3.5em; align-items: center; gap: 8px; margin: 3px 0; font-size: 11px; }
+.bench-row span { display: inline; margin: 0; color: rgba(255, 255, 255, 0.85); }
+.bench-row i { display: block; height: 10px; border-radius: 3px; }
+.bench-row i.cost { background: #ff5a3a; }
+.bench-row i.free { background: rgba(255, 255, 255, 0.2); }
+.bench-row i.cpu { background: #5aa8ff; }
+.bench-row b { display: inline; font-size: 11px; color: #fff; text-align: right; }
+.bench-row em { font-style: normal; color: rgba(255, 255, 255, 0.5); text-align: right; }
+.bench-btns { display: flex; gap: 10px; margin-top: 12px; }
+.bench-btns button { flex: 1; padding: 10px; border-radius: 8px; border: 1px solid rgba(255, 255, 255, 0.3); background: rgba(255, 255, 255, 0.08); color: #fff; font: 700 12px ui-monospace, Menlo, Consolas, monospace; letter-spacing: 0.12em; }

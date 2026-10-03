@@ -429,6 +429,15 @@ export class MainMenu {
     toggle('POST EFFECTS', g.postFx, (v) => (g.postFx = v));
     toggle('ANTI-ALIASING (RESTART)', g.antialias, (v) => (g.antialias = v));
     toggle('SHOW FPS', g.showFps, (v) => (g.showFps = v), false);
+    // On-device benchmark: ~30 s in game, then a chart of what costs how much (with COPY).
+    const bench = el('button', 'gbtn bench-btn', box, '<span class="gbtn-label">RUN BENCHMARK</span><span class="gbtn-shine"></span>');
+    el('div', 'panel-note', box, 'Starts the game and measures for ~30 s: what each part (HUD, resolution, 3D, AI, effects, characters, audio) costs in FPS. Don’t touch the screen while it runs.');
+    bench.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (!this.game) return;
+      this.game.runBenchmark();
+      this.play();
+    });
   }
 
   /** Spend Vanta Credits: starting sidearm and perks (they apply from the next raid). */

@@ -54,6 +54,7 @@ import { WeaponLights, weaponLight } from '../fx/WeaponLights';
 import { VIEW_DISTANCE, loadGraphics, type GraphicsSettings } from '../config/Graphics';
 import { DustMotes } from '../fx/DustMotes';
 import { Ambience } from '../audio/Ambience';
+import { PerfBench, type BenchFlags } from './PerfBench';
 import { raid } from '../game/Progress';
 import { Inhabitants } from '../game/Inhabitants';
 import type { ShowcaseDeps } from '../ui/Showcase';
@@ -204,6 +205,13 @@ export class Game {
   private env: THREE.Texture | null = null;
   private probe = new THREE.LightProbe(undefined, 0);
   private fpsEl: HTMLDivElement | null = null;
+  /** Frame-time history for the FPS readout's graph (seconds). */
+  private fpsHist: number[] = [];
+  private fpsCanvas: HTMLCanvasElement | null = null;
+  /** On-device benchmark (Settings → Graphics → RUN BENCHMARK). */
+  readonly benchFlags: BenchFlags = { noWorld: false, noSim: false };
+  private bench: PerfBench | null = null;
+  private benchIn = -1;
   /** Dust hanging in the air around you. */
   private dust!: DustMotes;
   /** Room tone, machines, wind; the building creaking in the dark. */
@@ -1081,6 +1089,41 @@ export class Game {
     }
   }
 
+  /** Start the benchmark a couple of seconds into play (the menu calls this, then PLAY). */
+  runBenchmark(): void {
+    this.benchIn = 2.5;
+    this.bench = null;
+  }
+
+  private startBench(): void {
+    const g = this;
+    this.bench = new PerfBench({
+      renderer: this.renderer,
+      scene: this.scene,
+      container: this.container,
+      flags: this.benchFlags,
+      get pixelRatio() {
+        return g.renderer.getPixelRatio();
+      },
+      set pixelRatio(v: number) {
+        g.renderer.setPixelRatio(v);
+        g.renderer.setSize(window.innerWidth, window.innerHeight);
+        g.grade?.resize();
+      },
+      audio: this.audio.ctx,
+      timed: [
+        ['Render (draw calls)', this.renderer, 'render'],
+        ['Physics', this.physics, 'step'],
+        ['AI teams + inhabitants', this, 'updateTeams'],
+        ['Robots + director', this.survival ?? {}, 'update'],
+        ['Weapons', this.weapons, 'updateState'],
+        ['HUD', this.hud, 'update'],
+        ['Status HUD', this.status, 'update'],
+        ['Minimap', this.mapOverlay ?? {}, 'update'],
+      ],
+    });
+  }
+
   /** What the main-menu unit showcase builds its lineups from. */
   showcaseDeps(): ShowcaseDeps {
     return { soldierDeps: this.soldierDeps, physics: this.physics, nav: this.nav, weapon: (id) => this.weapons.weapons.find((w) => w.data.id === id)?.data };
@@ -1275,6 +1318,11 @@ export class Game {
     if (s.showFps && !this.fpsEl) {
       this.fpsEl = document.createElement('div');
       this.fpsEl.className = 'fps-meter';
+      this.fpsEl.appendChild(document.createTextNode(''));
+      this.fpsCanvas = document.createElement('canvas');
+      this.fpsCanvas.width = 120;
+      this.fpsCanvas.height = 28;
+      this.fpsEl.appendChild(this.fpsCanvas);
       this.container.appendChild(this.fpsEl);
     }
     if (this.fpsEl) this.fpsEl.style.display = s.showFps ? '' : 'none';
@@ -1352,12 +1400,19 @@ export class Game {
     const realDt = Math.min(Math.max(rawDt, 0), 0.1);
     const dt = realDt * this.timeScale;
     this.fps += (1 / Math.max(rawDt, 1e-4) - this.fps) * 0.05;
-    if (this.gfx.dynamicResolution && !this.trailer) this.dynamicResolution(rawDt);
+    if (this.gfx.dynamicResolution && !this.trailer && !(this.bench && !this.bench.done)) this.dynamicResolution(rawDt);
+    if (this.benchIn > 0 && (this.benchIn -= rawDt) <= 0) this.startBench();
+    this.bench?.frame(rawDt);
     this.frameMs += (rawDt * 1000 - this.frameMs) * 0.05;
     if (this.fpsEl && this.gfx.showFps && (this.fpsTimer -= rawDt) <= 0) {
       this.fpsTimer = 0.25;
       const c = this.renderer.domElement;
-      this.fpsEl.textContent = `${Math.round(this.fps)} FPS · ${this.frameMs.toFixed(1)} ms · ${c.width}×${c.height}`;
+      this.fpsEl.firstChild!.textContent = `${Math.round(this.fps)} FPS · ${this.frameMs.toFixed(1)} ms · ${c.width}×${c.height}`;
+      this.drawFpsGraph();
+    }
+    if (this.fpsEl && this.gfx.showFps) {
+      this.fpsHist.push(rawDt);
+      if (this.fpsHist.length > 120) this.fpsHist.shift();
     }
 
     const input = this.input;
@@ -1381,7 +1436,7 @@ export class Game {
     const fovScale = Math.tan((this.camera.currentFov * DEG) / 2) / Math.tan((hfovToVfov(playerConfig.baseFov) * DEG) / 2);
     let yaw = input.lookYaw * fovScale;
     let pitch = input.lookPitch * fovScale;
-    if (input.lookFromTouch) [yaw, pitch] = this.applyAimAssist(yaw, pitch);
+    if (this.mobile) [yaw, pitch] = this.applyAimAssist(yaw, pitch, dt, input);
     [yaw, pitch] = this.weapons.recoil.absorb(yaw, pitch);
     this.player.updateLook(yaw, pitch);
     this.player.bufferInput(input);
@@ -1391,14 +1446,17 @@ export class Game {
     let steps = 0;
     // Small tolerance: at 60 fps two 120 Hz steps fit exactly; float error must not
     // turn that into an alternating 1-step / 3-step pattern (visible micro-stutter).
-    while (this.accumulator >= this.fixedDt - 1e-6 && steps < MAX_STEPS) {
+    // Phones: at most 2 catch-up steps. On a slow frame, 6 physics steps make the next
+    // frame slower still (spiral of death); dropping sim time keeps it responsive.
+    const maxSteps = this.mobile ? 2 : MAX_STEPS;
+    while (this.accumulator >= this.fixedDt - 1e-6 && steps < maxSteps) {
       this.player.fixedUpdate(this.fixedDt, input);
       for (const r of this.robots) r.fixedUpdate(this.fixedDt);
       this.physics.step();
       this.accumulator -= this.fixedDt;
       steps++;
     }
-    if (steps === MAX_STEPS) this.accumulator = 0;
+    if (steps === maxSteps) this.accumulator = 0;
     const alpha = Math.min(1, Math.max(0, this.accumulator / this.fixedDt));
     this.physics.syncObjects();
 
@@ -1466,10 +1524,11 @@ export class Game {
     t.sprinting = this.player.sprinting;
     t.crouching = this.player.crouching;
     t.alive = !this.health.dead;
-    for (const s of this.squads) s.update(dt, t, feel.enemyAI);
+    const sim = !this.benchFlags.noSim;
+    if (sim) for (const s of this.squads) s.update(dt, t, feel.enemyAI);
     this.aiTest?.update(dt);
-    if (this.survival) this.updateTeams(dt);
-    this.survival?.update(dt);
+    if (this.survival && sim) this.updateTeams(dt);
+    if (sim) this.survival?.update(dt);
     if (this.mapOverlay && this.mapState && this.survival) {
       const ms = this.mapState;
       ms.player.x = this.player.feet.x;
@@ -1543,7 +1602,7 @@ export class Game {
         this.grade.begin();
       }
       this.renderer.clear();
-      this.renderer.render(this.scene, this.camera.camera);
+      if (!this.benchFlags.noWorld) this.renderer.render(this.scene, this.camera.camera);
       this.renderer.clearDepth();
       if (!this.health.dead && !this.cinematic && !this.spectator) this.renderer.render(this.weapons.viewmodel.scene, this.weapons.viewmodel.camera);
       this.debugDraw.flush(realDt);
@@ -1599,31 +1658,103 @@ export class Game {
     input.endFrame();
   }
 
+  /** Aim assist state (touch): the target being tracked, the ADS snap window. */
+  private assist = { target: new THREE.Vector3(), has: false, snap: 0, wasAds: false };
+  private assistPts: THREE.Vector3[] = [];
+  private assistPool: THREE.Vector3[] = [];
+
   /**
-   * Touch aim assist: slows look speed when the camera is over a robot
-   * ("friction"). Mouse input is never assisted.
+   * Touch aim assist (mouse is never assisted), like console shooters:
+   *  - friction: look slows down over a target
+   *  - tracking: while you're aiming/firing near a target, the view follows it a little
+   *  - snap: bringing up ADS pulls onto a target near the crosshair (once, briefly)
+   * Only targets in line of sight, within ~45 m.
    */
-  private applyAimAssist(yaw: number, pitch: number): [number, number] {
+  private applyAimAssist(yaw: number, pitch: number, dt: number, input: Input): [number, number] {
     const strength = playerConfig.touchAimAssist;
+    const a = this.assist;
+    const ads = this.weapons.adsAmount > 0.3 || input.adsHeld;
+    if (ads && !a.wasAds) a.snap = 0.22;
+    a.wasAds = ads;
+    a.snap = Math.max(0, a.snap - dt);
     if (strength <= 0) return [yaw, pitch];
     this.camera.getAimDirection(this.player, this.aimDir);
     const eye = this.camera.eye;
-    let best = 0;
-    const points: THREE.Vector3[] = [];
-    for (const r of this.robots) if (r.alive) points.push(r.chestPoint.getWorldPosition(new THREE.Vector3()));
-    for (const sq of this.squads) for (const s of sq.soldiers) if (s.alive) points.push(s.chestPos.clone());
-    for (const c of this.world) if (c.team !== 'alpha' && c.alive && !c.downed) points.push(c.aim);
-    for (const p of points) {
-      this.tmp.copy(p);
-      const toTarget = this.tmp2.subVectors(this.tmp, eye);
-      const dist = toTarget.length();
-      if (dist > 60) continue;
-      toTarget.divideScalar(dist);
-      const angle = Math.acos(Math.min(1, toTarget.dot(this.aimDir)));
-      const radius = Math.max(2.5 * DEG, Math.atan(0.7 / dist));
-      if (angle < radius) best = Math.max(best, 1 - angle / radius);
+    const pts = this.assistPts;
+    pts.length = 0;
+    let n = 0;
+    for (const r of this.robots) {
+      if (!r.alive) continue;
+      const v = this.assistPool[n] ?? (this.assistPool[n] = new THREE.Vector3());
+      n++;
+      pts.push(r.chestPoint.getWorldPosition(v));
     }
-    const friction = 1 - best * strength * 0.6;
-    return [yaw * friction, pitch * friction];
+    for (const sq of this.squads) for (const s of sq.soldiers) if (s.alive) pts.push(s.chestPos);
+    for (const c of this.world) if (c.team !== 'alpha' && c.alive && !c.downed) pts.push(c.aim);
+    let best = 0;
+    let bestAngle = 0;
+    let bestP: THREE.Vector3 | null = null;
+    const cone = a.snap > 0 ? 9 * DEG : 0;
+    for (const p of pts) {
+      const to = this.tmp2.subVectors(p, eye);
+      const dist = to.length();
+      if (dist > 45 || dist < 0.5) continue;
+      to.divideScalar(dist);
+      const angle = Math.acos(Math.min(1, to.dot(this.aimDir)));
+      const radius = Math.max(cone, 4 * DEG, Math.atan(1.1 / dist));
+      if (angle >= radius) continue;
+      const score = 1 - angle / radius;
+      if (score > best) {
+        best = score;
+        bestAngle = angle;
+        bestP = p;
+      }
+    }
+    if (bestP && !this.physics.lineOfSight(eye, bestP, GROUPS.sight)) bestP = null;
+    if (!bestP) {
+      a.has = false;
+      return [yaw, pitch];
+    }
+    // Friction (only while your finger is moving the view).
+    if (input.lookFromTouch) {
+      const friction = 1 - best * strength * 0.65;
+      yaw *= friction;
+      pitch *= friction;
+    }
+    // Tracking pull / ADS snap toward the target's chest.
+    const engaged = a.snap > 0 || ads || input.fireHeld || input.lookFromTouch;
+    if (engaged && bestAngle > 0.2 * DEG) {
+      const to = this.tmp2.subVectors(bestP, eye);
+      const wantYaw = Math.atan2(-to.x, -to.z);
+      const wantPitch = Math.atan2(to.y, Math.hypot(to.x, to.z));
+      let dy = wantYaw - this.player.yaw;
+      dy = Math.atan2(Math.sin(dy), Math.cos(dy));
+      const dp = wantPitch - this.player.pitch;
+      const rate = a.snap > 0 ? 14 : (ads ? 3.2 : 1.6) * strength * best;
+      const k = Math.min(1, rate * dt);
+      yaw += dy * k;
+      pitch += dp * k;
+    }
+    a.has = true;
+    a.target.copy(bestP);
+    return [yaw, pitch];
+  }
+
+  /** Frame-time graph under the FPS readout: last 2 s; green under 16.7 ms, amber to 33, red above. */
+  private drawFpsGraph(): void {
+    const cv = this.fpsCanvas;
+    if (!cv) return;
+    const g = cv.getContext('2d')!;
+    g.clearRect(0, 0, cv.width, cv.height);
+    const h = this.fpsHist;
+    const x0 = cv.width - h.length;
+    for (let i = 0; i < h.length; i++) {
+      const ms = h[i] * 1000;
+      g.fillStyle = ms <= 17.5 ? '#6ad06a' : ms <= 34 ? '#ffb03a' : '#ff4a3a';
+      const bh = Math.min(cv.height, (ms / 100) * cv.height);
+      g.fillRect(x0 + i, cv.height - bh, 1, bh);
+    }
+    g.fillStyle = 'rgba(255,255,255,0.35)';
+    g.fillRect(0, cv.height - (16.7 / 100) * cv.height, cv.width, 1);
   }
 }

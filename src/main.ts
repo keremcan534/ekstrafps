@@ -23,6 +23,10 @@ const controls = (() => {
 
 const game = new Game(app);
 document.body.classList.toggle('is-touch', game.mobile);
+// Phones: the UI is laid out for ~640 px of height; scale it to the real screen (a phone in landscape is ~400).
+const uiScale = () => document.documentElement.style.setProperty('--ui-zoom', String(Math.max(0.58, Math.min(1, window.innerHeight / 640))));
+uiScale();
+window.addEventListener('resize', uiScale);
 
 // PLAY / RESUME. Desktop: the menu closes when the mouse is actually locked (pointerlockchange).
 const begin = () => {

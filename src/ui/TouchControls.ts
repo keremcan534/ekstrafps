@@ -30,6 +30,10 @@ const JOY_RADIUS = 64;
  *  - USE appears only when something can be bought/used, with its label.
  *  - Tap the minimap for the full map. Lab-only buttons are hidden in Survival.
  */
+
+/** The HUD's zoom on phones (--ui-zoom, see main.ts): pointer coordinates are in screen pixels. */
+const uiZoom = (): number => parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--ui-zoom')) || 1;
+
 export class TouchControls {
   readonly root: HTMLDivElement;
   private joyBase: HTMLDivElement;
@@ -89,21 +93,26 @@ export class TouchControls {
       setTimeout(() => this.weaponCard.classList.remove('pressed'), 120);
     });
 
+    const dev = new URLSearchParams(location.search).has('dev');
     if (!survival) {
-      this.holdButton('btn btn-lean-l', 'LEAN', (down) => (input.touchLean = down ? -1 : 0));
-      this.holdButton('btn btn-lean-r', 'LEAN', (down) => (input.touchLean = down ? 1 : 0));
-      const slots = el('slots', this.root);
-      weaponNames.forEach((name, i) => {
-        this.slotBtns.push(this.button('btn btn-slot', name, () => (input.slotPressed = i), slots));
-      });
+      this.holdButton('btn btn-lean-l', '', (down) => (input.touchLean = down ? -1 : 0));
+      this.holdButton('btn btn-lean-r', '', (down) => (input.touchLean = down ? 1 : 0));
+      // Sixteen slot buttons don't fit a phone: the weapon card cycles (tap) instead.
+      if (dev) {
+        const slots = el('slots', this.root);
+        weaponNames.forEach((name, i) => {
+          this.slotBtns.push(this.button('btn btn-slot', name, () => (input.slotPressed = i), slots));
+        });
+      }
     }
+
     if (actions.onUse) {
       this.useBtn = this.button('btn btn-use', 'USE', actions.onUse);
       this.useBtn.style.display = 'none';
     }
     if (actions.onMap) this.button('btn btn-small btn-map', 'MAP', actions.onMap);
     this.button('btn btn-small btn-tune', '⚙', actions.onTune);
-    if (!survival) {
+    if (!survival && dev) {
       this.button('btn btn-small btn-debug', 'DBG', actions.onDebug);
       const rays = this.button('btn btn-small btn-rays', 'RAY', () => rays.classList.toggle('on', actions.onRays()));
       const laser = this.button('btn btn-small btn-laser', 'LSR', () => laser.classList.toggle('on', actions.onLaser()));
@@ -123,6 +132,7 @@ export class TouchControls {
       const other = owned && owned.length > 1 ? owned.find((i) => i !== slot) : undefined;
       this.weaponCard.innerHTML = `<b>${this.names[slot] ?? ''}</b>${other !== undefined ? `<span>⇄ ${this.names[other]}</span>` : ''}`;
       this.weaponCard.style.display = owned && owned.length < 2 ? 'none' : '';
+      if (!owned) this.weaponCard.innerHTML = `<b>${this.names[slot] ?? ''}</b><span>TAP: NEXT ▸</span>`;
     }
     this.slotBtns.forEach((b, i) => b.classList.toggle('on', i === slot));
   }
@@ -218,7 +228,8 @@ export class TouchControls {
       }
       this.joyOrigin = { x: e.clientX, y: e.clientY };
       this.joyBase.classList.remove('idle');
-      this.joyBase.style.transform = `translate(${e.clientX}px, ${e.clientY}px)`;
+      const z = uiZoom();
+      this.joyBase.style.transform = `translate(${e.clientX / z}px, ${e.clientY / z}px)`;
       this.joyKnob.style.transform = 'translate(-50%, -50%)';
     } else {
       this.lookIds.set(e.pointerId, { x: e.clientX, y: e.clientY, t: performance.now() });
@@ -227,8 +238,10 @@ export class TouchControls {
 
   private onZoneMove = (e: PointerEvent): void => {
     if (e.pointerId === this.joyId) {
-      let dx = e.clientX - this.joyOrigin.x;
-      let dy = e.clientY - this.joyOrigin.y;
+      // In UI pixels (the HUD is zoomed on phones; the stick's radius is a UI size).
+      const z = uiZoom();
+      let dx = (e.clientX - this.joyOrigin.x) / z;
+      let dy = (e.clientY - this.joyOrigin.y) / z;
       const len = Math.hypot(dx, dy);
       // Dragging well past the ring, upward, onto the lock = sprint lock.
       const overLock = dy < -JOY_RADIUS * 1.45 && Math.abs(dx) < JOY_RADIUS * 0.7;
