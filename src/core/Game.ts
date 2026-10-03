@@ -1265,7 +1265,7 @@ export class Game {
     this.camera.camera.updateProjectionMatrix();
     if (this.arena instanceof Site9) this.arena.setViewDepth(vd.rooms, vd.roomFar);
     // Post effects: colour grade pass (Site-9) + grain / vignette overlay.
-    if (s.postFx && !this.grade && !this.trailer && this.arena instanceof Site9) this.grade = new ScreenGrade(this.renderer);
+    if (s.postFx && !this.grade && !this.trailer && this.arena instanceof Site9) this.grade = new ScreenGrade(this.renderer, this.mobile ? 0 : 4);
     else if (!s.postFx && this.grade) {
       this.grade.target.dispose();
       this.grade = null;

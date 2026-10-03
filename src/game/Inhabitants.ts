@@ -255,7 +255,8 @@ export class Inhabitants {
     const d = this.d;
     const sv = d.survival;
     const prey = d.prey;
-    for (let i = 0; i < 40; i++) {
+    let searches = 0;
+    for (let i = 0; i < 24 && searches < 3; i++) {
       const a = Math.random() * Math.PI * 2;
       const r = 12 + Math.random() * 14;
       const p = d.nav.nearestWalkable(prey.feet.x + Math.sin(a) * r, prey.feet.z + Math.cos(a) * r, new THREE.Vector3(), 2);
@@ -265,7 +266,8 @@ export class Inhabitants {
       const to = this.tmp.copy(p).setY(1.4).sub(prey.eye);
       const inView = to.dot(prey.look) / Math.max(to.length(), 1e-3) > Math.cos(1.1);
       if (inView && d.physics.lineOfSight(prey.eye, this.chest.copy(p).setY(1.4), GROUPS.sight)) continue;
-      if (!d.nav.findPath(p, prey.feet, 2500)) continue;
+      searches++;
+      if (!d.nav.findPath(p, prey.feet, 2000)) continue;
       return p;
     }
     return null;

@@ -209,10 +209,13 @@ export class MainMenu {
   private play(): void {
     if (!this.ready) return;
     this.setStatus(this.paused ? 'Resuming…' : 'Deploying…');
+    // The stage's bodies leave the physics world now (not on the menu's next frame).
+    this.showcase?.dispose();
     this.opts.onPlay();
   }
 
   private section: string | null = null;
+  private showcase: Showcase | null = null;
   private profileEl: HTMLDivElement;
 
   /** Level / XP / credits chip under the nav. */
@@ -511,7 +514,7 @@ export class MainMenu {
     let show: Showcase | null = null;
     const cap = el('div', 'showcase-cap', this.root);
     try {
-      show = new Showcase(g.showcaseDeps(), (l) => {
+      show = this.showcase = new Showcase(g.showcaseDeps(), (l) => {
         cap.classList.remove('in');
         void cap.offsetWidth;
         cap.innerHTML = `<b>${l.name}</b><i>${l.tag}</i><span>${l.text}</span>`;
@@ -536,7 +539,8 @@ export class MainMenu {
       if (show) {
         show.update(dt, innerWidth / innerHeight);
         const r = g.renderer;
-        r.setSize(innerWidth, innerHeight);
+        // Only on a real resize: setting the canvas size reallocates the framebuffer.
+        if (r.domElement.clientWidth !== innerWidth || r.domElement.clientHeight !== innerHeight) r.setSize(innerWidth, innerHeight);
         r.clear();
         r.render(show.scene, show.camera);
         requestAnimationFrame(tick);
@@ -549,7 +553,7 @@ export class MainMenu {
       b.cam.lookAt(b.center.x, b.center.y + Math.sin(t * 0.17) * 0.4, b.center.z);
       b.cam.updateProjectionMatrix();
       const r = g.renderer;
-      r.setSize(innerWidth, innerHeight);
+      if (r.domElement.clientWidth !== innerWidth || r.domElement.clientHeight !== innerHeight) r.setSize(innerWidth, innerHeight);
       r.clear();
       r.render(g.scene, b.cam);
       requestAnimationFrame(tick);

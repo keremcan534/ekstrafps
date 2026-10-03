@@ -48,7 +48,8 @@ export function presetSettings(preset: Exclude<GraphicsPreset, 'custom'>, mobile
     case 'balanced':
       return { ...base, resolution: Math.min(dpr, 1.25), dynamicResolution: mobile, shadows: mobile ? 'off' : 'high', lighting: mobile ? 'fast' : 'full', viewDistance: mobile ? 'near' : 'far', postFx: !mobile };
     case 'quality':
-      return { ...base, resolution: Math.min(dpr, mobile ? 1.5 : 2), dynamicResolution: mobile, shadows: mobile ? 'low' : 'high', lighting: 'full', viewDistance: mobile ? 'medium' : 'far', postFx: true, antialias: true };
+      // Phones: sharper and fuller lighting, but no shadow pass, colour grade or MSAA (each one alone can halve the frame rate).
+      return { ...base, resolution: Math.min(dpr, mobile ? 1.5 : 2), dynamicResolution: mobile, shadows: mobile ? 'off' : 'high', lighting: 'full', viewDistance: mobile ? 'medium' : 'far', postFx: !mobile, antialias: !mobile };
   }
 }
 
@@ -65,5 +66,9 @@ export function loadGraphics(mobile: boolean): GraphicsSettings {
   const old = saved.graphics === 'performance' || saved.graphics === 'quality' ? saved.graphics : 'balanced';
   const d = presetSettings(old, mobile);
   if (saved.shadows === false) d.shadows = 'off';
-  return { ...d, ...(saved.gfx ?? {}) };
+  const g = saved.gfx;
+  // A named preset always comes from its current definition (fixes travel to old saves);
+  // only CUSTOM keeps the stored fields. Fps cap and the readout are kept either way.
+  if (g?.preset && g.preset !== 'custom') return { ...presetSettings(g.preset, mobile), fpsCap: g.fpsCap ?? d.fpsCap, showFps: g.showFps ?? false };
+  return { ...d, ...(g ?? {}) };
 }

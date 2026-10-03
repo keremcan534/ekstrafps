@@ -14,9 +14,10 @@ export class ScreenGrade {
   private mat: THREE.ShaderMaterial;
   mood = 0;
 
-  constructor(private renderer: THREE.WebGLRenderer) {
+  /** @param samples MSAA on the HDR target (phones: 0, multisampled half-float targets are expensive there). */
+  constructor(private renderer: THREE.WebGLRenderer, samples = 4) {
     const size = renderer.getDrawingBufferSize(new THREE.Vector2());
-    this.target = new THREE.WebGLRenderTarget(size.x, size.y, { type: THREE.HalfFloatType, samples: 4 });
+    this.target = new THREE.WebGLRenderTarget(size.x, size.y, { type: THREE.HalfFloatType, samples });
     this.mat = new THREE.ShaderMaterial({
       uniforms: {
         tDiffuse: { value: this.target.texture },

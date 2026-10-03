@@ -27,6 +27,7 @@ const LEVEL = 0.38;
 export class Ambience {
   private beds = new Map<Bed, { gain: GainNode; src: AudioBufferSourceNode }>();
   private level = new Map<Bed, number>();
+  private rate = 1;
   private next = 10;
   private tmp = new THREE.Vector3();
 
@@ -66,7 +67,13 @@ export class Ambience {
         this.level.set(name, target);
         bed.gain.gain.setTargetAtTime(target, now, 1.2);
       }
-      if (name === 'hvac' || name === 'servers' || name === 'power') bed.src.playbackRate.setTargetAtTime(0.55 + 0.45 * live, now, 0.8);
+    }
+    // Spin-down: only schedule a change when it's real (every call adds an automation
+    // event the audio thread keeps; once a frame would pile up thousands).
+    const rate = 0.55 + 0.45 * live;
+    if (Math.abs(rate - this.rate) > 0.01) {
+      this.rate = rate;
+      for (const name of ['hvac', 'servers', 'power'] as const) this.beds.get(name)?.src.playbackRate.setTargetAtTime(rate, now, 0.8);
     }
 
     // The building, somewhere off in the dark.

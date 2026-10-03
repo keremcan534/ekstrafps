@@ -37,6 +37,8 @@ export class Civilian {
   private strideAmount = 0;
   private time = Math.random() * 10;
   private lookBack = 0;
+  /** Path searches are expensive: at most one escape plan a second. */
+  private replan = 0;
   private pose = defaultPose();
   private tmp = new THREE.Vector3();
   /** Where the latest scare came from. */
@@ -86,7 +88,7 @@ export class Civilian {
     const fresh = this.panic <= 0.5;
     this.panic = Math.max(this.panic, seconds);
     this.threat.copy(from);
-    if (this.state !== 'flee' || fresh || !this.path) this.pickRefuge();
+    if ((this.state !== 'flee' || fresh || !this.path) && this.replan <= 0) this.pickRefuge();
     this.state = 'flee';
   }
 
@@ -97,13 +99,14 @@ export class Civilian {
 
   /** A walkable point 14-26 m away, roughly away from the threat. */
   private pickRefuge(): void {
+    this.replan = 1 + Math.random() * 0.5;
     const away = Math.atan2(this.pos.x - this.threat.x, this.pos.z - this.threat.z);
-    for (let i = 0; i < 10; i++) {
-      const a = away + (Math.random() - 0.5) * (1.2 + i * 0.25);
+    for (let i = 0; i < 4; i++) {
+      const a = away + (Math.random() - 0.5) * (1.2 + i * 0.5);
       const r = 14 + Math.random() * 12;
       const p = this.nav.nearestWalkable(this.pos.x + Math.sin(a) * r, this.pos.z + Math.cos(a) * r, this.tmp, 3);
       if (!p) continue;
-      const path = this.nav.findPath(this.pos, p, 2500);
+      const path = this.nav.findPath(this.pos, p, 1500);
       if (path && path.length) {
         this.path = path;
         this.pathIndex = 0;
@@ -121,6 +124,7 @@ export class Civilian {
       return;
     }
     this.panic = Math.max(0, this.panic - dt);
+    this.replan -= dt;
     const desired = this.tmp.set(0, 0, 0);
     if (this.state === 'flee') {
       if (this.path && this.pathIndex < this.path.length) {
@@ -130,7 +134,9 @@ export class Civilian {
         const d = Math.hypot(dx, dz);
         if (d < 0.5) this.pathIndex++;
         else desired.set(dx / d, 0, dz / d).multiplyScalar(RUN);
-      } else if (this.panic > 0.5) this.pickRefuge();
+      } else if (this.panic > 0.5) {
+        if (this.replan <= 0) this.pickRefuge();
+      }
       else this.state = 'hide';
     }
     const accel = 12 * dt;
