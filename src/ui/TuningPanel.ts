@@ -5,6 +5,7 @@ import { WEAPON_DEFAULTS, weaponFile } from '../weapons/WeaponData';
 import { AMMO_DEFAULTS, ammoTable } from '../weapons/AmmoData';
 import { playerConfig, playerConfigDefaults } from '../player/PlayerConfig';
 import { feel, feelDefaults } from '../config/Feel';
+import { aiMonitor } from './AIMonitor';
 
 export interface TuningHooks {
   getWeapon(): WeaponData;
@@ -34,6 +35,22 @@ export class TuningPanel {
     this.gui.domElement.classList.add('tuning');
     this.status = { message: 'Tab / ⚙ toggles' };
     const refresh = () => this.gui.controllersRecursive().forEach((c) => c.updateDisplay());
+
+    // Watch the AI: a Site-9 team match with no player in it (free camera, live stats),
+    // or the 3 vs 3 firefight test.
+    const watch = this.gui.addFolder('AI watch');
+    const go = (q: string) => () => {
+      location.href = `?${q}`;
+    };
+    const w = {
+      match: go('map=site9&mode=teams&watch'),
+      firefight: go('aitest=J'),
+      squads: go('aitest=E'),
+    };
+    watch.add(w, 'match').name('▶ Watch AI team match (Site-9)');
+    watch.add(w, 'firefight').name('▶ 3 vs 3 firefight test');
+    watch.add(w, 'squads').name('▶ 3 vs 3 squads test');
+    watch.add(aiMonitor, 'on').name('AI monitor stats (F6)').listen();
 
     const actions = this.gui.addFolder('Save / reset');
     const a = {

@@ -418,3 +418,17 @@ body.perf-lite .menu-nav .gbtn, body.perf-lite .menu-panel.enter { animation: no
 .is-touch .sv-points { top: 122px; }
 .is-touch .squad-panel { top: 166px; }
 
+
+/* AI monitor (F6 / ?watch): live AI match stats. */
+.ai-monitor { position: absolute; right: 16px; top: 200px; width: 330px; padding: 10px 12px; background: rgba(10, 13, 16, 0.78); border: 1px solid rgba(255, 255, 255, 0.12); border-radius: 6px; font: 11px ui-monospace, Consolas, monospace; color: #dfe6ea; pointer-events: none; z-index: 20; }
+.ai-monitor .aim-head { font-weight: 800; letter-spacing: 0.14em; margin-bottom: 6px; display: flex; justify-content: space-between; color: #ffb35c; }
+.ai-monitor .aim-head span { color: #8a959c; font-weight: 400; letter-spacing: 0; }
+.ai-monitor .aim-row { display: grid; grid-template-columns: 1fr 52px 48px; gap: 4px; line-height: 1.55; }
+.ai-monitor .aim-row b { text-align: right; font-variant-numeric: tabular-nums; }
+.ai-monitor .aim-row i { text-align: right; color: #8a959c; font-style: normal; }
+.ai-monitor .aim-line { margin-top: 5px; color: #b9c3c9; }
+.ai-monitor .aim-team { display: grid; grid-template-columns: 62px 30px 58px 46px; gap: 4px; margin-top: 5px; padding-top: 4px; border-top: 1px solid rgba(255, 255, 255, 0.07); }
+.ai-monitor .aim-team em { grid-column: 1 / -1; font-style: normal; color: #8a959c; font-size: 10px; }
+.ai-monitor .aim-dec { font-size: 10px; color: #8a959c; border-top: 1px solid rgba(255, 255, 255, 0.07); padding-top: 4px; }
+.is-touch .ai-monitor { top: 8px; right: 8px; width: 260px; transform: scale(0.85); transform-origin: top right; }
+.watching .crosshair, .watching .ammo, .watching .squad-panel { display: none !important; }

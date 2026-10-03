@@ -43,6 +43,7 @@ import { AIDebug } from '../ai/AIDebug';
 import { coverRegistry } from '../ai/Cover';
 import type { Bot } from '../ai/Bot';
 import { AITest } from '../ai/AITest';
+import { AIMonitor, aiMonitor } from '../ui/AIMonitor';
 import { START_POINTS, Survival } from '../game/Survival';
 import { SurvivalHUD } from '../ui/SurvivalHUD';
 import { MapOverlay, type MapState } from '../ui/MapOverlay';
@@ -176,6 +177,10 @@ export class Game {
   aiTest: AITest | null = null;
   /** Spectating an AI test: free camera, no weapon. */
   spectator = false;
+  /** ?watch (Site-9 teams): spectate an AI-only match from a free camera, stats on screen. */
+  readonly watching = new URLSearchParams(location.search).has('watch');
+  private monitor: AIMonitor | null = null;
+  private fly = new THREE.Vector3();
   /** Physics step (120 Hz; 60 Hz on phones). */
   private fixedDt = FIXED_DT;
   /**
@@ -693,6 +698,7 @@ export class Game {
       mobile: this.mobile,
       hurtPlayer: (d, from) => this.hurtPlayer(d, from),
       hireAlly: (at) => this.hireAlly(at),
+      watching: teams && this.watching,
       mode: teams ? 'teams' : 'solo',
       startZones: teams ? ['hangar', 'barracks', 'power'] : [],
       focusProvider: teams ? () => this.match?.foci() ?? [] : undefined,
@@ -784,7 +790,7 @@ export class Game {
         lighting: this.lighting,
         shake: (at) => this.camera.addShake(Math.max(0, 1 - at.distanceTo(this.player.feet) / 60) * 0.9),
         allies: () => this.allies,
-        playerAlive: () => !this.health.dead,
+        playerAlive: () => !this.health.dead && !this.watching,
         playerPos: this.player.feet,
         mobile: this.mobile,
         playerWeapon: () => this.weapons.current.data.id,
@@ -798,8 +804,10 @@ export class Game {
         this.ended = true;
         document.exitPointerLock();
       };
-      // Everyone starts four strong: you and three operators on pistols.
-      for (let i = 0; i < 3; i++) {
+      this.monitor = new AIMonitor(ui, this.match, this.survival);
+      if (this.watching) this.startWatching(map);
+      // Everyone starts four strong: you and three operators on pistols (watching: no Vanta).
+      for (let i = 0; i < (this.watching ? 0 : 3); i++) {
         const at = this.nav.nearestWalkable(this.arena.spawn.x + (i - 1) * 1.6, this.arena.spawn.z + 2.2, new THREE.Vector3(), 4) ?? this.arena.spawn.clone();
         this.core.push(this.addAlly(at, false));
       }
@@ -976,13 +984,42 @@ export class Game {
     return c;
   }
 
+  /** ?watch: a ghost camera over the atrium (where the drops land); the AI teams fight it out. */
+  private startWatching(map: Site9): void {
+    this.spectator = true;
+    feel.godMode = true;
+    aiMonitor.on = true;
+    document.body.classList.add('watching');
+    const atrium = map.rooms.find((r) => r.id === 'atrium');
+    const [x0, z0, x1] = atrium?.rect ?? [-10, -10, 10];
+    this.fly.set((x0 + x1) / 2, 14, z0 + 4);
+    this.player.teleport(this.fly.clone(), Math.PI);
+    this.player.pitch = -0.55;
+    this.hud.toast('Watching the AI teams · WASD fly · Shift fast · Space/C up/down · F6 stats', 5);
+  }
+
+  /** Spectator flight with the movement keys (or the stick). */
+  private flyWatch(dt: number): void {
+    const input = this.player.lastInput;
+    const pl = this.player;
+    if (input) {
+      const sp = input.sprintHeld ? 22 : 9;
+      const cp = Math.cos(pl.pitch);
+      this.fly.x += (-Math.sin(pl.yaw) * cp * input.moveY + Math.cos(pl.yaw) * input.moveX) * sp * dt;
+      this.fly.z += (-Math.cos(pl.yaw) * cp * input.moveY - Math.sin(pl.yaw) * input.moveX) * sp * dt;
+      this.fly.y += (Math.sin(pl.pitch) * input.moveY + (input.jumpHeld ? 1 : 0) - (input.crouchHeld ? 1 : 0)) * sp * dt;
+    }
+    this.fly.y = Math.max(1.5, this.fly.y);
+    pl.hover(this.fly);
+  }
+
   /** Allies, AI teams and raiders all fight over one combatant list. */
   private updateTeams(dt: number): void {
     const sv = this.survival!;
     const w = this.world;
     w.length = 0;
     const pc = this.playerC;
-    pc.alive = !this.health.dead;
+    pc.alive = !this.health.dead && !this.watching;
     pc.downed = this.health.downed;
     w.push(pc);
     for (const a of this.allies) {
@@ -996,7 +1033,7 @@ export class Game {
     prey.feet.copy(this.player.feet);
     prey.eye.copy(this.camera.eye);
     this.camera.getAimDirection(this.player, prey.look);
-    prey.alive = !this.health.dead;
+    prey.alive = !this.health.dead && !this.watching;
     this.inhabitants?.update(dt);
     this.inhabitants?.combatants(w);
 
@@ -1102,6 +1139,8 @@ export class Game {
       this.hud.toast('Out of ammo: sidearm drawn', 2);
     }
     this.match?.update(dt, w);
+    this.monitor?.update(dt);
+    if (this.watching) this.flyWatch(dt);
 
     // Robots go for every soldier on the map; hazards hurt them all.
     const bodies = sv.extraTargets;
@@ -1344,6 +1383,10 @@ export class Game {
         break;
       case 'F4':
         this.hud.toast(`AI debug ${this.aiDebug.toggle() ? 'on' : 'off'}`);
+        break;
+      case 'F6':
+        aiMonitor.on = !aiMonitor.on;
+        if (!this.monitor) this.hud.toast('AI monitor: start a Site-9 team match (or Watch AI match in the lab panel)', 3);
         break;
       case 'KeyN':
         feel.damageNumbers = !feel.damageNumbers;
@@ -1763,6 +1806,8 @@ export class Game {
       input.fireHeld = input.firePressed = false;
       input.lookYaw = input.lookPitch = 0;
     }
+    // Spectating: no shooting (the gun is gone anyway).
+    if (this.watching) input.fireHeld = input.firePressed = false;
 
     // --- Look: ADS sensitivity scaling, touch aim assist, recoil absorption ---
     const fovScale = Math.tan((this.camera.currentFov * DEG) / 2) / Math.tan((hfovToVfov(playerConfig.baseFov) * DEG) / 2);

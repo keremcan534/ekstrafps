@@ -24,6 +24,8 @@ import { Utilities } from './Utilities';
 import type { WallSpot } from '../world/Site9';
 
 export interface SurvivalDeps {
+  /** ?watch: the player is a spectator camera, nobody's target. */
+  watching?: boolean;
   map: Site9;
   physics: Physics;
   scene: THREE.Scene;
@@ -265,7 +267,7 @@ export class Survival {
     this.playerTarget = {
       pos: deps.player.feet,
       get alive() {
-        return !deps.health.dead;
+        return !deps.health.dead && !deps.watching;
       },
       hit: (d, from) => deps.hurtPlayer(d, from),
     };

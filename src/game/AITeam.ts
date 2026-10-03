@@ -136,6 +136,11 @@ export class AITeam {
     return null;
   }
 
+  /** What the squad is up to (the AI monitor). */
+  get goalKind(): string {
+    return this.goal?.kind ?? 'free';
+  }
+
   get aliveCount(): number {
     let n = 0;
     for (const a of this.agents) if (a.alive) n++;

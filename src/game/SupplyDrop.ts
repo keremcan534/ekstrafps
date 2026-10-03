@@ -63,6 +63,14 @@ export class SupplyDrop {
     return this.pos;
   }
 
+  /** Where the drop stands, for the AI monitor. */
+  get info(): { state: 'waiting' | 'inbound' | 'down'; t: number; holder: string; hold: number; room: string } {
+    const room = this.pos ? (this.d.map.rooms.find((r) => r.rect[0] <= this.pos!.x && this.pos!.x <= r.rect[2] && r.rect[1] <= this.pos!.z && this.pos!.z <= r.rect[3])?.name ?? '') : '';
+    if (!this.pos) return { state: 'waiting', t: this.timer + WARNING, holder: '', hold: 0, room };
+    if (!this.landed) return { state: 'inbound', t: this.timer, holder: '', hold: 0, room };
+    return { state: 'down', t: EXPIRES - this.age, holder: this.holder, hold: this.hold / CLAIM_TIME, room };
+  }
+
   /** Seconds the leading team has held it (for the HUD). */
   get progress(): { team: string; t: number } | null {
     return this.landed && this.holder ? { team: this.holder, t: this.hold / CLAIM_TIME } : null;
