@@ -19,10 +19,15 @@ export function skipHiddenMatrices(scene: THREE.Object3D): void {
 
 /** updateMatrixWorld for `o` and its visible descendants (hidden ones are flagged to catch up when shown). */
 export function updateVisibleMatrices(o: THREE.Object3D, force: boolean): void {
+  // Same rules as Object3D.updateMatrixWorld: an object with matrixWorldAutoUpdate off
+  // keeps the matrixWorld it was given (ragdoll bones are written from the physics
+  // bodies), but its children are still visited.
   if (o.matrixAutoUpdate) o.updateMatrix();
   if (o.matrixWorldNeedsUpdate || force) {
-    if (o.parent === null) o.matrixWorld.copy(o.matrix);
-    else o.matrixWorld.multiplyMatrices(o.parent.matrixWorld, o.matrix);
+    if (o.matrixWorldAutoUpdate) {
+      if (o.parent === null) o.matrixWorld.copy(o.matrix);
+      else o.matrixWorld.multiplyMatrices(o.parent.matrixWorld, o.matrix);
+    }
     o.matrixWorldNeedsUpdate = false;
     force = true;
   }
@@ -33,7 +38,6 @@ export function updateVisibleMatrices(o: THREE.Object3D, force: boolean): void {
       c.matrixWorldNeedsUpdate = true;
       continue;
     }
-    if (!c.matrixWorldAutoUpdate && !force) continue;
     // Classes with their own pass (skinned meshes keep their bind matrix, cameras their inverse): theirs.
     if (Object.getPrototypeOf(c).updateMatrixWorld !== base) c.updateMatrixWorld(force);
     else updateVisibleMatrices(c, force);

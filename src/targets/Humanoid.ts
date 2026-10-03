@@ -688,6 +688,7 @@ export class Humanoid {
       for (const axis of [RAPIER.JointAxis.AngX, RAPIER.JointAxis.AngY, RAPIER.JointAxis.AngZ]) {
         raw.jointConfigureMotorPosition(j.handle, axis, 0, tone, damping);
       }
+      this.tone.push({ raw, handle: j.handle, tone, damping });
     };
 
     // Spherical joints with "muscle tone" everywhere the living pose can twist;
@@ -710,6 +711,21 @@ export class Humanoid {
     for (const j of this.joints) this.physics.world.removeImpulseJoint(j, true);
     this.joints.length = 0;
     this.knees.length = 0;
+    this.tone.length = 0;
+    this.toneStage = 0;
+  }
+
+  /** The spherical joints' "muscle tone" motors (released as the body goes limp). */
+  private tone: { raw: { jointConfigureMotorPosition(h: number, axis: number, pos: number, k: number, c: number): void }; handle: number; tone: number; damping: number }[] = [];
+  private toneStage = 0;
+
+  /** Weaken every spherical joint's tone to `share` of its strength (damping stays: no jelly). */
+  private setTone(share: number): void {
+    for (const t of this.tone) {
+      for (const axis of [RAPIER.JointAxis.AngX, RAPIER.JointAxis.AngY, RAPIER.JointAxis.AngZ]) t.raw.jointConfigureMotorPosition(t.handle, axis, 0, t.tone * share, t.damping);
+    }
+    // A body asleep in its last pose wouldn't notice: let it settle again.
+    for (const part of this.parts) part.body.wakeUp();
   }
 
   /**
@@ -1018,6 +1034,16 @@ export class Humanoid {
     if (this.ragdollTime > 0.45 && this.knees.length) {
       for (const k of this.knees) k.configureMotorPosition(0, 0, 1);
       this.knees.length = 0;
+    }
+    // The muscle tone goes too: it held the hips and torso in the standing pose, so a
+    // body that buckled stayed kneeling like a statue. A little stays (and the joint
+    // friction) so the head and limbs don't twist into impossible angles.
+    if (this.toneStage === 0 && this.ragdollTime > 0.45) {
+      this.toneStage = 1;
+      this.setTone(0.15);
+    } else if (this.toneStage === 1 && this.ragdollTime > 1.1) {
+      this.toneStage = 2;
+      this.setTone(0.04);
     }
     // Body-fall sounds: a heavy part that was falling fast and suddenly stopped.
     this.thudCooldown -= dt;
