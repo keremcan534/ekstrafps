@@ -1,0 +1,10 @@
+{
+  "appId": "com.keremcan534.site9",
+  "appName": "SITE-9",
+  "webDir": "dist",
+  "android": {
+    "backgroundColor": "#0b0c0e",
+    "allowMixedContent": false,
+    "webContentsDebuggingEnabled": false
+  }
+}

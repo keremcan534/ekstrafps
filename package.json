@@ -10,14 +10,18 @@
     "preview": "vite preview",
     "lab": "vite --open",
     "desktop": "vite build && electron .",
-    "desktop:build": "vite build && electron-builder --win portable"
+    "desktop:build": "vite build && electron-builder --win portable",
+    "android:build": "node scripts/build-apk.mjs"
   },
   "dependencies": {
+    "@capacitor/core": "^8.5.2",
     "@dimforge/rapier3d-compat": "^0.21.0",
     "lil-gui": "^0.21.0",
     "three": "^0.186.1"
   },
   "devDependencies": {
+    "@capacitor/android": "^8.5.2",
+    "@capacitor/cli": "^8.5.2",
     "@types/node": "^26.6.3",
     "@types/three": "^0.186.0",
     "electron": "^44.5.1",
