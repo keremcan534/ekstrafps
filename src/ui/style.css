@@ -418,30 +418,3 @@ body.perf-lite .menu-nav .gbtn, body.perf-lite .menu-panel.enter { animation: no
 .is-touch .sv-points { top: 122px; }
 .is-touch .squad-panel { top: 166px; }
 
-/* Phone HUD layout (src/ui/HudLayout.ts): opacity for the touch controls; the floating stick
-   follows the thumb, so its saved spot only applies while it rests. */
-.touch-root > .btn, .touch-root > .weapon-card { opacity: var(--hud-alpha, 1); }
-.is-touch .joy-base.idle { opacity: calc(0.55 * var(--hud-alpha, 1)); }
-.joy-base:not(.idle) { translate: none !important; }
-
-/* The layout editor: the HUD over a dimmed screen, every control outlined. */
-body.hud-editing .menu { display: none !important; }
-body.hud-editing .ui-layer { display: block !important; }
-body.hud-editing .touch-root { display: block !important; background: rgba(0, 0, 0, 0.35); }
-body.hud-editing .touch-root .btn-use { display: flex !important; }
-body.hud-editing .touch-root .weapon-card { display: block !important; }
-.hud-item { outline: 1.5px dashed rgba(255, 255, 255, 0.6); outline-offset: 3px; }
-.hud-item.hud-sel { outline: 2px solid var(--accent, #ffb020); }
-.hud-edit-bar { position: fixed; z-index: 400; top: max(6px, env(safe-area-inset-top)); left: 50%; transform: translateX(-50%); width: min(420px, 62vw);
-  padding: 8px 10px; border-radius: 12px; background: rgba(12, 14, 18, 0.94); border: 1px solid rgba(255, 255, 255, 0.16);
-  color: #e8e8e8; font: 11px/1.3 system-ui, sans-serif; display: flex; flex-direction: column; gap: 5px; touch-action: none; }
-.hud-edit-row { display: flex; align-items: center; gap: 8px; }
-.hud-edit-row b { font-size: 12px; letter-spacing: 0.08em; color: var(--accent, #ffb020); }
-.hud-edit-row span { color: #9aa; }
-.hud-edit-row em { font-style: normal; font-weight: 700; letter-spacing: 0.06em; min-width: 92px; }
-.hud-edit-row input[type=range] { flex: 1; accent-color: var(--accent, #ffb020); }
-.hud-edit-row output { min-width: 38px; text-align: right; font-variant-numeric: tabular-nums; }
-.hud-edit-row button { min-width: 34px; height: 28px; padding: 0 12px; border-radius: 8px; border: 1px solid rgba(255, 255, 255, 0.25);
-  background: rgba(255, 255, 255, 0.08); color: #fff; font: 700 12px system-ui, sans-serif; letter-spacing: 0.06em; }
-.hud-edit-row button.primary { margin-left: auto; background: var(--accent, #ffb020); color: #111; border-color: transparent; }
-.hud-edit-btn { margin-bottom: 10px; }

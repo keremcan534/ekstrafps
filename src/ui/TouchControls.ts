@@ -2,6 +2,9 @@ import type { Input } from '../core/Input';
 import { playerConfig } from '../player/PlayerConfig';
 
 export interface TouchActions {
+  /** Pause (the settings menu). */
+  onPause(): void;
+  /** Developer tuning panel (?dev drawer). */
   onTune(): void;
   onDebug(): void;
   /** Toggle debug aim rays; returns the new state. */
@@ -16,8 +19,23 @@ export interface TouchActions {
 const DEADZONE = 0.1;
 const JOY_RADIUS = 64;
 
+/** Compact tactical icons (stroke = currentColor). */
+const svg = (body: string, size = 24): string =>
+  `<svg viewBox="0 0 24 24" width="${size}" height="${size}" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${body}</svg>`;
+const ICON = {
+  fire: svg('<path d="M9 21h6M10 21V9l2-5 2 5v12M10 13h4"/>', 30),
+  ads: svg('<circle cx="12" cy="12" r="7"/><path d="M12 2v5M12 17v5M2 12h5M17 12h5"/><circle cx="12" cy="12" r="1" fill="currentColor"/>'),
+  reload: svg('<path d="M20 12a8 8 0 1 1-2.3-5.6"/><path d="M20 4v5h-5"/>'),
+  jump: svg('<path d="M6 15l6-6 6 6"/><path d="M6 20l6-6 6 6" opacity=".45"/>'),
+  crouch: svg('<path d="M6 9l6 6 6-6"/><path d="M5 20h14"/>'),
+  leanL: svg('<path d="M14 6l-6 6 6 6"/><path d="M19 4v16" opacity=".45"/>', 20),
+  leanR: svg('<path d="M10 6l6 6-6 6"/><path d="M5 4v16" opacity=".45"/>', 20),
+  pause: svg('<path d="M9 6v12M15 6v12"/>', 18),
+};
+
 /**
- * Mobile controls, modelled on the big mobile shooters (CoD Mobile / PUBG Mobile):
+ * Mobile controls, built on the ergonomics of the big mobile shooters (a clear
+ * right side for aiming, the thumbs' arcs for the buttons), in our own look:
  *
  *  - Left half: floating move stick. Its resting "ghost" stays visible; touching
  *    anywhere on the left re-centres it under the thumb. Push up past the ring
@@ -25,10 +43,14 @@ const JOY_RADIUS = 64;
  *    stick again to stop).
  *  - Right half: drag to look, with acceleration (slow drags = fine aim, fast
  *    flicks = big turns).
- *  - FIRE (right) doubles as a look pad while held; a second FIRE on the left.
- *  - ADS, RELOAD, JUMP, CROUCH, fire MODE; tap the weapon card to swap weapons.
- *  - USE appears only when something can be bought/used, with its label.
- *  - Tap the minimap for the full map. Lab-only buttons are hidden in Survival.
+ *  - FIRE: press fires, hold keeps firing, drag while holding aims; the finger is
+ *    captured, so leaving the button never stops the burst. ADS toggles and aims
+ *    the same way. A left FIRE for claw grips (off in the two-thumb preset).
+ *  - RELOAD, JUMP, CROUCH, small LEAN icons; the weapon strip swaps weapons, its
+ *    mode chip changes fire mode. USE appears only next to something usable.
+ *  - Tap the minimap for the full map. ?dev: debug tools in a DEV drawer.
+ *
+ * Where each control sits, its size, opacity and touch area: src/ui/HudLayout.ts.
  */
 
 /** The HUD's zoom on phones (--ui-zoom, see main.ts): pointer coordinates are in screen pixels. */
@@ -53,11 +75,9 @@ export class TouchControls {
   private weaponCard: HTMLDivElement;
   private slotBtns: HTMLDivElement[] = [];
   private ownedKey = '';
-  private names: string[] = [];
   private lastUse = '';
 
   constructor(parent: HTMLElement, private input: Input, weaponNames: string[], actions: TouchActions, survival = false) {
-    this.names = weaponNames;
     this.root = el(`touch-root${survival ? ' survival' : ''}`, parent);
     const zone = el('touch-zone', this.root);
     zone.addEventListener('pointerdown', this.onZoneDown);
@@ -71,56 +91,61 @@ export class TouchControls {
     this.joyLock.textContent = '⇧';
     this.resetJoy();
 
-    // Fire buttons double as look pads while held.
-    this.fireButton('btn btn-fire', '');
-    this.fireButton('btn btn-fire-left', '');
+    // FIRE: press fires, hold keeps firing, drag while holding aims (the button stays put;
+    // the finger is captured, so sliding off it never stops the burst). A left FIRE for
+    // claw grips (hidden in the two-thumb preset).
+    this.fireButton('btn btn-fire', ICON.fire);
+    this.fireButton('btn btn-fire-left', ICON.fire);
 
-    this.adsBtn = this.button('btn btn-ads', '◎', () => {
+    // ADS: tap toggles; drag on it aims too.
+    this.adsBtn = this.lookButton('btn btn-ads', ICON.ads, () => {
       input.adsHeld = !input.adsHeld;
       this.adsBtn.classList.toggle('on', input.adsHeld);
     });
-    this.button('btn btn-jump', '⤒', () => (input.jumpPressed = true));
-    this.crouchBtn = this.button('btn btn-crouch', '⤓', () => {
+    this.button('btn btn-jump', ICON.jump, () => (input.jumpPressed = true));
+    this.crouchBtn = this.button('btn btn-crouch', ICON.crouch, () => {
       input.touchCrouch = !input.touchCrouch;
       this.crouchBtn.classList.toggle('on', input.touchCrouch);
     });
-    this.button('btn btn-reload', '↻', () => (input.reloadPressed = true));
-    this.button('btn btn-mode', 'MODE', actions.onFireMode);
+    this.button('btn btn-reload', ICON.reload, () => (input.reloadPressed = true));
+    this.holdButton('btn btn-lean-l', ICON.leanL, (down) => (input.touchLean = down ? -1 : 0));
+    this.holdButton('btn btn-lean-r', ICON.leanR, (down) => (input.touchLean = down ? 1 : 0));
 
-    // Weapon card: current weapon; tap to swap to the other one.
-    this.weaponCard = el('weapon-card', this.root);
+    // Weapon + ammo: the HUD's ammo readout, moved in here and made touchable.
+    // Tap the fire-mode chip to change it, anywhere else to swap weapons.
+    this.weaponCard = parent.querySelector<HTMLDivElement>('.ammo') ?? el('ammo', this.root);
+    this.root.appendChild(this.weaponCard);
     this.weaponCard.addEventListener('pointerdown', (e) => {
       e.preventDefault();
       e.stopPropagation();
-      input.cyclePressed = 1;
+      if ((e.target as HTMLElement).closest('.ammo-mode')) actions.onFireMode();
+      else input.cyclePressed = 1;
       this.weaponCard.classList.add('pressed');
       setTimeout(() => this.weaponCard.classList.remove('pressed'), 120);
     });
-
-    const dev = new URLSearchParams(location.search).has('dev');
-    if (!survival) {
-      this.holdButton('btn btn-lean-l', '', (down) => (input.touchLean = down ? -1 : 0));
-      this.holdButton('btn btn-lean-r', '', (down) => (input.touchLean = down ? 1 : 0));
-      // Sixteen slot buttons don't fit a phone: the weapon card cycles (tap) instead.
-      if (dev) {
-        const slots = el('slots', this.root);
-        weaponNames.forEach((name, i) => {
-          this.slotBtns.push(this.button('btn btn-slot', name, () => (input.slotPressed = i), slots));
-        });
-      }
-    }
 
     if (actions.onUse) {
       this.useBtn = this.button('btn btn-use', 'USE', actions.onUse);
       this.useBtn.style.display = 'none';
     }
+    // Map: the minimap opens it (this button is off in every preset; the editor can show it).
     if (actions.onMap) this.button('btn btn-small btn-map', 'MAP', actions.onMap);
-    // Pause (the settings menu); the tuning panel with ?dev.
-    this.button('btn btn-small btn-tune', dev ? '⚙' : '❚❚', actions.onTune);
-    if (!survival && dev) {
-      this.button('btn btn-small btn-debug', 'DBG', actions.onDebug);
-      const rays = this.button('btn btn-small btn-rays', 'RAY', () => rays.classList.toggle('on', actions.onRays()));
-      const laser = this.button('btn btn-small btn-laser', 'LSR', () => laser.classList.toggle('on', actions.onLaser()));
+    this.button('btn btn-small btn-tune', ICON.pause, actions.onPause);
+
+    // ?dev: the debug tools live in a drawer, out of the normal HUD.
+    if (new URLSearchParams(location.search).has('dev')) {
+      const drawer = el('dev-drawer', this.root);
+      this.button('btn btn-small btn-dev', 'DEV', () => drawer.classList.toggle('open'));
+      this.button('btn btn-small', 'TUNE', actions.onTune, drawer);
+      this.button('btn btn-small', 'DBG', actions.onDebug, drawer);
+      const rays = this.button('btn btn-small', 'RAY', () => rays.classList.toggle('on', actions.onRays()), drawer);
+      const laser = this.button('btn btn-small', 'LSR', () => laser.classList.toggle('on', actions.onLaser()), drawer);
+      if (!survival) {
+        const slots = el('slots', drawer);
+        weaponNames.forEach((name, i) => {
+          this.slotBtns.push(this.button('btn btn-slot', name, () => (input.slotPressed = i), slots));
+        });
+      }
     }
   }
 
@@ -135,10 +160,8 @@ export class TouchControls {
     const key = `${owned ? owned.join(',') : 'all'}|${slot}`;
     if (key !== this.ownedKey) {
       this.ownedKey = key;
-      const other = owned && owned.length > 1 ? owned.find((i) => i !== slot) : undefined;
-      this.weaponCard.innerHTML = `<b>${this.names[slot] ?? ''}</b>${other !== undefined ? `<span>⇄ ${this.names[other]}</span>` : ''}`;
-      this.weaponCard.style.display = owned && owned.length < 2 ? 'none' : '';
-      if (!owned) this.weaponCard.innerHTML = `<b>${this.names[slot] ?? ''}</b><span>TAP: NEXT ▸</span>`;
+      // A swap mark on the readout when tapping it changes weapons.
+      this.weaponCard.classList.toggle('can-swap', !owned || owned.length > 1);
     }
     this.slotBtns.forEach((b, i) => b.classList.toggle('on', i === slot));
   }
@@ -178,7 +201,7 @@ export class TouchControls {
 
   private button(cls: string, label: string, onPress: () => void, parent: HTMLElement = this.root): HTMLDivElement {
     const b = el(cls, parent);
-    b.textContent = label;
+    b.innerHTML = label;
     b.addEventListener('pointerdown', (e) => {
       e.preventDefault();
       e.stopPropagation();
@@ -192,10 +215,32 @@ export class TouchControls {
     return b;
   }
 
+  /** Tap action + look pad while held (ADS): a drag on it aims like the right side of the screen. */
+  private lookButton(cls: string, icon: string, onPress: () => void): HTMLDivElement {
+    const b = el(cls, this.root);
+    b.innerHTML = icon;
+    b.addEventListener('pointerdown', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      capture(b, e.pointerId);
+      b.classList.add('pressed');
+      onPress();
+      this.lookIds.set(e.pointerId, { x: e.clientX, y: e.clientY, t: performance.now() });
+    });
+    b.addEventListener('pointermove', (e) => this.look(e));
+    const up = (e: PointerEvent) => {
+      b.classList.remove('pressed');
+      this.lookIds.delete(e.pointerId);
+    };
+    b.addEventListener('pointerup', up);
+    b.addEventListener('pointercancel', up);
+    return b;
+  }
+
   /** Button that reports press and release (lean). */
   private holdButton(cls: string, label: string, onChange: (down: boolean) => void): void {
     const b = el(cls, this.root);
-    b.textContent = label;
+    b.innerHTML = label;
     b.addEventListener('pointerdown', (e) => {
       e.preventDefault();
       e.stopPropagation();
@@ -211,10 +256,9 @@ export class TouchControls {
     b.addEventListener('pointercancel', up);
   }
 
-  private fireButton(cls: string, label: string): void {
+  private fireButton(cls: string, icon: string): void {
     const b = el(cls, this.root);
-    b.textContent = label;
-    el('fire-icon', b);
+    b.innerHTML = icon;
     b.addEventListener('pointerdown', (e) => {
       e.preventDefault();
       e.stopPropagation();

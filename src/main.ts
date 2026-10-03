@@ -4,6 +4,7 @@ import { loadGraphics, noGlass } from './config/Graphics';
 import { MainMenu } from './ui/MainMenu';
 import { applyHudLayout, loadHudLayout } from './ui/HudLayout';
 import './ui/glass.css';
+import './ui/touch-hud.css';
 
 const app = document.getElementById('app')!;
 const params = new URLSearchParams(location.search);
@@ -54,11 +55,12 @@ document.body.classList.toggle('is-touch', game.mobile);
 // Phones: no frosted glass (a blur pass per panel every frame). The game keeps this in sync with Settings.
 document.body.classList.toggle('no-glass', noGlass(game.mobile, loadGraphics(game.mobile)));
 // Phones: the UI is laid out for ~640 px of height; scale it to the real screen (a phone in landscape is ~400).
-// Phones: the button size / opacity / positions set in Settings → Controls → CUSTOMIZE HUD.
-if (game.mobile) applyHudLayout(loadHudLayout());
 const uiScale = () => document.documentElement.style.setProperty('--ui-zoom', String(Math.max(0.58, Math.min(1, window.innerHeight / 640))));
 uiScale();
-window.addEventListener('resize', uiScale);
+window.addEventListener('resize', () => {
+  uiScale();
+  if (game.mobile) applyHudLayout(loadHudLayout());
+});
 
 // PLAY / RESUME. Desktop: the menu closes when the mouse is actually locked (pointerlockchange).
 const begin = () => {
@@ -99,6 +101,8 @@ game
   .then(() => {
     if (trailerMode) return import('../production/trailer/capture/Director').then((m) => m.runTrailer(game));
     menu.setReady(game);
+    // Phones: the control layout (preset + Settings → Controls → CUSTOMIZE HUD); the controls exist from init().
+    if (game.mobile) applyHudLayout(loadHudLayout());
     // Lock refused (Chromium blocks a re-lock right after Esc): stay paused, the next click retries.
     game.input.onLockRefused = () => {
       if (!game.running || game.mobile) return;

@@ -81,6 +81,8 @@ function grainDataUrl(): string {
 const MAX_STEPS = 6;
 /** Dynamic resolution never goes below half the chosen resolution. */
 const DYN_FLOOR = 0.5;
+/** Touch aim assist as tuned (the menu's NORMAL); the recoil help scales against it. */
+const BASE_TOUCH_ASSIST = playerConfig.touchAimAssist;
 
 /** Let the browser paint (loading status) between startup phases. */
 const paint = (): Promise<void> => new Promise((r) => setTimeout(r, 0));
@@ -455,8 +457,9 @@ export class Game {
 
     if (this.mobile) {
       this.touch = new TouchControls(ui, this.input, this.weapons.weapons.map((w) => w.data.short), {
-        // Phones: pause (settings); the tuning panel is a ?dev tool there (P in the Weapon Lab on a PC).
-        onTune: () => (this.dev ? this.tuning.toggle() : this.onPauseRequest?.()),
+        onPause: () => this.onPauseRequest?.(),
+        // The tuning panel: the ?dev drawer on phones (P in the Weapon Lab on a PC).
+        onTune: () => this.tuning.toggle(),
         onDebug: () => this.debug.toggle(),
         onRays: () => this.toggleRays(),
         onLaser: () => this.toggleLaser(),
@@ -1915,7 +1918,9 @@ export class Game {
     const reload = cw.state === 'reloading' ? (cw.data.reload.kind === 'magazine' ? cw.stateProgress : cw.ammo / cw.data.magazineSize) : -1;
     if (cw.state === 'reloading' && this.prevWeaponState !== 'reloading') aiWorld.emit('reload', this.player.feet, 'alpha', this.player);
     this.prevWeaponState = cw.state;
-    this.hud.updateAmmo(cw.data.name, cw.ammo, cw.chambered && cw.data.closedBolt, cw.reserve === Infinity ? cw.data.magazineSize : cw.reserve, `${cw.fireMode.toUpperCase()} · ${this.weapons.ammo.caliber}`, reload, cw.data.magazineSize);
+    // Phones: the compact strip (short name, the fire-mode chip alone).
+    const mode = cw.fireMode.toUpperCase();
+    this.hud.updateAmmo(this.mobile ? cw.data.short : cw.data.name, cw.ammo, cw.chambered && cw.data.closedBolt, cw.reserve === Infinity ? cw.data.magazineSize : cw.reserve, this.mobile ? mode : `${mode} · ${this.weapons.ammo.caliber}`, reload, cw.data.magazineSize);
     this.hud.updateCrosshair(this.weapons.handling.dispersionDeg * 0.5, this.camera.currentFov, this.weapons.adsAmount, cw.state !== 'ready' || this.player.sprinting);
     this.hud.update(realDt, this.camera.camera);
     this.status.update(realDt, this.health.health, this.health.max, this.camera.camera);
@@ -2022,6 +2027,7 @@ export class Game {
     if (ads && !a.wasAds) a.snap = 0.22;
     a.wasAds = ads;
     a.snap = Math.max(0, a.snap - dt);
+    this.weapons.recoil.viewScale = 1;
     if (strength <= 0) return [yaw, pitch];
     this.camera.getAimDirection(this.player, this.aimDir);
     const eye = this.camera.eye;
@@ -2075,13 +2081,16 @@ export class Game {
       let dy = wantYaw - this.player.yaw;
       dy = Math.atan2(Math.sin(dy), Math.cos(dy));
       const dp = wantPitch - this.player.pitch;
-      const rate = a.snap > 0 ? 14 : (ads ? 3.2 : 1.6) * strength * best;
+      // Firing on a target pulls as hard as aiming does (a thumb can't fight recoil and track at once).
+      const rate = a.snap > 0 ? 14 : (ads || input.fireHeld ? 3.2 : 1.6) * strength * best;
       const k = Math.min(1, rate * dt);
       yaw += dy * k;
       pitch += dp * k;
     }
     a.has = true;
     a.target.copy(bestP);
+    // Recoil control on a target: up to 40 % less view kick (NORMAL and up), less on LOW.
+    this.weapons.recoil.viewScale = 1 - 0.4 * Math.min(1, strength / BASE_TOUCH_ASSIST);
     return [yaw, pitch];
   }
 

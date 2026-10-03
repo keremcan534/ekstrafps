@@ -1,0 +1,116 @@
+/* Phone HUD (body.is-touch). Loaded after style.css and glass.css; positions come from
+   src/ui/HudLayout.ts (presets + the player's editor changes), this file is the look:
+   compact dark discs with line icons, one accent ring on FIRE, no glass, no text boxes.
+   Sizes are HUD pixels (the phone HUD is 640 px tall, zoomed to the screen). */
+
+body.is-touch .touch-root .btn,
+body.is-touch :is(.flash-btn, .squad-btn, .build-btn) {
+  -webkit-backdrop-filter: none; backdrop-filter: none;
+  background: rgba(10, 12, 16, 0.42);
+  border: 1.5px solid rgba(255, 255, 255, 0.26) !important;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+  color: rgba(255, 255, 255, 0.92);
+  display: flex; align-items: center; justify-content: center;
+  border-radius: 50%; padding: 0;
+  font: 700 11px/1 system-ui, sans-serif; letter-spacing: 0.06em;
+  opacity: calc(var(--hud-alpha, 1) * var(--o, 1));
+}
+body.is-touch .touch-root .btn svg { display: block; pointer-events: none; }
+body.is-touch .touch-root .btn.pressed { background: rgba(255, 255, 255, 0.26); transform: scale(0.94); }
+body.is-touch .touch-root .btn.on { border-color: var(--accent, #ffb020) !important; color: var(--accent, #ffb020); }
+
+/* Touch area past the visible button: an invisible ring, var(--pad) wide (per control). */
+body.is-touch :is(.touch-root .btn, .touch-root .ammo, .flash-btn, .squad-btn, .build-btn)::after {
+  content: ''; position: absolute; inset: calc(-1 * var(--pad, 10px)); border-radius: inherit;
+}
+body.is-touch :is(.btn-lean-l, .btn-lean-r)::before { content: none; }
+
+/* Sizes. */
+body.is-touch .btn-fire { width: 104px; height: 104px; border: 2px solid rgba(255, 120, 70, 0.85) !important; background: rgba(60, 16, 6, 0.45); color: #fff; }
+body.is-touch .btn-fire.pressed { background: rgba(255, 96, 40, 0.42); }
+body.is-touch .btn-fire-left { width: 76px; height: 76px; border: 2px solid rgba(255, 120, 70, 0.7) !important; background: rgba(60, 16, 6, 0.4); }
+body.is-touch .btn-fire-left svg { width: 24px; height: 24px; }
+body.is-touch .btn-ads { width: 70px; height: 70px; }
+body.is-touch .btn-reload { width: 58px; height: 58px; }
+body.is-touch .btn-jump, body.is-touch .btn-crouch { width: 64px; height: 64px; }
+body.is-touch .btn-lean-l, body.is-touch .btn-lean-r { width: 46px; height: 46px; border-radius: 12px; }
+body.is-touch .touch-root .btn-small { width: 44px; height: 44px; border-radius: 12px; }
+body.is-touch .touch-root .btn-use { width: auto; height: auto; min-width: 120px; padding: 8px 14px; border-radius: 12px; flex-direction: column; gap: 2px;
+  border-color: rgba(224, 165, 28, 0.85) !important; color: #ffd25a; font-size: 12px; }
+
+/* Squad orders / flashlight / build (Site-9): small icons in a column beside the minimap. */
+body.is-touch .flash-btn, body.is-touch .squad-btn, body.is-touch .build-btn { width: 44px; min-width: 0; height: 44px; padding: 0; border-radius: 12px; font-size: 8px; }
+body.is-touch .flash-btn svg { width: 20px; height: 20px; }
+
+/* Move stick: rests where the layout puts it, floats under the thumb when touched. */
+body.is-touch .joy-base { width: 150px; height: 150px; margin: -75px 0 0 -75px; border: 1.5px solid rgba(255, 255, 255, 0.24); background: rgba(255, 255, 255, 0.04);
+  -webkit-backdrop-filter: none; backdrop-filter: none; box-shadow: none; }
+body.is-touch .joy-base.idle { transform: translate(var(--jx, calc((14vw + env(safe-area-inset-left)) / var(--ui-zoom, 1))), var(--jy, calc(70vh / var(--ui-zoom, 1))));
+  opacity: calc(0.6 * var(--hud-alpha, 1) * var(--o, 1)); }
+body.is-touch .joy-knob { width: 58px; height: 58px; background: rgba(255, 255, 255, 0.5); box-shadow: none; }
+
+/* Weapon + ammo: one compact strip (name · mode chip · count / spare). Tap: swap; chip: fire mode. */
+body.is-touch .touch-root .ammo {
+  position: absolute; left: 50%; bottom: 8px; right: auto; transform: none; translate: -50% 0;
+  display: flex; align-items: center; gap: 10px; min-width: 0; padding: 6px 12px; border-radius: 10px;
+  background: rgba(8, 10, 14, 0.5); border: 1px solid rgba(255, 255, 255, 0.12); box-shadow: none;
+  pointer-events: auto; touch-action: none; text-align: left; white-space: nowrap;
+  opacity: calc(var(--hud-alpha, 1) * var(--o, 1));
+}
+body.is-touch .touch-root .ammo.pressed { background: rgba(255, 255, 255, 0.16); }
+body.is-touch .touch-root .ammo-weapon { font: 700 12px/1 system-ui, sans-serif; letter-spacing: 0.08em; text-transform: uppercase; color: #e8e8e8; }
+body.is-touch .touch-root .ammo.can-swap .ammo-weapon::after { content: ' ⇄'; color: rgba(255, 255, 255, 0.5); }
+body.is-touch .touch-root .ammo-mode { margin: 0; padding: 4px 8px; font: 700 10px/1 ui-monospace, Consolas, monospace; letter-spacing: 0.12em; border-radius: 6px; }
+body.is-touch .touch-root .ammo-row { margin: 0; }
+body.is-touch .touch-root .ammo-count { font: 800 24px/1 system-ui, sans-serif; text-shadow: none; }
+body.is-touch .touch-root .ammo-mag { font-size: 13px; margin-left: 3px; }
+body.is-touch .touch-root .reload-bar { position: absolute; left: 10px; right: 10px; bottom: 2px; width: auto; margin: 0; }
+
+/* Top left: compact health, cash and squad. */
+body.is-touch .hp { min-width: 0; padding: 5px 10px; gap: 8px; border-radius: 8px; opacity: var(--o, 1); }
+body.is-touch .hp-text { font-size: 18px; min-width: 30px; }
+body.is-touch .hp-bar { width: 96px; height: 5px; }
+body.is-touch .sv-points { font-size: 15px; padding: 3px 8px; }
+body.is-touch .squad-panel { transform: scale(0.8); opacity: var(--o, 1); }
+body.is-touch .minimap { opacity: var(--o, 1); }
+
+/* Switched off in the layout (the editor still shows it, faint). */
+body.is-touch .hud-off { visibility: hidden !important; pointer-events: none !important; }
+
+/* ?dev: debug tools in a drawer (DEV button), not on the HUD. */
+body.is-touch .btn-dev { left: 12px; top: 220px; width: 44px; height: 30px; border-radius: 8px; font-size: 10px; opacity: 0.6; }
+.dev-drawer { display: none; position: absolute; left: 64px; top: 210px; max-width: 70%; flex-wrap: wrap; gap: 6px; padding: 8px; border-radius: 10px;
+  background: rgba(0, 0, 0, 0.72); pointer-events: auto; z-index: 5; }
+.dev-drawer.open { display: flex; }
+.dev-drawer .btn { position: relative !important; left: auto !important; top: auto !important; translate: none !important; }
+.dev-drawer .slots { position: static; transform: none; max-width: none; width: 100%; pointer-events: auto; }
+
+/* Layout editor (src/ui/HudLayout.ts): the HUD over a dimmed screen, each control and its touch area outlined. */
+body.hud-editing .menu { display: none !important; }
+body.hud-editing .ui-layer { display: block !important; }
+body.hud-editing .touch-root { display: block !important; background: rgba(0, 0, 0, 0.35); }
+body.hud-editing .touch-root .btn-use { display: flex !important; }
+body.hud-editing .hud-off { visibility: visible !important; opacity: 0.28 !important; }
+.hud-item { outline: 1.5px dashed rgba(255, 255, 255, 0.6); outline-offset: 2px; }
+.hud-item.hud-sel { outline: 2px solid var(--accent, #ffb020); }
+body.hud-editing .hud-item::after { outline: 1px dotted rgba(255, 255, 255, 0.35); }
+body.hud-editing .hud-sel::after { outline-color: rgba(255, 176, 32, 0.7); }
+.hud-edit-bar { position: fixed; z-index: 400; top: max(6px, env(safe-area-inset-top)); left: 50%; transform: translateX(-50%); width: min(560px, 70vw);
+  padding: 6px 8px; border-radius: 12px; background: rgba(12, 14, 18, 0.95); border: 1px solid rgba(255, 255, 255, 0.16);
+  color: #e8e8e8; font: 11px/1.2 system-ui, sans-serif; display: flex; flex-direction: column; gap: 4px; touch-action: none; }
+.hud-edit-bar.bottom { top: auto; bottom: max(6px, env(safe-area-inset-bottom)); }
+.hud-edit-row { display: flex; align-items: center; gap: 6px; }
+.hud-edit-row b { font-size: 12px; letter-spacing: 0.1em; color: var(--accent, #ffb020); margin-right: 2px; }
+.hud-edit-row em { font-style: normal; font-weight: 700; letter-spacing: 0.05em; white-space: nowrap; }
+.hud-edit-row .hud-edit-name { min-width: 110px; color: var(--accent, #ffb020); }
+.hud-edit-row label { flex: 1; display: flex; align-items: center; gap: 6px; min-width: 0; }
+.hud-edit-row label em { min-width: 74px; font-size: 10px; color: #aab; }
+.hud-edit-row input[type=range] { flex: 1; min-width: 40px; accent-color: var(--accent, #ffb020); }
+.hud-edit-row output { min-width: 34px; text-align: right; font-variant-numeric: tabular-nums; }
+.hud-edit-row button { height: 26px; padding: 0 9px; border-radius: 7px; border: 1px solid rgba(255, 255, 255, 0.22);
+  background: rgba(255, 255, 255, 0.07); color: #fff; font: 700 10px system-ui, sans-serif; letter-spacing: 0.06em; }
+.hud-edit-row button.on { border-color: var(--accent, #ffb020); color: var(--accent, #ffb020); }
+.hud-edit-row button.primary { margin-left: auto; background: var(--accent, #ffb020); color: #111; border-color: transparent; }
+.hud-edit-btn { margin-bottom: 10px; }
+.hud-presets { display: flex; gap: 6px; margin: 4px 0 8px; }
+.hud-presets .gseg-btn { flex: 1; }

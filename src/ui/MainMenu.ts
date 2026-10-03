@@ -7,7 +7,7 @@ import { Showcase } from './Showcase';
 import { PERKS, SIDEARMS, levelOf, loadProfile, perkSlots, saveProfile, type PerkId } from '../game/Progress';
 import { FPS_CAPS, loadGraphics, maxResolution, presetSettings, type GraphicsSettings } from '../config/Graphics';
 import { isTouchDevice } from '../core/math';
-import { applyHudLayout, editHudLayout, loadHudLayout, saveHudLayout } from './HudLayout';
+import { HUD_PRESETS, applyHudLayout, editHudLayout, loadHudLayout, saveHudLayout, type HudPreset } from './HudLayout';
 
 /**
  * Main menu + pause menu (liquid glass). Behind it the loaded map renders live
@@ -104,9 +104,9 @@ const KEYS: [string, string][] = [
 const TOUCH_HELP: [string, string][] = [
   ['Left side', 'Move (the stick appears under your thumb). Push up past the ring to lock sprint.'],
   ['Right side', 'Look'],
-  ['Fire', 'Shoot; drag while holding to aim'],
-  ['◎', 'Aim down sights'], ['↻', 'Reload'], ['⤒ / ⤓', 'Jump / crouch'], ['◀ ▶', 'Lean'],
-  ['Weapon card', 'Swap weapon'], ['USE', 'Appears next to things you can buy or use'], ['❚❚', 'Pause / settings'],
+  ['Fire', 'Shoot; hold to keep firing, drag while holding to aim'],
+  ['Aim', 'Aim down sights (tap); drag on it to aim'], ['Reload', 'Reload'], ['Jump / crouch', 'Bottom right'], ['Lean', 'Small arrows near Aim'],
+  ['Weapon strip', 'Tap to swap weapon; tap AUTO / SEMI to change fire mode'], ['USE', 'Appears next to things you can buy or use'], ['❚❚', 'Pause / settings'],
 ];
 
 const el = <K extends keyof HTMLElementTagNameMap>(tag: K, cls: string, parent?: HTMLElement, html?: string) => {
@@ -560,6 +560,22 @@ export class MainMenu {
         this.renderControls();
       });
     });
+    // Presets: two thumbs, three fingers, four-finger claw (each resets your own changes).
+    el('div', 'panel-label', this.panel, 'LAYOUT PRESET');
+    const presets = el('div', 'gseg', this.panel);
+    const note = el('div', 'panel-note', this.panel, HUD_PRESETS[hud.preset].text);
+    for (const id of Object.keys(HUD_PRESETS) as HudPreset[]) {
+      const b = el('button', `gseg-btn ${hud.preset === id ? 'active' : ''}`, presets, HUD_PRESETS[id].name);
+      b.addEventListener('click', (e) => {
+        e.stopPropagation();
+        hud.preset = id;
+        hud.items = {};
+        saveHudLayout(hud);
+        applyHudLayout(hud);
+        presets.querySelectorAll('.gseg-btn').forEach((x) => x.classList.toggle('active', x === b));
+        note.textContent = HUD_PRESETS[id].text;
+      });
+    }
     const slider = (label: string, min: number, max: number, value: number, set: (v: number) => void) => {
       const row = el('label', 'gslider', this.panel, `<span>${label}</span><output>${Math.round(value * 100)}%</output>`);
       const input = el('input', '', row) as HTMLInputElement;

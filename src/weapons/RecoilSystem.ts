@@ -27,6 +27,8 @@ export class RecoilSystem {
   private keepYaw = 0;
   private sinceShot = 99;
   private data: WeaponData | null = null;
+  /** Share of the view kick that reaches the view (touch aim assist lowers it on a target). */
+  viewScale = 1;
 
   setWeapon(data: WeaponData): void {
     this.data = data;
@@ -43,7 +45,7 @@ export class RecoilSystem {
     // the climb. Overall difficulty stays similar; what you see is the world moving,
     // not the sights jumping off the screen.
     const rw = rearwardShare(adsAmount);
-    const t = (r.cameraTransfer + 0.42 * rw) * feel.cameraRecoilScale * soft;
+    const t = (r.cameraTransfer + 0.42 * rw) * feel.cameraRecoilScale * soft * this.viewScale;
     const v = kick.vertical * t * DEG;
     const h = kick.horizontal * t * 0.6 * DEG;
     this.keepPitch += v * r.cameraKeep;
