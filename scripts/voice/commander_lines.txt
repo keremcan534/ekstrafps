@@ -142,3 +142,10 @@ commander_rare_07|[echoing] [muffled through a respirator] [slow, controlled bre
 commander_rare_08|[echoing] [quietly threatening] [muffled through a respirator] Don't worry. It'll be quick. [sniffs] Probably.
 commander_rare_09|[echoing] [low, commanding voice] [muffled through a respirator] Look around you. This is as far as you ever get.
 commander_rare_10|[echoing] [quietly threatening] [muffled through a respirator] I don't need to know your name. I only need to know where you're standing.
+
+commander_rage_01|[echoing] [shouting] [muffled through a respirator] YOU ARE GOING TO DIE!
+commander_rage_02|[echoing] [furious, shouting] [muffled through a respirator] I'M GOING TO TEAR YOU APART!
+commander_rage_03|[echoing] [shouting] [muffled through a respirator] THERE IS NOWHERE TO HIDE!
+commander_rage_04|[echoing] [yelling] [muffled through a respirator] COME OUT AND FACE ME!
+commander_rage_05|[echoing] [furious, shouting] [muffled through a respirator] YOU'RE DEAD! YOU HEAR ME? DEAD!
+commander_rage_06|[echoing] [shouting] [muffled through a respirator] KILL HIM! KILL HIM NOW!

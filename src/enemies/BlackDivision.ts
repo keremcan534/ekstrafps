@@ -273,7 +273,9 @@ export class BlackDivision {
       this.sayCmd('search');
     } else {
       this.cmdChatter = 13 + Math.random() * 10;
-      this.sayCmd(Math.random() < 0.6 ? 'command' : 'threat');
+      // Shouting: mostly once you have hurt him or killed one of his, rarely before.
+      const rage = (this.cmdLowHp || this.cmdPersonal ? 0.4 : 0.1) > Math.random();
+      this.sayCmd(rage ? 'rage' : Math.random() < 0.6 ? 'command' : 'threat');
     }
   }
 

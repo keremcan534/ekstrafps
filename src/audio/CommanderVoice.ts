@@ -8,7 +8,7 @@ import RAW from '../../scripts/voice/commander_lines.txt?raw';
  */
 export type CommanderCategory =
   | 'firstcontact' | 'threat' | 'search' | 'lost' | 'command' | 'allydown' | 'personal'
-  | 'hit' | 'lowhp' | 'reload' | 'retreat' | 'close' | 'neardeath' | 'kill' | 'rare';
+  | 'hit' | 'lowhp' | 'reload' | 'retreat' | 'close' | 'neardeath' | 'kill' | 'rare' | 'rage';
 
 export interface CommanderLine {
   id: string;
