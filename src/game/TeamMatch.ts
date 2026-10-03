@@ -16,6 +16,7 @@ import type { SurvivalHUD } from '../ui/SurvivalHUD';
 import type { DamageInfo } from '../targets/Humanoid';
 import type { Lighting } from './Lighting';
 import { GROUPS } from '../core/Physics';
+import { SupplyDrop } from './SupplyDrop';
 
 export const TEAM_ROWS: TeamRow[] = [
   { id: 'alpha', name: 'VANTA', color: '#4fa8ff' },
@@ -125,8 +126,42 @@ export class TeamMatch {
   private raidersQueued = false;
   private scavsQueued = false;
 
+  /** Supply drops in the middle of the facility: every team's objective (see SupplyDrop). */
+  readonly drop: SupplyDrop;
+
   constructor(private d: MatchDeps, private worldRef: () => Combatant[]) {
+    this.drop = new SupplyDrop({
+      map: d.map,
+      survival: d.survival,
+      nav: d.soldierDeps.nav,
+      scene: d.scene,
+      announce: (text, banner) => {
+        d.status.radio(text, 'SUPPLY', true);
+        if (banner) {
+          d.svHud.showBanner(banner, 'raid');
+          d.audio.play('alarm.short');
+        }
+      },
+      teamZones: () => {
+        const zones: string[] = [];
+        const pz = d.map.zoneAt(d.playerPos.x, d.playerPos.z);
+        if (pz) zones.push(pz);
+        for (const t of this.teams) {
+          const L = t.leader;
+          const z = L ? d.map.zoneAt(L.soldier.pos.x, L.soldier.pos.z) : null;
+          if (z) zones.push(z);
+        }
+        return zones;
+      },
+      reward: (team, score, cash) => {
+        d.survival.award(team, score, null);
+        for (const t of this.teams) if (t.def.id === team) for (const a of t.agents) if (a.alive) a.points += cash;
+        if (team === 'alpha') for (const a of d.allies()) if (a.alive) a.points += cash;
+      },
+      teamName: (team) => NAME[team] ?? team,
+    });
     this.ctx = {
+      drop: () => (this.extracting ? null : this.drop.target),
       deps: d.soldierDeps,
       map: d.map,
       survival: d.survival,
@@ -697,6 +732,7 @@ export class TeamMatch {
       this.updateExtraction(dt);
       if (this.finished) return;
     }
+    if (!this.extracting) this.drop.update(dt, world);
     for (const t of this.teams) t.update(dt, world);
     for (const t of this.raiders) t.update(dt, world);
     for (const t of this.scavs) t.update(dt, world);

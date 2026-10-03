@@ -21,6 +21,9 @@ import { OBSTACLES, obstacleAt } from '../game/Obstacles';
 import { lightSources, makeBeam, weaponLight, type LightSource } from '../fx/WeaponLights';
 import { aiWorld } from '../ai/World';
 
+/** Node budget for a soldier's path search (across the facility: ~85 m with detours). */
+const LONG_SEARCH = 40000;
+
 /** What the AI knows about the player, refreshed by the squad every frame. */
 export interface PlayerTarget {
   feet: THREE.Vector3;
@@ -502,9 +505,11 @@ export class Soldier implements LightSource {
   }
 
   private askPath(to: THREE.Vector3): boolean {
+    // (On the path worker the search is off this thread: long cross-facility routes,
+    // which wind through several rooms, get the nodes they need. See NavGrid.findPathFor.)
     // Around other teams' barricades when there's a way; through them (breaching) when there isn't.
     const nav = this.deps.nav;
-    let p = nav.findPathFor(this, this.pos, to, 6000, OBSTACLES.length ? this.team : undefined);
+    let p = nav.findPathFor(this, this.pos, to, LONG_SEARCH, OBSTACLES.length ? this.team : undefined);
     if (!p && nav.lastTruncated) {
       // Asked (or the frame's search budget is spent): keep walking, update() asks again.
       const w = (this.pathWant ??= { to: v3(), asked: v3() });
@@ -526,7 +531,7 @@ export class Soldier implements LightSource {
     const w = this.pathWant;
     if (!w) return;
     const nav = this.deps.nav;
-    const p = nav.findPathFor(this, this.pos, w.asked, 6000, OBSTACLES.length ? this.team : undefined);
+    const p = nav.findPathFor(this, this.pos, w.asked, LONG_SEARCH, OBSTACLES.length ? this.team : undefined);
     if (!p && nav.lastTruncated) return;
     this.pathWant = null;
     if (w.to.distanceToSquared(w.asked) > 4) {

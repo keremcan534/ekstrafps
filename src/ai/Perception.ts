@@ -166,13 +166,13 @@ export class BotPerception {
         if (aiWorld.takeRay()) occluded = !this.physics.lineOfSight(eye, this.tmp.set(n.pos.x, n.pos.y + 0.4, n.pos.z), GROUPS.sight);
         else occluded = d > 15;
       }
-      // Through walls a sound carries less far and points less precisely.
-      if (occluded && d > range * 0.6) continue;
+      // Through walls a sound points less precisely and, far off, sounds fainter
+      // (a muffled firefight down the hall is still heard, just with less certainty).
       const err = 1 + d * (occluded ? 0.2 : 0.09);
       const a = Math.random() * Math.PI * 2;
       const r = Math.sqrt(Math.random()) * err;
       const est = this.tmp.set(n.pos.x + Math.sin(a) * r, 0, n.pos.z + Math.cos(a) * r);
-      const conf = Math.min(0.85, Math.max(0.12, 1 - d / range)) * (occluded ? 0.6 : 1) * NOISE_WEIGHT[n.kind];
+      const conf = Math.min(0.85, Math.max(0.12, 1 - d / range)) * (occluded ? (d > range * 0.6 ? 0.4 : 0.6) : 1) * NOISE_WEIGHT[n.kind];
       const who = aiWorld.resolveOwner(n.source);
       if (who && who.team !== b.team && who.alive) {
         const c = mem.hear(who, est, conf, err, now, 'hearing');

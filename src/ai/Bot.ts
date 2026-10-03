@@ -167,6 +167,15 @@ export class Bot implements AIListener {
   }
 
   /** Any threat worth acting on (robots only when close). */
+  /**
+   * How urgent the squad's objective is (0..1): its team has somewhere to be (a supply
+   * drop, a hunt, a rush). Weighs FOLLOW (which carries out the team's order) against
+   * distractions: far robots and unidentified noises.
+   */
+  objective = 0;
+  /** Where the bot last made ground (progress = 3 m moved, not a decision entered). */
+  private progressAt = new THREE.Vector3(1e9, 0, 1e9);
+
   get hasThreat(): boolean {
     const t = this.target;
     if (!t || t.confidence < 0.12) return false;
@@ -343,6 +352,11 @@ export class Bot implements AIListener {
     if (Math.hypot(s.vel.x, s.vel.z) > 0.35) this.sinceMove = 0;
     else this.sinceMove += dt;
     this.sinceProgress += dt;
+    // Ground made counts as progress; choosing a decision or peeking again doesn't.
+    if (s.pos.distanceToSquared(this.progressAt) > 9) {
+      this.progressAt.copy(s.pos);
+      this.sinceProgress = 0;
+    }
     // Anti-passivity: a bot with something to deal with that hasn't done anything
     // meaningful for a while gets shaken out of its decision.
     let watchdog = false;
@@ -410,11 +424,16 @@ export class Bot implements AIListener {
       ENGAGE: 0, SEEK_COVER: 0, HOLD_ANGLE: 0, PEEK: 0, SUPPRESS: 0, FLANK: 0, PUSH: 0, RETREAT: 0,
       REPOSITION: 0, SEARCH: 0, INVESTIGATE: 0, RELOAD: 0, REGROUP: 0, ASSIST: 0, FOLLOW: 0.22,
     };
-    if (!threat) sc.FOLLOW += 0.3;
+    // Nothing to deal with: carry on (0.40), low enough that a heard gunshot, a squadmate's
+    // fight or a call for help wins. A squad objective weighs in unless a soldier is in sight.
+    if (!threat) sc.FOLLOW += 0.18;
+    if (this.objective > 0 && !(vis && !robot)) sc.FOLLOW += 0.3 * this.objective;
 
     // ENGAGE: shoot what we see from where we are.
     if (vis && t) {
-      if (robot) sc.ENGAGE = dist < 30 ? 0.9 : 0.5;
+      // Robots: anything in range gets shot; on the way to an objective only the close ones
+      // (the rest follow anyway and come into range).
+      if (robot) sc.ENGAGE = dist < 14 ? 0.9 : (dist < 30 ? 0.85 : 0.7) - 0.6 * this.objective;
       else {
         sc.ENGAGE = 0.62 + (inCover ? 0.18 : -0.12 * P.cover) + (inRange ? 0.08 : -0.18) + (t.lineOfFire ? 0.05 : -0.4);
         if (suppressed) sc.ENGAGE -= 0.3 * (1.3 - P.exposure);
@@ -428,6 +447,8 @@ export class Bot implements AIListener {
       sc.SEEK_COVER = (0.3 + 0.32 * exposedLvl + 0.35 * Math.min(1, supp) + (hp < 0.6 ? 0.15 : 0)) * P.cover + (vis ? 0.1 : 0);
       if (vis && inRange && P.push > 1.3) sc.SEEK_COVER -= 0.15;
       if (dist < 6 && vis) sc.SEEK_COVER -= 0.25; // too close to turn your back
+      // Spotted them first and not under fire: shoot before running for cover.
+      if (vis && inRange && !shotAt && t?.lineOfFire) sc.SEEK_COVER -= 0.12;
     }
 
     // HOLD_ANGLE: watch where they were. Gets old (fatigue persists across switches).
@@ -441,21 +462,23 @@ export class Bot implements AIListener {
 
     // PEEK: from cover, have a look.
     if (soldierThreat && inCover && !vis && conf > 0.25 && now > this.peek.next) {
-      sc.PEEK = 0.42 + 0.25 * Math.min(1, seenAgo / 4) - 0.45 * Math.min(1, supp) + (P.exposure - 1) * 0.2;
+      // Only heard, never seen: there's nothing to peek at yet (go find out instead).
+      const neverSeen = t!.lastSeenTime < 0;
+      sc.PEEK = 0.42 + 0.25 * Math.min(1, neverSeen ? 0 : seenAgo / 4) - 0.45 * Math.min(1, supp) + (P.exposure - 1) * 0.2 - (neverSeen ? 0.1 : 0);
     }
 
     // SUPPRESS: pin a known position, especially while a squadmate moves.
     const ammoOk = mag > 0.3 || reserveOk;
     if (soldierThreat && conf > 0.35 && seenAgo < 7 && ammoOk && (!vis || dist > range.max)) {
-      const base = (0.22 + (role === 'suppressor' ? 0.45 : 0) + (sq?.flankActive ? 0.35 : 0) - (supp > 0.6 ? 0.2 : 0)) * P.suppress * T.suppressUtility;
-      if (base > 0.3 && this.canSeeArea(t!)) sc.SUPPRESS = base;
+      const base = (0.3 + (role === 'suppressor' ? 0.4 : 0) + (sq?.flankActive ? 0.35 : 0) - (supp > 0.6 ? 0.2 : 0)) * P.suppress * T.suppressUtility;
+      if (base > 0.2 && this.canSeeArea(t!)) sc.SUPPRESS = base;
     }
 
     // FLANK: they're holding a spot and someone else is keeping them busy.
     if (soldierThreat && t && conf > 0.35 && now > this.flankBanUntil && (sq ? now > sq.flankBanUntil : true)) {
       const still = Math.hypot(t.vel.x, t.vel.z) < 1.2;
       if (still && dist > 8 && dist < 50 && hp > 0.45 && !suppressed && allies >= 1) {
-        sc.FLANK = (0.16 + (role === 'flanker' ? 0.5 : 0) + (plan === 'flank' && role === 'flanker' ? 0.15 : 0)) * P.flank * T.flankUtility;
+        sc.FLANK = (0.26 + (role === 'flanker' ? 0.5 : 0) + (plan === 'flank' && role === 'flanker' ? 0.15 : 0)) * P.flank * T.flankUtility;
       }
     }
 
@@ -503,7 +526,7 @@ export class Bot implements AIListener {
     // INVESTIGATE: a sound, or an enemy only heard.
     const sound = this.memory.sounds[this.memory.sounds.length - 1];
     if (!soldierThreat || (t && t.lastSeenTime < 0 && !vis)) {
-      if (sound && now - sound.time < 12 && sound.conf > 0.15) sc.INVESTIGATE = Math.min(0.62, 0.3 + sound.conf * 0.6) + (P.push - 1) * 0.1;
+      if (sound && now - sound.time < 12 && sound.conf > 0.15) sc.INVESTIGATE = (Math.min(0.62, 0.3 + sound.conf * 0.6) + (P.push - 1) * 0.1) * (1 - 0.6 * this.objective);
       if (t && soldierThreat && t.lastSeenTime < 0) sc.INVESTIGATE = Math.max(sc.INVESTIGATE, 0.5);
       if (now - this.allyFireAt < 6 && !soldierThreat) sc.INVESTIGATE = Math.max(sc.INVESTIGATE, 0.45 * P.cooperation);
     }
@@ -698,7 +721,7 @@ export class Bot implements AIListener {
         this.action = d === 'FOLLOW' ? 'calm' : d.toLowerCase();
         if (d === 'FOLLOW') this.navigator.stop(); // the team logic moves us now
     }
-    if (MOVES.includes(d) || d === 'SEEK_COVER' || d === 'RETREAT') this.progress(`decide:${d}`);
+    // (Entering a move isn't progress by itself: the watchdog counts ground made.)
   }
 
   // ------------------------------------------------------------ cover bookkeeping
@@ -1108,7 +1131,6 @@ export class Bot implements AIListener {
     this.peek.until = 0;
     // Irregular rhythm: skilled bots peek sooner and less predictably.
     this.peek.next = now + rand(1.2, 4) * (1.2 - 0.4 * this.skill01);
-    this.progress('peeked');
     this.stat('peek');
     this.commitUntil = 0;
     this.interrupt = true;

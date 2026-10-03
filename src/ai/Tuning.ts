@@ -43,7 +43,7 @@ export const AI_TUNING = {
   flankUtility: 1,
   pushUtility: 1.35,
   retreatUtility: 1,
-  suppressUtility: 0.7,
+  suppressUtility: 1,
   /** A lost enemy is searched for this long. */
   searchDuration: 32,
   /** No tactical progress for this long with a known threat: the watchdog forces a new plan. */

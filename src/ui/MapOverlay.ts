@@ -24,6 +24,8 @@ export interface MapState {
   lightsOut?: () => boolean;
   /** Extraction points (open at the end of the match). */
   exits?: { x: number; z: number; name: string }[];
+  /** The supply drop, announced or down. */
+  drop?: { x: number; z: number } | null;
 }
 
 const UTIL: Record<UtilityMarker['kind'], { color: string; glyph: string; name: string }> = {
@@ -267,6 +269,24 @@ export class MapOverlay {
       g.textBaseline = 'middle';
       g.fillText('⇪', x, y + 0.5 * px);
       this.pill(g, full ? `EXIT · ${e.name.toUpperCase()}` : 'EXIT', x, y + 19 * px, '#2bff7a', px, 9);
+    }
+    if (state.drop) {
+      const [x, y] = proj(state.drop.x, state.drop.z);
+      if (inside(x, y, 10 * px)) {
+        const r = 9 * px;
+        g.fillStyle = 'rgba(255,138,42,0.3)';
+        g.strokeStyle = '#ff8a2a';
+        g.lineWidth = 2.4 * px;
+        g.beginPath();
+        g.moveTo(x, y - r);
+        g.lineTo(x + r, y);
+        g.lineTo(x, y + r);
+        g.lineTo(x - r, y);
+        g.closePath();
+        g.fill();
+        g.stroke();
+        this.pill(g, full ? 'SUPPLY DROP' : 'DROP', x, y + 17 * px, '#ff8a2a', px, 9);
+      }
     }
     const dot = (p: { x: number; z: number }, color: string, r: number) => {
       const [x, y] = proj(p.x, p.z);

@@ -215,7 +215,8 @@ export class Survival {
     if (killed) this.penalize(victimTeam, this.deathPenalty);
     const t = info.hit.team;
     if (!t || t === victimTeam) return;
-    this.award(t, killed ? 150 : 10, info.hit.owner);
+    // A soldier kill pays double a robot horde's worth: fighting other teams beats farming.
+    this.award(t, killed ? 300 : 10, info.hit.owner);
   }
   readonly unlocked = new Set<string>(['start']);
   readonly doors: Door[] = [];

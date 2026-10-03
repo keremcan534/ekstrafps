@@ -45,6 +45,8 @@ export interface TeamContext {
   onBossDown?(info: DamageInfo): void;
   /** Match heat 0..1: fights get harder and more punishing as the clock runs. */
   heat?(): number;
+  /** The supply drop (announced or down), or null: every team's objective. */
+  drop?(): THREE.Vector3 | null;
 }
 
 /** Each downed member gets the nearest standing teammate (one rescuer each). */
@@ -76,7 +78,7 @@ export function assignRevives(agents: TeamAgent[]): void {
 }
 
 interface Goal {
-  kind: 'door' | 'hire' | 'roam' | 'hunt' | 'retreat' | 'farm' | 'rush' | 'extract';
+  kind: 'door' | 'hire' | 'roam' | 'hunt' | 'retreat' | 'farm' | 'rush' | 'extract' | 'contest';
   /** Moving target (a rush follows its victim). */
   track?: () => THREE.Vector3 | null;
   at: THREE.Vector3;
@@ -108,6 +110,9 @@ export class AITeam {
   private goal: Goal | null = null;
   private thinkTimer = Math.random();
   private errandTimer = Math.random() * 2;
+  /** Where the leader last made ground on a goal, and how long ago (the squad's stall watch). */
+  private stallAt = new THREE.Vector3(1e9, 0, 1e9);
+  private stallTime = 0;
   private tmp = new THREE.Vector3();
   /** Extraction phase: wiped teams don't come back. */
   noRespawn = false;
@@ -301,8 +306,10 @@ export class AITeam {
       if (this.errandTimer <= 0) {
         this.errandTimer = 2 + Math.random();
         const sv = this.ctx.survival;
+        // No shopping on the way to a drop, a hunt or a rush.
+        const busy = this.goal && (this.goal.kind === 'contest' || this.goal.kind === 'hunt' || this.goal.kind === 'rush' || this.goal.kind === 'extract');
         for (const a of this.agents) {
-          if (a.target || a.reviveTarget) continue;
+          if (busy || a.target || a.reviveTarget) continue;
           const e = planErrand(a, sv, this.ctx.map, { maxDist: 35, doorsNear: null, doorKeep: 0 });
           if (e) a.errand = e;
         }
@@ -341,9 +348,22 @@ export class AITeam {
         if (p) g.at.copy(p);
         else this.goal = null;
       }
-      if (g.time > (g.kind === 'rush' ? 70 : g.kind === 'extract' ? 120 : 45)) this.goal = null; // stuck: rethink
+      if (g.time > (g.kind === 'rush' ? 70 : g.kind === 'extract' || g.kind === 'contest' ? 120 : 45)) this.goal = null; // stuck: rethink
+      // The drop was taken (or lost): back to the squad's own business.
+      if (g.kind === 'contest' && !this.ctx.drop?.()) this.goal = null;
+      // Walking nowhere (no route, wedged): not 2 minutes of standing still, a rethink.
+      if (L.soldier.pos.distanceToSquared(this.stallAt) > 9) {
+        this.stallAt.copy(L.soldier.pos);
+        this.stallTime = 0;
+      } else if ((this.stallTime += dt) > 15 && L.bot.decision === 'FOLLOW' && L.distTo(g.at) > 6) {
+        this.goal = null;
+        this.stallTime = 0;
+      }
     }
-    const fast = g && (g.kind === 'hunt' || g.kind === 'retreat' || g.kind === 'rush' || g.kind === 'extract');
+    const fast = g && (g.kind === 'hunt' || g.kind === 'retreat' || g.kind === 'rush' || g.kind === 'extract' || g.kind === 'contest');
+    // The squad has somewhere to be: every member's tactical mind weighs it (see Bot.objective).
+    const urgency = fast ? 1 : 0;
+    for (const a of this.agents) a.bot.objective = urgency;
     // Persistent order objects, mutated in place (this runs every frame).
     if (g) {
       const o = L.gotoOrder;
@@ -407,6 +427,14 @@ export class AITeam {
     if (this.exit && this.goal?.kind !== 'extract') {
       // Extraction overrides everything but a retreat from a swarm.
       if (this.goal?.kind !== 'retreat') this.goal = { kind: 'extract', at: this.exit.at.clone(), time: 0 };
+      return;
+    }
+    // A supply drop is announced or down: everyone goes for it (that's where teams meet).
+    // Only a fight already on (a hunt after being shot at) or a retreat comes first.
+    const drop = this.ctx.drop?.();
+    if (drop && this.def.style !== 'hunter' && this.def.economy !== false && this.goal?.kind !== 'contest' && this.goal?.kind !== 'retreat' && this.goal?.kind !== 'hunt') {
+      this.goal = { kind: 'contest', at: drop.clone(), time: 0 };
+      for (const a of this.agents) a.plan = null;
       return;
     }
     if (this.goal) return;

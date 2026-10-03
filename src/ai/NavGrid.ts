@@ -279,7 +279,8 @@ export class NavGrid {
    * is findPath. The answer may be for where the asker stood a frame or two ago.
    */
   findPathFor(asker: object, from: THREE.Vector3, to: THREE.Vector3, maxNodes = 6000, avoidTeam?: string): THREE.Vector3[] | null {
-    if (!this.worker) return this.findPath(from, to, maxNodes, avoidTeam);
+    // On this thread a search costs frame time: keep to the usual size there.
+    if (!this.worker) return this.findPath(from, to, Math.min(maxNodes, 6000), avoidTeam);
     const now = performance.now();
     const ask = this.asks.get(asker);
     if (ask && ask.pts !== undefined) {
@@ -291,7 +292,7 @@ export class NavGrid {
       // No answer in 3 s: the worker is stuck. Search here from now on.
       if (now - ask.at > 3000) {
         this.stopWorker();
-        return this.findPath(from, to, maxNodes, avoidTeam);
+        return this.findPath(from, to, Math.min(maxNodes, 6000), avoidTeam);
       }
       this.lastTruncated = true;
       return null;

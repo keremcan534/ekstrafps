@@ -1895,6 +1895,7 @@ export class Game {
         this.match?.loud(ms.enemies, 'alpha');
       }
       if (this.match?.extracting && !ms.exits) ms.exits = this.match.exits.map((e) => ({ x: e.pos.x, z: e.pos.z, name: e.name }));
+      ms.drop = this.match?.drop.target ?? null;
       this.mapOverlay.update(realDt, ms);
     }
     this.health.update(dt);

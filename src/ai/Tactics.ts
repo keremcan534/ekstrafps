@@ -68,7 +68,9 @@ export function planFlank(
         if (!cand) continue;
         if (!takeRay()) return best ?? 'pending';
         rays++;
-        if (!canSee(physics, cand, threat, 1.5, 1.2)) continue; // must be able to see them from there
+        // Must see them from there, unless it's close: indoors the side door next to them is
+        // a flank even with a wall in between (they'll be in sight on arrival).
+        if (r > 12 && !canSee(physics, cand, threat, 1.5, 1.2)) continue;
         searches++;
         const path = nav.findPath(from, cand, 5000);
         if (!path || !path.length) {

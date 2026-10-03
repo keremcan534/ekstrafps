@@ -136,7 +136,9 @@ export class BotMemory {
       c.uncertainty = err;
       c.vel.set(0, 0, 0);
     }
-    c.confidence = Math.max(c.confidence, conf);
+    // Repeated noises build certainty (a sustained fight heard through walls becomes
+    // something to act on), not just the loudest single one.
+    c.confidence = Math.min(0.85, Math.max(c.confidence, conf) + conf * 0.25);
     c.lastHeardPos.copy(est);
     c.lastHeardTime = now;
     c.lastInfoTime = now;
