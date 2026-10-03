@@ -1494,6 +1494,14 @@ export class Site9 implements GameMap {
   }
 
   private visibleRooms = new Set<string>();
+  private viewDepth = 3;
+  private viewFar = Infinity;
+
+  /** Graphics → view distance: how many rooms deep to draw, and how far past your neighbours. */
+  setViewDepth(rooms: number, far: number): void {
+    this.viewDepth = rooms;
+    this.viewFar = far;
+  }
 
   /**
    * Cheap portal culling: draw the room you're in plus rooms seen through open
@@ -1504,9 +1512,9 @@ export class Site9 implements GameMap {
     if (!here) return;
     const seen = new Set<string>([here.id]);
     let frontier = [here.id];
-    // Phones: two rooms deep, and rooms past your neighbours only within 45 m.
-    const maxDepth = this.mobile ? 2 : 3;
-    const far = this.mobile ? 45 : Infinity;
+    // Short view distance: fewer rooms deep, and rooms past your neighbours only within `far`.
+    const maxDepth = this.viewDepth;
+    const far = this.viewFar;
     for (let depth = 0; depth < maxDepth; depth++) {
       const next: string[] = [];
       for (const id of frontier) {

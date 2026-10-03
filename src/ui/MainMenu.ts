@@ -3,6 +3,7 @@ import { matchClock } from '../game/TeamMatch';
 import type { Game } from '../core/Game';
 import { feel } from '../config/Feel';
 import { playerConfig } from '../player/PlayerConfig';
+import { FPS_CAPS, loadGraphics, maxResolution, presetSettings, type GraphicsSettings } from '../config/Graphics';
 
 /**
  * Main menu + pause menu (liquid glass). Behind it the loaded map renders live
@@ -22,19 +23,19 @@ interface Prefs {
   volume: number;
   sensitivity: number;
   fov: number;
-  shadows: boolean;
-  /** performance: 0.75x resolution, no real-time shadows · balanced: up to 1.25x · quality: native up to 2x. */
-  graphics: 'performance' | 'balanced' | 'quality';
+  /** Settings → Graphics (src/config/Graphics.ts). */
+  gfx: GraphicsSettings;
   /** 4 Teams: match length in minutes. */
   matchMinutes: number;
 }
 
 const PREFS_KEY = 'site9.prefs';
 
-export function loadPrefs(): Prefs {
-  const d: Prefs = { volume: feel.masterVolume, sensitivity: 1, fov: playerConfig.baseFov, shadows: true, graphics: 'balanced', matchMinutes: 15 };
+export function loadPrefs(mobile: boolean): Prefs {
+  const d: Prefs = { volume: feel.masterVolume, sensitivity: 1, fov: playerConfig.baseFov, gfx: loadGraphics(mobile), matchMinutes: 15 };
   try {
-    return { ...d, ...(JSON.parse(localStorage.getItem(PREFS_KEY) ?? '{}') as Partial<Prefs>) };
+    const saved = JSON.parse(localStorage.getItem(PREFS_KEY) ?? '{}') as Partial<Prefs>;
+    return { ...d, ...saved, gfx: d.gfx };
   } catch {
     return d;
   }
@@ -57,9 +58,7 @@ export function applyPrefs(game: Game, p: Prefs): void {
   matchClock.minutes = p.matchMinutes;
   playerConfig.mouseSensitivity = BASE_SENS * p.sensitivity;
   playerConfig.baseFov = p.fov;
-  const dpr = window.devicePixelRatio || 1;
-  const pr = p.graphics === 'performance' ? 0.75 : p.graphics === 'balanced' ? Math.min(dpr, game.mobile ? 1.25 : 1.25) : Math.min(dpr, game.mobile ? 1.5 : 2);
-  game.setQuality(pr, p.graphics !== 'performance' && p.shadows && !game.mobile);
+  game.applyGraphics(p.gfx);
 }
 
 const MAPS = {
@@ -94,10 +93,11 @@ export class MainMenu {
   private paused = false;
   private ready = false;
   private backdrop: { cam: THREE.PerspectiveCamera; center: THREE.Vector3; radius: number; height: number; t0: number } | null = null;
-  private prefs = loadPrefs();
+  private prefs: Prefs;
   private game: Game | null = null;
 
   constructor(parent: HTMLElement, private opts: MenuOptions) {
+    this.prefs = loadPrefs(opts.mobile);
     this.root = el('div', 'menu', parent);
     document.body.classList.add('in-menu');
     el('div', 'menu-shade', this.root);
@@ -291,31 +291,7 @@ export class MainMenu {
     slider('MASTER VOLUME', 0, 1, 0.01, p.volume, (v) => `${Math.round(v * 100)}`, (v) => (p.volume = v));
     slider('MOUSE SENSITIVITY', 0.3, 2.5, 0.05, p.sensitivity, (v) => v.toFixed(2), (v) => (p.sensitivity = v));
     slider('FIELD OF VIEW', 70, 110, 1, p.fov, (v) => `${v}°`, (v) => (p.fov = v));
-    const toggles = el('div', 'gtoggles', this.panel);
-    const toggle = (label: string, on: boolean, set: (v: boolean) => void) => {
-      const t = el('button', `gtoggle ${on ? 'on' : ''}`, toggles, `<span>${label}</span><i></i>`);
-      t.addEventListener('click', (e) => {
-        e.stopPropagation();
-        const v = !t.classList.contains('on');
-        t.classList.toggle('on', v);
-        set(v);
-        savePrefs(p);
-        if (this.game) applyPrefs(this.game, p);
-      });
-    };
-    if (!this.opts.mobile) toggle('REAL-TIME SHADOWS', p.shadows, (v) => (p.shadows = v));
-    el('div', 'panel-label', this.panel, 'GRAPHICS');
-    const gseg = el('div', 'gseg', this.panel);
-    for (const [id, label] of [['performance', 'PERFORMANCE'], ['balanced', 'BALANCED'], ['quality', 'QUALITY']] as const) {
-      const b = el('button', `gseg-btn ${p.graphics === id ? 'active' : ''}`, gseg, label);
-      b.addEventListener('click', (e) => {
-        e.stopPropagation();
-        p.graphics = id;
-        gseg.querySelectorAll('.gseg-btn').forEach((x) => x.classList.toggle('active', x === b));
-        savePrefs(p);
-        if (this.game) applyPrefs(this.game, p);
-      });
-    }
+    this.renderGraphics(el('div', 'gfx', this.panel));
     el('div', 'panel-label', this.panel, 'CONTROL SCHEME');
     const seg = el('div', 'gseg', this.panel);
     for (const [id, label] of [['auto', 'AUTO'], ['pc', 'KEYBOARD + MOUSE'], ['mobile', 'TOUCH']]) {
@@ -335,6 +311,95 @@ export class MainMenu {
         location.search = q.toString();
       });
     }
+  }
+
+  /** Graphics block of the settings panel (refilled in place when a preset is picked). */
+  private renderGraphics(box: HTMLDivElement): void {
+    const p = this.prefs;
+    const g = p.gfx;
+    box.innerHTML = '';
+    const changed = (custom = true) => {
+      if (custom) {
+        g.preset = 'custom';
+        box.querySelectorAll<HTMLElement>('[data-preset]').forEach((x) => x.classList.toggle('active', x.dataset.preset === 'custom'));
+      }
+      savePrefs(p);
+      if (this.game) applyPrefs(this.game, p);
+    };
+    const seg = <T extends string | number>(label: string, items: [T, string][], value: T, set: (v: T) => void, note?: string) => {
+      el('div', 'panel-label', box, note ? `${label} <em>${note}</em>` : label);
+      const s = el('div', 'gseg', box);
+      for (const [id, text] of items) {
+        const b = el('button', `gseg-btn ${value === id ? 'active' : ''}`, s, text);
+        b.addEventListener('click', (e) => {
+          e.stopPropagation();
+          s.querySelectorAll('.gseg-btn').forEach((x) => x.classList.toggle('active', x === b));
+          set(id);
+          changed();
+        });
+      }
+    };
+
+    el('div', 'panel-label', box, 'GRAPHICS PRESET');
+    const ps = el('div', 'gseg', box);
+    for (const [id, text] of [['performance', 'LOW'], ['balanced', 'MEDIUM'], ['quality', 'HIGH'], ['custom', 'CUSTOM']] as const) {
+      const b = el('button', `gseg-btn ${g.preset === id ? 'active' : ''}`, ps, text);
+      b.dataset.preset = id;
+      if (id === 'custom') {
+        b.disabled = true;
+        continue;
+      }
+      b.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const keep = { fpsCap: g.fpsCap, showFps: g.showFps };
+        Object.assign(g, presetSettings(id, this.opts.mobile), keep);
+        changed(false);
+        this.renderGraphics(box);
+      });
+    }
+
+    // Resolution: shows the real render size.
+    const maxR = maxResolution(this.opts.mobile);
+    const res = (v: number) => `${Math.round(window.innerWidth * v)}×${Math.round(window.innerHeight * v)}`;
+    const row = el('label', 'gslider', box, `<span>RESOLUTION</span><output>${res(g.resolution)}</output>`);
+    const input = el('input', '', row) as HTMLInputElement;
+    input.type = 'range';
+    input.min = '0.5';
+    input.max = String(maxR);
+    input.step = '0.05';
+    input.value = String(Math.min(g.resolution, maxR));
+    const paint = () => input.style.setProperty('--fill', `${((Number(input.value) - 0.5) / (maxR - 0.5)) * 100}%`);
+    paint();
+    input.addEventListener('input', () => {
+      row.querySelector('output')!.textContent = res(Number(input.value));
+      paint();
+    });
+    // Resizing the framebuffer per slider tick would stutter: apply on release.
+    input.addEventListener('change', () => {
+      g.resolution = Number(input.value);
+      changed();
+    });
+
+    seg('FRAME RATE LIMIT', FPS_CAPS.map((f) => [f, f ? `${f}` : 'MAX'] as [number, string]), g.fpsCap, (v) => (g.fpsCap = v), this.opts.mobile ? '60 keeps phones cool' : '');
+    seg('SHADOWS', [['off', 'OFF'], ['low', 'LOW'], ['high', 'HIGH']], g.shadows, (v) => (g.shadows = v));
+    seg('LIGHTING', [['fast', 'FAST'], ['full', 'FULL · REFLECTIONS']], g.lighting, (v) => (g.lighting = v));
+    seg('VIEW DISTANCE', [['near', 'NEAR'], ['medium', 'MEDIUM'], ['far', 'FAR']], g.viewDistance, (v) => (g.viewDistance = v));
+
+    const toggles = el('div', 'gtoggles', box);
+    const toggle = (label: string, on: boolean, set: (v: boolean) => void, custom = true) => {
+      const t = el('button', `gtoggle ${on ? 'on' : ''}`, toggles, `<span>${label}</span><i></i>`);
+      t.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const v = !t.classList.contains('on');
+        t.classList.toggle('on', v);
+        set(v);
+        changed(custom);
+      });
+    };
+    toggle('DYNAMIC RESOLUTION', g.dynamicResolution, (v) => (g.dynamicResolution = v));
+    toggle('POST EFFECTS', g.postFx, (v) => (g.postFx = v));
+    toggle('ANTI-ALIASING (RESTART)', g.antialias, (v) => (g.antialias = v));
+    toggle('SHOW FPS', g.showFps, (v) => (g.showFps = v), false);
   }
 
   private renderControls(): void {

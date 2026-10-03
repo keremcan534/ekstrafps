@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
+import { LightProbeGenerator } from 'three/examples/jsm/lights/LightProbeGenerator.js';
 import { Physics } from './Physics';
 import { Input } from './Input';
 import { DEG, controlPreference, hfovToVfov, isTouchDevice } from './math';
@@ -50,6 +51,7 @@ import { MuzzleLights } from '../fx/MuzzleLights';
 import { Lighting } from '../game/Lighting';
 import { buildWeaponModel } from '../weapons/WeaponModels';
 import { WeaponLights, weaponLight } from '../fx/WeaponLights';
+import { VIEW_DISTANCE, loadGraphics, type GraphicsSettings } from '../config/Graphics';
 
 const FIXED_DT = 1 / 120;
 
@@ -151,6 +153,8 @@ export class Game {
   private fixedDt = FIXED_DT;
   /** Phones: dynamic resolution (fraction of the quality preset's pixel ratio). */
   private dyn = { t: 0, acc: 0, n: 0, cooldown: 2, scale: 1 };
+  /** Frame cap: earliest timestamp for the next frame. */
+  private nextFrameAt = 0;
   private prevWeaponState = '';
   private lastImpactShare = 0;
   /** Your squad: name, role, money, weapon. */
@@ -186,6 +190,13 @@ export class Game {
   /** ?nolock: run without pointer lock (automated testing / screenshots). */
   private noLock = new URLSearchParams(location.search).has('nolock') || new URLSearchParams(location.search).has('trailer');
   private quality: { pixelRatio: number; shadows: boolean };
+  /** Settings → Graphics (applyGraphics). */
+  private gfx: GraphicsSettings;
+  /** Image-based lighting (lighting: full) and its cheap stand-in (lighting: fast). */
+  private env: THREE.Texture | null = null;
+  private probe = new THREE.LightProbe(undefined, 0);
+  private fpsEl: HTMLDivElement | null = null;
+  private fpsTimer = 0;
   private stationIndex = 0;
   private helpEl!: HTMLPreElement;
   private tmp = new THREE.Vector3();
@@ -199,7 +210,8 @@ export class Game {
     this.mobile = params.has('touch') || (!params.has('mouse') && (pref === 'mobile' || (pref === 'auto' && isTouchDevice())));
     // Phones: no realtime sun shadows by default (the shadow pass costs a draw per caster;
     // contact shadows still ground everything). Tuning panel can turn them back on.
-    this.quality = { pixelRatio: Math.min(window.devicePixelRatio, this.mobile ? 1.5 : 2), shadows: !this.mobile };
+    this.gfx = loadGraphics(this.mobile);
+    this.quality = { pixelRatio: this.gfx.resolution, shadows: this.gfx.shadows !== 'off' };
     if (this.mobile) {
       // Phones: cheaper characters, 60 Hz physics, a lighter AI schedule.
       skinDetail.low = true;
@@ -209,7 +221,8 @@ export class Game {
       AI_TUNING.decisionInterval = 0.28;
       AI_TUNING.squadInterval = 0.6;
     }
-    this.renderer = new THREE.WebGLRenderer({ antialias: !this.mobile, powerPreference: 'high-performance', preserveDrawingBuffer: params.has('trailer') });
+    const antialias = params.has('trailer') ? !this.mobile : this.gfx.antialias;
+    this.renderer = new THREE.WebGLRenderer({ antialias, powerPreference: 'high-performance', preserveDrawingBuffer: params.has('trailer') });
     this.renderer.setPixelRatio(this.quality.pixelRatio);
     this.renderer.setSize(window.innerWidth, window.innerHeight);
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
@@ -227,8 +240,17 @@ export class Game {
     this.input = new Input(this.renderer.domElement);
 
     const pmrem = new THREE.PMREMGenerator(this.renderer);
-    const env = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
-    this.scene.environment = env;
+    const room = new RoomEnvironment();
+    const env = pmrem.fromScene(room, 0.04).texture;
+    this.env = env;
+    // Lighting "fast": the same room light as spherical harmonics (a few multiply-adds per
+    // pixel instead of cube-map lookups). Same fill, no reflections.
+    const cube = new THREE.WebGLCubeRenderTarget(32, { type: THREE.HalfFloatType });
+    new THREE.CubeCamera(0.1, 100, cube).update(this.renderer, room);
+    this.probe.copy(await LightProbeGenerator.fromCubeRenderTarget(this.renderer, cube));
+    cube.dispose();
+    this.scene.add(this.probe);
+    this.scene.environment = this.gfx.lighting === 'full' ? env : null;
     this.scene.environmentIntensity = 0.35;
 
     onProgress('Building map…');
@@ -238,8 +260,9 @@ export class Game {
     this.arena.sun.castShadow = this.quality.shadows;
     this.scene.background = new THREE.Color(this.arena.skyColor);
     this.renderer.toneMappingExposure = this.arena.exposure ?? 1.05;
-    // Phones draw fewer distant rooms: a closer haze hides where they stop.
-    this.scene.fog = this.mobile ? new THREE.Fog(this.arena.skyColor, 32, 80) : new THREE.Fog(this.arena.skyColor, 90, 200);
+    // View distance: fewer distant rooms drawn, a closer haze hides where they stop.
+    const vd = VIEW_DISTANCE[this.gfx.viewDistance];
+    this.scene.fog = new THREE.Fog(this.arena.skyColor, vd.fogNear, vd.fogFar);
 
     onProgress('Rendering placeholder audio…');
     this.audio = new AudioSystem();
@@ -312,6 +335,7 @@ export class Game {
     this.status = new StatusHUD(ui);
     this.initBlackDivision();
     if (this.arena instanceof Site9) this.initSurvival(ui, this.arena);
+    this.applyGraphics(this.gfx);
     this.weapons.viewmodel.scene.environmentIntensity = 0.6;
 
     this.tuning = new TuningPanel({
@@ -522,8 +546,6 @@ export class Game {
       alive: !this.health.dead,
     }));
     this.lighting = new Lighting(this.scene, map, this.camera.eye, (out) => this.camera.getAimDirection(this.player, out), () => !this.health.dead, this.mobile ? 2 : 4);
-    // Desktop: colour grade pass (cold shadows, reds kept, redder and moodier in a blackout).
-    if (!this.mobile && !this.trailer) this.grade = new ScreenGrade(this.renderer);
     this.survival = new Survival({
       lighting: this.lighting,
       world: () => this.world,
@@ -996,7 +1018,17 @@ export class Game {
     if (!this.started) {
       this.started = true;
       this.lastTime = performance.now();
-      this.renderer.setAnimationLoop((t) => this.frame(t));
+      this.renderer.setAnimationLoop((t) => {
+        // Frame cap (phones default to 60: 90/120 Hz screens would otherwise run the whole
+        // game up to twice per 60 Hz frame, heat the phone and get throttled).
+        const cap = this.trailer ? 0 : this.gfx.fpsCap;
+        if (cap > 0) {
+          const step = 1000 / cap;
+          if (t < this.nextFrameAt - Math.min(4, step * 0.25)) return;
+          this.nextFrameAt = Math.max(this.nextFrameAt + step, t);
+        }
+        this.frame(t);
+      });
     }
   }
 
@@ -1148,14 +1180,63 @@ export class Game {
     return this.weapons.laser.enabled;
   }
 
+  /**
+   * Settings → Graphics. Everything applies live except antialiasing (the
+   * framebuffer is created with the renderer: next start).
+   */
+  applyGraphics(s: GraphicsSettings): void {
+    this.gfx = s;
+    if (!s.dynamicResolution) this.dyn.scale = 1;
+    this.nextFrameAt = 0;
+    // Shadows: map size first (a new size needs a new shadow map), then on/off.
+    const size = s.shadows === 'high' ? 2048 : 1024;
+    const sh = this.arena.sun.shadow;
+    if (sh.mapSize.x !== size) {
+      sh.mapSize.set(size, size);
+      sh.map?.dispose();
+      sh.map = null;
+    }
+    // Lighting: full image-based lighting, or the probe (frame loop sets its intensity).
+    const env = s.lighting === 'full' ? this.env : null;
+    if (this.scene.environment !== env) this.scene.environment = env;
+    this.probe.intensity = env ? 0 : this.scene.environmentIntensity * 1.1;
+    // View distance: haze, camera far plane, how deep rooms are drawn.
+    const vd = VIEW_DISTANCE[s.viewDistance];
+    const fog = this.scene.fog as THREE.Fog | null;
+    if (fog) {
+      fog.near = vd.fogNear;
+      fog.far = vd.fogFar;
+    }
+    this.camera.camera.far = vd.fogFar + 30;
+    this.camera.camera.updateProjectionMatrix();
+    if (this.arena instanceof Site9) this.arena.setViewDepth(vd.rooms, vd.roomFar);
+    // Post effects: colour grade pass (Site-9) + grain / vignette overlay.
+    if (s.postFx && !this.grade && !this.trailer && this.arena instanceof Site9) this.grade = new ScreenGrade(this.renderer);
+    else if (!s.postFx && this.grade) {
+      this.grade.target.dispose();
+      this.grade = null;
+    }
+    document.body.classList.toggle('no-postfx', !s.postFx);
+    // Fps readout.
+    if (s.showFps && !this.fpsEl) {
+      this.fpsEl = document.createElement('div');
+      this.fpsEl.className = 'fps-meter';
+      this.container.appendChild(this.fpsEl);
+    }
+    if (this.fpsEl) this.fpsEl.style.display = s.showFps ? '' : 'none';
+    this.setQuality(s.resolution, s.shadows !== 'off');
+  }
+
   setQuality(pixelRatio: number, shadows: boolean): void {
     this.quality.pixelRatio = pixelRatio;
     this.quality.shadows = shadows;
     this.renderer.setPixelRatio(pixelRatio * this.dyn.scale);
     this.renderer.setSize(window.innerWidth, window.innerHeight);
     this.grade?.resize();
+    if (this.renderer.shadowMap.enabled === shadows && this.arena.sun.castShadow === shadows) return;
     this.renderer.shadowMap.enabled = shadows;
     this.arena.sun.castShadow = shadows;
+    // Shadow receivers need new shaders.
     this.scene.traverse((o) => {
       const m = (o as THREE.Mesh).material as THREE.Material | undefined;
       if (m) m.needsUpdate = true;
@@ -1163,9 +1244,9 @@ export class Game {
   }
 
   /**
-   * Phones: keep ~45+ fps by trading resolution. Every second, if frames ran slower
-   * than ~42 fps the render scale drops 12% (down to 55%); if they had headroom
-   * (~57+ fps) it creeps back up toward the preset. Hysteresis + cooldown: no pumping.
+   * Dynamic resolution: hold the frame cap by trading resolution. Every second, if
+   * frames ran slower than ~70 % of the cap the render scale drops 12 % (down to 55 %);
+   * with headroom it creeps back up toward the setting. Hysteresis + cooldown: no pumping.
    */
   private dynamicResolution(rawDt: number): void {
     const d = this.dyn;
@@ -1179,8 +1260,10 @@ export class Game {
     d.t = d.acc = d.n = 0;
     if (d.cooldown > 0) return;
     let s = d.scale;
-    if (avg > 1 / 42) s = Math.max(0.55, s * 0.88);
-    else if (avg < 1 / 57) s = Math.min(1, s * 1.06);
+    // Aim for the frame cap (60 when uncapped): drop below ~70 % of it, recover above ~95 %.
+    const target = this.gfx.fpsCap || 60;
+    if (avg > 1 / (target * 0.7)) s = Math.max(0.55, s * 0.88);
+    else if (avg < 1 / (target * 0.95)) s = Math.min(1, s * 1.06);
     if (Math.abs(s - d.scale) < 0.01) return;
     d.scale = s;
     d.cooldown = 1.5;
@@ -1215,8 +1298,13 @@ export class Game {
     const realDt = Math.min(Math.max(rawDt, 0), 0.1);
     const dt = realDt * this.timeScale;
     this.fps += (1 / Math.max(rawDt, 1e-4) - this.fps) * 0.05;
-    if (this.mobile && !this.trailer) this.dynamicResolution(rawDt);
+    if (this.gfx.dynamicResolution && !this.trailer) this.dynamicResolution(rawDt);
     this.frameMs += (rawDt * 1000 - this.frameMs) * 0.05;
+    if (this.fpsEl && this.gfx.showFps && (this.fpsTimer -= rawDt) <= 0) {
+      this.fpsTimer = 0.25;
+      const c = this.renderer.domElement;
+      this.fpsEl.textContent = `${Math.round(this.fps)} FPS · ${this.frameMs.toFixed(1)} ms · ${c.width}×${c.height}`;
+    }
 
     const input = this.input;
     input.mouseSensitivity = playerConfig.mouseSensitivity;
@@ -1286,6 +1374,8 @@ export class Game {
     aiWorld.darkness = this.lighting ? this.lighting.darkness * 0.7 + 0.3 : this.arena instanceof Site9 ? 0.3 : 0.25;
     this.arena.update(dt, this.player.feet);
     this.lighting?.update(dt);
+    // The probe stands in for the image-based fill (and dims with it in a blackout).
+    this.probe.intensity = this.scene.environment ? 0 : this.scene.environmentIntensity * 1.1;
     // Lights out: muzzle flashes light the room (and give shooters away).
     const darkness = this.lighting?.darkness ?? 0;
     this.muzzleLights.boost = 1 + 3 * darkness;
@@ -1296,8 +1386,8 @@ export class Game {
       map.updateVisibility(this.player.feet.x, this.player.feet.z, (l) => (s ? s.isLinkOpen(l) : true));
       // Characters in rooms that aren't drawn don't need drawing either.
       if (s) for (const r of s.robots) if (r.active) r.body.root.visible = map.isVisibleAt(r.pos.x, r.pos.z);
-      // Phones: operators further than 55 m are a few pixels: skip drawing them.
-      const far2 = this.mobile ? 55 * 55 : Infinity;
+      // Short view distance: far operators are a few pixels in the haze; skip drawing them.
+      const far2 = VIEW_DISTANCE[this.gfx.viewDistance].characters ** 2;
       const f = this.player.feet;
       const show = (p: THREE.Vector3) => map.isVisibleAt(p.x, p.z) && (p.x - f.x) ** 2 + (p.z - f.z) ** 2 < far2;
       for (const a of this.allies) a.soldier.body.root.visible = !a.gone && show(a.soldier.pos);

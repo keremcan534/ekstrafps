@@ -174,6 +174,9 @@
 .gseg { display: flex; gap: 8px; padding: 6px; border-radius: 16px; background: rgba(0, 0, 0, 0.3); box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.6); }
 .gseg-btn { flex: 1; padding: 12px 8px; font-size: 12px; letter-spacing: 0.16em; box-shadow: none; background: transparent; border-color: transparent; }
 .gseg-btn.active { background: linear-gradient(180deg, rgba(255, 255, 255, 0.2), rgba(255, 255, 255, 0.05)); border-color: rgba(255, 255, 255, 0.25); box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.45), 0 4px 10px rgba(0, 0, 0, 0.4); color: #fff; }
+.gseg-btn:disabled { cursor: default; opacity: 0.45; }
+.gseg-btn:disabled.active { opacity: 1; }
+.panel-label em { margin-left: 8px; font-style: normal; letter-spacing: 0.12em; color: rgba(255, 255, 255, 0.32); }
 
 .keys { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 22px; }
 .key-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 6px 0; border-bottom: 1px solid rgba(255, 255, 255, 0.06); font: 600 15px var(--g-font); letter-spacing: 0.08em; color: var(--g-dim); }

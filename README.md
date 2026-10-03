@@ -188,7 +188,14 @@ Vanta Dynamics' research campus, single level, about 176 × 138 m (built at 0.8 
 - Room geometry is merged per room, so whole rooms are culled.
 - The shadow camera follows the player.
 - Third-person weapons are baked: every static part merged into one vertex-coloured mesh plus the magazine (~100 parts → 2 draw calls per soldier).
-- On phones: low-detail weapons and soldiers (plain boxes, ~2k instead of ~26k triangles each), 60 Hz physics, a lighter AI schedule (fewer rays and decisions per second), no film-grain blend layer, few lights, no robot shadows, smaller pools, and dynamic resolution (the render scale drops when frames slip under ~42 fps and creeps back with headroom).
+- On phones: low-detail weapons and soldiers (plain boxes, ~2k instead of ~26k triangles each), 60 Hz physics, a lighter AI schedule (fewer rays and decisions per second), no film-grain blend layer, few lights, no robot shadows, smaller pools, a 60 fps cap (90/120 Hz screens would otherwise run the game twice per frame and throttle), a light probe instead of image-based lighting, and dynamic resolution (the render scale drops when frames slip under ~70 % of the cap and creeps back with headroom).
+- **Settings → Graphics** (`config/Graphics.ts`): LOW / MEDIUM / HIGH presets, or any mix (CUSTOM):
+  - resolution (shows the real render size) and dynamic resolution
+  - frame rate limit: 30 / 60 / 90 / 120 / MAX
+  - shadows off / low (1024) / high (2048)
+  - lighting: fast (light probe) or full (image-based, with reflections)
+  - view distance (haze, rooms and characters drawn)
+  - post effects (colour grade, grain, vignette), anti-aliasing (after a restart), and an FPS readout
 
 ## Black Division
 
