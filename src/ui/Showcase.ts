@@ -33,7 +33,7 @@ const HOLD = 9;
 
 /**
  * Main-menu unit showcase: a dark stage with a red-lit floor, the factions of
- * Site-9 lined up in turn — the Black Division trio around The Warden, your
+ * Site-9 lined up in turn — the SABLE trio around The Warden, your
  * Vanta squad, the rival squads, the rogue machines — each revealed by its rim
  * lights coming up, the camera drifting round them.
  */
@@ -120,7 +120,7 @@ export class Showcase {
     };
 
     const bd = squad('bd', ['bd', 'bdboss', 'bd'], ['mk47', 'scarh', 'm4a1'], 70);
-    this.lineups.push({ name: 'BLACK DIVISION', tag: 'THE WARDEN AND HIS CLEANUP CREW', text: 'Corporate wet-work. Night vision, suppressors, rifle lights, no witnesses. When the power dies, they are already inside.', rim: 0xff1a0a, key: 0xffd6cc, ...bd });
+    this.lineups.push({ name: 'SABLE', tag: 'THE WARDEN AND HIS CLEANUP CREW', text: 'Corporate wet-work. Night vision, suppressors, rifle lights, no witnesses. When the power dies, they are already inside.', rim: 0xff1a0a, key: 0xffd6cc, ...bd });
     const vanta = squad('alpha', ['vanta', 'vanta', 'vanta'], ['m4a1', 'ak47', 'svd'], 74);
     this.lineups.push({ name: 'VANTA SECURITY', tag: 'YOUR SQUAD', text: 'Four contractors, one wallet each, and a facility gone dark. Buy, hire, extract — or don’t come back.', rim: 0x3a8bff, key: 0xe6f0ff, ...vanta });
     const rivals = squad('bravo', ['bravo', 'charlie', 'delta'], ['ak47', 'mp5', 'saiga12'], 78);

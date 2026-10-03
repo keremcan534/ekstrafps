@@ -17,12 +17,12 @@ export interface TeamDef {
   /** CSS colour for HUD/map. */
   color: string;
   palette: SoldierPalette;
-  /** disciplined: moves as a unit · reckless: spreads out, lone wolves · balanced · hunter: Black Division raid. */
+  /** disciplined: moves as a unit · reckless: spreads out, lone wolves · balanced · hunter: SABLE raid. */
   style: 'disciplined' | 'reckless' | 'balanced' | 'hunter';
   start: THREE.Vector3;
   /** Earns/spends points (false for raiders). */
   economy: boolean;
-  /** Raiders: the first operator is the Black Division commander. */
+  /** Raiders: the first operator is the SABLE commander. */
   boss?: boolean;
 }
 
@@ -39,9 +39,9 @@ export interface TeamContext {
   onKill?(victim: TeamAgent, info: DamageInfo): void;
   /** Enemy operators heard recently (gunfire). */
   intel?(team: string): Intel[];
-  /** A Black Division raider has eyes on the player. */
+  /** A SABLE raider has eyes on the player. */
   onRaiderSpotsPlayer?(): void;
-  /** The Black Division commander went down (bonus, banner). */
+  /** The SABLE commander went down (bonus, banner). */
   onBossDown?(info: DamageInfo): void;
   /** Match heat 0..1: fights get harder and more punishing as the clock runs. */
   heat?(): number;

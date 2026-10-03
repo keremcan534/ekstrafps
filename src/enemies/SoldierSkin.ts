@@ -6,7 +6,7 @@ import type { HumanoidSkin, PartDef } from '../targets/Humanoid';
 type V3 = [number, number, number];
 
 /**
- * Black Division operator: all-black fabric and gear, plate carrier (armor class
+ * SABLE operator: all-black fabric and gear, plate carrier (armor class
  * ~4), high-cut helmet (class ~3) with a flipped-down quad night-vision unit whose
  * tubes glow a faint green, ear protection, radio, and a blinking IR strobe.
  * Faceless on purpose.
@@ -36,7 +36,7 @@ export interface SoldierMaterials {
   trim: THREE.MeshStandardMaterial;
 }
 
-/** Black Division (all black, green NVG) or Vanta Security (navy, white helmet, cyan NVG). */
+/** SABLE (all black, green NVG) or Vanta Security (navy, white helmet, cyan NVG). */
 export type SoldierPalette = 'bd' | 'bdboss' | 'vanta' | 'bravo' | 'charlie' | 'delta' | 'salvage';
 
 const shared = new Map<SoldierPalette, SoldierMaterials>();
@@ -157,7 +157,7 @@ export function soldierSkin(health: number, palette: SoldierPalette = 'bd', kit 
   const team = palette === 'bravo' || palette === 'charlie' || palette === 'delta' || palette === 'salvage';
   // Your team wears a hooded field kit instead of helmet + NVG.
   const hooded = palette === 'vanta';
-  // Black Division: respirators under the NVG; the commander adds a fur-hooded parka and heavier plates.
+  // SABLE: respirators under the NVG; the commander adds a fur-hooded parka and heavier plates.
   const bd = palette === 'bd' || palette === 'bdboss';
   const boss = palette === 'bdboss';
   // Salvagers: scavenged gear, no night vision or IR strobe.

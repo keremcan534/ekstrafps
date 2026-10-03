@@ -1378,7 +1378,7 @@ export function compactRig(rig: WeaponRig): void {
 export const shellMaterials = { brass: mat.brass, red: mat.shellRed };
 
 /**
- * Black Division carbine for the AI: an all-black MK47-pattern rifle, hands
+ * SABLE carbine for the AI: an all-black MK47-pattern rifle, hands
  * hidden (their positions stay as IK grip points), casting shadows in the world.
  */
 export function buildEnemyRifle(low = false): WeaponRig {

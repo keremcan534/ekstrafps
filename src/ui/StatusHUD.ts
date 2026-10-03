@@ -51,7 +51,7 @@ export class StatusHUD {
     for (let i = 0; i < 6; i++) this.indicators.push({ el: div('hit-ind', parent), from: new THREE.Vector3(), life: 0 });
     this.downed = div('downed', parent);
     this.death = div('death-screen', parent);
-    this.death.innerHTML = '<div class="death-title">K.I.A.</div><div class="death-sub">BLACK DIVISION</div><div class="death-hint">respawning…</div>';
+    this.death.innerHTML = '<div class="death-title">K.I.A.</div><div class="death-sub">SABLE</div><div class="death-hint">respawning…</div>';
   }
 
   damaged(amount: number, from: THREE.Vector3 | null): void {
@@ -67,7 +67,7 @@ export class StatusHUD {
   }
 
   /** Enemy radio line as a subtitle. */
-  radio(text: string, tag = 'BLACK DIVISION', friendly = false): void {
+  radio(text: string, tag = 'SABLE', friendly = false): void {
     this.comms.innerHTML = `<span class="comms-tag${friendly ? ' friendly' : ''}">${tag}</span> ${text}`;
     this.comms.classList.add('show');
     this.commsTime = 2.8;

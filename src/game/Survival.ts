@@ -44,7 +44,7 @@ export interface SurvivalDeps {
   startZones?: string[];
   /** Positions the director may also send mobs at (AI team leaders). */
   focusProvider?: () => THREE.Vector3[];
-  /** A team's score crossed a raid threshold → blackout + Black Division raid. */
+  /** A team's score crossed a raid threshold → blackout + SABLE raid. */
   onRaid?: (team: string) => void;
   onWin?: (team: string) => void;
   /** Everyone with a wallet on a team (the player's included) — for the team share. */
@@ -146,7 +146,7 @@ export class Survival {
     this.teamPoints.set('alpha', v);
   }
 
-  /** Score at which the next Black Division raid triggers (team games). */
+  /** Score at which the next SABLE raid triggers (team games). */
   get nextRaid(): number | null {
     return this.deps.mode === 'teams' ? (this.raidAt[0] ?? null) : null;
   }

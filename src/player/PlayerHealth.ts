@@ -1,7 +1,7 @@
 import { feel } from '../config/Feel';
 
 /**
- * Player health. Damage comes from Black Division rounds (scaled by
+ * Player health. Damage comes from SABLE rounds (scaled by
  * feel.enemyDamageScale). Optional slow regeneration after a quiet period keeps
  * the lab testable; death runs a short timer and then respawns.
  */

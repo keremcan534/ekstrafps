@@ -141,7 +141,7 @@ canvas { display: block; touch-action: none; }
 .is-touch .debug-hud { top: 54px; font-size: 8px; line-height: 1.35; padding: 4px 6px; max-height: calc(100vh - 64px); overflow: hidden; }
 .is-touch .help { display: none; }
 
-/* ---------- Player condition (Black Division) ---------- */
+/* ---------- Player condition (SABLE) ---------- */
 .dmg-vignette { position: absolute; inset: 0; pointer-events: none; opacity: 0;
   background: radial-gradient(ellipse at center, rgba(120,0,0,0) 45%, rgba(130,0,0,0.55) 78%, rgba(90,0,0,0.9) 100%); }
 .supp-vignette { position: absolute; inset: 0; pointer-events: none; opacity: 0;

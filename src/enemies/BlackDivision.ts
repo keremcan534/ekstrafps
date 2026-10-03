@@ -26,7 +26,7 @@ interface PendingLine {
 }
 
 /**
- * Black Division squad: four operators that patrol in a column on the leader's
+ * SABLE squad: four operators that patrol in a column on the leader's
  * trail. When one of them sees you he stops and reports it ("I see the enemy."),
  * the leader orders "Spread out." and the squad splits into roles:
  *
@@ -104,7 +104,7 @@ export class BlackDivision {
   }
 
   get statusText(): string {
-    return `BLACK DIVISION ${this.aliveCount}/${this.soldiers.length} · ${this.state.toUpperCase()}`;
+    return `SABLE ${this.aliveCount}/${this.soldiers.length} · ${this.state.toUpperCase()}`;
   }
 
   /** (Re)spawn the whole squad in a column at the patrol start. */

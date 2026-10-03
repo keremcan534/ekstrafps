@@ -23,10 +23,10 @@ export const TEAM_ROWS: TeamRow[] = [
   { id: 'charlie', name: 'CHARLIE', color: '#9dff4a' },
   { id: 'delta', name: 'DELTA', color: '#d06aff' },
 ];
-const NAME: Record<string, string> = { alpha: 'Vanta', bravo: 'Bravo', charlie: 'Charlie', delta: 'Delta', bd: 'Black Division', robots: 'Robots', salvage: 'Salvagers', cult: 'The Choir' };
+const NAME: Record<string, string> = { alpha: 'Vanta', bravo: 'Bravo', charlie: 'Charlie', delta: 'Delta', bd: 'SABLE', robots: 'Robots', salvage: 'Salvagers', cult: 'The Choir' };
 const COLOR: Record<string, string> = { alpha: '#4fa8ff', bravo: '#ffa040', charlie: '#9dff4a', delta: '#d06aff', bd: '#ff3b2f', robots: '#bbb', salvage: '#c8a070', cult: '#a01020' };
 
-/** Seconds of power-out per raid (the raid ends early when Black Division is wiped). */
+/** Seconds of power-out per raid (the raid ends early when SABLE is wiped). */
 const RAID_TIME = 150;
 /** Match length: when the clock runs out the exits open. */
 export const matchClock = { minutes: 15 };
@@ -70,7 +70,7 @@ export interface MatchDeps {
  * The four-team race on Site-9: you (Vanta) and three AI teams start in
  * opposite corners, earn points on robots and each other, buy weapons, open the
  * facility and hire contractors. When a team crosses a raid threshold the power
- * dies and two Black Division squads storm in, hostile to everyone. First to the
+ * dies and two SABLE squads storm in, hostile to everyone. First to the
  * win score takes the match.
  */
 export class TeamMatch {
@@ -279,8 +279,8 @@ export class TeamMatch {
       this.d.audio.play('bd.arrival');
       const where = this.deployRaiders(team);
       this.raiderChatter = 1.5;
-      this.d.svHud.showBanner('BLACK DIVISION INCOMING', 'raid');
-      this.d.status.radio(`Black Division breach: ${where}. They kill everyone. Breakers restore power.`);
+      this.d.svHud.showBanner('SABLE INCOMING', 'raid');
+      this.d.status.radio(`SABLE breach: ${where}. They kill everyone. Breakers restore power.`);
     }, 4500);
   }
 
@@ -322,7 +322,7 @@ export class TeamMatch {
       this.d.shake?.(blast);
       if (this.raiders[i]) this.raiders[i].redeploy(at);
       else {
-        const def: TeamDef = { id: 'bd', name: 'Black Division', color: COLOR.bd, palette: 'bd', style: 'hunter', start: at, economy: false, boss: i === 0 };
+        const def: TeamDef = { id: 'bd', name: 'SABLE', color: COLOR.bd, palette: 'bd', style: 'hunter', start: at, economy: false, boss: i === 0 };
         this.raiders.push(new AITeam(def, this.ctx, 4));
       }
     });
@@ -367,10 +367,10 @@ export class TeamMatch {
     return best ?? this.respawnPoint();
   }
 
-  /** Seconds to the next Black Division radio call during a raid (<0: none scheduled). */
+  /** Seconds to the next SABLE radio call during a raid (<0: none scheduled). */
   private raiderChatter = -1;
 
-  /** Black Division radio during a raid: heard across the facility. Call from update(dt). */
+  /** SABLE radio during a raid: heard across the facility. Call from update(dt). */
   private raiderRadio(dt: number): void {
     if (this.raiderChatter < 0) return;
     this.raiderChatter -= dt;
@@ -389,7 +389,7 @@ export class TeamMatch {
 
   /** A breaker brought the lights back early. */
   powerRestored(): void {
-    this.d.status.radio('Power restored at a breaker. Black Division is still in here.');
+    this.d.status.radio('Power restored at a breaker. SABLE is still in here.');
   }
 
   private endRaid(): void {
@@ -648,7 +648,7 @@ export class TeamMatch {
       this.lastAmmo.set(a, ammo);
     }
 
-    // Raid clock: ends when Black Division is wiped or time runs out.
+    // Raid clock: ends when SABLE is wiped or time runs out.
     if (this.raidActive) {
       this.raidTime += dt;
       const deployed = this.raiders.length > 0 && this.raidTime > 6;

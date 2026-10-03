@@ -7,7 +7,7 @@ import type { Site9 } from '../world/Site9';
  * Site-9 runs at night: a dim fill, and the light near you comes from the lamps
  * (practical lights parked on the nearest fixtures, see updateReds).
  *
- * The lights go out during a Black Division raid (until someone restores power at
+ * The lights go out during a SABLE raid (until someone restores power at
  * a breaker) or when someone cuts them at a breaker on purpose. Going dark
  * flickers a few times, then the hemisphere/sun/lamps, sky, fog and image-based
  * ambient all drop; red emergency strips keep pulsing. The flashlight switches

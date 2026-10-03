@@ -438,7 +438,7 @@ export class Game {
     this.nav = new NavGrid(this.physics, x0, z0, x1, z1, 0.5, 0.32, blockers);
     this.muzzleLights = new MuzzleLights(this.mobile ? 0 : 2);
     this.scene.add(this.muzzleLights.group);
-    // Black Division rifle lights: a fixed pool of real spots (phones: beams only).
+    // SABLE rifle lights: a fixed pool of real spots (phones: beams only).
     this.weaponLights = new WeaponLights(this.mobile ? 0 : 4);
     this.scene.add(this.weaponLights.group);
     this.soldierDeps = {
@@ -533,7 +533,7 @@ export class Game {
       total += s.soldiers.length;
     }
     const state = this.squads.some((s) => s.state === 'combat') ? 'COMBAT' : this.squads.some((s) => s.state === 'search') ? 'SEARCH' : 'PATROL';
-    return `BLACK DIVISION ${alive}/${total} · ${state}`;
+    return `SABLE ${alive}/${total} · ${state}`;
   }
 
   /** Damage the player with all the feedback (vignette, direction, aim punch, sound). */
@@ -1185,7 +1185,7 @@ export class Game {
         if (this.survival) this.toggleSquadMode();
         else {
           for (const s of this.squads) s.spawn();
-          this.hud.toast('Black Division respawned');
+          this.hud.toast('SABLE respawned');
         }
         break;
       case 'KeyX':

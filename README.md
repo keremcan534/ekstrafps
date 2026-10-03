@@ -44,7 +44,7 @@ On the start screen, click anywhere or press Enter. Esc releases the mouse.
 | Z | slow motion |
 | I | infinite ammo |
 | K | reset robots |
-| Y | respawn the Black Division squad |
+| Y | respawn the SABLE squad |
 | O | god mode |
 | U | enemy AI on / off |
 | M | next test station (wall test, lean pillar, long range…) |
@@ -135,7 +135,7 @@ Pick a map on the start screen. A map can also be opened directly with `?map=sit
 
 ### Weapon Lab
 
-The graybox test range plus the Black Division container yard.
+The graybox test range plus the SABLE container yard.
 
 ### Site-9 (Survival)
 
@@ -174,7 +174,7 @@ Vanta Dynamics' research campus, single level, about 176 × 138 m (built at 0.8 
 - In a fight: the squad shares a focus target, goes for the head on calm targets, backs off from robots while shooting, falls back when badly hurt and retreats when swarmed. Getting shot alerts everyone nearby: they turn to the shooter, hold the angle or push it, and the squad goes after you. Nobody revives a teammate while a hostile is in view or they're under fire.
 - Your squad: **Y** (SQUAD on touch) switches between free roam (default: they farm, buy and open doors on their own within ~55 m of you) and follow me. **F** next to a downed operator revives them (3 s). They call out on the radio.
 - Running AI carry their weapon low ready or high port; handguns are pushed out to aim and tucked in otherwise. Firing on the move scatters (hip fire most, aimed a little, mid-air a lot).
-- Raids at 6000 / 14000 / 22000 team score: the power dies and two Black Division squads blow their way in (breaching charges you hear across the facility) far from you, out of sight, hostile to everyone. A power breaker restores the lights ($750). The commander, The Warden (grey parka, fur collar, respirator, suppressed SMG), leads the first squad.
+- Raids at 6000 / 14000 / 22000 team score: the power dies and two SABLE squads blow their way in (breaching charges you hear across the facility) far from you, out of sight, hostile to everyone. A power breaker restores the lights ($750). The commander, The Warden (grey parka, fur collar, respirator, suppressed SMG), leads the first squad.
 - Two ways to end: first team to 20000 wins on the spot, or the match clock runs out (10 / 15 / 20 / 30 min, chosen under Operations; 15 by default). Then every shutter rolls up and three exits open for 3 minutes (green beacons, on the map). Hold an exit for 6 s to extract with your full score; die before you get out, or still be inside when the window closes, and you lose half. AI teams race for the exits too.
 - Losing people costs: every operator killed takes points off their team's score (100 at the start, up to 350 late).
 - It gets harder: AI aim sharpens with the clock, and from mid-game every squad fields one or two elite operators who jump-peek, ADAD-strafe and snap to heads. Mid and late game, a full enemy squad may suddenly push your position. Mega hordes hit at 30%, 55% and 80% of the clock and when the exits open. Robot numbers grow up to 20% with the clock, and rare brutes show up (armour plates, red visor, triple health, hit hard, triple points); fast runners have amber visors.
@@ -183,7 +183,7 @@ Vanta Dynamics' research campus, single level, about 176 × 138 m (built at 0.8 
 **Facility extras (random spots each game, on the map).** Medical stations ($400, full heal), armor lockers ($1000, plates soak 60% of damage), power breakers (cut the lights / restore power), a supply crate ($950, random weapon, moves after a few uses), sentry turrets ($1500, 60 s for whoever paid), plus ten extra wall weapons. **L** toggles your flashlight (it switches on when the power dies). Site-9 runs at night: a dim fill and moonlight through the skylights, with the light coming from the lamps (pools on the floor, real lights on the fixtures nearest you). With the power out it goes almost black: a few emergency beacons pulse dim red, the air turns to a dark red haze, and on desktop a colour grade (cold shadows, reds kept saturated, heavier vignette) deepens with the dark. Enemy operators who fire show up on the minimap for a moment.
 
 **Career: XP, Vanta Credits, Armory** (`game/Progress.ts`, saved in the browser). Every raid ends with an operation report that counts only what *you* did:
-- XP: robot 15, brute 45, salvager 50, rival operator 60, Black Division 90, The Choir 120, The Warden 400, +10 per headshot kill, −100 per civilian killed, +10 per minute alive, placement (4 Teams) 600 / 350 / 200 / 100.
+- XP: robot 15, brute 45, salvager 50, rival operator 60, SABLE 90, The Choir 120, The Warden 400, +10 per headshot kill, −100 per civilian killed, +10 per minute alive, placement (4 Teams) 600 / 350 / 200 / 100.
 - Fate multiplier: extracted ×1.5, killed in action ×0.75.
 - Vanta Credits (VC): XP / 5, plus 10 % of the cash you carry out when you extract.
 - Levels: 800 XP for level 2, +200 more per level after that.
@@ -197,7 +197,7 @@ Vanta Dynamics' research campus, single level, about 176 × 138 m (built at 0.8 
 - Voices (`production/audio/gen_voices.py`) use Piper neural TTS with commercial-safe models only:
   - lab staff: six LibriTTS-R speakers panicking, pleading ("Don't shoot!" when you aim at them) and whimpering
   - The Choir: lines whispered by a layered chorus
-  - Black Division radio: the public-domain *john* voice through a gas-mask and radio chain
+  - SABLE radio: the public-domain *john* voice through a gas-mask and radio chain
   - facility PA: the public-domain *kristin* voice
 - **Ambience** (`audio/Ambience.ts`, `production/audio/gen_ambience.py`): looping beds mixed by the room you're in. Air ducts hum in the offices, fans whir in the server hall, the plant rumbles and buzzes, wind blows under the skylights. In a blackout the machines spin down (their pitch sags) and a low drone takes over. Now and then the building creaks, thumps or rattles a duct somewhere around you, muffled by the walls in between.
 - **Sound through walls and distance:** positional sounds lose their highs with distance, and a ray from your ear decides whether a wall is in the way. A fight in the next room comes through as a dull, boomy thump.
@@ -221,7 +221,7 @@ Vanta Dynamics' research campus, single level, about 176 × 138 m (built at 0.8 
   - view distance (haze, rooms and characters drawn)
   - post effects (colour grade, grain, vignette), anti-aliasing (after a restart), and an FPS readout
 
-## Black Division
+## SABLE
 
 The enemy faction: four all-black operators in plate carriers and high-cut helmets with glowing quad night vision. They are faceless on purpose. They patrol the container yard behind the range. To get there, press **M** and pick the yard door station, or walk through either door in the back wall. Code: `enemies/`, `ai/NavGrid.ts`.
 
@@ -289,7 +289,7 @@ Dead soldiers ragdoll and drop their rifle as a physics object. The squad calls 
 ### Voice and tuning
 
 - Voice lines are generated offline with the Piper neural TTS (voice: en_US ryan, high) and processed as a masked operator on a radio in a concrete facility: slightly lower and slower, gas-mask muffle and cavity resonance, radio band and grit, squelch, slapback and hall reverb (`public/audio/voice/`). Drop in real recordings with the same names to replace them.
-- Tuning: *Black Division* folder in the panel. It covers AI on/off, god mode, enemy damage scale, enemy accuracy and regeneration.
+- Tuning: *SABLE* folder in the panel. It covers AI on/off, god mode, enemy damage scale, enemy accuracy and regeneration.
 
 ## Tactical AI (src/ai/)
 
@@ -317,7 +317,7 @@ Bots behave like imperfect human players in squads: they act on what they saw, h
 
 ## Sound
 
-Gunshots are layered: a recorded close blast (several variations per weapon), synth low-end punch and mechanical action, a room tail that grows with the size of the room you're in, and a distant report that takes over from ~20 m and darkens past ~70 m. The recorded shots were cut from Pixabay sound effects (Pixabay Content License) by freesound_community, pwlpl, haruudu, sovetsky_rastov72 and u_2n07b18i8q (the M4/M16 reload recording by freesound_community drives the magazine and charging-handle sounds; the power-cut slam and the Black Division encounter sting are by universfield, the raid arrival impact by black_kumizhi, the breaching-charge explosion by freesound_community, metal hits by floraphonic, gear rustle footsteps by whitecrowsp); the cuts live in `public/audio/guns`.
+Gunshots are layered: a recorded close blast (several variations per weapon), synth low-end punch and mechanical action, a room tail that grows with the size of the room you're in, and a distant report that takes over from ~20 m and darkens past ~70 m. The recorded shots were cut from Pixabay sound effects (Pixabay Content License) by freesound_community, pwlpl, haruudu, sovetsky_rastov72 and u_2n07b18i8q (the M4/M16 reload recording by freesound_community drives the magazine and charging-handle sounds; the power-cut slam and the SABLE encounter sting are by universfield, the raid arrival impact by black_kumizhi, the breaching-charge explosion by freesound_community, metal hits by floraphonic, gear rustle footsteps by whitecrowsp); the cuts live in `public/audio/guns`.
 
 ## Where tuning lives
 

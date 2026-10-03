@@ -1838,7 +1838,7 @@ export class Site9 implements GameMap {
   }
 
   /**
-   * Power failure (Black Division raid): lamps and screens die, ambient falls to a
+   * Power failure (SABLE raid): lamps and screens die, ambient falls to a
    * dim red, emergency strips pulse. k: 0 = normal .. 1 = full blackout.
    */
   setBlackout(k: number): void {

@@ -19,7 +19,7 @@ type V3 = [number, number, number];
  *                         hanging steel plates at 20 m and 50 m
  *   Right zone (x > 8): stairs → raised platform → ramp, pillars, metal cover
  *   Behind spawn: crouch tunnel + jump boxes for movement testing
- *   Black Division yard (z < -65, through two doors in the back wall): open-air
+ *   SABLE yard (z < -65, through two doors in the back wall): open-air
  *   container yard where the enemy squad patrols.
  */
 export class Arena implements GameMap {
@@ -32,7 +32,7 @@ export class Arena implements GameMap {
   readonly props: PhysicsProps;
   readonly spawn = new THREE.Vector3(0, 0, 4);
   readonly robotSpawns: RobotOptions[] = [];
-  /** Black Division patrol loop (yard). */
+  /** SABLE patrol loop (yard). */
   readonly patrolRoute: THREE.Vector3[] = [
     [-16.5, -70], [-17, -84], [-8, -95], [-9, -112], [2, -123], [16, -121], [20, -96], [15.5, -70], [0, -69],
   ].map(([x, z]) => new THREE.Vector3(x, 0, z));
@@ -133,7 +133,7 @@ export class Arena implements GameMap {
     this.solid('floor', [44, 1, 80], [0, -0.5, -24]);
     this.solid('wall', [1, 10, 80], [-22.5, 5, -24]);
     this.solid('wall', [1, 10, 80], [22.5, 5, -24]);
-    // Back wall with two 4 m doors into the Black Division yard.
+    // Back wall with two 4 m doors into the SABLE yard.
     this.solid('wall', [4.5, 10, 1], [-20.75, 5, -64.5]);
     this.solid('wall', [29, 10, 1], [0, 5, -64.5]);
     this.solid('wall', [4.5, 10, 1], [20.75, 5, -64.5]);
@@ -226,7 +226,7 @@ export class Arena implements GameMap {
     this.pillar(12, 12);
   }
 
-  /** Open-air container yard behind the range: the Black Division patrol area. */
+  /** Open-air container yard behind the range: the SABLE patrol area. */
   private buildYard(): void {
     this.solid('asphalt', [46, 1, 63], [0, -0.5, -95.5]);
     this.solid('yardWall', [1, 8, 63], [-22.5, 4, -95.5]);

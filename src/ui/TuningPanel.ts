@@ -102,7 +102,7 @@ export class TuningPanel {
     feelF.add(feel, 'masterVolume', 0, 1, 0.01).onChange(() => hooks.onFeelChanged());
     feelF.add(feel, 'robotRespawnTime', 0.5, 15, 0.5);
 
-    const bd = this.gui.addFolder('Black Division').close();
+    const bd = this.gui.addFolder('SABLE').close();
     bd.add(feel, 'enemyAI').name('Enemy AI (U)').listen();
     bd.add(feel, 'godMode').name('God mode (O)').listen();
     bd.add(feel, 'enemyDamageScale', 0, 2, 0.05).name('Enemy damage scale');

@@ -76,7 +76,7 @@ const HEAD_OFFSET = new THREE.Vector3(0, 0.15, 0.04);
 const v3 = () => new THREE.Vector3();
 
 /**
- * One Black Division operator: Humanoid body (soldier skin, plate + helmet),
+ * One SABLE operator: Humanoid body (soldier skin, plate + helmet),
  * a black carbine held with two-hand IK, perception (view cone + line of sight
  * + awareness that builds up), navigation, cover-aware positioning, and
  * human-like shooting (reaction time, aim error that tightens while the target
@@ -89,7 +89,7 @@ export class Soldier implements LightSource {
   readonly body: Humanoid;
   rig: WeaponRig;
   readonly index: number;
-  /** The Warden (Black Division boss kit). */
+  /** The Warden (SABLE boss kit). */
   readonly boss: boolean;
   state: BrainState = 'patrol';
   role: Role = 'anchor';
@@ -132,7 +132,7 @@ export class Soldier implements LightSource {
   private burstLeft = 0;
   private nextShot = 0;
   private burstPause = 0;
-  // Current weapon (Black Division default: black MK47-pattern carbine).
+  // Current weapon (SABLE default: black MK47-pattern carbine).
   magSize = 30;
   private fireInterval = 60 / 620;
   private reloadTime = 2.7;
@@ -155,7 +155,7 @@ export class Soldier implements LightSource {
   /** Mag and reserve both empty. */
   onDry: (() => void) | null = null;
   private lastStep = 0;
-  /** Black Division: rifle light (visible beam; a pooled spot light when near the camera). */
+  /** SABLE: rifle light (visible beam; a pooled spot light when near the camera). */
   private beam: ReturnType<typeof makeBeam> | null = null;
   private beamOn = false;
   /** Jump-peek height (m), driven by the AI brain. */
@@ -170,7 +170,7 @@ export class Soldier implements LightSource {
   private checkTimer = 4 + Math.random() * 10;
   private checking = 0;
   private roll = 0;
-  /** Marksmanship multiplier (1 = Black Division standard). */
+  /** Marksmanship multiplier (1 = SABLE standard). */
   skill = 1;
   /** Holding a handgun: pushed out at arm's length to aim, tucked to the chest otherwise. */
   private pistol = false;
@@ -216,7 +216,7 @@ export class Soldier implements LightSource {
     private deps: SoldierDeps,
     index: number,
     private hooks: SoldierHooks,
-    /** Team id: 'bd' (Black Division), 'alpha' (the player's team), 'bravo', 'charlie', 'delta'. */
+    /** Team id: 'bd' (SABLE), 'alpha' (the player's team), 'bravo', 'charlie', 'delta'. */
     readonly team: string = 'bd',
     palette: SoldierPalette = team === 'alpha' ? 'vanta' : team === 'bd' ? 'bd' : (team as SoldierPalette),
   ) {

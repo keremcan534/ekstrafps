@@ -346,7 +346,7 @@ export const RECIPES: Record<string, Recipe> = {
     burst(c, { dur: 0.5, attack: 0.02, freq: 2400, freqEnd: 500, q: 1.2, gain: 0.35 });
     tone(c, { dur: 0.25, f0: 70, f1: 35, gain: 1.0 });
   } },
-  // ---------- Black Division / player damage ----------
+  // ---------- SABLE / player damage ----------
   flyby_crack: { dur: 0.12, samples: (sr) => crackSamples(sr, 0.45, 9), drive: 2.2 },
   flyby_whizz: { dur: 0.35, render: (c) => {
     burst(c, { dur: 0.22, attack: 0.06, freq: 2600, freqEnd: 700, q: 2.5, gain: 0.9 });

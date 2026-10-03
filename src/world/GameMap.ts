@@ -8,7 +8,7 @@ export interface Station {
   yaw: number;
 }
 
-/** One Black Division squad: its patrol loop and where on it the column starts. */
+/** One SABLE squad: its patrol loop and where on it the column starts. */
 export interface SquadSpawn {
   route: THREE.Vector3[];
   spawnIndex: number;

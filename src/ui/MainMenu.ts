@@ -64,7 +64,7 @@ export function applyPrefs(game: Game, p: Prefs): void {
 }
 
 const MAPS = {
-  lab: { name: 'WEAPON LAB', tag: 'TRAINING RANGE', text: 'Graybox firing range, robot targets and the Black Division container yard. Learn every gun.' },
+  lab: { name: 'WEAPON LAB', tag: 'TRAINING RANGE', text: 'Graybox firing range, robot targets and the SABLE container yard. Learn every gun.' },
   site9: { name: 'SITE-9', tag: 'VANTA DYNAMICS CAMPUS', text: 'Sixteen rooms of a robotics facility gone dark. Four squads, rogue machines, raids.' },
 };
 const MODES = {

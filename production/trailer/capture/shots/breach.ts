@@ -5,7 +5,7 @@ import { handheld } from '../stage';
 import { AISLE_Z, NIGHT_POST, aimAt, ally, pulse, stage, trigger, type S9 } from './site9';
 
 /**
- * Black Division breach (real soldier rigs, real weapons and tracers): the alarm
+ * SABLE breach (real soldier rigs, real weapons and tracers): the alarm
  * spins up, a breaching charge blows the far end of the assembly aisle, four
  * operators with glowing quad NVGs push through the smoke, fan out and open fire
  * on the squad; the player answers. Covers the 1:00-1:10 arrival in the flow cut.
@@ -52,7 +52,7 @@ export const BD: Shot = {
     const flash = new THREE.PointLight(0xffb070, 0, 40, 1.3);
     flash.position.set(-72, 1.8, AISLE_Z);
     game.scene.add(flash);
-    // The breach team: real Black Division soldiers, hidden until the charge blows.
+    // The breach team: real SABLE soldiers, hidden until the charge blows.
     const deps = (game as unknown as { soldierDeps: SoldierDeps }).soldierDeps;
     const hooks = { onSpotted() {}, onDamaged() {}, onKilled() {}, say() {}, onThud() {} };
     const ak = game.weapons.weapons.find((w) => w.data.id === 'ak47')!.data;

@@ -3,7 +3,7 @@
  * the browser. A raid tracks what *you* did (not your AI squad); the end screen
  * turns it into XP and credits:
  *
- *   XP   kills (robot 15, brute 45, salvager 50, rival operator 60, Black Division 90,
+ *   XP   kills (robot 15, brute 45, salvager 50, rival operator 60, SABLE 90,
  *        The Choir 120, The Warden 400, +10 per headshot kill) + 10 per minute alive
  *        − 100 per civilian you killed
  *        + placement (4 Teams: 600 / 350 / 200 / 100)
@@ -133,7 +133,7 @@ export function settleRaid(r: RaidResult): Payout {
   add(`Brutes destroyed ×${raid.brutes}`, raid.brutes * 45);
   add(`Rival operators ×${raid.soldiers}`, raid.soldiers * 60);
   add(`Salvagers ×${raid.salvage}`, raid.salvage * 50);
-  add(`Black Division ×${raid.bd}`, raid.bd * 90);
+  add(`SABLE ×${raid.bd}`, raid.bd * 90);
   add(`The Choir ×${raid.choir}`, raid.choir * 120);
   add('The Warden', raid.warden * 400);
   add(`Headshot kills ×${raid.headshots}`, raid.headshots * 10);

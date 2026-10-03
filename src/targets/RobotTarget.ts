@@ -97,7 +97,7 @@ export function robotSkin(paint: THREE.Material, dark: THREE.Material, visor: TH
 /**
  * Robot target dummy: a Humanoid body with a robot skin, an optional strafing
  * rail, damage flash, a visor that shows health and auto-respawn.
- * No AI (the Black Division soldiers have it).
+ * No AI (the SABLE soldiers have it).
  */
 export class RobotTarget {
   readonly body: Humanoid;

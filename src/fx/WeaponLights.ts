@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 
 /**
- * Weapon-mounted lights for Black Division operators. Every operator carries a
+ * Weapon-mounted lights for SABLE operators. Every operator carries a
  * visible beam (a soft additive cone: cheap, readable from across a dark hall);
  * the few operators nearest the camera also get a real spot light from a fixed
  * pool, so the floor and walls light up where they look. The pool never grows or
@@ -56,7 +56,7 @@ export interface LightSource {
   lightDir(out: THREE.Vector3): THREE.Vector3;
 }
 
-/** Everyone currently carrying a weapon light (Black Division operators register themselves). */
+/** Everyone currently carrying a weapon light (SABLE operators register themselves). */
 export const lightSources = new Set<LightSource>();
 
 export class WeaponLights {

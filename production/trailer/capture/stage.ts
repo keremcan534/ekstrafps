@@ -43,7 +43,7 @@ export function handheld(t: number, amp: number, seed = 0, out = new THREE.Vecto
 
 /**
  * A black stage: the map, its lights, sky and fog are hidden; lab robots and the
- * Black Division squad are hidden and their AI is off. Shots build their own set.
+ * SABLE squad are hidden and their AI is off. Shots build their own set.
  */
 export function blackStage(game: Game): THREE.Group {
   game.arena.group.visible = false;

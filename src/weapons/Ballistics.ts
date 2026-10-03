@@ -293,7 +293,7 @@ export class ProjectileSystem {
     t.size = t.sizeEnd = p.tracer ? 0.022 : 0.012;
     t.stretch = p.tracer ? 0.0065 : 0.0045;
     t.r = 1;
-    // Black Division rounds burn red.
+    // SABLE rounds burn red.
     t.g = p.hostile ? (p.tracer ? 0.2 : 0.55) : p.tracer ? 0.62 : 0.9;
     t.b = p.hostile ? (p.tracer ? 0.15 : 0.45) : p.tracer ? 0.3 : 0.7;
     t.alpha = p.tracer ? 0.95 : 0.55;

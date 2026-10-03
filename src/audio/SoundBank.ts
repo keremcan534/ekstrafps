@@ -287,7 +287,7 @@ export const SOUND_BANK: Record<string, SoundEvent> = {
   // Layered under every shot you fire (not other people's).
   'self.kick': { layers: [{ synth: 'chest_kick', gain: 0.75 }], maxVoices: 3, bus: 'ui' },
   'robot.stagger': { layers: [{ synth: 'servo_strain', gain: 0.5 }], pitchVariance: 0.1, maxDist: 20, maxVoices: 2 },
-  // ---------- Black Division ----------
+  // ---------- SABLE ----------
   'bd.fire': {
     layers: [
       { files: shots('ak', 4), gain: 1.15, range: 'near' },
