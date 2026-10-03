@@ -628,7 +628,7 @@ export class Site9 implements GameMap {
       case 'cabinet':
         this.boxW(R, 'gunmetal', [0.5, 1.32, 0.6], [x, 0.66, z], true, rot());
         for (let i = 0; i < 4; i++) this.boxW(R, 'dark', [0.16, 0.025, 0.02], P(0, 0.25 + i * 0.32, 0.31), false, rot());
-        if (rnd() < 0.5) this.boxW(R, 'gunmetal', [0.44, 0.26, 0.5], P(0, 0.9, 0.42), false, rot()); // drawer pulled out
+        if (rnd() < 0.5) this.boxW(R, 'gunmetal', [0.44, 0.26, 0.5], P(0, 0.9, 0.42), true, rot()); // drawer pulled out
         break;
       case 'bags':
         for (let i = 0, n = 2 + Math.floor(rnd() * 3); i < n; i++) {

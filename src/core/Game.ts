@@ -53,6 +53,7 @@ import { buildWeaponModel } from '../weapons/WeaponModels';
 import { WeaponLights, weaponLight } from '../fx/WeaponLights';
 import { VIEW_DISTANCE, loadGraphics, type GraphicsSettings } from '../config/Graphics';
 import { DustMotes } from '../fx/DustMotes';
+import type { ShowcaseDeps } from '../ui/Showcase';
 
 const FIXED_DT = 1 / 120;
 
@@ -1036,6 +1037,11 @@ export class Game {
         this.frame(t);
       });
     }
+  }
+
+  /** What the main-menu unit showcase builds its lineups from. */
+  showcaseDeps(): ShowcaseDeps {
+    return { soldierDeps: this.soldierDeps, physics: this.physics, nav: this.nav, weapon: (id) => this.weapons.weapons.find((w) => w.data.id === id)?.data };
   }
 
   /** The game loop is running (PLAY was pressed at least once). */

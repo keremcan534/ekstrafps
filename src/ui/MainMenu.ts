@@ -3,6 +3,7 @@ import { matchClock } from '../game/TeamMatch';
 import type { Game } from '../core/Game';
 import { feel } from '../config/Feel';
 import { playerConfig } from '../player/PlayerConfig';
+import { Showcase } from './Showcase';
 import { FPS_CAPS, loadGraphics, maxResolution, presetSettings, type GraphicsSettings } from '../config/Graphics';
 
 /**
@@ -127,7 +128,8 @@ export class MainMenu {
     this.status = el('div', 'menu-status', left, 'Loading…');
     this.panel = el('div', 'menu-panel glass', this.root);
     el('div', 'menu-foot', this.root, '<span>IN DEVELOPMENT</span><span>BUILD 0.3</span>');
-    this.show('operations');
+    // The panel opens from the nav; until then the unit showcase has the stage.
+    this.panel.classList.add('closed');
     // 3D buttons tilt toward the pointer (desktop).
     this.root.addEventListener('pointermove', (e) => {
       const b = (e.target as HTMLElement).closest<HTMLElement>('.gbtn, .gcard');
@@ -206,7 +208,18 @@ export class MainMenu {
     this.opts.onPlay();
   }
 
+  private section: string | null = null;
+
   private show(section: 'operations' | 'settings' | 'controls'): void {
+    // The same button again closes the panel (back to the showcase).
+    if (this.section === section && !this.panel.classList.contains('closed') && !this.paused) {
+      this.panel.classList.add('closed');
+      this.section = null;
+      this.nav.querySelectorAll<HTMLElement>('.gbtn').forEach((b) => b.classList.remove('active'));
+      return;
+    }
+    this.section = section;
+    this.panel.classList.remove('closed');
     this.nav.querySelectorAll<HTMLElement>('.gbtn').forEach((b) => b.classList.toggle('active', b.dataset.key === section));
     this.panel.classList.remove('enter');
     void this.panel.offsetWidth;
@@ -421,13 +434,42 @@ export class MainMenu {
     const center = atrium ? new THREE.Vector3((atrium.rect[0] + atrium.rect[2]) / 2, 5, (atrium.rect[1] + atrium.rect[3]) / 2) : arena.spawn.clone().add(new THREE.Vector3(0, 1.6, -18));
     const cam = new THREE.PerspectiveCamera(42, innerWidth / innerHeight, 0.1, 400);
     this.backdrop = { cam, center, radius: atrium ? 24 : 15, height: atrium ? 8 : 3.2, t0: performance.now() };
+    // Unit showcase on a dark stage (falls back to the map flyover if it can't build).
+    let show: Showcase | null = null;
+    const cap = el('div', 'showcase-cap', this.root);
+    try {
+      show = new Showcase(g.showcaseDeps(), (l) => {
+        cap.classList.remove('in');
+        void cap.offsetWidth;
+        cap.innerHTML = `<b>${l.name}</b><i>${l.tag}</i><span>${l.text}</span>`;
+        cap.classList.add('in');
+      });
+    } catch (e) {
+      console.warn('showcase unavailable', e);
+      cap.remove();
+    }
+    let last = performance.now();
     const tick = () => {
       const b = this.backdrop;
       if (!b || g.running) {
         this.backdrop = null;
+        cap.remove();
+        show?.dispose();
         return;
       }
-      const t = (performance.now() - b.t0) / 1000;
+      const now = performance.now();
+      const dt = Math.min(0.05, (now - last) / 1000);
+      last = now;
+      if (show) {
+        show.update(dt, innerWidth / innerHeight);
+        const r = g.renderer;
+        r.setSize(innerWidth, innerHeight);
+        r.clear();
+        r.render(show.scene, show.camera);
+        requestAnimationFrame(tick);
+        return;
+      }
+      const t = (now - b.t0) / 1000;
       const a = 0.55 + t * 0.028;
       b.cam.aspect = innerWidth / innerHeight;
       b.cam.position.set(b.center.x + Math.sin(a) * b.radius, b.center.y + b.height + Math.sin(t * 0.21) * 0.6, b.center.z + Math.cos(a) * b.radius);

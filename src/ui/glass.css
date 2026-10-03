@@ -357,3 +357,14 @@ kbd, .sv-key {
 .ex-stats b { display: block; margin-top: 4px; font: 700 32px var(--g-font); letter-spacing: 0.04em; color: #fff; }
 .ex-continue { margin-top: 10px; height: 60px; padding: 0 46px; animation: menuIn 600ms 1100ms both; }
 @media (max-width: 760px) { .ex-stats { grid-template-columns: repeat(2, 1fr); } }
+
+/* Main-menu unit showcase caption (bottom centre, between the nav and the panel). */
+.showcase-cap { position: absolute; left: 57%; bottom: 58px; transform: translateX(-50%); width: min(520px, 40vw); text-align: center; pointer-events: none; opacity: 0; z-index: 1; }
+.showcase-cap.in { animation: cap-in 0.9s 0.35s ease-out forwards; }
+.showcase-cap b { display: block; font: 700 clamp(18px, 2.2vw, 30px) var(--g-font); letter-spacing: 0.34em; color: #fff; text-shadow: 0 2px 18px rgba(0, 0, 0, 0.8); }
+.showcase-cap i { display: block; margin-top: 6px; font: 600 11px var(--g-mono); font-style: normal; letter-spacing: 0.3em; color: #ff5a3a; }
+.showcase-cap span { display: block; margin-top: 10px; font-size: 13px; line-height: 1.5; letter-spacing: 0.04em; color: rgba(255, 255, 255, 0.62); }
+@keyframes cap-in { from { opacity: 0; transform: translate(-50%, 10px); } to { opacity: 1; transform: translate(-50%, 0); } }
+@media (max-width: 900px) { .showcase-cap { display: none; } }
+.menu-panel { transition: opacity 0.3s, transform 0.3s; }
+.menu-panel.closed { opacity: 0; transform: translateX(24px); pointer-events: none; }
