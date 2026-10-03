@@ -1,0 +1,86 @@
+{
+  "id": "glock18",
+  "name": "G18C Machine Pistol",
+  "short": "G18",
+  "model": "glock",
+  "animSet": "pistol",
+  "category": "pistol",
+  "ammo": "9x19_pst",
+  "fireModes": [
+    "auto",
+    "semi"
+  ],
+  "fireRate": 1100,
+  "magazineSize": 33,
+  "closedBolt": true,
+  "barrelLength": 0.114,
+  "handling": {
+    "weight": 0.9,
+    "length": 0.19,
+    "ergonomics": 90
+  },
+  "accuracy": {
+    "moa": 6.0
+  },
+  "recoil": {
+    "vertical": 0.85,
+    "horizontal": 0.5,
+    "horizontalBias": 0.12,
+    "back": 0.012,
+    "shoulder": 140,
+    "damping": 0.5,
+    "cameraTransfer": 0.4,
+    "cameraKeep": 0.22,
+    "cameraRecovery": 4.5,
+    "dispersion": 0.18,
+    "punch": 0.25,
+    "roll": 1.4
+  },
+  "aim": {
+    "hipConvergence": 10,
+    "zeroDistance": 25
+  },
+  "sight": {
+    "type": "iron",
+    "adsFov": 76,
+    "sightDistance": 0.34
+  },
+  "viewmodel": {
+    "hipPosition": [
+      0.13,
+      -0.15,
+      -0.36
+    ]
+  },
+  "reload": {
+    "kind": "magazine",
+    "time": 1.5,
+    "emptyTime": 1.85,
+    "shellStart": 0,
+    "shellInsert": 0,
+    "shellEnd": 0
+  },
+  "equipTime": 0.26,
+  "holsterTime": 0.14,
+  "sprintToFireTime": 0.08,
+  "fx": {
+    "tracerEvery": 0,
+    "muzzleFlashScale": 0.8,
+    "smoke": 0.4,
+    "shellEjectDelay": 0.01,
+    "shellEjectSpeed": 3.8
+  },
+  "audio": {
+    "fire": "glock.fire",
+    "dry": "dry_fire",
+    "equip": "equip.pistol",
+    "reloadStart": "reload.pistol.start",
+    "magOut": "reload.pistol.magout",
+    "magIn": "reload.pistol.magin",
+    "boltBack": "reload.pistol.slideback",
+    "boltForward": "reload.pistol.slideforward",
+    "shellInsert": "",
+    "pump": ""
+  },
+  "boltCycleTime": 0
+}

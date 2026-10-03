@@ -1,0 +1,85 @@
+{
+  "id": "m249",
+  "name": "M249 SAW",
+  "short": "M249",
+  "model": "m249",
+  "animSet": "rifle",
+  "category": "rifle",
+  "ammo": "556_m855",
+  "fireModes": [
+    "auto"
+  ],
+  "fireRate": 780,
+  "magazineSize": 100,
+  "closedBolt": false,
+  "barrelLength": 0.465,
+  "handling": {
+    "weight": 7.5,
+    "length": 1.04,
+    "ergonomics": 18
+  },
+  "accuracy": {
+    "moa": 3.0
+  },
+  "recoil": {
+    "vertical": 0.62,
+    "horizontal": 0.36,
+    "horizontalBias": 0.12,
+    "back": 0.016,
+    "shoulder": 230,
+    "damping": 0.66,
+    "cameraTransfer": 0.3,
+    "cameraKeep": 0.2,
+    "cameraRecovery": 3.8,
+    "dispersion": 0.1,
+    "punch": 0.25,
+    "roll": 0.9
+  },
+  "aim": {
+    "hipConvergence": 15,
+    "zeroDistance": 100
+  },
+  "sight": {
+    "type": "iron",
+    "adsFov": 68,
+    "sightDistance": 0.34
+  },
+  "viewmodel": {
+    "hipPosition": [
+      0.17,
+      -0.23,
+      -0.44
+    ]
+  },
+  "reload": {
+    "kind": "magazine",
+    "time": 5.2,
+    "emptyTime": 5.8,
+    "shellStart": 0,
+    "shellInsert": 0,
+    "shellEnd": 0
+  },
+  "equipTime": 0.85,
+  "holsterTime": 0.4,
+  "sprintToFireTime": 0.24,
+  "fx": {
+    "tracerEvery": 4,
+    "muzzleFlashScale": 1.15,
+    "smoke": 0.7,
+    "shellEjectDelay": 0.02,
+    "shellEjectSpeed": 3.0
+  },
+  "audio": {
+    "fire": "m249.fire",
+    "dry": "dry_fire",
+    "equip": "equip.rifle",
+    "reloadStart": "reload.rifle.start",
+    "magOut": "reload.rifle.magout",
+    "magIn": "reload.rifle.magin",
+    "boltBack": "reload.rifle.boltback",
+    "boltForward": "reload.rifle.boltforward",
+    "shellInsert": "",
+    "pump": ""
+  },
+  "boltCycleTime": 0
+}

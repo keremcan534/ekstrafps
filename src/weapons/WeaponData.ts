@@ -8,8 +8,15 @@ import mosin from '../config/weapons/mosin.json';
 import kar98 from '../config/weapons/kar98.json';
 import heavyPistol from '../config/weapons/heavy_pistol.json';
 import pumpShotgun from '../config/weapons/pump_shotgun.json';
+import mp5 from '../config/weapons/mp5.json';
+import glock18 from '../config/weapons/glock18.json';
+import saiga12 from '../config/weapons/saiga12.json';
+import svd from '../config/weapons/svd.json';
+import m249 from '../config/weapons/m249.json';
+import scarh from '../config/weapons/scarh.json';
 
-export type ModelKey = 'ak47' | 'mk47' | 'asval' | 'm4a1' | 'rd704' | 'ppsh' | 'mosin' | 'kar98' | 'pistol' | 'shotgun';
+export type ModelKey = 'ak47' | 'mk47' | 'asval' | 'm4a1' | 'rd704' | 'ppsh' | 'mosin' | 'kar98' | 'pistol' | 'shotgun'
+  | 'mp5' | 'glock' | 'saiga' | 'svd' | 'm249' | 'scarh';
 export type AnimSet = 'rifle' | 'pistol' | 'shotgun' | 'bolt';
 export type FireMode = 'auto' | 'semi' | 'pump' | 'bolt';
 
@@ -146,7 +153,7 @@ export interface WeaponData {
   };
 }
 
-export const WEAPON_DEFAULTS: readonly WeaponData[] = [ak47, mk47, asval, m4a1, rd704, ppsh, mosin, kar98, heavyPistol, pumpShotgun] as WeaponData[];
+export const WEAPON_DEFAULTS: readonly WeaponData[] = [ak47, mk47, asval, m4a1, rd704, ppsh, mosin, kar98, heavyPistol, pumpShotgun, mp5, glock18, saiga12, svd, m249, scarh] as WeaponData[];
 
 /** Live, mutable copies the game and tuning panel share. */
 export const createWeaponDefs = (): WeaponData[] => WEAPON_DEFAULTS.map((w) => structuredClone(w));
@@ -167,6 +174,12 @@ if (import.meta.hot) {
       '../config/weapons/kar98.json',
       '../config/weapons/heavy_pistol.json',
       '../config/weapons/pump_shotgun.json',
+      '../config/weapons/mp5.json',
+      '../config/weapons/glock18.json',
+      '../config/weapons/saiga12.json',
+      '../config/weapons/svd.json',
+      '../config/weapons/m249.json',
+      '../config/weapons/scarh.json',
     ],
     () => {},
   );

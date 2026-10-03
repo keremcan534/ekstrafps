@@ -216,7 +216,7 @@ export class AudioSystem {
     }
     if (gain < 0.01) return;
 
-    const pitch = (opts?.pitch ?? 1) * (1 + (Math.random() * 2 - 1) * (ev.pitchVariance ?? 0));
+    const pitch = (opts?.pitch ?? 1) * (ev.pitch ?? 1) * (1 + (Math.random() * 2 - 1) * (ev.pitchVariance ?? 0));
     const now = this.ctx.currentTime;
     let longest = 0;
     // Your own gunshot (no position, has distance bands): louder, a chest kick under it,

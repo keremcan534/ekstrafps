@@ -77,6 +77,7 @@ const mat = {
   reticle: new THREE.MeshBasicMaterial({ color: 0xff2a1a, toneMapped: false, side: THREE.DoubleSide }),
   holoGlass: new THREE.MeshStandardMaterial({ color: 0xffd9a0, metalness: 0.2, roughness: 0.05, transparent: true, opacity: 0.06, depthWrite: false }),
   darkHole: std(0x060607, 0.2, 0.9),
+  olive: poly(0x4b4f38, 0.92, 0),
 };
 
 type V3 = [number, number, number];
@@ -920,6 +921,323 @@ function buildShotgun(): WeaponRig {
   });
 }
 
+// ------------------------------------------------------------------ newer guns
+
+/** MP5A3: roller-delayed 9 mm, slim curved mag, drum diopter + hooded post, sliding stock. 0.7 m. */
+function buildMP5(): WeaponRig {
+  const R = new THREE.Group();
+  const B = mat.black;
+  // Round-topped stamped receiver + cocking tube running over the barrel.
+  box(R, B, [0.044, 0.046, 0.3], [0, 0.023, -0.08]);
+  tube(R, B, 0.022, 0.3, [0, 0.048, -0.08]);
+  tube(R, B, 0.014, 0.17, [0, 0.058, -0.31]);
+  box(R, B, [0.02, 0.022, 0.03], [0, 0.04, -0.235]);
+  // Fat tropical handguard with finger ribs.
+  profile(R, mat.polymer, [[-0.22, 0.052], [-0.37, 0.05], [-0.38, 0.03], [-0.37, -0.012], [-0.24, -0.016], [-0.22, -0.004]], 0.06);
+  row(R, mat.black, 5, [0.062, 0.003, 0.008], [0, -0.01, -0.25], [0, 0, -0.026]);
+  // Barrel, three-lug muzzle, hooded front post on the cocking tube.
+  tube(R, mat.blued, 0.0105, 0.11, [0, 0.03, -0.43]);
+  tube(R, mat.blued, 0.0135, 0.034, [0, 0.03, -0.47]);
+  for (const a of [0, (Math.PI * 2) / 3, (Math.PI * 4) / 3]) box(R, mat.blued, [0.006, 0.006, 0.012], [Math.sin(a) * 0.015, 0.03 + Math.cos(a) * 0.015, -0.462]);
+  box(R, B, [0.016, 0.03, 0.022], [0, 0.077, -0.38]);
+  ringZ(R, B, 0.013, 0.006, [0, 0.1, -0.38]);
+  ironFront(R, -0.38, 0.1, 0.088);
+  // Rear drum diopter: the aperture ring frames the front post.
+  box(R, B, [0.034, 0.018, 0.026], [0, 0.074, 0.03]);
+  tube(R, B, 0.011, 0.03, [0, 0.082, 0.03]).rotation.set(0, 0, Math.PI / 2);
+  box(R, B, [0.004, 0.016, 0.004], [0, 0.09, 0.018]);
+  ringZ(R, B, 0.007, 0.004, [0, 0.1, 0.018]);
+  const sight = point(R, [0, 0.1, 0.018]);
+  // Lower: trigger housing, raked grip, guard, paddle selector.
+  box(R, mat.polymer, [0.04, 0.03, 0.13], [0, -0.012, -0.015]);
+  profile(R, mat.polymer, [[-0.005, -0.02], [0.042, -0.02], [0.07, -0.118], [0.048, -0.128], [0.024, -0.12], [0.004, -0.064]], 0.032);
+  for (let i = 0; i < 4; i++) box(R, mat.polymer, [0.034, 0.003, 0.005], [0, -0.045 - i * 0.018, 0.034 + i * 0.006], [0.3, 0, 0]);
+  box(R, mat.blued, [0.008, 0.024, 0.04], [0, -0.034, -0.04]);
+  triggerGuard(R, mat.polymer, -0.07, -0.004, -0.027, 0.03);
+  box(R, mat.steel, [0.004, 0.012, 0.03], [-0.022, 0.0, 0.01], [-0.4, 0, 0]);
+  // Mag well + slim curved 30-rounder.
+  box(R, B, [0.034, 0.03, 0.05], [0, -0.012, -0.13]);
+  const mag = group(R, [0, -0.02, -0.13]);
+  curvedMag(mag, mat.blued, 4, 0.024, 0.042, 0.06, 0.048);
+  // Charging handle: left side, forward on the cocking tube.
+  const bolt = group(R, [-0.018, 0.058, -0.29]);
+  box(bolt, mat.steel, [0.022, 0.01, 0.012], [-0.012, 0, 0]);
+  // A3 sliding stock: two struts and a butt plate.
+  box(R, B, [0.046, 0.06, 0.02], [0, 0.025, 0.075]);
+  for (const sx of [-1, 1]) {
+    tube(R, mat.blued, 0.005, 0.22, [0.019 * sx, 0.048, 0.185]);
+    tube(R, mat.blued, 0.005, 0.22, [0.019 * sx, -0.004, 0.185]);
+  }
+  box(R, mat.blued, [0.05, 0.1, 0.012], [0, 0.015, 0.29]);
+  box(R, mat.rubber, [0.046, 0.096, 0.012], [0, 0.015, 0.302]);
+  box(R, mat.darkHole, [0.002, 0.016, 0.04], [0.0225, 0.042, -0.06]); // ejection port
+  rivets(R, mat.steel, [[0.023, 0.02, -0.2], [-0.023, 0.02, -0.2], [0.023, 0.02, 0.05], [-0.023, 0.02, 0.05]]);
+  slingLoop(R, [0.0, 0.07, -0.33]);
+  const rightHand = hand(R, [0, -0.064, 0.035], [0.1, -0.25, 0.36], [0.05, 0.085, 0.085]);
+  const leftHand = hand(R, [-0.005, -0.008, -0.31], [-0.22, -0.26, -0.02], [0.055, 0.05, 0.1]);
+  return rig(R, {
+    muzzle: point(R, [0, 0.03, -0.49]),
+    ejectPort: point(R, [0.024, 0.042, -0.06]),
+    laser: point(R, [0.034, 0.02, -0.3]),
+    sight, mag, bolt, pump: null, leftHand, rightHand, heldShell: null, shellType: 'pistol',
+    butt: [0, 0.015, 0.3],
+  });
+}
+
+/** G18C machine pistol: polymer frame, ported slide, selector, 33-round stick. 0.19 m. */
+function buildGlock(): WeaponRig {
+  const R = new THREE.Group();
+  const P = mat.polymer;
+  box(R, P, [0.03, 0.026, 0.17], [0, 0.002, -0.07]);
+  box(R, P, [0.03, 0.11, 0.048], [0, -0.058, 0.01], [0.3, 0, 0]);
+  box(R, mat.steel, [0.006, 0.024, 0.008], [0, -0.022, -0.042]);
+  tube(R, mat.steel, 0.009, 0.03, [0, 0.03, -0.17]);
+  const slide = group(R, [0, 0, 0]);
+  box(slide, mat.black, [0.034, 0.034, 0.19], [0, 0.032, -0.07]);
+  for (const sx of [-1, 1]) row(slide, mat.darkHole, 6, [0.002, 0.02, 0.003], [0.0171 * sx, 0.032, 0.008], [0, 0, 0.0055]);
+  box(slide, mat.darkHole, [0.003, 0.012, 0.03], [0.0172, 0.04, -0.045]); // ejection port
+  row(slide, mat.darkHole, 3, [0.008, 0.003, 0.007], [0, 0.0495, -0.125], [0, 0, -0.012]); // compensator cuts
+  box(slide, mat.steel, [0.004, 0.012, 0.012], [-0.019, 0.034, 0.012]); // selector switch
+  box(slide, mat.black, [0.009, 0.016, 0.008], [0.0095, 0.054, 0.02]);
+  box(slide, mat.black, [0.009, 0.016, 0.008], [-0.0095, 0.054, 0.02]);
+  box(slide, mat.black, [0.0055, 0.016, 0.006], [0, 0.053, -0.15]);
+  const frontDot = new THREE.Mesh(new THREE.CircleGeometry(0.0024, 10), mat.bead);
+  frontDot.position.set(0, 0.0575, -0.1465);
+  slide.add(frontDot);
+  for (const x of [0.0095, -0.0095]) {
+    const rearDot = new THREE.Mesh(new THREE.CircleGeometry(0.0018, 8), mat.bead);
+    rearDot.position.set(x, 0.0565, 0.0242);
+    slide.add(rearDot);
+  }
+  // Extended magazine sticks well out of the grip.
+  const mag = group(R, [0, -0.03, 0.0]);
+  box(mag, mat.gunmetal, [0.026, 0.16, 0.04], [0, -0.07, 0.019], [0.3, 0, 0]);
+  box(mag, P, [0.03, 0.012, 0.05], [0, -0.152, 0.045], [0.3, 0, 0]);
+  const rightHand = hand(R, [0, -0.06, 0.025], [0.08, -0.24, 0.36], [0.05, 0.09, 0.08]);
+  const leftHand = hand(R, [-0.025, -0.075, 0.015], [-0.18, -0.25, 0.32], [0.05, 0.075, 0.08]);
+  box(R, P, [0.026, 0.006, 0.06], [0, -0.012, -0.115]); // accessory rail
+  row(R, mat.black, 3, [0.027, 0.003, 0.006], [0, -0.006, -0.1], [0, 0, -0.015]);
+  triggerGuard(R, P, -0.065, -0.02, -0.012, 0.03);
+  for (const sx of [-1, 1]) for (let i = 0; i < 4; i++) box(R, mat.black, [0.002, 0.012, 0.03], [0.0155 * sx, -0.04 - i * 0.017, 0.008 + i * 0.005], [0.3, 0, 0]);
+  return rig(R, {
+    muzzle: point(R, [0, 0.03, -0.185]),
+    ejectPort: point(R, [0.02, 0.045, -0.05]),
+    laser: point(R, [0, -0.02, -0.13]),
+    sight: point(R, [0, 0.06, 0.02]),
+    mag, bolt: slide, pump: null, leftHand, rightHand, heldShell: null, shellType: 'pistol',
+    butt: [0, -0.06, 0.06],
+  });
+}
+
+/** Saiga-12K: AK-pattern 12 gauge, black polymer furniture, fat box mag, folding stock. 0.91 m. */
+function buildSaiga(): WeaponRig {
+  const R = new THREE.Group();
+  box(R, mat.blued, [0.054, 0.076, 0.28], [0, 0.025, -0.06]);
+  box(R, mat.blued, [0.056, 0.022, 0.22], [0, 0.072, -0.04]);
+  box(R, mat.blued, [0.04, 0.026, 0.05], [0, 0.074, -0.18]);
+  const sight = ironRear(R, -0.2, 0.098);
+  row(R, mat.blued, 4, [0.058, 0.003, 0.006], [0, 0.084, 0.04], [0, 0, -0.035]);
+  // Polymer handguards around a thick barrel + gas tube.
+  tube(R, mat.blued, 0.012, 0.17, [0, 0.07, -0.295]);
+  profile(R, mat.polymer, [[-0.215, 0.062], [-0.37, 0.062], [-0.375, 0.076], [-0.36, 0.09], [-0.225, 0.09], [-0.21, 0.078]], 0.044);
+  profile(R, mat.polymer, [[-0.205, 0.05], [-0.398, 0.048], [-0.398, -0.002], [-0.37, -0.014], [-0.3, -0.008], [-0.24, -0.014], [-0.205, -0.006]], 0.062);
+  for (const sx of [-1, 1]) row(R, mat.darkHole, 4, [0.002, 0.012, 0.024], [0.031 * sx, 0.024, -0.235], [0, 0, -0.04]);
+  tube(R, mat.blued, 0.015, 0.2, [0, 0.03, -0.5]);
+  box(R, mat.blued, [0.03, 0.05, 0.034], [0, 0.056, -0.42]); // gas block
+  box(R, mat.blued, [0.026, 0.05, 0.03], [0, 0.058, -0.56]);
+  ironFront(R, -0.565, 0.098, 0.083);
+  tube(R, mat.gunmetal, 0.018, 0.035, [0, 0.03, -0.615]); // thread protector
+  // Side-folding polymer stock, AK grip, guard.
+  profile(R, mat.polymer, [[0.075, 0.036], [0.31, 0.012], [0.316, -0.1], [0.2, -0.07], [0.13, -0.038], [0.075, -0.012]], 0.04);
+  box(R, mat.rubber, [0.044, 0.116, 0.014], [0, -0.044, 0.318], [0.02, 0, 0]);
+  box(R, mat.blued, [0.05, 0.05, 0.02], [0, 0.012, 0.085]); // hinge block
+  profile(R, mat.polymer, [[-0.005, -0.008], [0.04, -0.008], [0.072, -0.105], [0.05, -0.118], [0.026, -0.112], [0.006, -0.06]], 0.032);
+  box(R, mat.blued, [0.008, 0.026, 0.05], [0, -0.022, -0.03]);
+  triggerGuard(R, mat.blued, -0.07, 0.0, -0.013, 0.034);
+  box(R, mat.blued, [0.004, 0.014, 0.12], [0.029, 0.036, -0.03], [-0.08, 0, 0]); // selector lever
+  box(R, mat.blued, [0.022, 0.012, 0.014], [0, -0.036, -0.075]); // mag catch
+  // Wide box magazine: eight 12 ga shells.
+  const mag = group(R, [0, -0.012, -0.125]);
+  curvedMag(mag, mat.black, 4, 0.044, 0.088, 0.035, 0.05);
+  box(mag, mat.black, [0.05, 0.012, 0.096], [0, -0.19, -0.034], [0.15, 0, 0]);
+  const bolt = group(R, [0.034, 0.04, -0.1]);
+  box(bolt, mat.steel, [0.022, 0.012, 0.03], [0.008, 0, 0]);
+  box(bolt, mat.steel, [0.008, 0.018, 0.02], [0.02, 0.004, 0.0]);
+  for (const sx of [-1, 1]) rivets(R, mat.steel, [[0.028 * sx, 0.04, -0.18], [0.028 * sx, 0.01, -0.18], [0.028 * sx, 0.04, 0.06], [0.028 * sx, 0.01, 0.06]]);
+  box(R, mat.blued, [0.004, 0.022, 0.1], [-0.029, 0.024, 0.0]);
+  slingLoop(R, [-0.02, 0.044, -0.42]);
+  const rightHand = hand(R, [0, -0.06, 0.035], [0.1, -0.25, 0.36], [0.05, 0.085, 0.085]);
+  const leftHand = hand(R, [-0.005, -0.026, -0.31], [-0.22, -0.26, -0.02], [0.055, 0.05, 0.1]);
+  return rig(R, {
+    muzzle: point(R, [0, 0.03, -0.635]),
+    ejectPort: point(R, [0.03, 0.04, -0.06]),
+    laser: point(R, [0.04, 0.012, -0.36]),
+    sight, mag, bolt, pump: null, leftHand, rightHand, heldShell: null, shellType: 'shotgun',
+    butt: [0, -0.024, 0.32],
+  });
+}
+
+/** SVD Dragunov: long DMR, skeleton thumbhole stock, slotted handguard, 10-round mag. 1.22 m. */
+function buildSVD(): WeaponRig {
+  const R = new THREE.Group();
+  const W = mat.akWood;
+  box(R, mat.blued, [0.05, 0.07, 0.28], [0, 0.025, -0.06]);
+  box(R, mat.blued, [0.052, 0.022, 0.22], [0, 0.07, -0.04]);
+  box(R, mat.blued, [0.04, 0.026, 0.05], [0, 0.072, -0.18]);
+  const sight = ironRear(R, -0.2, 0.096);
+  row(R, mat.blued, 4, [0.054, 0.003, 0.006], [0, 0.082, 0.04], [0, 0, -0.035]);
+  box(R, mat.blued, [0.006, 0.03, 0.16], [-0.028, 0.03, -0.05]); // side scope rail
+  row(R, mat.darkHole, 4, [0.002, 0.004, 0.02], [-0.0312, 0.03, 0.01], [0, 0, -0.035]);
+  // Slotted wooden handguard, long barrel, gas block, front sight, slotted flash hider.
+  tube(R, mat.blued, 0.012, 0.3, [0, 0.07, -0.36]);
+  box(R, W, [0.058, 0.07, 0.3], [0, 0.042, -0.36]);
+  for (const sx of [-1, 1]) row(R, mat.darkHole, 5, [0.002, 0.022, 0.03], [0.0295 * sx, 0.048, -0.25], [0, 0, -0.055]);
+  box(R, mat.blued, [0.062, 0.074, 0.012], [0, 0.042, -0.21]);
+  box(R, mat.blued, [0.062, 0.074, 0.012], [0, 0.042, -0.512]);
+  tube(R, mat.blued, 0.011, 0.36, [0, 0.03, -0.69]);
+  box(R, mat.blued, [0.03, 0.05, 0.04], [0, 0.05, -0.54]); // gas block
+  box(R, mat.blued, [0.022, 0.04, 0.024], [0, 0.06, -0.8]);
+  ironFront(R, -0.805, 0.096, 0.08);
+  tube(R, mat.blued, 0.015, 0.09, [0, 0.03, -0.9]);
+  for (const sx of [-1, 1]) row(R, mat.darkHole, 1, [0.002, 0.008, 0.06], [0.0152 * sx, 0.03, -0.905], [0, 0, 0]);
+  // Skeleton thumbhole stock: comb strut, grip, lower strut, butt, cheek pad.
+  profile(R, W, [[0.07, 0.04], [0.31, 0.034], [0.31, 0.004], [0.12, 0.008], [0.07, 0.014]], 0.044);
+  profile(R, W, [[0.24, 0.034], [0.33, 0.034], [0.335, -0.125], [0.22, -0.125], [0.25, -0.08]], 0.044);
+  profile(R, W, [[0.06, -0.09], [0.24, -0.1], [0.24, -0.125], [0.07, -0.118]], 0.04);
+  profile(R, W, [[-0.005, -0.008], [0.04, -0.008], [0.075, -0.1], [0.07, -0.118], [0.026, -0.112], [0.006, -0.06]], 0.034);
+  box(R, mat.rubber, [0.046, 0.165, 0.012], [0, -0.045, 0.338]);
+  box(R, mat.polymer, [0.048, 0.02, 0.09], [0, 0.046, 0.25]); // cheek pad
+  box(R, mat.blued, [0.008, 0.026, 0.05], [0, -0.022, -0.03]);
+  triggerGuard(R, mat.blued, -0.07, 0.0, -0.011, 0.034);
+  box(R, mat.blued, [0.004, 0.014, 0.12], [0.027, 0.036, -0.03], [-0.08, 0, 0]);
+  const mag = group(R, [0, -0.012, -0.12]);
+  ribbedMag(mag, mat.blued, 4, 0.03, 0.06, 0.03, 0.033);
+  const bolt = group(R, [0.032, 0.04, -0.1]);
+  box(bolt, mat.steel, [0.022, 0.012, 0.03], [0.008, 0, 0]);
+  box(bolt, mat.steel, [0.008, 0.018, 0.02], [0.02, 0.004, 0.0]);
+  for (const sx of [-1, 1]) rivets(R, mat.steel, [[0.026 * sx, 0.04, -0.18], [0.026 * sx, 0.01, -0.18], [0.026 * sx, 0.04, 0.06], [0.026 * sx, 0.01, 0.06]]);
+  slingLoop(R, [0.0, 0.0, -0.5]);
+  slingLoop(R, [0.0, -0.13, 0.28]);
+  const rightHand = hand(R, [0, -0.06, 0.035], [0.1, -0.25, 0.36], [0.05, 0.085, 0.085]);
+  const leftHand = hand(R, [-0.005, -0.012, -0.36], [-0.22, -0.26, -0.04], [0.055, 0.05, 0.1]);
+  return rig(R, {
+    muzzle: point(R, [0, 0.03, -0.95]),
+    ejectPort: point(R, [0.03, 0.04, -0.06]),
+    laser: point(R, [0.034, 0.042, -0.4]),
+    sight, mag, bolt, pump: null, leftHand, rightHand, heldShell: null, shellType: 'rifle',
+    butt: [0, -0.045, 0.335],
+  });
+}
+
+/** M249 SAW: box receiver with feed cover, carry handle, folded bipod, 100-round soft pouch. 1.04 m. */
+function buildM249(): WeaponRig {
+  const R = new THREE.Group();
+  const B = mat.black;
+  box(R, B, [0.062, 0.09, 0.32], [0, 0.025, -0.1]);
+  box(R, mat.parkerized, [0.066, 0.024, 0.2], [0, 0.08, -0.13]); // feed tray cover
+  box(R, mat.parkerized, [0.07, 0.01, 0.03], [0, 0.07, -0.03]); // cover latch
+  const sight = ironRear(R, -0.03, 0.118);
+  box(R, B, [0.03, 0.022, 0.03], [0, 0.098, -0.03]);
+  box(R, mat.brass, [0.016, 0.03, 0.08], [-0.036, 0.05, -0.15]); // belt entering the feed tray
+  row(R, mat.brass, 4, [0.022, 0.008, 0.008], [-0.04, 0.03, -0.18], [0, 0, 0.02]);
+  // Barrel, heat shield, gas tube, handguard, carry handle.
+  tube(R, mat.blued, 0.013, 0.46, [0, 0.03, -0.49]);
+  box(R, B, [0.034, 0.006, 0.2], [0, 0.05, -0.38]);
+  row(R, mat.darkHole, 6, [0.02, 0.002, 0.012], [0, 0.0535, -0.3], [0, 0, -0.03]);
+  tube(R, B, 0.01, 0.34, [0, -0.002, -0.43]);
+  box(R, mat.polymer, [0.064, 0.05, 0.16], [0, 0.0, -0.34]);
+  row(R, B, 5, [0.066, 0.003, 0.006], [0, -0.02, -0.28], [0, 0, -0.03]);
+  box(R, B, [0.008, 0.04, 0.012], [0.038, 0.05, -0.33]);
+  box(R, B, [0.008, 0.04, 0.012], [0.038, 0.05, -0.45]);
+  box(R, B, [0.012, 0.012, 0.14], [0.042, 0.075, -0.39]);
+  box(R, B, [0.016, 0.04, 0.03], [0, 0.04, -0.69]);
+  ironFront(R, -0.69, 0.118, 0.06);
+  box(R, B, [0.012, 0.06, 0.02], [0, 0.088, -0.69]);
+  tube(R, mat.blued, 0.016, 0.06, [0, 0.03, -0.745]);
+  row(R, mat.darkHole, 3, [0.034, 0.004, 0.008], [0, 0.03, -0.73], [0, 0, -0.014]);
+  // Folded bipod under the barrel.
+  box(R, B, [0.04, 0.02, 0.03], [0, 0.008, -0.62]);
+  for (const sx of [-1, 1]) box(R, mat.blued, [0.01, 0.012, 0.24], [0.016 * sx, -0.012, -0.5]);
+  // Stock, grip, trigger guard.
+  profile(R, mat.polymer, [[0.06, 0.066], [0.33, 0.046], [0.336, -0.085], [0.2, -0.052], [0.06, -0.016]], 0.046);
+  row(R, mat.black, 4, [0.048, 0.003, 0.012], [0, 0.058, 0.12], [0, 0, 0.05]);
+  box(R, mat.rubber, [0.05, 0.14, 0.014], [0, -0.018, 0.338]);
+  profile(R, mat.polymer, [[-0.005, -0.018], [0.04, -0.018], [0.072, -0.115], [0.05, -0.128], [0.026, -0.122], [0.006, -0.07]], 0.032);
+  box(R, mat.blued, [0.008, 0.026, 0.05], [0, -0.032, -0.03]);
+  triggerGuard(R, B, -0.07, 0.0, -0.02, 0.032);
+  // 100-round soft ammo pouch (the "magazine").
+  const mag = group(R, [0, -0.02, -0.15]);
+  box(mag, mat.olive, [0.08, 0.13, 0.14], [-0.012, -0.075, 0]);
+  box(mag, mat.olive, [0.084, 0.012, 0.144], [-0.012, -0.004, 0]);
+  box(mag, mat.black, [0.02, 0.024, 0.06], [0.03, -0.03, 0]);
+  rivets(mag, mat.steel, [[0.029, -0.07, 0.05], [0.029, -0.07, -0.05]], 0.004);
+  const bolt = group(R, [0.034, 0.02, -0.19]);
+  box(bolt, mat.steel, [0.02, 0.014, 0.022], [0.008, 0, 0]);
+  rivets(R, mat.steel, [[0.032, 0.0, -0.24], [0.032, 0.05, -0.24], [-0.032, 0.0, -0.24], [-0.032, 0.05, -0.24], [0.032, 0.0, 0.04], [-0.032, 0.0, 0.04]]);
+  slingLoop(R, [0, -0.07, 0.25]);
+  const rightHand = hand(R, [0, -0.07, 0.035], [0.1, -0.25, 0.36], [0.05, 0.085, 0.085]);
+  const leftHand = hand(R, [-0.005, -0.026, -0.36], [-0.22, -0.26, -0.06], [0.056, 0.05, 0.1]);
+  return rig(R, {
+    muzzle: point(R, [0, 0.03, -0.78]),
+    ejectPort: point(R, [0.012, -0.02, -0.08]),
+    laser: point(R, [0.034, 0.01, -0.4]),
+    sight, mag, bolt, pump: null, leftHand, rightHand, heldShell: null, shellType: 'rifle',
+    butt: [0, -0.018, 0.335],
+  });
+}
+
+/** SCAR-H: FDE monolithic upper with a full-length rail, holo sight, folding stock, 20-round mag. 0.97 m. */
+function buildSCARH(): WeaponRig {
+  const R = new THREE.Group();
+  const T = mat.tan;
+  box(R, T, [0.052, 0.05, 0.5], [0, 0.06, -0.17]);
+  box(R, mat.black, [0.026, 0.012, 0.52], [0, 0.091, -0.17]);
+  railTeeth(R, 0.08, -0.42, 0.097);
+  const sight = holoSight(R, -0.04, 0.097);
+  for (const sx of [-1, 1]) {
+    box(R, mat.black, [0.008, 0.016, 0.16], [0.03 * sx, 0.055, -0.33]); // side rails
+    row(R, mat.darkHole, 4, [0.002, 0.01, 0.02], [0.0262 * sx, 0.055, -0.21], [0, 0, -0.045]);
+  }
+  box(R, mat.black, [0.03, 0.01, 0.16], [0, 0.03, -0.33]); // bottom rail
+  // Barrel, gas block, flash hider.
+  tube(R, mat.blued, 0.012, 0.16, [0, 0.06, -0.5]);
+  box(R, mat.black, [0.03, 0.03, 0.03], [0, 0.068, -0.44]);
+  tube(R, mat.black, 0.015, 0.06, [0, 0.06, -0.6]);
+  row(R, mat.darkHole, 3, [0.032, 0.004, 0.008], [0, 0.06, -0.585], [0, 0, -0.014]);
+  // Black lower, grip, guard, flared mag well.
+  box(R, mat.black, [0.046, 0.05, 0.2], [0, 0.01, -0.06]);
+  box(R, mat.black, [0.034, 0.085, 0.045], [0, -0.058, 0.025], [0.32, 0, 0]);
+  for (const sx of [-1, 1]) box(R, mat.polymer, [0.002, 0.06, 0.03], [0.0175 * sx, -0.06, 0.028], [0.32, 0, 0]);
+  box(R, mat.black, [0.008, 0.026, 0.05], [0, -0.026, -0.03]);
+  triggerGuard(R, mat.black, -0.068, 0.0, -0.015, 0.03);
+  box(R, mat.black, [0.052, 0.03, 0.034], [0, -0.022, -0.11], [0.2, 0, 0]);
+  box(R, mat.black, [0.003, 0.004, 0.018], [-0.024, 0.02, 0.015]); // selector
+  // Folding stock: hinge, FDE body with a cheek riser, black butt pad.
+  box(R, mat.black, [0.046, 0.05, 0.024], [0, 0.06, 0.09]);
+  profile(R, T, [[0.1, 0.085], [0.34, 0.077], [0.345, -0.07], [0.3, -0.07], [0.24, -0.006], [0.14, 0.012], [0.1, 0.03]], 0.04);
+  box(R, T, [0.042, 0.018, 0.12], [0, 0.092, 0.22]);
+  box(R, mat.rubber, [0.044, 0.155, 0.016], [0, 0.005, 0.35]);
+  box(R, mat.darkHole, [0.002, 0.014, 0.05], [0.0262, 0.058, -0.05]); // ejection port
+  // 20-round 7.62 mag.
+  const mag = group(R, [0, -0.015, -0.11]);
+  curvedMag(mag, mat.black, 3, 0.03, 0.072, 0.025, 0.055);
+  box(mag, mat.black, [0.036, 0.01, 0.08], [0, -0.165, -0.008], [0.05, 0, 0]);
+  // Reciprocating charging handle, left side.
+  const bolt = group(R, [-0.03, 0.068, -0.24]);
+  box(bolt, mat.black, [0.022, 0.012, 0.016], [-0.01, 0, 0]);
+  rivets(R, mat.steel, [[0.027, 0.07, 0.02], [-0.027, 0.07, 0.02], [0.027, 0.07, -0.38], [-0.027, 0.07, -0.38]]);
+  slingLoop(R, [0.024, 0.06, 0.3]);
+  const rightHand = hand(R, [0, -0.058, 0.03], [0.1, -0.25, 0.36], [0.05, 0.085, 0.085]);
+  const leftHand = hand(R, [-0.005, 0.0, -0.33], [-0.22, -0.24, -0.04], [0.055, 0.05, 0.1]);
+  return rig(R, {
+    muzzle: point(R, [0, 0.06, -0.632]),
+    ejectPort: point(R, [0.028, 0.058, -0.05]),
+    laser: point(R, [0.036, 0.055, -0.33]),
+    sight, mag, bolt, pump: null, leftHand, rightHand, heldShell: null, shellType: 'rifle',
+    butt: [0, 0.02, 0.35],
+  });
+}
+
 const BUILDERS: Record<ModelKey, () => WeaponRig> = {
   ak47: buildAK47,
   mk47: buildMK47,
@@ -931,6 +1249,12 @@ const BUILDERS: Record<ModelKey, () => WeaponRig> = {
   kar98: buildKar98,
   pistol: buildPistol,
   shotgun: buildShotgun,
+  mp5: buildMP5,
+  glock: buildGlock,
+  saiga: buildSaiga,
+  svd: buildSVD,
+  m249: buildM249,
+  scarh: buildSCARH,
 };
 
 export function buildWeaponModel(model: ModelKey, low = false): WeaponRig {

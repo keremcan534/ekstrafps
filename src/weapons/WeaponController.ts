@@ -216,7 +216,13 @@ export class WeaponController implements WeaponListener {
         this.requestSwitch(o[(i + input.cyclePressed + o.length) % o.length]);
       }
     } else {
-      if (input.slotPressed >= 0) this.requestSwitch(input.slotPressed);
+      if (input.slotPressed >= 0) {
+        // Ten keys, more guns: the key of the gun in hand flips to its second page (1 → 11 → 1).
+        const cur = this.pendingIndex >= 0 ? this.pendingIndex : this.currentIndex;
+        let i = input.slotPressed;
+        if (cur % 10 === i) i = cur < 10 && cur + 10 < this.weapons.length ? cur + 10 : i;
+        this.requestSwitch(i);
+      }
       if (input.cyclePressed !== 0) {
         const n = this.weapons.length;
         this.requestSwitch((this.currentIndex + input.cyclePressed + n) % n);

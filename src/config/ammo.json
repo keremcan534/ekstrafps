@@ -150,5 +150,43 @@
     "pellets": 1,
     "pelletSpread": 0,
     "impactBoost": 2.2
+  },
+  "9x19_pst": {
+    "name": "9x19 Pst gzh",
+    "caliber": "9x19 Parabellum",
+    "projectileMass": 7.5,
+    "muzzleVelocity": 390,
+    "referenceBarrel": 0.114,
+    "velocityPerBarrelMeter": 0.9,
+    "damage": 46,
+    "penetration": 18,
+    "ballisticCoefficient": 0.14,
+    "ricochetChance": 0.3,
+    "fragmentationChance": 0.05,
+    "tracer": false,
+    "accuracyModifier": 1.0,
+    "recoilModifier": 0.65,
+    "pellets": 1,
+    "pelletSpread": 0,
+    "impactBoost": 1.3
+  },
+  "762x51_m80": {
+    "name": "7.62x51 M80",
+    "caliber": "7.62x51 NATO",
+    "projectileMass": 9.5,
+    "muzzleVelocity": 833,
+    "referenceBarrel": 0.508,
+    "velocityPerBarrelMeter": 0.6,
+    "damage": 78,
+    "penetration": 41,
+    "ballisticCoefficient": 0.39,
+    "ricochetChance": 0.25,
+    "fragmentationChance": 0.1,
+    "tracer": false,
+    "accuracyModifier": 1.0,
+    "recoilModifier": 1.0,
+    "pellets": 1,
+    "pelletSpread": 0,
+    "impactBoost": 1.6
   }
 }

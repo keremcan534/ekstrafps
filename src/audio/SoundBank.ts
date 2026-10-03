@@ -39,6 +39,8 @@ export interface SoundEvent {
   layers: SoundLayer[];
   /** Random pitch +/- (fraction). */
   pitchVariance?: number;
+  /** Base pitch (1 = as recorded): lets one recording voice several guns. */
+  pitch?: number;
   /** Max overlapping instances of this event. */
   maxVoices?: number;
   /** Bus: weapon sounds duck nothing, ui bypasses distance attenuation. */
@@ -143,6 +145,81 @@ export const SOUND_BANK: Record<string, SoundEvent> = {
     reverb: 0.65,
     pitchVariance: 0.025,
     maxVoices: 6,
+  },
+  // Newer guns voice the same recordings at their own pitch and weight.
+  'mp5.fire': {
+    layers: [
+      { files: shots('p90', 4), gain: 1.0, range: 'near' },
+      { synth: 'pistol_punch', gain: 0.5, range: 'near' },
+      { file: 'audio/guns/tail_hall.wav', gain: 0.22, tail: true },
+      ...distant(0.6),
+    ],
+    reverb: 0.45,
+    pitch: 1.1,
+    pitchVariance: 0.025,
+    maxVoices: 20,
+  },
+  'glock.fire': {
+    layers: [
+      { files: shots('pistol', 3), gain: 1.1, range: 'near' },
+      { synth: 'pistol_punch', gain: 0.55, range: 'near' },
+      { file: 'audio/guns/tail_hall.wav', gain: 0.2, tail: true },
+      ...distant(0.55),
+    ],
+    reverb: 0.5,
+    pitch: 1.16,
+    pitchVariance: 0.03,
+    maxVoices: 20,
+  },
+  'saiga.fire': {
+    layers: [
+      { files: shots('boom', 2), gain: 1.2, range: 'near' },
+      { synth: 'shotgun_punch', gain: 1.1, range: 'near' },
+      { synth: 'ak_punch', gain: 0.4, range: 'near' },
+      { file: 'audio/guns/tail_hall.wav', gain: 0.32, tail: true },
+      ...distant(1.0),
+    ],
+    reverb: 0.6,
+    pitch: 1.06,
+    pitchVariance: 0.03,
+    maxVoices: 8,
+  },
+  'svd.fire': {
+    layers: [
+      { files: shots('bolt', 3), gain: 1.25, range: 'near' },
+      { synth: 'rifle_boom', gain: 1.0, range: 'near' },
+      { synth: 'ak_punch', gain: 0.5, range: 'near' },
+      ...distant(1.25),
+    ],
+    reverb: 0.6,
+    pitch: 1.05,
+    pitchVariance: 0.02,
+    maxVoices: 6,
+  },
+  'm249.fire': {
+    layers: [
+      { files: shots('mg', 4), gain: 1.2, range: 'near' },
+      { synth: 'ar_punch', gain: 0.8, range: 'near' },
+      { file: 'audio/guns/tail_hall.wav', gain: 0.45, tail: true },
+      ...distant(1.1),
+    ],
+    reverb: 0.55,
+    pitch: 1.07,
+    pitchVariance: 0.02,
+    maxVoices: 20,
+  },
+  'scar.fire': {
+    layers: [
+      { files: shots('heavy', 2), gain: 1.2, range: 'near' },
+      { synth: 'rifle_boom', gain: 0.55, range: 'near' },
+      { synth: 'ak_punch', gain: 0.8, range: 'near' },
+      { file: 'audio/guns/tail_hall.wav', gain: 0.45, tail: true },
+      ...distant(1.15),
+    ],
+    reverb: 0.55,
+    pitch: 0.94,
+    pitchVariance: 0.025,
+    maxVoices: 16,
   },
   // Bolt actions: N-wave crack, saturated body, deep boom, big room.
   'mosin.fire': {

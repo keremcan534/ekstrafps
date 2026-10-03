@@ -121,7 +121,7 @@ canvas { display: block; touch-action: none; }
 .btn-jump { right: calc(2.5vw + env(safe-area-inset-right)); bottom: 6vh; width: 62px; height: 62px; }
 .btn-crouch { right: calc(2.5vw + 78px + env(safe-area-inset-right)); bottom: 4vh; width: 54px; height: 54px; font-size: 9px; }
 .btn-reload { right: calc(9vw + 10px + env(safe-area-inset-right)); bottom: calc(22vh + 104px); width: 48px; height: 48px; }
-.slots { position: absolute; top: 10px; left: 50%; transform: translateX(-50%); display: flex; gap: 8px; pointer-events: none; }
+.slots { position: absolute; top: 10px; left: 50%; transform: translateX(-50%); display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; width: max-content; max-width: 70vw; pointer-events: none; }
 .btn-slot { position: static; width: auto; height: 30px; padding: 0 8px; border-radius: 6px; font-size: 9px; }
 .btn-mode { right: calc(9vw + 104px + env(safe-area-inset-right)); bottom: calc(22vh + 112px); width: 46px; height: 46px; font-size: 9px; }
 .btn-lean-l, .btn-lean-r { top: 30vh; width: 50px; height: 50px; font-size: 9px; border-radius: 10px; }

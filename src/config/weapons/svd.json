@@ -1,0 +1,85 @@
+{
+  "id": "svd",
+  "name": "SVD Dragunov",
+  "short": "SVD",
+  "model": "svd",
+  "animSet": "rifle",
+  "category": "rifle",
+  "ammo": "762x54r_lps",
+  "fireModes": [
+    "semi"
+  ],
+  "fireRate": 300,
+  "magazineSize": 10,
+  "closedBolt": true,
+  "barrelLength": 0.62,
+  "handling": {
+    "weight": 4.3,
+    "length": 1.22,
+    "ergonomics": 30
+  },
+  "accuracy": {
+    "moa": 1.4
+  },
+  "recoil": {
+    "vertical": 2.6,
+    "horizontal": 0.45,
+    "horizontalBias": 0.12,
+    "back": 0.024,
+    "shoulder": 140,
+    "damping": 0.55,
+    "cameraTransfer": 0.45,
+    "cameraKeep": 0.16,
+    "cameraRecovery": 3.4,
+    "dispersion": 0.04,
+    "punch": 1.0,
+    "roll": 1.8
+  },
+  "aim": {
+    "hipConvergence": 15,
+    "zeroDistance": 100
+  },
+  "sight": {
+    "type": "iron",
+    "adsFov": 62,
+    "sightDistance": 0.36
+  },
+  "viewmodel": {
+    "hipPosition": [
+      0.165,
+      -0.215,
+      -0.43
+    ]
+  },
+  "reload": {
+    "kind": "magazine",
+    "time": 2.4,
+    "emptyTime": 3.0,
+    "shellStart": 0,
+    "shellInsert": 0,
+    "shellEnd": 0
+  },
+  "equipTime": 0.6,
+  "holsterTime": 0.3,
+  "sprintToFireTime": 0.18,
+  "fx": {
+    "tracerEvery": 0,
+    "muzzleFlashScale": 1.8,
+    "smoke": 1.1,
+    "shellEjectDelay": 0.02,
+    "shellEjectSpeed": 3.0
+  },
+  "audio": {
+    "fire": "svd.fire",
+    "dry": "dry_fire",
+    "equip": "equip.rifle",
+    "reloadStart": "reload.rifle.start",
+    "magOut": "reload.rifle.magout",
+    "magIn": "reload.rifle.magin",
+    "boltBack": "reload.rifle.boltback",
+    "boltForward": "reload.rifle.boltforward",
+    "shellInsert": "",
+    "pump": ""
+  },
+  "boltCycleTime": 0
+}

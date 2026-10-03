@@ -50,7 +50,8 @@ export interface HazardSpot {
 
 /** Prices of the wall weapons; positions get a random weapon each game (lobby excepted). */
 export const WEAPON_PRICES: Record<string, number> = {
-  heavy_pistol: 300, kar98: 600, pump_shotgun: 900, mosin: 1000, ppsh: 1200, ak47: 1400, asval: 1600, m4a1: 1800, mk47: 2000, rd704: 2250,
+  heavy_pistol: 300, kar98: 600, glock18: 700, pump_shotgun: 900, mosin: 1000, mp5: 1100, ppsh: 1200, ak47: 1400, saiga12: 1500, asval: 1600,
+  m4a1: 1800, mk47: 2000, svd: 2100, rd704: 2250, scarh: 2400, m249: 2600,
 };
 /** Team start rooms (4-team mode): cheap guns on their walls, a guaranteed ammo cache. */
 export const TEAM_STARTS: Record<string, { room: string; zone: string; pos: [number, number] }> = {
@@ -59,8 +60,11 @@ export const TEAM_STARTS: Record<string, { room: string; zone: string; pos: [num
   charlie: { room: 'barracks', zone: 'barracks', pos: [90, 76] },
   delta: { room: 'power', zone: 'power', pos: [12, -69] },
 };
-const START_WEAPONS = ['kar98', 'pump_shotgun', 'mosin'];
-const RANDOM_WEAPONS = ['pump_shotgun', 'mosin', 'ppsh', 'ak47', 'asval', 'm4a1', 'mk47', 'rd704', 'pump_shotgun', 'ppsh', 'ak47'];
+const START_WEAPONS = ['kar98', 'pump_shotgun', 'mosin', 'glock18'];
+const RANDOM_WEAPONS = [
+  'pump_shotgun', 'mosin', 'ppsh', 'ak47', 'asval', 'm4a1', 'mk47', 'rd704', 'pump_shotgun', 'ppsh', 'ak47',
+  'mp5', 'mp5', 'saiga12', 'svd', 'scarh', 'm249',
+];
 
 export interface Terminal {
   kind: 'ally';

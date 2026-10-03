@@ -35,6 +35,7 @@ On the start screen, click anywhere or press Enter. Esc releases the mouse.
 | R / B / T | reload / fire mode / inspect (magazine, chamber) |
 | [ / ] | zero distance |
 | 1-9, 0, mouse wheel | AK-47, MK47, AS VAL, M4A1, RD-704, PPSh-41, Mosin, Kar98k, pistol, shotgun |
+| same number again | MP5, G18, Saiga-12K, SVD, M249, SCAR-H (1 → 11 … 6 → 16) |
 | **Lab** | |
 | G | aim rays: camera ray, bore ray, muzzle vector, wall probes, bullet trajectories |
 | L | test laser (parallel to the bore) |
@@ -88,7 +89,7 @@ The camera and the weapon are separate bodies. The camera responds instantly. Th
   - Projectiles simulate muzzle velocity (from barrel length), gravity, quadratic drag, travel time and grazing-angle ricochets.
   - Damage and impulse scale with remaining velocity.
   - Mechanical accuracy is MOA × the ammo's accuracy modifier. There is no hip-fire bloom.
-- **Mechanism.** Magazine plus chamber: a tactical reload gives mag+1. The PPSh fires from an open bolt and the shotgun uses a pump. Fire modes are selectable. Malfunctions, attachments and optics have hooks in the data and architecture.
+- **Mechanism.** Magazine plus chamber: a tactical reload gives mag+1. The PPSh and M249 fire from an open bolt and the pump shotgun uses a pump (the Saiga is a semi-auto box-mag 12 gauge). Fire modes are selectable. Malfunctions, attachments and optics have hooks in the data and architecture.
 
 ## Robot hit reactions and ragdolls
 
