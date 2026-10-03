@@ -114,7 +114,7 @@ export interface HumanoidPose {
 }
 
 /** Torso roll at full lean (rad). */
-export const LEAN_ROLL = 0.42;
+export const LEAN_ROLL = 0.5;
 
 /**
  * Ground covered by one full walk cycle (m) at a stride amount: what the legs' swing

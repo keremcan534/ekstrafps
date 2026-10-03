@@ -818,8 +818,9 @@ export class Soldier implements LightSource {
       pitch = Math.atan2(d.y, Math.hypot(lx, lz)) - (mode === 'ready' ? 0.35 : 0);
       if (mode === 'aim') {
         const moving = Math.hypot(this.vel.x, this.vel.z) > 0.6;
-        const settle = 1 + 3.5 * Math.exp(-this.visibleTime / 2.0);
-        const sigma = ((1.0 + 0.03 * dist) * settle * (moving ? 1.7 : 1) * (1 + this.flinch * 2) * DEG) / Math.max(0.2, feel.enemyAccuracy * this.skill);
+        // Error shrinks as the aim stays on the target (first rounds wide, then they walk in).
+        const settle = 1 + 2.4 * Math.exp(-this.visibleTime / 1.3);
+        const sigma = ((0.65 + 0.026 * dist) * settle * (moving ? 1.6 : 1) * (1 + this.flinch * 2) * DEG) / Math.max(0.2, feel.enemyAccuracy * this.skill);
         yaw += this.errNoise.sample(this.time * 0.9) * sigma * 1.9;
         pitch += this.errNoise2.sample(this.time * 0.9) * sigma * 1.1;
       }
@@ -913,7 +914,8 @@ export class Soldier implements LightSource {
     if (this.burstLeft <= 0) {
       if (this.time < this.burstPause) return;
       const dist = this.pos.distanceTo(player.feet);
-      const base = this.semi ? 1 : dist > 35 ? 1 + ((Math.random() * 2) | 0) : dist > 15 ? 2 + ((Math.random() * 2) | 0) : 3 + ((Math.random() * 3) | 0);
+      // Long bursts up close, controlled pairs at mid range, taps far out.
+      const base = this.semi ? 1 : dist > 35 ? 1 + ((Math.random() * 2) | 0) : dist > 15 ? 2 + ((Math.random() * 3) | 0) : 3 + ((Math.random() * 4) | 0);
       this.burstLeft = Math.max(1, Math.round(base * (dist > 15 ? this.burstScale : 1)));
     }
     // Muzzle and bore.
@@ -950,7 +952,7 @@ export class Soldier implements LightSource {
     this.ammo--;
     this.burstLeft--;
     this.nextShot = this.time + this.fireInterval * (0.95 + Math.random() * 0.1);
-    if (this.burstLeft <= 0) this.burstPause = this.time + (this.semi ? 0.25 + Math.random() * 0.35 : 0.6 + Math.random() * 0.9);
+    if (this.burstLeft <= 0) this.burstPause = this.time + (this.semi ? 0.22 + Math.random() * 0.3 : 0.45 + Math.random() * 0.55);
     const tracer = this.team === 'bd' && this.ammo % 4 === 0;
     // Any team but the player's can hit the player; the player's team never gives hit markers.
     const hostile = this.team !== 'alpha';

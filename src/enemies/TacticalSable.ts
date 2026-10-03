@@ -4,11 +4,14 @@ import { TeamAgent, randomPersonality, type Combatant } from '../game/TeamAgent'
 import { SquadBrain } from '../ai/Squad';
 import { SquadVoice } from '../ai/SquadVoice';
 import { pickCommanderLine, type CommanderCategory } from '../audio/CommanderVoice';
+import { PERSONAS, type PersonaId } from '../ai/Persona';
 
 type SquadState = 'patrol' | 'combat' | 'search';
 
 const SIZE = 4;
 const WEAPONS = ['asval', 'ak47', 'm4a1', 'mk47'];
+/** A squad with a shape: the Warden hunts, one pushes, one works corners, one lies in wait. */
+const PERSONALITY: PersonaId[] = ['gigachad', 'chad', 'normal', 'turtle'];
 const WALK = 1.5;
 const RESPAWN = 10;
 
@@ -60,6 +63,7 @@ export class TacticalSable {
       }
       const a = new TeamAgent(deps, 'bd', 40 + i, p, warden ? 'bdboss' : 'bd', undefined, 'disciplined');
       a.soldier.body.canGoDown = () => false;
+      a.bot.setPersona(PERSONAS[PERSONALITY[i % PERSONALITY.length]]);
       this.squad.add(a.bot);
       this.agents.push(a);
       this.mates.push(a.soldier);
@@ -88,8 +92,8 @@ export class TacticalSable {
       a.spawn(p, Math.random() * Math.PI * 2);
       a.arm(WEAPONS[i % WEAPONS.length]);
       // Sharper than the AI teams: quick to read a fight, accurate, the Warden most of all.
-      a.baseSkill = a.soldier.skill = i === 0 ? 1.45 : 1.35;
-      a.chad = i === 0 || i === 2;
+      a.baseSkill = a.soldier.skill = i === 0 ? 1.35 : 1.25;
+      a.chad = i === 0;
     });
     this.wasAlive = this.agents.map(() => true);
     this.state = 'patrol';

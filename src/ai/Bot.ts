@@ -6,23 +6,57 @@ import { canSee, coverRegistry, findCover, protectedFrom, type CoverSpot } from 
 import { BotMemory, type Contact } from './Memory';
 import { Navigator } from './Navigator';
 import { BotPerception } from './Perception';
+import { PERSONAS, personaFor, type Persona } from './Persona';
 import type { SquadBrain, SquadRole } from './Squad';
 import { flankLabel, planFlank, planSearch, type FlankPlan } from './Tactics';
 import { AI_TUNING, PROFILES, WEAPON_RANGE, type Profile, type ProfileId } from './Tuning';
 import { aiWorld, type AIListener } from './World';
 
-/** Tactical decisions (utility-scored). FOLLOW = calm: the team/economy logic drives. */
+/**
+ * Tactical decisions, SAIN-style: picked by ordered rules (self → close quarters →
+ * the squad's jobs → what the enemy is doing), and each one carries itself out:
+ * a decision changes when its rule stops applying or it finishes, not every tick.
+ *
+ *   FOLLOW        nothing to fight: the team / economy logic drives
+ *   SHOOT         enemy in sight, in the open: shoot, strafing in legs (stand and shoot)
+ *   DOGFIGHT      enemy close: shoot while backing off and circling
+ *   RUSH          enemy reloading / pinned / the squad pushes: charge
+ *   HOLD_COVER    in cover: shoot from it, peek and lean round its edge on a rhythm
+ *   RUN_TO_COVER  under fire in the open: sprint to the nearest fighting cover
+ *   MOVE_TO_COVER enemy in sight: work to cover while shooting
+ *   SHIFT_COVER   this cover's gone stale: the next one (aggressive: closer)
+ *   RETREAT       badly hurt: cover away from the enemy
+ *   AMBUSH        lost them: hold the angle on the last known spot, leaning to check it
+ *   SEARCH        held long enough: go and find them (wait, approach, peek, sweep)
+ *   INVESTIGATE   an enemy only heard / a noise / squadmates' gunfire
+ *   FLANK         the squad's flanker: around the side
+ *   SUPPRESS      pin a known spot while a squadmate moves
+ *   RELOAD        empty, or low with nobody in sight (cover first when exposed)
+ *   REGROUP       too far from the squad
+ *   HELP          a squadmate is fighting something we can't see
+ *   ROBOT         a rogue machine close by: shoot it, keeping the gap
+ */
 export type Decision =
-  | 'ENGAGE' | 'SEEK_COVER' | 'HOLD_ANGLE' | 'PEEK' | 'SUPPRESS' | 'FLANK' | 'PUSH' | 'RETREAT'
-  | 'REPOSITION' | 'SEARCH' | 'INVESTIGATE' | 'RELOAD' | 'REGROUP' | 'ASSIST' | 'FOLLOW';
+  | 'FOLLOW' | 'SHOOT' | 'DOGFIGHT' | 'RUSH' | 'HOLD_COVER' | 'RUN_TO_COVER' | 'MOVE_TO_COVER' | 'SHIFT_COVER'
+  | 'RETREAT' | 'AMBUSH' | 'SEARCH' | 'INVESTIGATE' | 'FLANK' | 'SUPPRESS' | 'RELOAD' | 'REGROUP' | 'HELP' | 'ROBOT';
 
 export const DECISIONS: readonly Decision[] = [
-  'ENGAGE', 'SEEK_COVER', 'HOLD_ANGLE', 'PEEK', 'SUPPRESS', 'FLANK', 'PUSH', 'RETREAT',
-  'REPOSITION', 'SEARCH', 'INVESTIGATE', 'RELOAD', 'REGROUP', 'ASSIST', 'FOLLOW',
+  'FOLLOW', 'SHOOT', 'DOGFIGHT', 'RUSH', 'HOLD_COVER', 'RUN_TO_COVER', 'MOVE_TO_COVER', 'SHIFT_COVER',
+  'RETREAT', 'AMBUSH', 'SEARCH', 'INVESTIGATE', 'FLANK', 'SUPPRESS', 'RELOAD', 'REGROUP', 'HELP', 'ROBOT',
 ];
 
-/** Decisions that change the bot's position (the watchdog pushes toward these). */
-const MOVES: readonly Decision[] = ['REPOSITION', 'PEEK', 'FLANK', 'SEARCH', 'PUSH', 'INVESTIGATE', 'ASSIST', 'REGROUP'];
+/** Decisions that answer an enemy in sight: switching into one of them is never held back. */
+const SIGHT: ReadonlySet<Decision> = new Set<Decision>(['SHOOT', 'DOGFIGHT', 'HOLD_COVER', 'RUN_TO_COVER', 'MOVE_TO_COVER', 'RUSH']);
+
+/** Moving decisions that still shoot at what shows up (walk / jog pace). */
+const SHOOTS_ON_MOVE: ReadonlySet<Decision> = new Set<Decision>(['SEARCH', 'INVESTIGATE', 'FLANK', 'HELP', 'SHIFT_COVER', 'AMBUSH']);
+
+/** Shortest run of a decision before a non-urgent change (seconds): no flip-flopping. */
+const MIN_HOLD: Record<Decision, number> = {
+  FOLLOW: 0.5, SHOOT: 1.4, DOGFIGHT: 0.9, RUSH: 1.5, HOLD_COVER: 1.6, RUN_TO_COVER: 0.8, MOVE_TO_COVER: 1.2,
+  SHIFT_COVER: 1.5, RETREAT: 2.5, AMBUSH: 1.6, SEARCH: 3, INVESTIGATE: 2.5, FLANK: 3, SUPPRESS: 2.5, RELOAD: 1,
+  REGROUP: 2, HELP: 2, ROBOT: 0.8,
+};
 
 const pick = <T>(a: readonly T[]) => a[(Math.random() * a.length) | 0];
 const rand = (a: number, b: number) => a + Math.random() * (b - a);
@@ -37,11 +71,20 @@ export function profileFor(p: Personality, style?: string): ProfileId {
   return Math.random() < 0.3 ? 'tactical' : 'balanced';
 }
 
+interface SearchState {
+  phase: 'wait' | 'move' | 'corner' | 'look';
+  pts: THREE.Vector3[];
+  i: number;
+  until: number;
+  target: Contact | null;
+  since: number;
+}
+
 /**
- * One bot's tactical mind, layered:
- *   perception (senses) → memory (beliefs) → decision brain (utility) →
- *   tactical movement (navigator, cover, flank, search) → combat execution (Soldier).
- * The squad brain sits above and shares contacts, roles and a plan.
+ * One bot's tactical mind:
+ *   perception (senses) → memory (beliefs) → decision rules (SAIN-style layers) →
+ *   tactical movement (navigator, cover, flank, search, leans) → combat (Soldier).
+ * The squad brain sits above: it shares contacts, deals roles and sets a plan.
  *
  * Bots never read an enemy's live position unless they currently see it: they
  * act on what they saw, heard, felt or were told, and that belief fades.
@@ -51,12 +94,16 @@ export class Bot implements AIListener {
   readonly senses: BotPerception;
   readonly navigator: Navigator;
   profile: Profile;
+  /** How this bot fights (when each rule fires). */
+  persona: Persona;
+  /** Its own personality (the elite flag swaps in the gigachad while it's set). */
+  private basePersona: Persona;
   squad: SquadBrain | null = null;
   role: SquadRole = 'none';
   decision: Decision = 'FOLLOW';
   /** Step inside the decision (debug). */
   action = 'calm';
-  /** Last utility scores (debug). */
+  /** Kept for the debug panel (the rules don't score). */
   scores: Partial<Record<Decision, number>> = {};
   /** The contact that matters most right now. */
   target: Contact | null = null;
@@ -76,54 +123,70 @@ export class Bot implements AIListener {
   watchdogCount = 0;
   /** 0..1 skill (reaction, recognition, peeks, decision quality). */
   skill01 = 0.4;
+  /**
+   * How urgent the squad's objective is (0..1): its team has somewhere to be (a supply
+   * drop, a hunt, a rush). Far robots and unidentified noises don't derail it.
+   */
+  objective = 0;
   /** Debug drawing data. */
   readonly debug = { covers: [] as { pos: THREE.Vector3; ok: boolean }[], searchPts: [] as THREE.Vector3[], investigate: null as THREE.Vector3 | null };
   /** Stats for tests. */
   readonly stats: Record<string, number> = {};
 
   private decisionAt = -1e9;
-  private commitUntil = 0;
+  /** No non-urgent change before this. */
+  private minUntil = 0;
+  /** A proposed change waits for a second agreeing evaluation (debounce). */
+  private proposal: Decision | null = null;
+  private proposalN = 0;
+  /** The running decision finished (or failed): decide again now, no debounce. */
+  private done = false;
   private evalTimer = Math.random() * 0.2;
   private interrupt = false;
-  private wasInterrupt = false;
-  private peek = { phase: 'none' as 'none' | 'out' | 'back', until: 0, next: 0, at: new THREE.Vector3() };
+  /** Watchdog: pushed out of a standoff (search at once, shift cover toward them). */
+  private pushOnUntil = 0;
+  private progressAt = new THREE.Vector3(1e9, 0, 1e9);
+
+  // Per-decision state.
+  private peek = { out: false, until: 0, next: 0, lean: 0, move: false };
+  private strafe = { dir: 0, last: 0, until: 0 };
+  private adadUntil = 0;
+  private adadNext = 0;
+  private leanSide = 0;
+  private leanCheckAt = 0;
   private suppressUntil = 0;
   private readonly suppressPt = new THREE.Vector3();
   private flankIndex = 0;
   private flankBanUntil = 0;
-  /** Flank plans put off for lack of AI budget in a row (and when the last was). */
   private flankPending = 0;
-  private flankPendingAt = -1e9;
-  /** A watchdog re-plan of a running flank was put off: re-enter FLANK at the next evaluation. */
-  private flankRetry = false;
-  private search: { pts: THREE.Vector3[]; i: number; pauseUntil: number; target: Contact | null; since: number } | null = null;
+  private search: SearchState | null = null;
   private investigate: { pos: THREE.Vector3; arrived: number; since: number } | null = null;
   private noCoverUntil = 0;
-  /** After a cover search found nothing, don't search again right away. */
   private coverRetryAt = 0;
-  /** The cover whose arrival was already counted. */
   private arrivedCover: CoverSpot | null = null;
-  /** When a fall-back position was last reached. */
   private retreatedAt = -1e9;
-  private lastReposition = -1e9;
-  private strafeTimer = 0;
-  /** Fighting from full cover on one knee (a few shots at a time). */
-  private kneel = false;
+  private lastShift = -1e9;
+  private rushUntil = 0;
+  private rushCooldown = 0;
   private crouchCycle = 0;
   private standUp = true;
   private kiteTimer = 0;
   private lookTimer = 0;
   private lookAngle = 0;
-  /** Seconds spent holding angles lately (fades slowly): holding gets old, it doesn't reset by switching. */
-  private holdFatigue = 0;
   private lastHurt = -1e9;
   private lastThreatAt = -1e9;
   private allyFireAt = -1e9;
   private readonly allyFirePos = new THREE.Vector3();
   private lastShare = new WeakMap<Combatant, number>();
   private lastFireProgress = -1e9;
-  private adadT = 0;
-  private adadSide = 1;
+  /** Rolled once per sighting: stand and shoot, or work to cover. */
+  private stand = { target: null as Contact | null, at: -1e9, yes: false };
+  /** Rolled once per loss of sight: how long to hold the angle before searching. */
+  private lost = { target: null as Contact | null, lostAt: -2e9, after: 0 };
+  /** Rolled once per heard contact: go and look, or hold and wait. */
+  private heard = { target: null as Contact | null, go: false };
+  /** Who the aim has been settling on. */
+  private aimedAt: Combatant | null = null;
   private readonly aimTgt: PlayerTarget = {
     feet: new THREE.Vector3(), head: new THREE.Vector3(), chest: new THREE.Vector3(), velocity: new THREE.Vector3(),
     sprinting: false, crouching: false, alive: false,
@@ -139,6 +202,7 @@ export class Bot implements AIListener {
     this.navigator = new Navigator(agent.soldier, deps.nav);
     this.senses = new BotPerception(this, deps.physics);
     this.profile = PROFILES[profileFor(agent.personality, teamStyle)];
+    this.basePersona = this.persona = personaFor(this.profile.id, agent.personality, false);
     aiWorld.listeners.add(this);
   }
 
@@ -174,15 +238,6 @@ export class Bot implements AIListener {
   }
 
   /** Any threat worth acting on (robots only when close). */
-  /**
-   * How urgent the squad's objective is (0..1): its team has somewhere to be (a supply
-   * drop, a hunt, a rush). Weighs FOLLOW (which carries out the team's order) against
-   * distractions: far robots and unidentified noises.
-   */
-  objective = 0;
-  /** Where the bot last made ground (progress = 3 m moved, not a decision entered). */
-  private progressAt = new THREE.Vector3(1e9, 0, 1e9);
-
   get hasThreat(): boolean {
     const t = this.target;
     if (!t || t.confidence < 0.12) return false;
@@ -192,6 +247,16 @@ export class Bot implements AIListener {
   /** Currently shooting at this (visible) enemy — the team brain's "target". */
   get engaged(): Combatant | null {
     return this.target?.visible ? this.target.target : null;
+  }
+
+  /** Give this bot a fighting personality (it keeps it through respawns). */
+  setPersona(p: Persona): void {
+    this.basePersona = this.persona = p;
+  }
+
+  /** The elite flag (the team logic sets it after spawn): the personality follows. */
+  private syncPersona(): void {
+    this.persona = this.agent.chad ? PERSONAS.gigachad : this.basePersona;
   }
 
   private stat(k: string): void {
@@ -273,8 +338,10 @@ export class Bot implements AIListener {
     this.decision = 'FOLLOW';
     this.action = 'calm';
     this.sinceProgress = 0;
+    this.proposal = null;
     this.navigator.stop();
     coverRegistry.release(this);
+    this.syncPersona();
   }
 
   /** Called when someone tells this bot (radio) about a point to watch (no identity). */
@@ -324,7 +391,7 @@ export class Bot implements AIListener {
     const expected = now - c.lastHeardTime < 5 || c.reported || now - c.lostAt < 6;
     const delay = (0.95 - 0.55 * this.skill01) * (expected ? 0.45 : 1.15) * (0.8 + Math.random() * 0.4) + d * 0.004;
     s.react(this.agent.chad ? Math.min(delay, 0.28) : delay);
-    s.settle(expected ? 0.7 : this.agent.chad ? 1.4 : 0);
+    s.settle(expected ? 0.9 : this.agent.chad ? 1.4 : 0.2);
     if (c.kind === 'player') this.agent.onSpotPlayer?.();
     if (now - c.firstTime < 0.5 || now - c.lostAt > 8) {
       this.agent.say(pick(c.kind === 'robot' ? ['Contact, bot!', 'Robot, on me!', 'Got one here!'] : ['Contact!', 'Hostile, eyes on!', 'Enemy spotted!', 'Shooters!']));
@@ -355,6 +422,7 @@ export class Bot implements AIListener {
     const now = aiWorld.time;
     this.evalTimer -= dt;
     this.watchdogFlash -= dt;
+    this.syncPersona();
     const s = this.soldier;
     if (Math.hypot(s.vel.x, s.vel.z) > 0.35) this.sinceMove = 0;
     else this.sinceMove += dt;
@@ -364,23 +432,37 @@ export class Bot implements AIListener {
       this.progressAt.copy(s.pos);
       this.sinceProgress = 0;
     }
-    // Anti-passivity: a bot with something to deal with that hasn't done anything
-    // meaningful for a while gets shaken out of its decision.
-    let watchdog = false;
-    const task = this.hasTask;
-    if (task && this.sinceProgress > AI_TUNING.passivityTimeout * this.profile.patience) {
-      watchdog = true;
+    // Anti-passivity: something to deal with and nothing happening → push on.
+    if (this.hasTask && this.sinceProgress > AI_TUNING.passivityTimeout * this.profile.patience * 1.6) {
       this.watchdogFlash = 2.4;
       this.watchdogCount++;
       this.stat('watchdog');
       this.sinceProgress = 0;
+      this.pushOnUntil = now + 6;
+      this.done = true;
     }
-    if (!task && this.decision === 'FOLLOW' && this.sinceProgress > 5) this.sinceProgress = 0;
-    if (this.interrupt || watchdog || this.evalTimer <= 0) {
-      this.wasInterrupt = this.interrupt;
+    if (!this.hasTask && this.decision === 'FOLLOW') this.sinceProgress = 0;
+    if (this.done || this.interrupt || this.evalTimer <= 0) {
+      this.evalTimer = AI_TUNING.decisionInterval * (0.85 + Math.random() * 0.3);
+      const finished = this.done;
+      this.done = false;
       this.interrupt = false;
-      this.evalTimer = AI_TUNING.decisionInterval * (0.8 + Math.random() * 0.4);
-      this.evaluate(watchdog, now);
+      this.target = this.memory.primary(s.pos, now, this.target);
+      this.updateCover(this.target, now);
+      const { d, urgent } = this.decide(now);
+      if (d === this.decision && !finished) {
+        this.proposal = null;
+        this.proposalN = 0;
+      } else if (finished || urgent || (SIGHT.has(d) && !SIGHT.has(this.decision))) {
+        this.enter(d, now);
+      } else if (now >= this.minUntil) {
+        if (this.proposal === d) {
+          if (++this.proposalN >= 2) this.enter(d, now);
+        } else {
+          this.proposal = d;
+          this.proposalN = 1;
+        }
+      }
     }
     return this.decision !== 'FOLLOW';
   }
@@ -393,342 +475,284 @@ export class Bot implements AIListener {
     return !!this.squad?.inCombat && this.decision !== 'FOLLOW';
   }
 
-  private evaluate(watchdog: boolean, now: number): void {
+  /**
+   * The rules, in priority order (first match wins). `urgent` changes skip the
+   * debounce: the mag ran dry, falling back, close quarters, hit in the open.
+   */
+  private decide(now: number): { d: Decision; urgent: boolean } {
     const s = this.soldier;
-    const P = this.profile;
-    const T = AI_TUNING;
-    const t = (this.target = this.memory.primary(s.pos, now, this.target));
-    this.updateCover(t, now);
+    const P = this.persona;
+    const t = this.target;
+    const sq = this.squad;
+    const cur = this.decision;
     const hp = this.agent.hp;
     const mag = s.magSize > 0 ? s.ammo / s.magSize : 1;
-    const reserveOk = s.reserve > 0;
-    const reloading = s.reloadTimer > 0;
-    const supp = this.suppression;
-    const suppressed = supp > T.suppressedLevel;
-    const robot = t?.kind === 'robot';
-    const conf = t?.confidence ?? 0;
-    const dist = t ? Math.hypot(t.pos.x - s.pos.x, t.pos.z - s.pos.z) : Infinity;
-    const vis = !!t?.visible;
-    const range = WEAPON_RANGE[s.weaponClass] ?? WEAPON_RANGE.rifle;
-    const inRange = dist <= range.max;
-    const threat = this.hasThreat;
-    const soldierThreat = threat && !robot;
-    const seenAgo = t ? now - t.lastSeenTime : 1e9;
-    const infoAge = t ? t.age(now) : 1e9;
-    const inCover = this.inCover;
-    const coverAge = now - this.coverSince;
+    const reserve = s.reserve > 0;
+    const pushOn = now < this.pushOnUntil;
+
+    // --- No soldier to fight: robots, or the calm layer (squad help, noises, orders).
+    if (!t || t.kind === 'robot' || t.confidence < 0.12 || t.target.downed) {
+      if (t && t.kind === 'robot' && t.visible) {
+        const d = this.flat(t.pos);
+        if (d < (this.objective > 0 ? 14 : 30)) return { d: 'ROBOT', urgent: cur === 'FOLLOW' || d < 8 };
+      }
+      return { d: this.calm(now), urgent: false };
+    }
+
+    const d = this.flat(t.pos);
+    const seenAgo = now - t.lastSeenTime;
+    const everSeen = t.lastSeenTime > -1e8;
+    // Out of sight for a blink still counts as in sight; a gunfight in the open keeps its
+    // aim on the spot a few seconds (they ducked: they'll come back up).
+    const vis = t.visible || seenAgo < (cur === 'SHOOT' || cur === 'DOGFIGHT' ? 2.5 : 0.5);
+    const shotAt = now - this.lastThreatAt < 1.8;
+    const hurt = now - this.lastHurt < 2.5;
+
+    // 1. Self: an empty mag comes first (pistols and the like carry on in close quarters).
+    if (s.ammo === 0 && reserve) return { d: 'RELOAD', urgent: true };
+    // 2. Badly hurt and still in the line of fire: fall back.
+    if (P.retreatHp > 0 && hp < P.retreatHp && (vis || shotAt) && now - this.retreatedAt > 10 && cur !== 'RETREAT') return { d: 'RETREAT', urgent: true };
+    if (cur === 'RETREAT' && now - this.decisionAt < 12 && !this.done) return { d: 'RETREAT', urgent: false };
+    // 3. Close quarters: no cover runs, no peeking — fight.
+    const [dfIn, dfOut] = P.dogfight;
+    if (vis && d < (cur === 'DOGFIGHT' ? dfOut : dfIn)) return { d: 'DOGFIGHT', urgent: cur !== 'DOGFIGHT' };
+    // 4. Rush: they're reloading, pinned, or the squad pushes — and we're up for it.
+    if (cur === 'RUSH' && now < this.rushUntil) return { d: 'RUSH', urgent: false };
+    if (P.rushes && now > this.rushCooldown && hp > 0.45 && mag > 0.3 && d < 32 && everSeen) {
+      const reloading = now - t.lastReloadHeard < 3;
+      const pinned = now - this.lastFireProgress < 2 && !t.visible && seenAgo < 6;
+      const squadPush = sq?.plan === 'push' && (this.role === 'assault' || this.role === 'flanker');
+      if (reloading || pinned || squadPush || (pushOn && !vis)) return { d: 'RUSH', urgent: reloading };
+    }
+    // 5. The squad's jobs.
+    if (cur === 'FLANK' && this.flank) return { d: 'FLANK', urgent: false };
+    if (sq && this.role === 'flanker' && sq.plan === 'flank' && now > this.flankBanUntil && now > sq.flankBanUntil && !(vis && d < 25) && hp > 0.45) return { d: 'FLANK', urgent: false };
+    if (sq && this.role === 'suppressor' && sq.flankActive && !t.visible && everSeen && seenAgo < 10 && (mag > 0.3 || reserve) && cur !== 'SUPPRESS' && this.canSeeArea(t)) return { d: 'SUPPRESS', urgent: false };
+    if (cur === 'SUPPRESS' && now < this.suppressUntil) return { d: 'SUPPRESS', urgent: false };
+    // 6. Low on ammo with nobody in sight: reload now, not mid-fight.
+    if (mag < 0.35 && reserve && !vis && seenAgo > 1.5) return { d: 'RELOAD', urgent: false };
+
+    // 7. Enemy in sight.
+    if (vis) {
+      if (this.inCover && this.cover) {
+        if (now - this.coverSince > P.shiftCoverAfter * (pushOn ? 0.4 : 1) && now - this.lastShift > 6) return { d: 'SHIFT_COVER', urgent: false };
+        return { d: 'HOLD_COVER', urgent: false };
+      }
+      // Already on the way to cover: get there.
+      if ((cur === 'RUN_TO_COVER' || cur === 'MOVE_TO_COVER') && this.cover) return { d: cur, urgent: false };
+      const underFire = shotAt || hurt || this.suppression > AI_TUNING.suppressedLevel;
+      if (underFire && now > this.noCoverUntil && P.standAndShoot < 0.8) return { d: 'RUN_TO_COVER', urgent: hurt };
+      if (now < this.noCoverUntil || this.rollStand(t, d, now)) return { d: 'SHOOT', urgent: false };
+      return { d: 'MOVE_TO_COVER', urgent: false };
+    }
+
+    // 8. Seen before, out of sight now: hold the angle, then go and look.
+    if (everSeen) {
+      const after = this.rollSearch(t, now) * (sq?.plan === 'search' ? 0.6 : 1) * (pushOn ? 0 : 1);
+      if (seenAgo < after) {
+        if (this.inCover && this.cover) return { d: 'HOLD_COVER', urgent: false };
+        if (cur === 'MOVE_TO_COVER' && this.cover) return { d: cur, urgent: false };
+        if (seenAgo < 2.5 && now > this.noCoverUntil && P.standAndShoot < 0.6 && d < 45) return { d: 'MOVE_TO_COVER', urgent: false };
+        return { d: 'AMBUSH', urgent: false };
+      }
+      if (cur === 'SEARCH' && this.search) return { d: 'SEARCH', urgent: false };
+      if (!t.searched && now - t.lastInfoTime < AI_TUNING.searchDuration) return { d: 'SEARCH', urgent: false };
+      return { d: this.calm(now), urgent: false };
+    }
+
+    // 9. Only heard, or told by the radio.
+    if (t.confidence > 0.22) {
+      if (this.objective > 0 && d > 25) return { d: this.calm(now), urgent: false };
+      if (cur === 'INVESTIGATE' && this.investigate) return { d: 'INVESTIGATE', urgent: false };
+      // The squad is in a fight there: set up facing it (cover, then peeks) or go see.
+      if (sq?.inCombat && d < 45) {
+        if (this.inCover && this.cover) return now - this.coverSince > P.shiftCoverAfter ? { d: 'SHIFT_COVER', urgent: false } : { d: 'HOLD_COVER', urgent: false };
+        if (now > this.noCoverUntil && !this.rollHeard(t)) return { d: 'MOVE_TO_COVER', urgent: false };
+        return { d: 'INVESTIGATE', urgent: false };
+      }
+      if (this.rollHeard(t) || pushOn || now - t.firstTime > this.rollSearch(t, now)) return { d: 'INVESTIGATE', urgent: false };
+      return { d: 'AMBUSH', urgent: false };
+    }
+    return { d: this.calm(now), urgent: false };
+  }
+
+  /** Nothing to fight: help the squad, check a noise, or carry on with orders. */
+  private calm(now: number): Decision {
     const sq = this.squad;
-    const friendly = !!sq?.friendly;
-    const allies = sq ? sq.aliveNear(this, 35) : 0;
-    const enemies = Math.max(soldierThreat ? 1 : 0, this.memory.countKnown(0.3, now));
-    const outnumbered = enemies >= allies + 2;
-    const advantage = Math.max(-1, Math.min(1, (allies + 1 - enemies) / 3));
-    const role = this.role;
-    const plan = sq?.plan ?? 'idle';
-    const shotAt = now - this.lastThreatAt < 3;
-    const moving = Math.hypot(s.vel.x, s.vel.z) > 0.5;
-    const sc: Record<Decision, number> = {
-      ENGAGE: 0, SEEK_COVER: 0, HOLD_ANGLE: 0, PEEK: 0, SUPPRESS: 0, FLANK: 0, PUSH: 0, RETREAT: 0,
-      REPOSITION: 0, SEARCH: 0, INVESTIGATE: 0, RELOAD: 0, REGROUP: 0, ASSIST: 0, FOLLOW: 0.22,
-    };
-    // Nothing to deal with: carry on (0.40), low enough that a heard gunshot, a squadmate's
-    // fight or a call for help wins. A squad objective weighs in unless a soldier is in sight.
-    if (!threat) sc.FOLLOW += 0.18;
-    if (this.objective > 0 && !(vis && !robot)) sc.FOLLOW += 0.3 * this.objective;
-
-    // ENGAGE: shoot what we see from where we are.
-    if (vis && t) {
-      // Robots: anything in range gets shot; on the way to an objective only the close ones
-      // (the rest follow anyway and come into range).
-      if (robot) sc.ENGAGE = dist < 14 ? 0.9 : (dist < 30 ? 0.85 : 0.7) - 0.6 * this.objective;
-      else {
-        sc.ENGAGE = 0.62 + (inCover ? 0.18 : -0.12 * P.cover) + (inRange ? 0.08 : -0.18) + (t.lineOfFire ? 0.05 : -0.4);
-        if (suppressed) sc.ENGAGE -= 0.3 * (1.3 - P.exposure);
-        if (hp < P.retreatHp) sc.ENGAGE -= 0.2;
-      }
-    }
-
-    // SEEK_COVER: exposed to a known threat, or being shot at.
-    if (soldierThreat && !inCover && now > this.noCoverUntil) {
-      const exposedLvl = vis || shotAt ? 1 : 0.3;
-      sc.SEEK_COVER = (0.3 + 0.32 * exposedLvl + 0.35 * Math.min(1, supp) + (hp < 0.6 ? 0.15 : 0)) * P.cover + (vis ? 0.1 : 0);
-      if (vis && inRange && P.push > 1.3) sc.SEEK_COVER -= 0.15;
-      if (dist < 6 && vis) sc.SEEK_COVER -= 0.25; // too close to turn your back
-      // Spotted them first and not under fire: shoot before running for cover.
-      if (vis && inRange && !shotAt && t?.lineOfFire) sc.SEEK_COVER -= 0.12;
-    }
-
-    // HOLD_ANGLE: watch where they were. Gets old (fatigue persists across switches).
-    if (soldierThreat && t && !vis && conf > 0.25 && infoAge < 15) {
-      const team = sq && sq.alive.length > 1;
-      sc.HOLD_ANGLE = 0.36 + (inCover ? 0.12 : 0) + (team && (role === 'anchor' || role === 'overwatch') ? 0.2 : 0) + (P.cover - 1) * 0.2;
-      sc.HOLD_ANGLE -= Math.min(0.7, (this.holdFatigue / (T.maxHoldCover * P.hold)) * 0.7);
-      if (seenAgo < 2.5) sc.HOLD_ANGLE += 0.1; // just ducked out of sight: they'll reappear
-      if (t.lastSeenTime < 0) sc.HOLD_ANGLE -= 0.15; // only heard: find out what it is
-    }
-
-    // PEEK: from cover, have a look.
-    if (soldierThreat && inCover && !vis && conf > 0.25 && now > this.peek.next) {
-      // Only heard, never seen: there's nothing to peek at yet (go find out instead).
-      const neverSeen = t!.lastSeenTime < 0;
-      sc.PEEK = 0.42 + 0.25 * Math.min(1, neverSeen ? 0 : seenAgo / 4) - 0.45 * Math.min(1, supp) + (P.exposure - 1) * 0.2 - (neverSeen ? 0.1 : 0);
-    }
-
-    // SUPPRESS: pin a known position, especially while a squadmate moves.
-    const ammoOk = mag > 0.3 || reserveOk;
-    if (soldierThreat && conf > 0.35 && seenAgo < 7 && ammoOk && (!vis || dist > range.max)) {
-      const base = (0.3 + (role === 'suppressor' ? 0.4 : 0) + (sq?.flankActive ? 0.35 : 0) - (supp > 0.6 ? 0.2 : 0)) * P.suppress * T.suppressUtility;
-      if (base > 0.2 && this.canSeeArea(t!)) sc.SUPPRESS = base;
-    }
-
-    // FLANK: they're holding a spot and someone else is keeping them busy.
-    if (soldierThreat && t && conf > 0.35 && now > this.flankBanUntil && (sq ? now > sq.flankBanUntil : true)) {
-      const still = Math.hypot(t.vel.x, t.vel.z) < 1.2;
-      if (still && dist > 8 && dist < 50 && hp > 0.45 && !suppressed && allies >= 1) {
-        sc.FLANK = (0.26 + (role === 'flanker' ? 0.5 : 0) + (plan === 'flank' && role === 'flanker' ? 0.15 : 0)) * P.flank * T.flankUtility;
-      }
-    }
-
-    // PUSH: the fight favours us.
-    if (soldierThreat && t && conf > 0.3) {
-      const enemyReloading = now - t.lastReloadHeard < 2.5;
-      const enemySuppressed = now - this.lastFireProgress < 2 && !vis; // we've been hammering their spot
-      const closeWeapon = (s.weaponClass === 'shotgun' || s.weaponClass === 'smg' || s.weaponClass === 'pistol') && dist > range.ideal;
-      let push = 0.1 + 0.3 * (enemySuppressed ? 1 : 0) + 0.3 * (enemyReloading ? 1 : 0) + 0.25 * Math.max(0, advantage) + (closeWeapon ? 0.2 : 0);
-      push += (role === 'assault' ? 0.25 : 0) + (plan === 'push' ? 0.25 : 0);
-      push -= (hp < 0.5 ? 0.35 : 0) + (mag < 0.3 && !reserveOk ? 0.3 : 0) + (allies === 0 && !friendly ? 0.25 : 0) + 0.4 * Math.min(1, supp) + (conf < 0.5 ? 0.2 : 0);
-      // Already in their face: the push is done, fight it out.
-      if (dist < Math.max(4, range.ideal * 0.6)) push *= 0.25;
-      sc.PUSH = Math.max(0, push) * P.push * T.pushUtility;
-    }
-
-    // RETREAT: this fight is bad.
-    if (soldierThreat) {
-      let r = Math.max(0, (P.retreatHp - hp) / P.retreatHp) * 0.9;
-      r += (outnumbered ? 0.25 : 0) + (mag <= 0 && !reserveOk ? 0.6 : 0) + (supp > 1 && !inCover ? 0.3 : 0) + (plan === 'retreat' ? 0.45 : 0);
-      // Already fell back to cover: stay and recover there for a while.
-      if (inCover && now - this.retreatedAt < 10) r *= 0.3;
-      sc.RETREAT = r * T.retreatUtility;
-    }
-
-    // REPOSITION: stale cover, stale angle (never right after arriving somewhere new).
-    if (soldierThreat && now - this.lastReposition > Math.max(T.minRepositionInterval, 4)) {
-      // Firing from the same spot for too long: they know where we are now. Relocate.
-      if (inCover && vis && coverAge > T.maxHoldCover * P.hold * 2) sc.REPOSITION = 1.1;
-      else if (inCover && coverAge > T.maxHoldCover * P.hold) sc.REPOSITION = 0.55;
-      else if (!vis && seenAgo > 6 && infoAge < 12 && conf > 0.3 && !moving && (!inCover || coverAge > 6)) sc.REPOSITION = 0.42;
-      else if (!inCover && now < this.noCoverUntil && (vis || shotAt)) sc.REPOSITION = 0.35;
-    }
-
-    // SEARCH: lost them; go look where they were.
-    if (soldierThreat && t && !vis && infoAge > 3 && conf < 0.75 && now - t.lastInfoTime < T.searchDuration && !t.searched) {
-      sc.SEARCH = 0.4 + (P.push - 1) * 0.15 + (plan === 'search' ? 0.25 : 0);
-      if (t.lastSeenTime < 0) sc.SEARCH -= 0.15; // never seen: investigating suits better
-    }
-
-    // A search / an investigation under way is finished, even as the trail goes cold.
-    if (this.search && now - this.search.since < T.searchDuration && !vis) sc.SEARCH = Math.max(sc.SEARCH, 0.55);
-    if (this.investigate && now - this.investigate.since < 30 && !vis) sc.INVESTIGATE = Math.max(sc.INVESTIGATE, 0.55);
-
-    // INVESTIGATE: a sound, or an enemy only heard.
-    const sound = this.memory.sounds[this.memory.sounds.length - 1];
-    if (!soldierThreat || (t && t.lastSeenTime < 0 && !vis)) {
-      if (sound && now - sound.time < 12 && sound.conf > 0.15) sc.INVESTIGATE = (Math.min(0.62, 0.3 + sound.conf * 0.6) + (P.push - 1) * 0.1) * (1 - 0.6 * this.objective);
-      if (t && soldierThreat && t.lastSeenTime < 0) sc.INVESTIGATE = Math.max(sc.INVESTIGATE, 0.5);
-      if (now - this.allyFireAt < 6 && !soldierThreat) sc.INVESTIGATE = Math.max(sc.INVESTIGATE, 0.45 * P.cooperation);
-    }
-
-    // RELOAD: low mag, ideally in cover.
-    if (mag < 0.35 && reserveOk && !reloading) sc.RELOAD = vis ? (s.ammo === 0 ? 0.95 : 0.15) : 0.6 + (inCover ? 0.15 : 0);
-
-    // REGROUP: too far from the squad (friendlies: from you).
-    if (sq && !vis) {
+    const busy = this.objective > 0;
+    if (sq) {
       const far = sq.distanceFromSquad(this);
-      if (far > (friendly ? T.friendlyTooFar : 30)) sc.REGROUP = friendly ? 0.8 : 0.55;
-      if (plan === 'regroup') sc.REGROUP = Math.max(sc.REGROUP, 0.5);
+      if (far > (sq.friendly ? AI_TUNING.friendlyTooFar : 30)) return 'REGROUP';
+      if (!busy && sq.helpFor(this)) return 'HELP';
     }
+    if (this.decision === 'INVESTIGATE' && this.investigate) return 'INVESTIGATE';
+    if (busy) return 'FOLLOW';
+    const sound = this.memory.sounds[this.memory.sounds.length - 1];
+    if (sound && now - sound.time < 10 && sound.conf > 0.2 && Math.random() < 0.35 + 0.65 * this.persona.investigates) return 'INVESTIGATE';
+    if (now - this.allyFireAt < 6) return 'INVESTIGATE';
+    return 'FOLLOW';
+  }
 
-    // ASSIST: a squadmate (or the player) is in a fight we're not part of.
-    if (sq && !vis && !soldierThreat) {
-      const help = sq.helpFor(this);
-      if (help) sc.ASSIST = (friendly && help.player ? 0.66 : 0.52) * P.cooperation;
-    }
+  private flat(p: THREE.Vector3): number {
+    return Math.hypot(p.x - this.soldier.pos.x, p.z - this.soldier.pos.z);
+  }
 
-    // Decision quality: worse bots weigh things less accurately.
-    const noise = 0.14 * (1 - this.skill01 * 0.7);
-    for (const d of DECISIONS) if (sc[d] > 0) sc[d] += (Math.random() - 0.5) * noise;
-    // Stick with what we're doing unless something is clearly better (calm never clings).
-    if (sc[this.decision] > 0 && this.decision !== 'FOLLOW') sc[this.decision] += 0.12;
-    if (watchdog) {
-      sc[this.decision] *= 0.35;
-      sc.HOLD_ANGLE *= 0.4;
-      let any = false;
-      for (const d of MOVES) if (sc[d] > 0) {
-        sc[d] += 0.25;
-        any = true;
-      }
-      if (!any && soldierThreat && t) {
-        if (!vis && conf < 0.75) sc.SEARCH = Math.max(sc.SEARCH, 0.6);
-        else sc.REPOSITION = Math.max(sc.REPOSITION, 0.6);
-      }
-      this.lastReposition = -1e9;
+  /** Once per sighting: stand and shoot (likelier up close), or work to cover. */
+  private rollStand(t: Contact, d: number, now: number): boolean {
+    const r = this.stand;
+    if (r.target !== t || now - r.at > 10) {
+      r.target = t;
+      const near = d < 12 ? 0.2 : d > 35 ? -0.2 : 0;
+      r.yes = Math.random() < clamp01(this.persona.standAndShoot + near);
     }
-    let best: Decision = 'FOLLOW';
-    for (const d of DECISIONS) if (sc[d] > sc[best]) best = d;
-    // Commitment: finish what was started unless something interrupts or is much better.
-    if (best !== this.decision && now < this.commitUntil && !this.wasInterrupt && !watchdog && sc[best] < sc[this.decision] + 0.35) best = this.decision;
-    this.scores = sc;
-    if (best !== this.decision || (watchdog && MOVES.includes(best)) || (this.flankRetry && best === 'FLANK')) this.enter(best, now);
+    r.at = now;
+    return r.yes;
+  }
+
+  /** Once per loss of sight: seconds to hold the angle before searching. */
+  private rollSearch(t: Contact, now: number): number {
+    const r = this.lost;
+    if (r.target !== t || r.lostAt !== t.lostAt) {
+      r.target = t;
+      r.lostAt = t.lostAt;
+      r.after = rand(this.persona.searchAfter[0], this.persona.searchAfter[1]);
+    }
+    void now;
+    return r.after;
+  }
+
+  /** Once per heard contact: go and look, or hold and wait for them. */
+  private rollHeard(t: Contact): boolean {
+    const r = this.heard;
+    if (r.target !== t) {
+      r.target = t;
+      r.go = Math.random() < this.persona.investigates;
+    }
+    return r.go;
   }
 
   private enter(d: Decision, now: number): void {
     const prev = this.decision;
     this.decision = d;
     this.decisionAt = now;
-    this.flankRetry = false;
-    if (d !== 'FLANK') this.stat(d); // FLANK: counted once a plan is in (see below)
-    if (prev === 'FLANK' && d !== 'FLANK') this.squad?.flankDone(this, false);
+    this.minUntil = now + MIN_HOLD[d];
+    this.proposal = null;
+    this.proposalN = 0;
+    if (d !== 'FLANK') this.stat(d);
+    if (prev === 'FLANK' && d !== 'FLANK') {
+      this.squad?.flankDone(this, false);
+      this.flank = null;
+    }
     if (d !== 'SEARCH') this.search = null;
     if (d !== 'INVESTIGATE') this.investigate = null;
-    this.peek.phase = 'none';
+    this.peek.out = false;
+    this.peek.next = now + rand(0.4, 1.2);
+    this.strafe.until = 0;
     const t = this.target;
     const s = this.soldier;
     switch (d) {
-      case 'SEEK_COVER':
-        this.cover = null;
-        this.commitUntil = now + 6;
+      case 'RUN_TO_COVER':
+      case 'MOVE_TO_COVER':
+        // Keep a cover already picked for this fight; otherwise a fresh search.
+        if (this.cover && (this.inCover || this.cover.pos.distanceTo(s.pos) > 18)) this.cover = null;
         this.action = 'finding cover';
         break;
-      case 'REPOSITION':
-        this.lastReposition = now;
+      case 'SHIFT_COVER':
+        this.lastShift = now;
         if (this.cover) this.memory.markCover(this.cover.pos, now);
         this.cover = null;
         this.inCover = false;
         coverRegistry.release(this);
-        this.commitUntil = now + 5;
-        this.action = 'repositioning';
+        this.action = 'shifting cover';
         break;
       case 'RETREAT':
         this.cover = null;
         this.inCover = false;
-        this.commitUntil = now + 7;
+        coverRegistry.release(this);
         this.action = 'falling back';
         this.agent.say(pick(["I'm hit, falling back!", 'Falling back!', 'Moving to cover, back!']), true);
         break;
-      case 'FLANK': {
-        let plan: FlankPlan | null | 'pending' = null;
-        if (t) {
-          const anchor = this.squad?.anchorPos(this) ?? s.pos;
-          // Phones: as heavy as a cover search, so it shares its one-per-frame slot (and needs
-          // a ray left; checked first so the slot isn't spent when the ray budget is gone).
-          const budget = !this.deps.lowSpec || (aiWorld.takeRay() && aiWorld.takeCoverQuery());
-          plan = budget ? planFlank(this.deps.nav, this.deps.physics, s.pos, t.pos, anchor, Math.random() < 0.5 ? 1 : -1, this.deps.lowSpec) : 'pending';
-        }
-        if (now - this.flankPendingAt > 3) this.flankPending = 0;
-        if (plan === 'pending') {
-          // Out of AI budget this frame, nothing learned about the map: no squad flank ban.
-          this.stat('flankPending');
-          const replan = prev === 'FLANK' && !!this.flank;
-          // Leaving a flank without a route to keep: free the squad's flanker slot (no squad ban).
-          if (prev === 'FLANK' && !(replan && this.flankPending < 4) && this.squad?.flanker === this) this.squad.flanker = null;
-          if (this.flankPending < 4) {
-            this.flankPending++;
-            this.flankPendingAt = now;
-            this.evalTimer = 0.2; // ask again shortly
-            if (replan) {
-              // Watchdog re-plan of a flank under way: keep walking the current route meanwhile.
-              this.decision = 'FLANK';
-              this.flankRetry = true;
-              return;
-            }
-            this.flank = null;
-            this.decision = 'HOLD_ANGLE';
-            this.commitUntil = now + 0.2;
-            this.action = 'planning flank';
-            return;
-          }
-          // Still no budget after a few tries: this bot gives up for a while; the squad doesn't.
-          this.flankPending = 0;
-          this.flank = null;
-          this.flankBanUntil = now + 10;
-          this.decision = 'HOLD_ANGLE';
-          this.commitUntil = now + 1;
-          this.action = 'no flank route';
-          return;
-        }
-        this.stat('FLANK');
-        this.flankPending = 0;
-        this.flankIndex = 0;
-        this.flank = plan;
-        if (!this.flank) {
-          this.flankBanUntil = now + 10;
-          this.squad?.flankDone(this, false);
-          this.decision = 'HOLD_ANGLE';
-          this.commitUntil = now + 1;
-          this.action = 'no flank route';
-          this.stat('flankFailed');
-          return;
-        }
-        this.commitUntil = now + 20;
-        this.action = flankLabel(this.flank.side);
-        this.squad?.flankStarted(this);
-        this.agent.say(this.flank.side === 1 ? 'Flanking left!' : 'Flanking right!', true);
+      case 'RUSH':
+        this.rushUntil = now + rand(4, 7);
+        this.action = 'rushing';
+        this.agent.say(pick(['Pushing!', 'Moving up!', 'Go, go, go!', "He's reloading, push!"]), true);
         break;
-      }
-      case 'SEARCH':
-        this.commitUntil = now + 8;
+      case 'FLANK':
+        this.startFlank(now, prev);
+        break;
+      case 'SEARCH': {
         this.action = 'searching';
         if (t) {
-          const pts = this.squad?.searchPointsFor(this, t) ?? planSearch(this.deps.nav, t.pos, t.vel, 3, (p) => this.memory.wasSearched(p, now));
-          this.search = { pts, i: 0, pauseUntil: 0, target: t, since: now };
+          const extra = this.squad?.searchPointsFor(this, t) ?? planSearch(this.deps.nav, t.pos, t.vel, 3, (p) => this.memory.wasSearched(p, now));
+          // The last known spot first, then the squad's share of the area around it.
+          const pts = [t.pos.clone(), ...extra.filter((p) => p.distanceToSquared(t.pos) > 9)].slice(0, 4);
+          this.search = { phase: 'wait', pts, i: 0, until: now + this.persona.searchWait * rand(0.6, 1.4), target: t, since: now };
           this.debug.searchPts = pts;
-          if (Math.random() < 0.5) this.agent.say(pick(['Checking last known.', 'Lost him, searching.', 'Moving to last position.']));
+          if (Math.random() < 0.6) this.agent.say(pick(['Checking last known.', 'Lost him, searching.', 'Moving to last position.', 'Going to find him.']));
         }
         break;
+      }
       case 'INVESTIGATE': {
-        this.commitUntil = now + 6;
         const sound = this.memory.sounds[this.memory.sounds.length - 1];
-        const at = t && t.lastSeenTime < 0 && t.confidence > 0.2 ? t.pos : sound && now - sound.time < 12 ? sound.pos : now - this.allyFireAt < 6 ? this.allyFirePos : null;
+        const at = t && t.kind !== 'robot' && t.confidence > 0.2 ? t.pos : sound && now - sound.time < 12 ? sound.pos : now - this.allyFireAt < 6 ? this.allyFirePos : null;
         this.investigate = at ? { pos: at.clone(), arrived: -1, since: now } : null;
         this.debug.investigate = this.investigate?.pos ?? null;
         this.action = 'investigating';
+        if (!this.investigate) this.done = true;
         break;
       }
-      case 'PEEK':
-        this.commitUntil = now + 3;
-        this.peek.phase = 'out';
-        this.peek.until = 0;
-        this.action = 'peeking';
-        break;
       case 'SUPPRESS':
-        this.suppressUntil = now + rand(2.6, 4.6);
-        this.commitUntil = this.suppressUntil;
+        this.suppressUntil = now + rand(3, 5);
         if (t) this.suppressPt.set(t.pos.x, 1.1, t.pos.z);
         s.react(0.2 + Math.random() * 0.2);
         this.action = 'suppressing';
         this.agent.say(pick(['Suppressing!', 'Covering fire!', 'Keep their heads down!']));
         this.progress('suppress');
         break;
-      case 'PUSH':
-        this.commitUntil = now + 4;
-        this.action = 'pushing';
-        if (Math.random() < 0.5) this.agent.say(pick(['Pushing!', 'Moving up!', 'Go, go!']));
-        break;
-      case 'RELOAD':
-        this.commitUntil = now + 2;
-        this.action = 'reloading';
-        break;
-      case 'REGROUP':
-      case 'ASSIST':
-        this.commitUntil = now + 5;
-        this.action = d === 'REGROUP' ? 'regrouping' : 'assisting';
-        break;
       default:
-        this.commitUntil = now + 0.8;
-        this.action = d === 'FOLLOW' ? 'calm' : d.toLowerCase();
+        this.action = d === 'FOLLOW' ? 'calm' : d.toLowerCase().replace('_', ' ');
         if (d === 'FOLLOW') this.navigator.stop(); // the team logic moves us now
     }
-    // (Entering a move isn't progress by itself: the watchdog counts ground made.)
+  }
+
+  private startFlank(now: number, prev: Decision): void {
+    const t = this.target;
+    const s = this.soldier;
+    let plan: FlankPlan | null | 'pending' = null;
+    if (t) {
+      const anchor = this.squad?.anchorPos(this) ?? s.pos;
+      // Phones: as heavy as a cover search, so it shares its one-per-frame slot.
+      const budget = !this.deps.lowSpec || (aiWorld.takeRay() && aiWorld.takeCoverQuery());
+      plan = budget ? planFlank(this.deps.nav, this.deps.physics, s.pos, t.pos, anchor, Math.random() < 0.5 ? 1 : -1, this.deps.lowSpec) : 'pending';
+    }
+    void prev;
+    if (plan === 'pending') {
+      // Out of AI budget this frame: try again shortly (a few times), else give up for a while.
+      if (++this.flankPending > 4) {
+        this.flankPending = 0;
+        this.flankBanUntil = now + 10;
+      }
+      this.flank = null;
+      this.done = true;
+      this.action = 'planning flank';
+      return;
+    }
+    this.flankPending = 0;
+    this.flankIndex = 0;
+    this.flank = plan;
+    this.stat('FLANK');
+    if (!plan) {
+      this.flankBanUntil = now + 10;
+      this.squad?.flankDone(this, false);
+      this.stat('flankFailed');
+      this.done = true;
+      this.action = 'no flank route';
+      return;
+    }
+    this.minUntil = now + 6;
+    this.action = flankLabel(plan.side);
+    this.squad?.flankStarted(this);
+    this.agent.say(plan.side === 1 ? 'Flanking left!' : 'Flanking right!', true);
   }
 
   // ------------------------------------------------------------ cover bookkeeping
@@ -743,7 +767,7 @@ export class Bot implements AIListener {
     const d = Math.hypot(c.pos.x - s.pos.x, c.pos.z - s.pos.z);
     if (d > 6) {
       // Moved on: the spot is someone else's now.
-      if (this.decision !== 'SEEK_COVER' && this.decision !== 'RETREAT' && this.decision !== 'REPOSITION' && this.decision !== 'PEEK') {
+      if (this.decision !== 'RUN_TO_COVER' && this.decision !== 'MOVE_TO_COVER' && this.decision !== 'SHIFT_COVER' && this.decision !== 'RETREAT' && this.decision !== 'RELOAD') {
         coverRegistry.release(this);
         this.cover = null;
         this.inCover = false;
@@ -752,7 +776,8 @@ export class Bot implements AIListener {
     }
     const was = this.inCover;
     const dp = c.peek ? Math.hypot(c.peek.x - s.pos.x, c.peek.z - s.pos.z) : Infinity;
-    this.inCover = d < 1.3 || dp < 1;
+    // Hysteresis: in at 1.3 m, out past 2.2 m (peeking out doesn't count as leaving).
+    this.inCover = (was ? d < 2.2 : d < 1.3) || dp < 1;
     this.atPeek = dp < d;
     if (this.inCover && !was) {
       this.coverSince = now;
@@ -806,7 +831,7 @@ export class Bot implements AIListener {
   // ------------------------------------------------------------ execution
 
   /** Run the current decision for this frame and drive the soldier. */
-  drive(dt: number, mates: import('../enemies/Soldier').Soldier[]): void {
+  drive(dt: number, mates: Soldier[]): void {
     const now = aiWorld.time;
     const s = this.soldier;
     this.face = null;
@@ -815,38 +840,36 @@ export class Bot implements AIListener {
     this.aimTgt.alive = false;
     this.navigator.update(dt, now);
     const t = this.target;
-    // Holding gets old; anything else lets it recover slowly. New sightings reset it.
-    if (this.decision === 'HOLD_ANGLE') this.holdFatigue += dt;
-    else this.holdFatigue = Math.max(0, this.holdFatigue - dt * 0.25);
-    if (t?.visible) this.holdFatigue = 0;
-    // Standing unless a decision says otherwise (hold / cover / peek / reload crouch on their own).
+    // Standing unless a decision says otherwise; upright unless one leans.
     s.crouchTarget = 0;
     s.leanTarget = 0;
     switch (this.decision) {
-      case 'ENGAGE':
-        this.doEngage(dt, now);
+      case 'SHOOT':
+        this.doShoot(dt, now);
         break;
-      case 'SEEK_COVER':
-      case 'REPOSITION':
-        this.doCover(dt, now, 'fight');
+      case 'DOGFIGHT':
+        this.doDogfight(dt, now);
+        break;
+      case 'RUSH':
+        this.doRush(dt, now);
+        break;
+      case 'HOLD_COVER':
+        this.doHoldCover(dt, now);
+        break;
+      case 'RUN_TO_COVER':
+        this.doCoverMove(now, 'run');
+        break;
+      case 'MOVE_TO_COVER':
+        this.doCoverMove(now, 'move');
+        break;
+      case 'SHIFT_COVER':
+        this.doCoverMove(now, 'shift');
         break;
       case 'RETREAT':
-        this.doCover(dt, now, 'retreat');
+        this.doCoverMove(now, 'retreat');
         break;
-      case 'HOLD_ANGLE':
-        this.doHold(dt, now);
-        break;
-      case 'PEEK':
-        this.doPeek(dt, now);
-        break;
-      case 'SUPPRESS':
-        this.doSuppress(dt, now);
-        break;
-      case 'FLANK':
-        this.doFlank(dt, now);
-        break;
-      case 'PUSH':
-        this.doPush(dt, now);
+      case 'AMBUSH':
+        this.doAmbush(dt, now);
         break;
       case 'SEARCH':
         this.doSearch(dt, now);
@@ -854,23 +877,39 @@ export class Bot implements AIListener {
       case 'INVESTIGATE':
         this.doInvestigate(dt, now);
         break;
+      case 'FLANK':
+        this.doFlank(dt, now);
+        break;
+      case 'SUPPRESS':
+        this.doSuppress(dt, now);
+        break;
       case 'RELOAD':
         this.doReload(dt, now);
         break;
       case 'REGROUP':
         this.doRegroup(dt, now);
         break;
-      case 'ASSIST':
-        this.doAssist(dt, now);
+      case 'HELP':
+        this.doHelp(dt, now);
+        break;
+      case 'ROBOT':
+        this.doRobot(dt, now);
         break;
       default:
         break;
     }
-    // Opportunistic fire: a visible enemy while moving at a walk/jog (aim suffers).
-    if (!this.fire && t?.visible && t.lineOfFire && this.decision !== 'RETREAT' && this.decision !== 'REGROUP') {
-      const v = Math.hypot(s.vel.x, s.vel.z);
-      if (v <= JOG * 1.05 && (this.skill01 > 0.35 || this.profile.push > 1.2 || t.kind === 'robot')) this.aimAt(t, false);
+    // Shoot what shows up while searching, flanking, helping (walk / jog: aim suffers).
+    if (!this.fire && t?.visible && t.lineOfFire && SHOOTS_ON_MOVE.has(this.decision)) {
+      if (Math.hypot(s.vel.x, s.vel.z) <= JOG * 1.05) this.aimAt(t, false);
     }
+    // The aim settles while it stays on a target (and drifts off when it doesn't).
+    if (this.aimTgt.alive && t?.visible && this.face) {
+      if (this.aimedAt !== t.target) {
+        this.aimedAt = t.target;
+        s.visibleTime = Math.min(s.visibleTime, 0.5);
+      }
+      s.visibleTime = Math.min(8, s.visibleTime + dt);
+    } else s.visibleTime = Math.max(0, s.visibleTime - dt * 1.5);
     // Firing at something we can see counts as doing something.
     if (this.fire && this.aimTgt.alive && t?.visible && now - this.lastFireProgress > 2.5) {
       this.lastFireProgress = now;
@@ -912,245 +951,224 @@ export class Bot implements AIListener {
     this.aimMode = v > 3 ? this.agent.carry : 'ready';
   }
 
-  private doEngage(dt: number, now: number): void {
+  /** Shoot it if we can, else keep the gun on where it was. */
+  private aimOrWatch(t: Contact, head = true): void {
+    if (t.visible) this.aimAt(t, head);
+    else this.look(t.pos, 1.3, 'aim');
+  }
+
+  // --- SHOOT: stand and shoot, strafing in legs.
+  private doShoot(dt: number, now: number): void {
     const t = this.target;
+    if (!t) {
+      this.done = true;
+      return;
+    }
     const s = this.soldier;
-    if (!t || !t.visible) {
-      this.interrupt = true;
-      if (t) this.look(t.pos, 1.3, 'aim');
+    const d = this.flat(t.pos);
+    this.aimOrWatch(t);
+    this.action = 'shooting';
+    this.strafeTick(now, t.pos, d);
+    s.crouchTarget = this.persona.crouchesAtRange && d > 25 && this.strafe.dir === 0 ? 1 : 0;
+    void dt;
+  }
+
+  /**
+   * Strafing in a gunfight: legs with a direction (alternating, not twitching), and
+   * pauses to let the aim settle (longer ones at range). Chads add A-D-A-D bursts.
+   */
+  private strafeTick(now: number, from: THREE.Vector3, d: number): void {
+    const st = this.strafe;
+    const P = this.persona;
+    if (P.adad && now > this.adadNext) {
+      this.adadUntil = now + rand(1.1, 1.8);
+      this.adadNext = now + rand(4, 7);
+    }
+    const adad = P.adad && d < 25 && now < this.adadUntil;
+    const legOver = now >= st.until || (st.dir !== 0 && this.navigator.status !== 'moving');
+    if (!legOver) return;
+    if (st.dir !== 0 && !adad && Math.random() < (d > 25 ? 0.6 : 0.4)) {
+      // A beat standing still: the aim settles.
+      st.dir = 0;
+      st.until = now + rand(0.9, 2);
+      this.navigator.stop();
       return;
     }
-    const d = Math.hypot(t.pos.x - s.pos.x, t.pos.z - s.pos.z);
-    this.aimAt(t, true);
-    if (t.kind === 'robot') {
-      // Robots only hurt up close: keep the gap while shooting.
-      const kite = 4.2 + (1.4 - this.profile.push) * 2;
-      if (d < kite) {
-        this.action = 'kiting';
-        this.kiteTimer -= dt;
-        if (this.kiteTimer <= 0) {
-          this.kiteTimer = 0.3;
-          this.stepAway(t.pos, 3.5, this.agent.hp < 0.35 ? RUN : JOG);
-        }
-      } else {
-        this.action = 'shooting';
-        this.navigator.stop();
-      }
-      s.crouchTarget = 0;
+    const len = adad ? rand(0.8, 1.2) : rand(1.8, 3.2);
+    const speed = adad || this.suppression > 0.5 || now - this.lastThreatAt < 2 ? JOG : WALK;
+    let dir = st.last === 0 ? (Math.random() < 0.5 ? -1 : 1) : -st.last;
+    let ok = this.sideStep(from, len, speed, dir);
+    if (!ok) {
+      dir = -dir;
+      ok = this.sideStep(from, len, speed, dir);
+    }
+    st.dir = ok ? dir : 0;
+    if (ok) st.last = dir;
+    else this.navigator.stop();
+    st.until = now + (adad ? rand(0.3, 0.5) : rand(1.5, 2.8));
+  }
+
+  // --- DOGFIGHT: close quarters, shoot while backing off and circling.
+  private doDogfight(dt: number, now: number): void {
+    const t = this.target;
+    if (!t) {
+      this.done = true;
       return;
     }
-    if (this.inCover && this.cover) {
-      this.action = this.cover.low ? 'firing over cover' : 'firing from cover';
-      if (!this.cover.low && this.atPeek) {
-        s.leanTarget = this.peekSide(this.cover) * 0.9;
-        // Shooting from the side of full cover: limited exposure, then back in.
-        if (this.peek.until === 0) this.peek.until = now + AI_TUNING.peekExposure * 2 * this.profile.exposure * (1.3 - 0.6 * this.skill01);
-        if (now > this.peek.until) {
-          this.navigator.go(this.cover.pos, JOG, 0.4);
-          this.action = 'ducking back';
-          this.fire = false;
-        } else this.navigator.stop();
-      } else {
-        if (!this.atPeek) this.peek.until = 0;
-        // Behind full cover: shuffle along it now and then and drop to a knee for a few
-        // shots (a man fighting from cover keeps adjusting; a statue doesn't).
-        this.strafeTimer -= dt;
-        if (this.strafeTimer <= 0) {
-          this.strafeTimer = rand(1.4, 3.2);
-          this.kneel = !this.cover.low && Math.random() < 0.35;
-          // Along the cover: whichever way is open (one side is usually the wall).
-          const side = Math.random() < 0.5 ? -1 : 1;
-          const dist = rand(0.6, 1.1);
-          if (Math.random() < 0.15 || !(this.sideStep(t.pos, dist, WALK, side) || this.sideStep(t.pos, dist, WALK, -side))) this.navigator.stop();
+    const s = this.soldier;
+    this.aimOrWatch(t);
+    this.action = 'dogfight';
+    s.crouchTarget = 0;
+    const st = this.strafe;
+    if (now >= st.until || this.navigator.status !== 'moving') {
+      const d = this.flat(t.pos);
+      const ax = s.pos.x - t.pos.x;
+      const az = s.pos.z - t.pos.z;
+      const al = Math.hypot(ax, az) || 1;
+      // Back off while circling; the aggressive ones circle and hold their ground.
+      const back = this.persona.rushes && d > 3.5 ? 0.2 : 1.4;
+      // Mostly keep circling the same way (a switch now and then, not every step).
+      let dir = st.last === 0 ? (Math.random() < 0.5 ? -1 : 1) : Math.random() < 0.3 ? -st.last : st.last;
+      let ok = false;
+      for (let k = 0; k < 2 && !ok; k++, dir = -dir) {
+        const x = s.pos.x + (ax / al) * back + (-az / al) * dir * 1.6;
+        const z = s.pos.z + (az / al) * back + (ax / al) * dir * 1.6;
+        if (this.deps.nav.walkable(x, z) && this.deps.nav.clearLine(s.pos.x, s.pos.z, x, z)) {
+          this.navigator.go(this.tmp2.set(x, 0, z), this.persona.adad ? JOG : WALK * 1.3, 0.3);
+          st.last = dir;
+          ok = true;
         }
       }
-      if (this.cover.low) {
-        // Low cover: up to shoot, down to reload / when the fire gets heavy.
-        this.crouchCycle -= dt;
-        if (this.crouchCycle <= 0) {
-          this.standUp = !this.standUp;
-          this.crouchCycle = this.standUp ? rand(1.1, 1.1 + 1.3 * this.profile.exposure) : rand(0.6, 1.3);
-        }
-        const up = this.standUp && s.reloadTimer <= 0 && this.suppression < 1;
+      if (!ok) this.navigator.stop();
+      st.until = now + rand(0.9, 1.5);
+    }
+    if (this.persona.adad) this.agent.tryHop();
+    void dt;
+  }
+
+  // --- RUSH: charge their position, shooting when they show.
+  private doRush(dt: number, now: number): void {
+    const t = this.target;
+    if (!t) {
+      this.done = true;
+      return;
+    }
+    const d = this.flat(t.pos);
+    this.navigator.go(t.pos, t.visible ? JOG : this.persona.sprints ? SPRINT : RUN, 2.5);
+    this.action = 'rushing';
+    if (t.visible) this.aimAt(t, false);
+    else if (d < 14) this.look(t.pos, 1.3, 'aim');
+    else this.carry();
+    if (d < 4 || now > this.rushUntil || this.navigator.status === 'failed' || this.navigator.status === 'arrived') {
+      this.rushCooldown = now + rand(5, 9);
+      this.rushUntil = 0;
+      this.done = true;
+    }
+    void dt;
+  }
+
+  // --- HOLD_COVER: fight from cover on a rhythm (hidden → peek / lean → back).
+  private doHoldCover(dt: number, now: number): void {
+    const t = this.target;
+    const c = this.cover;
+    const s = this.soldier;
+    if (!t || !c) {
+      this.done = true;
+      return;
+    }
+    const P = this.persona;
+    const pk = this.peek;
+    const dc = Math.hypot(c.pos.x - s.pos.x, c.pos.z - s.pos.z);
+    this.action = c.low ? 'holding low cover' : 'holding cover';
+    // They're in sight from where we are: shoot (low cover: stand up for it).
+    if (t.visible && t.lineOfFire) {
+      this.aimAt(t, true);
+      if (!pk.out && dc > 0.9) this.navigator.go(c.pos, WALK, 0.5);
+      else if (!pk.out) this.navigator.stop();
+      if (c.low) {
+        const up = this.lowCoverCycle(dt, now);
         s.crouchTarget = up ? 0 : 1;
         if (!up) this.fire = false;
-      } else s.crouchTarget = this.kneel && !this.navigator.hasDest && s.reloadTimer <= 0 ? 0.6 : 0;
-    } else {
-      this.action = 'shooting';
-      // In the open nobody stands still (a standing man is an easy shot): side-steps to
-      // spoil aim, the pushy ones edging in, the careful ones giving ground up close,
-      // a beat of stillness now and then to settle the aim.
-      this.strafeTimer -= dt;
-      if (this.strafeTimer <= 0) {
-        this.strafeTimer = rand(0.8, 1.9) / Math.max(0.7, Math.sqrt(this.profile.push));
-        const pushy = this.profile.push > 1.05;
-        const r = Math.random();
-        if (r < 0.15 && now - this.lastThreatAt > 2) this.navigator.stop();
-        else if (r < 0.35 && pushy && d > 10) this.navigator.go(this.tmp2.copy(s.pos).lerp(t.pos, Math.min(0.35, 3 / d)), WALK, 0.4);
-        else if (r < 0.35 && !pushy && d < 9) this.stepAway(t.pos, 2.5, WALK);
-        else this.sideStep(t.pos, rand(1.4, 3.2), this.suppression > 0.5 || now - this.lastThreatAt < 2 ? JOG : WALK);
       }
-      s.crouchTarget = this.profile.cover > 1.2 && d > 15 && !this.navigator.hasDest ? 1 : 0;
-    }
-    // Elite: jump-peeks and ADAD between shots.
-    if (this.agent.chad) {
-      this.agent.tryHop();
-      this.adadT -= dt;
-      if (this.adadT <= 0) {
-        this.adadT = rand(0.22, 0.47);
-        this.adadSide = -this.adadSide;
-        this.sideStep(t.pos, 1.4, JOG, this.adadSide);
+      if (pk.out) {
+        s.leanTarget = pk.lean * 0.9;
+        // Exposed: a burst or two, then back in.
+        if (now > pk.until + 0.8) this.endPeek(now, c);
       }
-    }
-  }
-
-  private doCover(dt: number, now: number, mode: 'fight' | 'retreat'): void {
-    const s = this.soldier;
-    const t = this.target;
-    if (!t) {
-      this.interrupt = true;
       return;
     }
-    // Repositioning again from a spot we already reached: pick a new one, not the same.
-    if (this.decision === 'REPOSITION' && this.cover && this.inCover && !this.navigator.hasDest && now - this.coverSince > 1) {
-      this.memory.markCover(this.cover.pos, now);
-      this.cover = null;
-      this.inCover = false;
-      coverRegistry.release(this);
-    }
-    if (!this.cover) {
-      if (now < this.coverRetryAt) {
-        // Nothing found a moment ago: back off from the threat instead of searching every frame.
-        if (mode === 'retreat') {
-          if (!this.navigator.hasDest) this.stepAway(t.pos, 8, RUN);
-          this.action = 'backing off';
-          this.carry();
-        } else {
-          this.commitUntil = 0;
-          this.interrupt = true;
-        }
-        return;
-      }
-      const res = this.queryCover(mode, t.pos);
-      if (res === 'pending') {
-        // Waiting a frame for the cover search: keep fighting / move off the line.
-        if (t.visible) this.aimAt(t, false);
-        else this.look(t.pos);
-        return;
-      }
-      if (!res) {
-        this.noCoverUntil = now + 4;
-        this.coverRetryAt = now + 2.5;
-        this.stat('noCover');
-        if (mode === 'retreat') {
-          this.stepAway(t.pos, 8, RUN);
-          this.action = 'backing off';
-          this.commitUntil = now + 2;
-        } else this.interrupt = true;
-        return;
-      }
-      this.cover = res;
-      this.action = mode === 'retreat' ? 'running to cover' : 'moving to cover';
-    }
-    const c = this.cover;
-    const exposed = t.visible || now - this.lastThreatAt < 2;
-    const speed = mode === 'retreat' || this.suppression > 0.8 ? RUN : exposed ? RUN : JOG * this.profile.pace;
-    this.navigator.go(c.pos, speed, 0.7);
-    if (this.navigator.status === 'failed') {
-      this.cover = null;
-      coverRegistry.release(this);
-      this.noCoverUntil = now + 3;
-      this.interrupt = true;
-      return;
-    }
-    const d = Math.hypot(c.pos.x - s.pos.x, c.pos.z - s.pos.z);
-    if (d < 1.0) {
-      // Arrived (counted once per cover): the decision is done, re-evaluate from the new spot.
-      if (this.arrivedCover !== c) {
-        this.arrivedCover = c;
-        if (mode === 'retreat') this.retreatedAt = now;
-        this.inCover = true;
-        this.coverSince = now;
-        this.memory.markCover(c.pos, now);
-        this.progress(mode === 'retreat' ? 'fell back' : 'reached cover');
-        this.stat('coverReached');
-        if (this.decision === 'REPOSITION') this.lastReposition = now;
-      }
-      this.navigator.stop();
-      this.commitUntil = 0;
-      this.interrupt = true;
+    if (!pk.out) {
+      // Hidden: on the spot, gun on where they were.
+      if (dc > 0.9) this.navigator.go(c.pos, JOG, 0.5);
+      else this.navigator.stop();
       s.crouchTarget = c.low ? 1 : 0;
-      this.look(t.pos);
+      this.look(t.pos, 1.3, 'aim');
+      const pinned = this.suppression > 1;
+      if (now >= pk.next && !pinned) {
+        // Peek: low cover stands up; full cover leans round its edge (Q / E), stepping
+        // to the peek spot when the lean alone doesn't clear it.
+        pk.out = true;
+        pk.until = now + AI_TUNING.peekExposure * P.exposure * (1.3 - 0.5 * this.skill01) * rand(0.8, 1.25);
+        const lean = this.leanProbe(t.pos, now);
+        pk.lean = c.low ? 0 : lean !== 0 ? lean : this.peekSide(c);
+        pk.move = !c.low && lean === 0 && !!c.peek;
+        this.stat('peek');
+      }
       return;
     }
-    s.crouchTarget = 0;
-    if (t.visible && speed <= JOG * 1.05) this.aimAt(t, false);
-    else this.carry();
+    // Out: looking for them.
+    if (c.low) s.crouchTarget = 0;
+    else {
+      s.leanTarget = pk.lean * 0.9;
+      if (pk.move && c.peek) this.navigator.go(c.peek, WALK * 1.4, 0.35);
+      else this.navigator.stop();
+    }
+    this.look(t.pos, 1.3, 'aim');
+    if (now > pk.until) this.endPeek(now, c);
   }
 
-  private doHold(dt: number, now: number): void {
-    const s = this.soldier;
-    const t = this.target;
-    if (!t) {
-      this.interrupt = true;
-      return;
+  private endPeek(now: number, c: CoverSpot): void {
+    const pk = this.peek;
+    pk.out = false;
+    pk.lean = 0;
+    pk.next = now + rand(this.persona.peekEvery[0], this.persona.peekEvery[1]) * (1.2 - 0.4 * this.skill01) * (this.suppression > 0.6 ? 1.6 : 1);
+    if (pk.move && !c.low) this.navigator.go(c.pos, JOG, 0.5);
+    pk.move = false;
+  }
+
+  /** Low cover: up to shoot, down now and then (reloads, heavy fire). */
+  private lowCoverCycle(dt: number, now: number): boolean {
+    this.crouchCycle -= dt;
+    if (this.crouchCycle <= 0) {
+      this.standUp = !this.standUp;
+      this.crouchCycle = this.standUp ? rand(1.2, 1.2 + 1.4 * this.persona.exposure) : rand(0.5, 1.1);
     }
-    this.navigator.stop();
-    this.action = this.inCover ? 'holding angle (cover)' : 'holding angle';
-    // Small sweeps around where they should be.
-    this.lookTimer -= dt;
-    if (this.lookTimer <= 0) {
-      this.lookTimer = rand(0.8, 2);
-      this.lookAngle = (Math.random() - 0.5) * 0.35;
-    }
-    const dx = t.pos.x - s.pos.x;
-    const dz = t.pos.z - s.pos.z;
-    const a = Math.atan2(dx, dz) + this.lookAngle;
-    const r = Math.hypot(dx, dz);
-    this.tmp.set(s.pos.x + Math.sin(a) * r, 0, s.pos.z + Math.cos(a) * r);
-    this.look(this.tmp, 1.3, t.confidence > 0.45 ? 'aim' : 'ready');
-    s.crouchTarget = this.inCover && this.cover?.low ? 1 : this.profile.cover > 1.2 ? 1 : 0;
     void now;
+    return this.standUp && this.soldier.reloadTimer <= 0 && this.suppression < 1;
   }
 
-  private doPeek(dt: number, now: number): void {
+  /**
+   * Lean check (Q / E): can't see `p` from here, but could with the head out to one
+   * side? Two rays, cached for half a second. 0 = straight view (or no lean helps).
+   */
+  private leanProbe(p: THREE.Vector3, now: number): number {
+    if (now < this.leanCheckAt) return this.leanSide;
+    this.leanCheckAt = now + 0.45 + Math.random() * 0.3;
     const s = this.soldier;
-    const t = this.target;
-    const c = this.cover;
-    if (!t || !c) {
-      this.interrupt = true;
-      return;
+    const dx = p.x - s.pos.x;
+    const dz = p.z - s.pos.z;
+    const l = Math.hypot(dx, dz) || 1;
+    if (l > 45 || !aiWorld.takeRay()) return this.leanSide;
+    if (canSee(this.deps.physics, s.pos, p, 1.55, 1.2)) return (this.leanSide = 0);
+    const rx = -dz / l;
+    const rz = dx / l;
+    const first = this.leanSide || (Math.random() < 0.5 ? -1 : 1);
+    for (const side of [first, -first]) {
+      if (!aiWorld.takeRay()) break;
+      this.tmp.set(s.pos.x + rx * side * 0.4, 0, s.pos.z + rz * side * 0.4);
+      if (canSee(this.deps.physics, this.tmp, p, 1.5, 1.2)) return (this.leanSide = side);
     }
-    const exposure = AI_TUNING.peekExposure * this.profile.exposure * (1.3 - 0.6 * this.skill01) * rand(0.8, 1.25);
-    if (c.low || !c.peek) {
-      // Low cover (or no side): stand up, look, get down.
-      this.navigator.stop();
-      if (this.peek.until === 0) this.peek.until = now + exposure;
-      const out = now < this.peek.until;
-      s.crouchTarget = out ? 0 : 1;
-      this.action = out ? 'peeking (up)' : 'back down';
-      if (t.visible) this.aimAt(t, false);
-      else this.look(t.pos, 1.3, 'aim');
-      if (!out) this.endPeek(now);
-      return;
-    }
-    if (this.peek.phase === 'out') {
-      this.navigator.go(c.peek, WALK * 1.4, 0.35);
-      this.action = 'peeking out';
-      // Round the corner with a lean (Q / E): head and gun out, body behind the edge.
-      s.leanTarget = this.peekSide(c) * 0.9;
-      const d = Math.hypot(c.peek.x - s.pos.x, c.peek.z - s.pos.z);
-      if (d < 0.5 && this.peek.until === 0) this.peek.until = now + exposure;
-      if (this.peek.until > 0 && now > this.peek.until) this.peek.phase = 'back';
-      if (this.navigator.status === 'failed') this.peek.phase = 'back';
-      if (t.visible) this.aimAt(t, false);
-      else this.look(t.pos, 1.3, 'aim');
-    } else {
-      this.navigator.go(c.pos, JOG, 0.5);
-      this.action = 'back in cover';
-      this.look(t.pos);
-      if (Math.hypot(c.pos.x - s.pos.x, c.pos.z - s.pos.z) < 0.7 || this.navigator.status !== 'moving') this.endPeek(now);
-    }
+    return (this.leanSide = 0);
   }
 
   /** Which way the open side of a full cover is (lean that way): -1 left, 1 right, 0 none. */
@@ -1163,22 +1181,251 @@ export class Bot implements AIListener {
     return Math.sign((c.peek.x - c.pos.x) * (-fz / l) + (c.peek.z - c.pos.z) * (fx / l));
   }
 
-  private endPeek(now: number): void {
-    this.peek.phase = 'none';
-    this.peek.until = 0;
-    // Irregular rhythm: skilled bots peek sooner and less predictably.
-    this.peek.next = now + rand(1.2, 4) * (1.2 - 0.4 * this.skill01);
-    this.stat('peek');
-    this.commitUntil = 0;
-    this.interrupt = true;
+  // --- RUN / MOVE / SHIFT to cover, RETREAT.
+  private doCoverMove(now: number, mode: 'run' | 'move' | 'shift' | 'retreat'): void {
+    const s = this.soldier;
+    const t = this.target;
+    if (!t) {
+      this.done = true;
+      return;
+    }
+    if (!this.cover) {
+      if (now < this.coverRetryAt) {
+        // Nothing found a moment ago.
+        if (mode === 'retreat') {
+          if (!this.navigator.hasDest) this.stepAway(t.pos, 8, RUN);
+          this.action = 'backing off';
+          this.carry();
+        } else this.done = true;
+        return;
+      }
+      // Shifting: aggressive bots look for the next cover between them and the enemy.
+      const around = mode === 'shift' && (this.persona.rushes || now < this.pushOnUntil) ? this.tmp.copy(s.pos).lerp(t.pos, 0.35) : undefined;
+      const res = this.queryCover(mode === 'retreat' ? 'retreat' : 'fight', t.pos, around);
+      if (res === 'pending') {
+        // Waiting a frame for the cover search: keep fighting meanwhile.
+        this.aimOrWatch(t, false);
+        return;
+      }
+      if (!res) {
+        this.noCoverUntil = now + 4;
+        this.coverRetryAt = now + 2.5;
+        this.stat('noCover');
+        if (mode === 'retreat') {
+          this.stepAway(t.pos, 8, RUN);
+          this.action = 'backing off';
+          this.retreatedAt = now;
+        } else this.done = true;
+        return;
+      }
+      this.cover = res;
+      this.action = mode === 'retreat' ? 'running back to cover' : mode === 'run' ? 'running to cover' : 'moving to cover';
+    }
+    const c = this.cover;
+    const fast = mode === 'run' || mode === 'retreat' || (mode !== 'move' && !t.visible);
+    const speed = fast ? (this.persona.sprints && !t.visible ? SPRINT : RUN) : t.visible ? WALK * 1.3 : JOG * this.profile.pace;
+    this.navigator.go(c.pos, speed, 0.7);
+    if (this.navigator.status === 'failed') {
+      this.cover = null;
+      coverRegistry.release(this);
+      this.noCoverUntil = now + 3;
+      this.done = true;
+      return;
+    }
+    const d = Math.hypot(c.pos.x - s.pos.x, c.pos.z - s.pos.z);
+    if (d < 1.0) {
+      // Arrived (counted once per cover): the next rule picks HOLD_COVER from here.
+      if (this.arrivedCover !== c) {
+        this.arrivedCover = c;
+        if (mode === 'retreat') this.retreatedAt = now;
+        this.inCover = true;
+        this.coverSince = now;
+        this.memory.markCover(c.pos, now);
+        this.progress(mode === 'retreat' ? 'fell back' : 'reached cover');
+        this.stat('coverReached');
+      }
+      this.navigator.stop();
+      this.done = true;
+      s.crouchTarget = c.low ? 1 : 0;
+      this.look(t.pos, 1.3, 'aim');
+      return;
+    }
+    s.crouchTarget = 0;
+    if (!fast && t.visible) this.aimAt(t, false);
+    else if (!fast) this.look(t.pos, 1.3, 'ready');
+    else this.carry();
   }
 
+  // --- AMBUSH: lost them; hold the angle on the last known spot.
+  private doAmbush(dt: number, now: number): void {
+    const s = this.soldier;
+    const t = this.target;
+    if (!t) {
+      this.done = true;
+      return;
+    }
+    this.navigator.stop();
+    this.action = 'holding the angle';
+    // Small sweeps around where they should be.
+    this.lookTimer -= dt;
+    if (this.lookTimer <= 0) {
+      this.lookTimer = rand(0.8, 2);
+      this.lookAngle = (Math.random() - 0.5) * 0.35;
+    }
+    const dx = t.pos.x - s.pos.x;
+    const dz = t.pos.z - s.pos.z;
+    const a = Math.atan2(dx, dz) + this.lookAngle;
+    const r = Math.hypot(dx, dz);
+    this.tmp.set(s.pos.x + Math.sin(a) * r, 0, s.pos.z + Math.cos(a) * r);
+    this.look(this.tmp, 1.3, t.confidence > 0.4 ? 'aim' : 'ready');
+    // At a corner: lean out to watch it (Q / E).
+    s.leanTarget = this.leanProbe(t.pos, now) * 0.9;
+    s.crouchTarget = this.persona.crouchesAtRange && r > 12 && s.leanTarget === 0 ? 1 : 0;
+  }
+
+  // --- SEARCH: wait and listen, approach the last known spot, peek corners, sweep.
+  private doSearch(dt: number, now: number): void {
+    const s = this.soldier;
+    const sr = this.search;
+    if (!sr || !sr.pts.length) {
+      if (this.target) this.target.searched = true;
+      this.done = true;
+      return;
+    }
+    const tgt = sr.target;
+    const p = sr.pts[Math.min(sr.i, sr.pts.length - 1)];
+    const dist = Math.hypot(p.x - s.pos.x, p.z - s.pos.z);
+    switch (sr.phase) {
+      case 'wait':
+        this.navigator.stop();
+        this.action = 'listening';
+        this.look(p, 1.3, 'aim');
+        s.leanTarget = this.leanProbe(p, now) * 0.9;
+        if (now > sr.until) sr.phase = 'move';
+        return;
+      case 'corner':
+        // Peeking a corner on the way in.
+        this.navigator.stop();
+        this.action = 'peeking corner';
+        s.leanTarget = this.leanSide * 0.9;
+        this.look(p, 1.3, 'aim');
+        if (now > sr.until) {
+          sr.phase = 'move';
+          sr.until = now + 1.2; // don't stop at the same corner again right away
+        }
+        return;
+      case 'look':
+        this.navigator.stop();
+        this.action = `checking ${sr.i + 1}/${sr.pts.length}`;
+        this.lookTimer -= dt;
+        if (this.lookTimer <= 0) {
+          this.lookTimer = rand(0.5, 1.1);
+          this.lookAngle = s.yaw + (Math.random() - 0.5) * 2.6;
+        }
+        this.tmp.set(s.pos.x + Math.sin(this.lookAngle) * 8, 0, s.pos.z + Math.cos(this.lookAngle) * 8);
+        this.look(this.tmp, 1.3, 'aim');
+        if (now > sr.until) {
+          this.memory.markSearched(p, now);
+          sr.i++;
+          this.progress('search advanced');
+          if (sr.i >= sr.pts.length) {
+            // Nothing: the trail is cold.
+            if (tgt) {
+              tgt.searched = true;
+              tgt.confidence *= 0.4;
+            }
+            this.stat('searchDone');
+            this.search = null;
+            this.done = true;
+            return;
+          }
+          sr.phase = 'move';
+        }
+        return;
+      default:
+        break;
+    }
+    // Moving: fast while far, then the gun up and a walk (crouched for the sneaky ones).
+    const P = this.persona;
+    const close = dist < 14;
+    const pace = P.searchPace === 'sprint' ? SPRINT : P.searchPace === 'run' ? RUN : JOG;
+    this.navigator.go(p, close ? WALK * 1.25 : pace, 1.2);
+    this.action = `search → ${sr.i + 1}/${sr.pts.length}`;
+    if (close) {
+      this.look(p, 1.3, 'aim');
+      if (P.searchPace === 'walk' && dist < 9) s.crouchTarget = 0.6;
+      // A corner between us and the spot: stop at it and lean round.
+      if (now > sr.until) {
+        const side = this.leanProbe(p, now);
+        if (side !== 0) {
+          sr.phase = 'corner';
+          sr.until = now + rand(0.7, 1.3);
+          this.stat('cornerPeek');
+          return;
+        }
+      }
+    } else this.carry();
+    if (this.navigator.status === 'arrived' || this.navigator.status === 'failed' || dist < 1.4) {
+      sr.phase = 'look';
+      sr.until = now + rand(1, 2.2) * (P.searchPace === 'walk' ? 1.4 : 1);
+    }
+  }
+
+  // --- INVESTIGATE: go and see what that was.
+  private doInvestigate(dt: number, now: number): void {
+    const s = this.soldier;
+    const iv = this.investigate;
+    if (!iv) {
+      this.done = true;
+      return;
+    }
+    const d = Math.hypot(iv.pos.x - s.pos.x, iv.pos.z - s.pos.z);
+    if (iv.arrived < 0) {
+      const P = this.persona;
+      this.navigator.go(iv.pos, d < 12 ? WALK * 1.3 : P.searchPace === 'walk' ? JOG : RUN, 3.5);
+      this.action = 'investigating';
+      if (d < 16) {
+        this.look(iv.pos, 1.3, d < 10 ? 'aim' : 'ready');
+        s.leanTarget = this.leanProbe(iv.pos, now) * 0.6;
+      } else this.carry();
+      if (this.navigator.status === 'arrived' || this.navigator.status === 'failed' || d < 3.6) {
+        iv.arrived = now;
+        this.navigator.stop();
+        this.progress('investigated');
+      }
+      if (now - iv.since > 30) this.done = true;
+      return;
+    }
+    // There: look around it for a moment.
+    this.action = 'looking around';
+    this.lookTimer -= dt;
+    if (this.lookTimer <= 0) {
+      this.lookTimer = rand(0.5, 1.1);
+      this.lookAngle = Math.atan2(iv.pos.x - s.pos.x, iv.pos.z - s.pos.z) + (Math.random() - 0.5) * 2.2;
+    }
+    this.tmp.set(s.pos.x + Math.sin(this.lookAngle) * 8, 0, s.pos.z + Math.cos(this.lookAngle) * 8);
+    this.look(this.tmp, 1.3, 'aim');
+    if (now - iv.arrived > 2.4) {
+      this.memory.markSearched(iv.pos, now);
+      const snd = this.memory.sounds;
+      for (let i = snd.length - 1; i >= 0; i--) if (snd[i].pos.distanceToSquared(iv.pos) < 64) snd.splice(i, 1);
+      if (this.target && this.target.lastSeenTime < -1e8) {
+        this.target.confidence *= 0.5;
+        this.target.searched = true;
+      }
+      this.allyFireAt = -1e9;
+      this.investigate = null;
+      this.stat('investigated');
+      this.done = true;
+    }
+  }
+
+  // --- SUPPRESS: walk the fire around the last known spot.
   private doSuppress(dt: number, now: number): void {
     const s = this.soldier;
     const t = this.target;
     if (!t || now > this.suppressUntil || (s.ammo <= 0 && s.reserve <= 0)) {
-      this.commitUntil = 0;
-      this.interrupt = true;
+      this.done = true;
       return;
     }
     if (t.visible) {
@@ -1188,10 +1435,10 @@ export class Bot implements AIListener {
     }
     // From cover with a side peek: step out to put rounds downrange.
     const c = this.cover;
-    if (this.inCover && c?.peek && !c.low) this.navigator.go(c.peek, WALK * 1.4, 0.35);
-    else this.navigator.stop();
-    s.crouchTarget = 0;
-    // Walk the fire around the last known spot.
+    if (this.inCover && c?.peek && !c.low) {
+      this.navigator.go(c.peek, WALK * 1.4, 0.35);
+      s.leanTarget = this.peekSide(c) * 0.9;
+    } else this.navigator.stop();
     this.suppressPt.x += (t.pos.x - this.suppressPt.x) * Math.min(1, dt * 0.8) + (Math.random() - 0.5) * dt * 3;
     this.suppressPt.z += (t.pos.z - this.suppressPt.z) * Math.min(1, dt * 0.8) + (Math.random() - 0.5) * dt * 3;
     const a = this.aimTgt;
@@ -1208,170 +1455,49 @@ export class Bot implements AIListener {
     this.action = 'suppressing';
   }
 
+  // --- FLANK: walk the planned route round the side.
   private doFlank(dt: number, now: number): void {
     const s = this.soldier;
     const f = this.flank;
     const t = this.target;
     if (!f || !t) {
-      this.interrupt = true;
+      this.done = true;
       return;
     }
     const wp = f.route[Math.min(this.flankIndex, f.route.length - 1)];
     const far = Math.hypot(t.pos.x - s.pos.x, t.pos.z - s.pos.z) > 25;
-    this.navigator.go(wp, far && !t.visible ? RUN : JOG * this.profile.pace, this.flankIndex >= f.route.length - 1 ? 0.8 : 1.2);
+    this.navigator.go(wp, far && !t.visible ? (this.persona.sprints ? SPRINT : RUN) : JOG * this.profile.pace, this.flankIndex >= f.route.length - 1 ? 0.8 : 1.2);
     if (this.navigator.status === 'arrived') {
       this.flankIndex++;
       this.progress('flank leg');
       if (this.flankIndex >= f.route.length) {
         this.stat('flankDone');
         this.squad?.flankDone(this, true);
+        this.flank = null;
         this.action = 'flank position';
-        this.commitUntil = 0;
-        this.interrupt = true;
         this.look(t.pos, 1.3, 'aim');
+        this.done = true;
         return;
       }
     } else if (this.navigator.status === 'failed') {
       this.flankBanUntil = now + 10;
       this.squad?.flankDone(this, false);
+      this.flank = null;
       this.stat('flankFailed');
-      this.commitUntil = 0;
-      this.interrupt = true;
+      this.done = true;
       return;
     }
     s.crouchTarget = 0;
     this.action = flankLabel(f.side);
     if (t.visible && !far) this.aimAt(t, false);
     else this.carry();
-  }
-
-  private doPush(dt: number, now: number): void {
-    const s = this.soldier;
-    const t = this.target;
-    if (!t) {
-      this.interrupt = true;
-      return;
-    }
-    const range = WEAPON_RANGE[s.weaponClass] ?? WEAPON_RANGE.rifle;
-    const d = Math.hypot(t.pos.x - s.pos.x, t.pos.z - s.pos.z);
-    s.crouchTarget = 0;
-    if (d > Math.max(3.5, range.ideal * 0.55)) {
-      this.navigator.go(t.pos, t.visible ? JOG : RUN, Math.max(3, range.ideal * 0.5));
-      this.action = 'pushing';
-    } else {
-      this.navigator.stop();
-      this.action = 'pushed in';
-      this.commitUntil = 0;
-    }
-    if (this.navigator.status === 'failed') {
-      this.commitUntil = 0;
-      this.interrupt = true;
-    }
-    if (t.visible) this.aimAt(t, false);
-    else this.look(t.pos, 1.3, 'aim');
     void dt;
-    void now;
   }
 
-  private doSearch(dt: number, now: number): void {
-    const s = this.soldier;
-    const sr = this.search;
-    if (!sr || !sr.pts.length) {
-      if (this.target) this.target.searched = true;
-      this.commitUntil = 0;
-      this.interrupt = true;
-      return;
-    }
-    const p = sr.pts[sr.i];
-    if (sr.pauseUntil > 0) {
-      // At a search point: hold, listen, look around.
-      this.navigator.stop();
-      this.action = `checking ${sr.i + 1}/${sr.pts.length}`;
-      this.lookTimer -= dt;
-      if (this.lookTimer <= 0) {
-        this.lookTimer = rand(0.6, 1.2);
-        this.lookAngle = s.yaw + (Math.random() - 0.5) * 2.4;
-      }
-      this.tmp.set(s.pos.x + Math.sin(this.lookAngle) * 8, 0, s.pos.z + Math.cos(this.lookAngle) * 8);
-      this.look(this.tmp, 1.3, 'ready');
-      if (now > sr.pauseUntil) {
-        sr.pauseUntil = 0;
-        this.memory.markSearched(p, now);
-        sr.i++;
-        this.progress('search advanced');
-        if (sr.i >= sr.pts.length) {
-          // Nothing: the trail is cold.
-          if (sr.target) {
-            sr.target.searched = true;
-            sr.target.confidence *= 0.4;
-          }
-          this.stat('searchDone');
-          this.search = null;
-          this.commitUntil = 0;
-          this.interrupt = true;
-        }
-      }
-      return;
-    }
-    const close = Math.hypot(p.x - s.pos.x, p.z - s.pos.z);
-    this.navigator.go(p, close < 10 ? WALK * 1.3 : JOG * this.profile.pace, 1.2);
-    this.action = `search → ${sr.i + 1}/${sr.pts.length}`;
-    if (this.navigator.status === 'arrived' || this.navigator.status === 'failed') {
-      sr.pauseUntil = now + rand(1, 2.4) * (2 - this.profile.pace);
-    }
-    // Weapon up toward where they were, while close to it.
-    const t = sr.target;
-    if (t && close < 14) this.look(t.pos, 1.3, 'ready');
-    else this.carry();
-    s.crouchTarget = 0;
-  }
-
-  private doInvestigate(dt: number, now: number): void {
-    const s = this.soldier;
-    const iv = this.investigate;
-    if (!iv) {
-      this.interrupt = true;
-      return;
-    }
-    const d = Math.hypot(iv.pos.x - s.pos.x, iv.pos.z - s.pos.z);
-    if (iv.arrived < 0) {
-      this.navigator.go(iv.pos, d < 12 ? WALK * 1.3 : JOG * this.profile.pace, 3.5);
-      this.action = 'investigating';
-      if (d < 16) this.look(iv.pos, 1.3, 'ready');
-      else this.carry();
-      if (this.navigator.status === 'arrived' || this.navigator.status === 'failed' || d < 3.6) {
-        iv.arrived = now;
-        this.navigator.stop();
-        this.progress('investigated');
-      }
-      return;
-    }
-    // There: look around it for a moment.
-    this.action = 'looking around';
-    this.lookTimer -= dt;
-    if (this.lookTimer <= 0) {
-      this.lookTimer = rand(0.5, 1.1);
-      this.lookAngle = Math.atan2(iv.pos.x - s.pos.x, iv.pos.z - s.pos.z) + (Math.random() - 0.5) * 2.2;
-    }
-    this.tmp.set(s.pos.x + Math.sin(this.lookAngle) * 8, 0, s.pos.z + Math.cos(this.lookAngle) * 8);
-    this.look(this.tmp);
-    if (now - iv.arrived > 2.4) {
-      this.memory.markSearched(iv.pos, now);
-      const snd = this.memory.sounds;
-      for (let i = snd.length - 1; i >= 0; i--) if (snd[i].pos.distanceToSquared(iv.pos) < 64) snd.splice(i, 1);
-      if (this.target && this.target.lastSeenTime < 0) this.target.confidence *= 0.5;
-      this.allyFireAt = -1e9;
-      this.investigate = null;
-      this.stat('investigated');
-      this.commitUntil = 0;
-      this.interrupt = true;
-    }
-  }
-
+  // --- RELOAD: behind something first if exposed.
   private doReload(dt: number, now: number): void {
     const s = this.soldier;
     const t = this.target;
-    // Exposed with cover close by: get behind it first.
     if (!this.inCover && t && (t.visible || now - this.lastThreatAt < 2) && now > this.noCoverUntil && now > this.coverRetryAt && !this.cover) {
       const res = this.queryCover('hide', t.pos);
       if (res && res !== 'pending' && res.pos.distanceTo(s.pos) < 7) this.cover = res;
@@ -1383,27 +1509,29 @@ export class Bot implements AIListener {
     if (this.cover && !this.inCover && this.cover.pos.distanceTo(s.pos) < 8) {
       this.navigator.go(this.cover.pos, RUN, 0.7);
       if (Math.hypot(this.cover.pos.x - s.pos.x, this.cover.pos.z - s.pos.z) < 1) this.inCover = true;
+      if (s.ammo === 0) s.startReload(); // reload on the run when dry
     } else {
       this.navigator.stop();
       if (s.reloadTimer <= 0 && !s.startReload()) {
-        this.commitUntil = 0;
-        this.interrupt = true;
-      } else if (Math.random() < 0.01) this.agent.say(pick(['Reloading!', 'Changing mags!', 'Cover me, reloading!']));
+        this.done = true;
+        return;
+      }
+      if (Math.random() < 0.01) this.agent.say(pick(['Reloading!', 'Changing mags!', 'Cover me, reloading!']));
     }
     s.crouchTarget = this.inCover && this.cover?.low ? 1 : t?.visible ? 1 : 0;
     if (t) this.look(t.pos);
     if (s.reloadTimer <= 0 && s.ammo >= s.magSize * 0.9) {
       this.progress('reloaded');
-      this.commitUntil = 0;
-      this.interrupt = true;
+      this.done = true;
     }
     void dt;
   }
 
+  // --- REGROUP: back to the squad.
   private doRegroup(dt: number, now: number): void {
     const p = this.squad?.regroupPoint(this);
     if (!p) {
-      this.interrupt = true;
+      this.done = true;
       return;
     }
     const s = this.soldier;
@@ -1412,40 +1540,30 @@ export class Bot implements AIListener {
     this.carry();
     if (this.navigator.status === 'arrived' || d < 3) {
       this.progress('regrouped');
-      this.commitUntil = 0;
-      this.interrupt = true;
-    } else if (this.navigator.status === 'failed') {
-      this.commitUntil = 0;
-      this.interrupt = true;
-    }
+      this.done = true;
+    } else if (this.navigator.status === 'failed') this.done = true;
     s.crouchTarget = 0;
     void dt;
     void now;
   }
 
-  private doAssist(dt: number, now: number): void {
+  // --- HELP: a squadmate (or the player) is in a fight: get into it, from cover.
+  private doHelp(dt: number, now: number): void {
     const s = this.soldier;
     const help = this.squad?.helpFor(this);
     if (!help) {
-      this.commitUntil = 0;
-      this.interrupt = true;
+      this.done = true;
       return;
     }
     if ((!this.cover || this.cover.threat.distanceToSquared(help.threat) > 64) && now > this.coverRetryAt) {
       const res = this.queryCover('fight', help.threat, help.pos);
       if (res === null) this.coverRetryAt = now + 2.5;
-      if (res === 'pending') {
-        this.navigator.go(help.pos, RUN, 4);
-        this.carry();
-        return;
-      }
-      if (!res) {
-        // No cover there: just get close to them, facing their threat.
+      if (res === 'pending' || !res) {
         this.navigator.go(help.pos, RUN, 4);
         this.look(help.threat);
-        if (Math.hypot(help.pos.x - s.pos.x, help.pos.z - s.pos.z) < 5) {
-          this.commitUntil = 0;
-          this.interrupt = true;
+        if (!res && Math.hypot(help.pos.x - s.pos.x, help.pos.z - s.pos.z) < 5) {
+          this.memory.addSound(help.threat, 0.5, 'assist', now);
+          this.done = true;
         }
         return;
       }
@@ -1453,31 +1571,54 @@ export class Bot implements AIListener {
     }
     const c = this.cover;
     if (!c) {
-      // Waiting out a failed cover search: close in on them meanwhile.
       this.navigator.go(help.pos, RUN, 4);
       this.carry();
       return;
     }
     const d = Math.hypot(c.pos.x - s.pos.x, c.pos.z - s.pos.z);
-    this.navigator.go(c.pos, d > 10 ? RUN : JOG, 0.8);
+    this.navigator.go(c.pos, d > 10 ? (this.persona.sprints ? SPRINT : RUN) : JOG, 0.8);
     this.action = help.player ? 'covering you' : 'moving to help';
-    if (d < 4) this.look(help.threat, 1.3, 'aim');
+    if (d < 6) this.look(help.threat, 1.3, 'aim');
     else this.carry();
     if (d < 1.1) {
       this.inCover = true;
       this.coverSince = now;
       this.progress('assist position');
-      this.commitUntil = 0;
-      this.interrupt = true;
       // Whatever they were fighting is now our business too.
       this.memory.addSound(help.threat, 0.5, 'assist', now);
+      this.done = true;
     }
     if (this.navigator.status === 'failed') {
       this.cover = null;
-      this.commitUntil = 0;
-      this.interrupt = true;
+      this.done = true;
     }
     void dt;
+  }
+
+  // --- ROBOT: shoot it, keeping the gap (they only hurt up close).
+  private doRobot(dt: number, now: number): void {
+    const t = this.target;
+    const s = this.soldier;
+    if (!t || !t.visible) {
+      this.done = true;
+      return;
+    }
+    const d = this.flat(t.pos);
+    this.aimAt(t, true);
+    const kite = 4.2 + (1.4 - this.profile.push) * 2;
+    if (d < kite) {
+      this.action = 'kiting';
+      this.kiteTimer -= dt;
+      if (this.kiteTimer <= 0) {
+        this.kiteTimer = 0.4;
+        this.stepAway(t.pos, 3.5, this.agent.hp < 0.35 ? RUN : JOG);
+      }
+    } else {
+      this.action = 'shooting robot';
+      this.navigator.stop();
+    }
+    s.crouchTarget = 0;
+    void now;
   }
 
   // ------------------------------------------------------------ movement helpers
@@ -1510,7 +1651,7 @@ export class Bot implements AIListener {
     const l = Math.hypot(dx, dz) || 1;
     const x = s.pos.x + (-dz / l) * side * dist;
     const z = s.pos.z + (dx / l) * side * dist;
-    if (!this.deps.nav.clearLine(s.pos.x, s.pos.z, x, z)) return false;
+    if (!this.deps.nav.walkable(x, z) || !this.deps.nav.clearLine(s.pos.x, s.pos.z, x, z)) return false;
     this.navigator.go(this.tmp2.set(x, 0, z), speed, 0.4);
     return true;
   }
@@ -1523,7 +1664,7 @@ export class Bot implements AIListener {
     const tgt = t ? `${t.target.kind}${t.visible ? ' (vis)' : ''} ${Math.round(t.confidence * 100)}%` : '—';
     const cover = this.inCover ? (this.cover?.low ? 'low cover' : 'cover') : this.cover ? '→ cover' : 'open';
     const lines = [
-      `${this.name} [${this.team}] ${this.profile.id} · ${this.role}${this.squad ? ` · ${this.squad.plan}` : ''}`,
+      `${this.name} [${this.team}] ${this.persona.id} · ${this.role}${this.squad ? ` · ${this.squad.plan}` : ''}`,
       `${dec} ${(now - this.decisionAt).toFixed(1)}s · ${this.action}`,
       `tgt ${tgt} · ${cover} · supp ${this.suppression.toFixed(2)}`,
       `move ${this.sinceMove.toFixed(1)}s · prog ${this.sinceProgress.toFixed(1)}s (${this.lastProgress})`,

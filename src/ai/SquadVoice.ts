@@ -6,11 +6,12 @@ type Line = 'see_enemy' | 'contact' | 'flanking' | 'moving' | 'reloading' | 'tar
 /** Decisions that get a callout when a bot switches into them. */
 const ON_DECISION: Partial<Record<string, Line>> = {
   FLANK: 'flanking',
-  PUSH: 'moving',
-  REPOSITION: 'moving',
+  RUSH: 'moving',
+  SHIFT_COVER: 'moving',
   RELOAD: 'reloading',
   SEARCH: 'lost_visual',
   SUPPRESS: 'contact',
+  RETREAT: 'hit',
 };
 
 interface Seen {

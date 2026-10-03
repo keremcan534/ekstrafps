@@ -175,7 +175,7 @@ export class AITest {
             this.flags.hidden = time;
             this.note(`t=${time.toFixed(1)} player hidden; last known ${fmt(this.lastKnown)}`);
           }
-          if (this.flags.hidden && !this.flags.searchStart && (bot.decision === 'SEARCH' || bot.decision === 'INVESTIGATE' || bot.decision === 'PUSH' || bot.decision === 'HOLD_ANGLE')) {
+          if (this.flags.hidden && !this.flags.searchStart && (bot.decision === 'SEARCH' || bot.decision === 'INVESTIGATE' || bot.decision === 'RUSH' || bot.decision === 'AMBUSH')) {
             this.flags.searchStart = time;
             this.note(`t=${time.toFixed(1)} bot → ${bot.decision}`);
           }
