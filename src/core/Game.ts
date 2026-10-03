@@ -53,6 +53,7 @@ import { buildWeaponModel } from '../weapons/WeaponModels';
 import { WeaponLights, weaponLight } from '../fx/WeaponLights';
 import { VIEW_DISTANCE, loadGraphics, type GraphicsSettings } from '../config/Graphics';
 import { DustMotes } from '../fx/DustMotes';
+import { Ambience } from '../audio/Ambience';
 import { raid } from '../game/Progress';
 import { Inhabitants } from '../game/Inhabitants';
 import type { ShowcaseDeps } from '../ui/Showcase';
@@ -205,6 +206,8 @@ export class Game {
   private fpsEl: HTMLDivElement | null = null;
   /** Dust hanging in the air around you. */
   private dust!: DustMotes;
+  /** Room tone, machines, wind; the building creaking in the dark. */
+  private ambience: Ambience | null = null;
   private prevBroken = 0;
   private fpsTimer = 0;
   private stationIndex = 0;
@@ -1429,6 +1432,8 @@ export class Game {
     // Lights out: muzzle flashes light the room (and give shooters away).
     const darkness = this.lighting?.darkness ?? 0;
     this.dust.update(dt, this.camera.eye, darkness);
+    if (!this.ambience && this.audio.ready && !this.trailer) this.ambience = new Ambience(this.audio);
+    this.ambience?.update(dt, this.arena instanceof Site9 ? this.arena.ambienceAt(this.player.feet.x, this.player.feet.z) : null, darkness, this.camera.eye);
     if (this.survival && !this.health.dead && !this.ended) raid.alive += dt;
     // Broken lamps spark when they stutter back on (only the ones near you).
     if (this.arena instanceof Site9) {

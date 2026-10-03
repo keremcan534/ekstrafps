@@ -357,3 +357,10 @@ for (let sp = 0; sp < 6; sp++) {
     SOUND_BANK[`civ.${kind}.${sp}`] = { layers: [{ files, gain }], reverb: 0.35, pitchVariance: 0.03, maxVoices: 2, maxDist, voice: true };
   }
 }
+
+/** Ambience beds (looped by Ambience.ts; preloaded with the bank). */
+export const AMBIENCE_LOOPS = ['room', 'hvac', 'servers', 'power', 'wind', 'dark'].map((n) => `audio/amb/${n}.wav`);
+// Distant building noises (positional: they come through walls muffled).
+SOUND_BANK['amb.groan'] = { layers: [{ files: ['audio/amb/groan0.wav', 'audio/amb/groan1.wav', 'audio/amb/groan2.wav'], gain: 0.9 }], pitchVariance: 0.08, maxVoices: 1, reverb: 0.6, maxDist: 70, voice: true };
+SOUND_BANK['amb.thump'] = { layers: [{ files: ['audio/amb/thump0.wav', 'audio/amb/thump1.wav'], gain: 1.0 }], pitchVariance: 0.1, maxVoices: 1, reverb: 0.7, maxDist: 80, voice: true };
+SOUND_BANK['amb.rattle'] = { layers: [{ files: ['audio/amb/rattle0.wav', 'audio/amb/rattle1.wav'], gain: 0.7 }], pitchVariance: 0.15, maxVoices: 1, reverb: 0.4, maxDist: 40, voice: true };

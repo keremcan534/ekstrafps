@@ -199,6 +199,7 @@ Vanta Dynamics' research campus, single level, about 176 × 138 m (built at 0.8 
   - The Choir: lines whispered by a layered chorus
   - Black Division radio: the public-domain *john* voice through a gas-mask and radio chain
   - facility PA: the public-domain *kristin* voice
+- **Ambience** (`audio/Ambience.ts`, `production/audio/gen_ambience.py`): looping beds mixed by the room you're in. Air ducts hum in the offices, fans whir in the server hall, the plant rumbles and buzzes, wind blows under the skylights. In a blackout the machines spin down (their pitch sags) and a low drone takes over. Now and then the building creaks, thumps or rattles a duct somewhere around you, muffled by the walls in between.
 - **Sound through walls and distance:** positional sounds lose their highs with distance, and a ray from your ear decides whether a wall is in the way. A fight in the next room comes through as a dull, boomy thump.
 
 **Credits.** Voice models: [Piper](https://github.com/rhasspy/piper) voices from rhasspy/piper-voices. LibriTTS-R speakers: Koizumi et al., *LibriTTS-R* (2023), CC BY 4.0. *john*, *kristin* and *joe*: public domain / CC0.

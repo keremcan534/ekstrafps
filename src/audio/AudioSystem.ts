@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { RECIPES } from './Synth';
-import { SOUND_BANK, type SoundEvent } from './SoundBank';
+import { AMBIENCE_LOOPS, SOUND_BANK, type SoundEvent } from './SoundBank';
 import { feel } from '../config/Feel';
 
 const VARIATIONS = 3;
@@ -127,6 +127,7 @@ export class AudioSystem {
         for (const f of l.files ?? []) files.add(f);
       }
     }
+    for (const f of AMBIENCE_LOOPS) files.add(f);
     const jobs: Promise<void>[] = [];
     for (const name of needed) {
       const recipe = RECIPES[name];
@@ -160,6 +161,28 @@ export class AudioSystem {
     }
     await Promise.all(jobs);
     this.ready = true;
+  }
+
+  /**
+   * A looping bed (ambience): starts silent; the caller fades its gain. Rate can
+   * be changed (machines spinning down). Null if the file didn't load.
+   */
+  startLoop(file: string): { gain: GainNode; src: AudioBufferSourceNode } | null {
+    const buf = this.fileBuffers.get(file);
+    if (!buf) return null;
+    const src = this.ctx.createBufferSource();
+    src.buffer = buf;
+    src.loop = true;
+    const gain = this.ctx.createGain();
+    gain.gain.value = 0;
+    src.connect(gain).connect(this.world);
+    src.start(this.ctx.currentTime, Math.random() * buf.duration);
+    return { gain, src };
+  }
+
+  /** Audio clock (seconds). */
+  get now(): number {
+    return this.ctx.currentTime;
   }
 
   /** Must be called from a user gesture (mobile browsers require it). */

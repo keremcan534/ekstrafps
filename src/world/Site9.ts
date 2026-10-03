@@ -1860,6 +1860,12 @@ export class Site9 implements GameMap {
   }
 
   /** Zone of the room containing (x, z). */
+  /** Ambience: the room you're in (id, style, open to the sky). */
+  ambienceAt(x: number, z: number): { id: string; style: string; open: boolean } | null {
+    const r = this.layout.roomAt(x, z);
+    return r ? { id: r.id, style: r.style, open: !!(r.sky || r.skylight) } : null;
+  }
+
   zoneAt(x: number, z: number): string | null {
     return this.layout.roomAt(x, z)?.zone ?? null;
   }
