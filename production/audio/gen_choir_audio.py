@@ -12,7 +12,7 @@ import soundfile as sf
 from scipy.signal import butter, fftconvolve, lfilter, resample
 
 SR = 48000
-ROOT = Path(__file__).resolve().parents[3]
+ROOT = Path(__file__).resolve().parents[2]
 GUNS = ROOT / "public" / "audio" / "guns"
 rng = np.random.default_rng(9)
 

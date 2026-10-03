@@ -193,7 +193,15 @@ Vanta Dynamics' research campus, single level, about 176 × 138 m (built at 0.8 
 - **Lab staff** (`enemies/Civilian.ts`): ten Site-9 scientists in white lab coats still hiding in the labs (six on phones). They cower with their hands over their heads; gunfire, blasts, robots or The Choir nearby send them running in a panic, arms pumping and looking back. Robots hunt them. Killing one costs you $250 and 100 XP.
 - **The Choir** (`enemies/Cultist.ts`, `game/Inhabitants.ts`): robot-worshipping squatters in long hooded robes and pale masks with dim red eyes. They only come out in a blackout. They creep up in the dark, breathing and whispering. When you're close and not looking, they rush you with a blade raised (a jumpscare sting), slash once and melt back into the dark to try again. Your flashlight burns them: caught in the beam they cover their masks and back off. When the power comes back they're gone. 120 XP, and $300 to whoever drops one.
 - **Salvagers** (4 Teams): a crew of three scavengers in mismatched gear with cheap guns (pump shotgun, Mosin, Kar98, PPSh, G18, MP5, Saiga, pistol). They roam for loot and shoot anyone; a crew turns up a few minutes in and again after it's wiped. 50 XP and $150 a head.
-- Sounds for The Choir (`production/trailer/tools/gen_choir_audio.py`) are made from the game's own recordings plus shaped noise, with no pitched synth tones.
+- Sounds for The Choir (`production/audio/gen_choir_audio.py`) are made from the game's own recordings plus shaped noise, with no pitched synth tones.
+- Voices (`production/audio/gen_voices.py`) use Piper neural TTS with commercial-safe models only:
+  - lab staff: six LibriTTS-R speakers panicking, pleading ("Don't shoot!" when you aim at them) and whimpering
+  - The Choir: lines whispered by a layered chorus
+  - Black Division radio: the public-domain *john* voice through a gas-mask and radio chain
+  - facility PA: the public-domain *kristin* voice
+- **Sound through walls and distance:** positional sounds lose their highs with distance, and a ray from your ear decides whether a wall is in the way. A fight in the next room comes through as a dull, boomy thump.
+
+**Credits.** Voice models: [Piper](https://github.com/rhasspy/piper) voices from rhasspy/piper-voices. LibriTTS-R speakers: Koizumi et al., *LibriTTS-R* (2023), CC BY 4.0. *john*, *kristin* and *joe*: public domain / CC0.
 
 **An abandoned facility.** Seeded clutter (the same every game, kept out of doorways, spawns and buy spots): papers, rubble, cable runs, oil stains and fallen ceiling tiles on the floor; box stacks, cabinets, crates, pallets, drums, gas cylinders and trash bags along the walls (solid); overturned-table-and-sandbag barricades in the big rooms (cover); extinguishers, vents and hanging cables; and a broken lamp in most rooms, hanging off one cable, flickering and sparking. Dust hangs in the air around you.
 

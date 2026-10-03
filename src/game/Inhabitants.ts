@@ -54,6 +54,9 @@ export class Inhabitants {
   private noiseSeen = -1;
   private tmp = new THREE.Vector3();
   private chest = new THREE.Vector3();
+  /** Lab staff: when each may speak again, and what they were doing last frame. */
+  private nextLine = new Map<Civilian, number>();
+  private wasFleeing = new Set<Civilian>();
 
   constructor(private d: InhabitantDeps) {
     const civHooks = {
@@ -66,6 +69,9 @@ export class Inhabitants {
         void c;
       },
       onThud: (at: THREE.Vector3, s: number) => d.audio.play('robot.fall', { position: at, volume: 0.15 + 0.3 * s }),
+      onHurt: (c: Civilian, info: DamageInfo) => {
+        if (byPlayer(info.hit)) this.say(c, 'plead', 3, true);
+      },
     };
     const count = d.mobile ? 6 : 10;
     const rooms = d.map.rooms.filter((r) => LAB_ROOMS.includes(r.id));
@@ -103,6 +109,18 @@ export class Inhabitants {
       if (d.mobile) c.body.setCastShadow(false);
       this.cult.push(c);
     }
+  }
+
+  /** Each of them keeps one voice: long hair (odd skins) → one of the women's voices. */
+  private speaker(c: Civilian): number {
+    return (c.index % 2 ? 3 : 0) + ((c.index >> 1) % 3);
+  }
+
+  private say(c: Civilian, kind: 'panic' | 'plead' | 'whimper', cooldown: number, force = false): void {
+    const now = aiWorld.time;
+    if (!force && (this.nextLine.get(c) ?? 0) > now) return;
+    this.nextLine.set(c, now + cooldown);
+    this.d.audio.play(`civ.${kind}.${this.speaker(c)}`, { position: c.body.part('head').worldPos });
   }
 
   /** A walkable point inside a room rect (margin m from the walls). */
@@ -165,6 +183,22 @@ export class Inhabitants {
           if (r.alive && r.state === 'chase' && r.pos.distanceToSquared(c.pos) < 81) c.scare(r.pos, 5);
         }
         for (const k of this.cult) if (k.alive && k.pos.distanceToSquared(c.pos) < 64) c.scare(k.pos, 6);
+      }
+      // Voices: a cry when they bolt (and now and then while running), "don't shoot" when
+      // you point a gun at them up close, whimpering while they cower near you.
+      if (c.alive) {
+        const fleeing = c.state === 'flee';
+        if (fleeing && !this.wasFleeing.has(c) && Math.random() < 0.75) this.say(c, 'panic', 4);
+        else if (fleeing && Math.random() < dt * 0.15) this.say(c, 'panic', 5);
+        if (fleeing) this.wasFleeing.add(c);
+        else this.wasFleeing.delete(c);
+        const dist = c.pos.distanceTo(prey.feet);
+        if (dist < 12 && prey.alive) {
+          const to = this.tmp.copy(c.pos).setY(1.3).sub(prey.eye);
+          const aimed = to.dot(prey.look) / Math.max(to.length(), 1e-3) > Math.cos(0.12);
+          if (aimed && d.physics.lineOfSight(prey.eye, this.chest.copy(c.pos).setY(1.3), GROUPS.sight)) this.say(c, 'plead', 6);
+          else if (!fleeing && dist < 9 && Math.random() < dt * 0.25) this.say(c, 'whimper', 7);
+        }
       }
       const shown = d.map.isVisibleAt(c.pos.x, c.pos.z);
       c.body.root.visible = shown;

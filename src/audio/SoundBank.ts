@@ -325,7 +325,7 @@ export const SOUND_BANK: Record<string, SoundEvent> = {
   // The Choir (blackout cult): the rush sting is for you alone (no position), the rest is in the room.
   'choir.sting': { layers: [{ file: 'audio/guns/choir_sting.wav', gain: 1.0 }], maxVoices: 1, bus: 'ui' },
   'choir.hiss': { layers: [{ file: 'audio/guns/choir_hiss.wav', gain: 0.9 }], pitchVariance: 0.1, maxVoices: 2, reverb: 0.4, maxDist: 26 },
-  'choir.whisper': { layers: [{ files: ['audio/guns/choir_whisper0.wav', 'audio/guns/choir_whisper1.wav', 'audio/guns/choir_whisper2.wav'], gain: 0.75 }], pitchVariance: 0.08, maxVoices: 3, reverb: 0.5, maxDist: 20 },
+  'choir.whisper': { layers: [{ files: Array.from({ length: 8 }, (_, i) => `audio/voice/choir_voice_${i}.wav`), gain: 0.85 }, { files: ['audio/guns/choir_whisper0.wav', 'audio/guns/choir_whisper1.wav', 'audio/guns/choir_whisper2.wav'], gain: 0.3 }], pitchVariance: 0.08, maxVoices: 3, reverb: 0.5, maxDist: 20 },
   'choir.slash': { layers: [{ file: 'audio/guns/choir_slash.wav', gain: 1.0 }, { synth: 'impact_flesh', gain: 0.5, delay: 0.15 }], pitchVariance: 0.06, maxVoices: 2, reverb: 0.2, maxDist: 20 },
   'bd.encounter': { layers: [{ files: ['audio/guns/bd_encounter.wav', 'audio/guns/bd_encounter2.wav'], gain: 0.9 }], maxVoices: 1, bus: 'ui' },
   // Extraction: helicopter, evac bunker doors, countdown heartbeat, the theme.
@@ -347,3 +347,13 @@ export const SOUND_BANK: Record<string, SoundEvent> = {
   'player.land': { layers: [{ synth: 'land', gain: 0.5 }], pitchVariance: 0.08, bus: 'ui' },
   'player.jump': { layers: [{ synth: 'jump', gain: 0.4 }], pitchVariance: 0.1, bus: 'ui' },
 };
+
+// Lab staff voices: six speakers (0-2 men, 3-4-5 women), one event per speaker and kind,
+// so each person keeps their own voice ('civ.panic.3', 'civ.plead.0', 'civ.whimper.5').
+const VOICE_FILES = ['civ_panic_00.wav', 'civ_panic_02.wav', 'civ_panic_04.wav', 'civ_panic_06.wav', 'civ_panic_11.wav', 'civ_panic_13.wav', 'civ_panic_15.wav', 'civ_panic_17.wav', 'civ_panic_20.wav', 'civ_panic_22.wav', 'civ_panic_24.wav', 'civ_panic_26.wav', 'civ_panic_31.wav', 'civ_panic_33.wav', 'civ_panic_35.wav', 'civ_panic_37.wav', 'civ_panic_40.wav', 'civ_panic_42.wav', 'civ_panic_44.wav', 'civ_panic_46.wav', 'civ_panic_51.wav', 'civ_panic_53.wav', 'civ_panic_55.wav', 'civ_panic_57.wav', 'civ_plead_00.wav', 'civ_plead_01.wav', 'civ_plead_02.wav', 'civ_plead_10.wav', 'civ_plead_11.wav', 'civ_plead_12.wav', 'civ_plead_20.wav', 'civ_plead_21.wav', 'civ_plead_22.wav', 'civ_plead_30.wav', 'civ_plead_31.wav', 'civ_plead_32.wav', 'civ_plead_40.wav', 'civ_plead_41.wav', 'civ_plead_42.wav', 'civ_plead_50.wav', 'civ_plead_51.wav', 'civ_plead_52.wav', 'civ_whimper_00.wav', 'civ_whimper_02.wav', 'civ_whimper_11.wav', 'civ_whimper_13.wav', 'civ_whimper_20.wav', 'civ_whimper_22.wav', 'civ_whimper_31.wav', 'civ_whimper_33.wav', 'civ_whimper_40.wav', 'civ_whimper_42.wav', 'civ_whimper_51.wav', 'civ_whimper_53.wav'];
+for (let sp = 0; sp < 6; sp++) {
+  for (const [kind, gain, maxDist] of [['panic', 1.0, 45], ['plead', 1.0, 35], ['whimper', 0.7, 12]] as const) {
+    const files = VOICE_FILES.filter((f) => f.startsWith(`civ_${kind}_${sp}`)).map((f) => `audio/voice/${f}`);
+    SOUND_BANK[`civ.${kind}.${sp}`] = { layers: [{ files, gain }], reverb: 0.35, pitchVariance: 0.03, maxVoices: 2, maxDist, voice: true };
+  }
+}

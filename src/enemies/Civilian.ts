@@ -7,6 +7,8 @@ import { labSkin } from './CivilianSkin';
 
 export interface CivilianHooks {
   onKilled(c: Civilian, info: DamageInfo): void;
+  /** Hit but still alive. */
+  onHurt?(c: Civilian, info: DamageInfo): void;
   onThud(at: THREE.Vector3, strength: number): void;
 }
 
@@ -48,7 +50,10 @@ export class Civilian {
     hooks: CivilianHooks,
   ) {
     this.body = new Humanoid(physics, scene, labSkin(index), {
-      onDamage: (info) => this.scare(info.hit.point, 8),
+      onDamage: (info) => {
+        this.scare(info.hit.point, 8);
+        if (!info.killed) hooks.onHurt?.(this, info);
+      },
       onDeath: (info) => {
         this.state = 'dead';
         hooks.onKilled(this, info);
