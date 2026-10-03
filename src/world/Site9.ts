@@ -795,8 +795,8 @@ export class Site9 implements GameMap {
     const R = 'security';
     for (const z of [58, 64, 70]) {
       this.box(R, 'gunmetal', [6, 1.0, 0.8], [30, 0.5, z], true, undefined, METAL);
-      this.box(R, 'steel', [1.4, 2.2, 0.15], [34, 1.1, z - 0.6], false);
-      this.box(R, 'steel', [1.4, 2.2, 0.15], [34, 1.1, z + 0.6], false);
+      this.box(R, 'steel', [1.4, 2.2, 0.15], [34, 1.1, z - 0.6], true, undefined, METAL);
+      this.box(R, 'steel', [1.4, 2.2, 0.15], [34, 1.1, z + 0.6], true, undefined, METAL);
       this.box(R, 'steel', [1.4, 0.15, 1.35], [34, 2.2, z], false);
     }
     for (const z of [58, 66, 74]) {
@@ -848,7 +848,7 @@ export class Site9 implements GameMap {
     for (const z of [18, 24, 30, 36, 42, 48]) {
       this.box(R, 'white', [2.1, 0.6, 1.0], [62.5, 0.5, z]);
       this.box(R, 'mint', [2.0, 0.12, 0.9], [62.5, 0.86, z], false);
-      this.box(R, 'steel', [0.04, 2.4, 2.6], [61, 1.2, z + 1.6], false);
+      this.box(R, 'steel', [0.04, 2.4, 2.6], [61, 1.2, z + 1.6], true, undefined, METAL); // bay divider
       this.box(R, 'mint', [0.03, 1.8, 2.6], [61, 1.5, z + 1.6], false);
     }
     this.box(R, 'steel', [2.2, 0.9, 0.8], [48, 0.45, 30], true, undefined, METAL);
@@ -943,11 +943,11 @@ export class Site9 implements GameMap {
     this.box(R, 'dark', [1.2, 1.0, 76], [-80, 11.5, -26], false);
     // Robot charging bays: rogue robots step out of these.
     for (let x = -104; x <= -46; x += 8) {
-      this.box(R, 'dark', [3, 4, 0.6], [x, 2, -65.6], false);
+      this.box(R, 'dark', [3, 4, 0.6], [x, 2, -65.6], true, undefined, METAL);
       this.box(R, 'screenWarm', [2.2, 3.2, 0.05], [x, 2, -65.28], false);
     }
     for (let z = -58; z <= 6; z += 8) {
-      this.box(R, 'dark', [0.6, 4, 3], [-109.6, 2, z], false);
+      this.box(R, 'dark', [0.6, 4, 3], [-109.6, 2, z], true, undefined, METAL);
       this.box(R, 'screenWarm', [0.05, 3.2, 2.2], [-109.28, 2, z], false);
     }
     this.spawnAt('assembly', [[-104, -63], [-88, -63], [-72, -63], [-56, -63], [-107, -50], [-107, -26], [-107, -2], [-44, 10]]);
@@ -993,7 +993,7 @@ export class Site9 implements GameMap {
     this.box(R, 'contRust', [2.44, 2.6, 6.06], [-104, 3.9, 25.5], false);
     for (const z of [78, 82]) this.cyl(R, 'offwhite', 1.6, 5, [-106, 2.5, z], true, [0, 0, 0], 18);
     this.box(R, 'steel', [0.4, 12, 40], [-109.6, 6, 52], false);
-    for (let z = 33; z < 72; z += 2) this.box(R, z % 4 < 2 ? 'yellow' : 'dark', [0.08, 0.6, 1.2], [-109.35, 0.3, z], false);
+    for (let z = 33; z < 72; z += 2) this.box(R, z % 4 < 2 ? 'yellow' : 'dark', [0.08, 0.6, 1.2], [-109.35, 0.3, z], true, undefined, METAL);
     this.serviceLift(R, -80, 85.85, Math.PI);
     this.spawnAt('hangar', [[-108, 16], [-68, 84], [-108, 84]]);
   }
@@ -1076,7 +1076,7 @@ export class Site9 implements GameMap {
     this.physics.addStaticBox(new THREE.Vector3(...this.at(R, [80, 1.5, 60])), new THREE.Vector3(10 * kOf(R, 0), 1.5, 0.08), undefined, METAL);
     for (const z of [68, 74, 80]) {
       this.box(R, 'woodDark', [1.2, 1.1, 2.4], [72, 0.55, z]);
-      this.box(R, 'offwhite', [0.6, 1.6, 0.05], [106, 1.4, z], false);
+      this.box(R, 'offwhite', [0.6, 1.6, 0.05], [106, 1.4, z]);
     }
     for (const x of [76, 90, 104]) this.box(R, 'vanta', [3, 4.5, 0.06], [x, 3.4, 85.88], false);
     this.serviceLift(R, 96, 85.85, Math.PI);
@@ -1140,6 +1140,10 @@ export class Site9 implements GameMap {
       this.box(M, 'gunmetal', [5, 0.1, 1.2], [x, 0.05, 8]);
       for (const y of [0.9, 1.9, 2.9]) this.box(M, 'gunmetal', [5, 0.06, 1.2], [x, y, 8], false);
       for (const dx of [-2.45, 2.45]) this.box(M, 'yellow', [0.1, 3.2, 1.2], [x + dx, 1.6, 8], true, undefined);
+      // The rack itself (shelves and parts are visual only): one collider for its body.
+      const rc = this.at(M, [x, 1.5, 8]);
+      const rs = this.sz(M, [5, 3, 1.2]);
+      this.physics.addStaticBox(new THREE.Vector3(...rc), new THREE.Vector3(rs[0] / 2, rs[1] / 2, rs[2] / 2), undefined, METAL);
       for (let i = 0; i < 4; i++) {
         this.box(M, 'white', [0.55, 0.45, 0.4], [x - 1.8 + i * 1.2, 1.2, 8], false); // torso shells
         this.box(M, 'dark', [0.35, 0.3, 0.3], [x - 1.8 + i * 1.2, 2.13, 8], false); // heads
@@ -1222,7 +1226,7 @@ export class Site9 implements GameMap {
       for (let i = 0; i < 5; i++) this.box(P, i % 2 ? 'lampRed' : 'leds', [0.06, 0.06, 0.02], [x - 1.2 + i * 0.6, 1.02, -67.95], false);
     }
     for (const x of [-34, -18, 18, 34]) {
-      for (const y of [1.2, 2.0, 2.8]) this.cyl(P, 'steel', 0.18, 6, [x, y, -85.3], false, [0, 0, Math.PI / 2], 10);
+      for (const y of [1.2, 2.0, 2.8]) this.cyl(P, 'steel', 0.18, 6, [x, y, -85.3], y < 2, [0, 0, Math.PI / 2], 10);
       this.cyl(P, 'vanta', 0.32, 0.05, [x + 3.2, 2.0, -84.9], false, [Math.PI / 2, 0, 0], 16);
     }
   }
