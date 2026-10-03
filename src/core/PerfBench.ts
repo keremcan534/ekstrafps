@@ -78,7 +78,11 @@ export class PerfBench {
   private i = -1;
   private t = 0;
   private frames: number[] = [];
-  private results: { name: string; label: string; fps: number; ms: number }[] = [];
+  /** CPU time per frame (ms): a 120 Hz screen shows frames in 8.3 ms steps, so frame times alone flip between 60 and 120 fps. */
+  private works: number[] = [];
+  /** Shortest frame seen (s): the screen's refresh. */
+  private minFrame = Infinity;
+  private results: { name: string; label: string; fps: number; ms: number; cpu: number }[] = [];
   private cpu = new Map<string, number>();
   private cpuFrames = 0;
   private restore: (() => void)[] = [];
@@ -156,8 +160,8 @@ export class PerfBench {
     this.restore = [];
   }
 
-  /** Call once per real frame with its duration (seconds). */
-  frame(rawDt: number): void {
+  /** Call once per real frame with its duration (seconds) and the CPU time of the frame before (ms). */
+  frame(rawDt: number, workMs: number): void {
     if (this.done) return;
     if (this.i < 0) {
       this.next();
@@ -166,6 +170,8 @@ export class PerfBench {
     this.t += rawDt;
     if (this.t > SETTLE) {
       this.frames.push(rawDt);
+      this.works.push(workMs);
+      if (rawDt > 0.002) this.minFrame = Math.min(this.minFrame, rawDt);
       if (this.i === 0) this.cpuFrames++;
     }
     const step = this.steps[this.i];
@@ -173,7 +179,8 @@ export class PerfBench {
     if (this.t >= SETTLE + MEASURE) {
       const sorted = [...this.frames].sort((a, b) => a - b);
       const median = sorted[sorted.length >> 1] ?? 0.1;
-      this.results.push({ name: step.name, label: step.label, fps: 1 / median, ms: median * 1000 });
+      const work = [...this.works].sort((a, b) => a - b);
+      this.results.push({ name: step.name, label: step.label, fps: 1 / median, ms: median * 1000, cpu: work[work.length >> 1] ?? 0 });
       if (this.i === 0) this.details = this.host.details();
       step.off();
       this.next();
@@ -184,6 +191,7 @@ export class PerfBench {
     this.i++;
     this.t = 0;
     this.frames = [];
+    this.works = [];
     if (this.i >= this.steps.length) {
       this.done = true;
       this.report();
@@ -194,7 +202,10 @@ export class PerfBench {
 
   private report(): void {
     const base = this.results[0];
-    const rows = this.results.slice(1).map((r) => ({ ...r, gainMs: base.ms - r.ms, gainFps: r.fps - base.fps }));
+    // Costs in CPU time (what each thing adds to the frame's work); the fps shown move in the screen's steps.
+    const rows = this.results.slice(1).map((r) => ({ ...r, gainMs: base.cpu - r.cpu, gainFps: r.fps - base.fps }));
+    const hz = Math.round(1 / this.minFrame / 10) * 10;
+    const budget = hz > 0 && Number.isFinite(hz) ? 1000 / hz : 0;
     const cpu = [...this.cpu.entries()].map(([k, v]) => [k, v / Math.max(1, this.cpuFrames)] as [string, number]).sort((a, b) => b[1] - a[1]);
     const { gpu } = glInfo(this.host.renderer);
     const canvas = this.host.renderer.domElement;
@@ -202,20 +213,22 @@ export class PerfBench {
     const device = `${gpu} · ${canvas.width}×${canvas.height} px (dpr ${devicePixelRatio.toFixed(2)}, render ${this.host.pixelRatio.toFixed(2)}) · ${nav.hardwareConcurrency ?? '?'} cores${nav.deviceMemory ? ` · ${nav.deviceMemory} GB` : ''}`;
     const maxMs = Math.max(1, ...rows.map((r) => Math.abs(r.gainMs)), ...cpu.map((c) => c[1]));
     const bar = (ms: number, cls: string) => `<i class="${cls}" style="width:${Math.max(1, (Math.abs(ms) / maxMs) * 100).toFixed(1)}%"></i>`;
+    const verdict = budget ? `${hz} Hz screen: ${base.cpu < budget ? `fits ${hz} fps` : `${(base.cpu - budget).toFixed(1)} ms over the ${hz} fps budget (${budget.toFixed(1)} ms)`}` : '';
     const lines = [
-      `SITE-9 benchmark: ${base.fps.toFixed(1)} fps (${base.ms.toFixed(1)} ms/frame)`,
+      `SITE-9 benchmark: ${base.cpu.toFixed(1)} ms CPU per frame (room for ~${Math.round(1000 / Math.max(0.1, base.cpu))} fps) · shown ${base.fps.toFixed(1)} fps`,
+      verdict,
       device,
       ...this.details,
       navigator.userAgent,
-      'What each thing costs (frame time saved when it is off):',
-      ...rows.map((r) => `  ${r.label}: ${r.gainMs >= 0 ? '' : '+'}${(-r.gainMs).toFixed(1)} ms (${r.gainFps >= 0 ? '+' : ''}${r.gainFps.toFixed(1)} fps without it)`),
+      'What each thing costs (CPU time saved when it is off; fps shown without it):',
+      ...rows.map((r) => `  ${r.label}: ${r.gainMs.toFixed(2)} ms (${r.fps.toFixed(0)} fps)`),
       'CPU per frame (baseline):',
       ...cpu.map(([k, v]) => `  ${k}: ${v.toFixed(2)} ms`),
     ];
     this.el.classList.add('done');
-    this.el.innerHTML = `<b>BENCHMARK · ${base.fps.toFixed(1)} FPS</b><span>${base.ms.toFixed(1)} ms per frame · ${device}</span>${this.details.map((d) => `<span>${d.replace(/</g, '&lt;')}</span>`).join('')}
-      <h4>What each thing costs <em>(frame time saved when it's off)</em></h4>
-      ${rows.map((r) => `<div class="bench-row"><span>${r.label}</span>${bar(r.gainMs, r.gainMs > 0 ? 'cost' : 'free')}<b>${r.gainMs > 0 ? '−' : '+'}${Math.abs(r.gainMs).toFixed(1)} ms</b><em>${r.fps.toFixed(0)} fps</em></div>`).join('')}
+    this.el.innerHTML = `<b>BENCHMARK · ${base.cpu.toFixed(1)} MS CPU · ${base.fps.toFixed(0)} FPS SHOWN</b><span>${verdict}</span><span>${device}</span>${this.details.map((d) => `<span>${d.replace(/</g, '&lt;')}</span>`).join('')}
+      <h4>What each thing costs <em>(CPU time saved when it's off)</em></h4>
+      ${rows.map((r) => `<div class="bench-row"><span>${r.label}</span>${bar(r.gainMs, r.gainMs > 0 ? 'cost' : 'free')}<b>${r.gainMs.toFixed(2)} ms</b><em>${r.fps.toFixed(0)} fps</em></div>`).join('')}
       <h4>CPU per frame <em>(as you play)</em></h4>
       ${cpu.map(([k, v]) => `<div class="bench-row"><span>${k}</span>${bar(v, 'cpu')}<b>${v.toFixed(2)} ms</b><em></em></div>`).join('')}
       <div class="bench-btns"><button class="bench-copy">COPY</button><button class="bench-close">CLOSE</button></div>`;

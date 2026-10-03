@@ -232,6 +232,8 @@ export class Game {
   private lastTime = 0;
   private fps = 60;
   private frameMs = 16;
+  /** CPU time of the last frame (ms, frame() start to end): what the screen's 60 / 120 Hz steps hide. */
+  private workMs = 0;
   private started = false;
   /** ?nolock: run without pointer lock (automated testing / screenshots). */
   private noLock = new URLSearchParams(location.search).has('nolock') || new URLSearchParams(location.search).has('trailer');
@@ -1708,6 +1710,7 @@ export class Game {
       }
       return;
     }
+    const workStart = performance.now();
     // Clamp: never negative (clock hiccups) and never huge (tab switch, breakpoints).
     const realDt = Math.min(Math.max(rawDt, 0), 0.1);
     const dt = realDt * this.timeScale;
@@ -1719,7 +1722,7 @@ export class Game {
       this.autoQ.frame(rawDt, Math.min(this.fpsCap || 60, 60, v < Infinity ? Math.max(45, 1 / v) : 60), this.dyn.scale);
     }
     if (this.benchIn > 0 && (this.benchIn -= rawDt) <= 0) this.startBench();
-    this.bench?.frame(rawDt);
+    this.bench?.frame(rawDt, this.workMs);
     if (this.bench?.done && this.benchCapSaved !== undefined) {
       this.capOverride = this.benchCapSaved;
       this.benchCapSaved = undefined;
@@ -2006,6 +2009,7 @@ export class Game {
     }
 
     input.endFrame();
+    this.workMs = performance.now() - workStart;
   }
 
   /** Aim assist state (touch): the target being tracked, the ADS snap window. */

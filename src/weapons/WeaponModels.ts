@@ -1425,6 +1425,64 @@ export function compactRig(rig: WeaponRig): void {
   }
 }
 
+/**
+ * First-person rig: ~60 parts, each its own draw call, on screen every frame.
+ * Every visible part is merged per material into the nearest moving node above it
+ * (the root, magazine, bolt, pump, hands, held shell): ~60 draw calls → ~15, the
+ * same look. A part with a moving node, an attachment point or a hidden part
+ * below it stays as is, and so does anything hidden at build time. The merged
+ * originals are hidden, not removed, so attachment points keep their place.
+ */
+export function compactViewRig(rig: WeaponRig): void {
+  const anchors = new Set<THREE.Object3D>([rig.root, rig.mag, rig.bolt, rig.pump, rig.leftHand, rig.rightHand, rig.heldShell].filter((o): o is THREE.Object3D => !!o));
+  const points = new Set<THREE.Object3D>([rig.muzzle, rig.ejectPort, rig.sight, rig.laser]);
+  rig.root.updateMatrixWorld(true);
+  const visibleUnder = (o: THREE.Object3D, top: THREE.Object3D) => {
+    for (let p: THREE.Object3D | null = o; p && p !== top.parent; p = p.parent) if (!p.visible) return false;
+    return true;
+  };
+  // Each mesh's nearest anchor (itself excluded); meshes holding an anchor or a point below them stay.
+  const groups = new Map<THREE.Object3D, Map<THREE.Material, THREE.Mesh[]>>();
+  rig.root.traverse((o) => {
+    const m = o as THREE.Mesh;
+    if (!m.isMesh || anchors.has(m) || Array.isArray(m.material)) return;
+    let holds = false;
+    m.traverse((c) => {
+      if (c !== m && (anchors.has(c) || points.has(c) || !c.visible)) holds = true;
+    });
+    if (holds) return;
+    let a: THREE.Object3D | null = m.parent;
+    while (a && !anchors.has(a)) a = a.parent;
+    if (!a || !visibleUnder(m, rig.root)) return;
+    const byMat = groups.get(a) ?? new Map<THREE.Material, THREE.Mesh[]>();
+    groups.set(a, byMat);
+    byMat.set(m.material, [...(byMat.get(m.material) ?? []), m]);
+  });
+  const m4 = new THREE.Matrix4();
+  for (const [anchor, byMat] of groups) {
+    const inv = new THREE.Matrix4().copy(anchor.matrixWorld).invert();
+    for (const [mt, meshes] of byMat) {
+      const geos: THREE.BufferGeometry[] = [];
+      for (const m of meshes) {
+        let g = m.geometry.index ? m.geometry.toNonIndexed() : m.geometry.clone();
+        for (const name of Object.keys(g.attributes)) if (name !== 'position' && name !== 'normal' && name !== 'uv') g.deleteAttribute(name);
+        if (!g.getAttribute('uv')) g.setAttribute('uv', new THREE.BufferAttribute(new Float32Array(g.getAttribute('position').count * 2), 2));
+        g.applyMatrix4(m4.multiplyMatrices(inv, m.matrixWorld));
+        geos.push(g);
+      }
+      const merged = mergeGeometries(geos, false);
+      for (const g of geos) g.dispose();
+      if (!merged) continue;
+      const mesh = new THREE.Mesh(merged, mt);
+      mesh.frustumCulled = false;
+      mesh.castShadow = meshes[0].castShadow;
+      mesh.renderOrder = meshes[0].renderOrder;
+      anchor.add(mesh);
+      for (const m of meshes) m.visible = false;
+    }
+  }
+}
+
 /** Shared materials for ejected shells (world space). */
 export const shellMaterials = { brass: mat.brass, red: mat.shellRed };
 

@@ -4,7 +4,7 @@ import { Noise1D } from '../core/Noise';
 import { DEG, clamp, damp, randSign, smoothstep } from '../core/math';
 import { feel } from '../config/Feel';
 import { MuzzleFlash } from '../fx/MuzzleFlash';
-import { buildWeaponModel, type WeaponRig } from './WeaponModels';
+import { buildWeaponModel, compactViewRig, type WeaponRig } from './WeaponModels';
 import { WeaponAnimator, type PoseOffset } from './WeaponAnimator';
 import type { Weapon } from './Weapon';
 import type { WeaponData } from './WeaponData';
@@ -139,6 +139,7 @@ export class Viewmodel {
     this.recoilPivot.rotation.order = 'YXZ';
     for (const w of weapons) {
       const r = buildWeaponModel(w.model);
+      compactViewRig(r);
       r.root.visible = false;
       this.mirror.add(r.root);
       this.rigs.set(w.id, r);
