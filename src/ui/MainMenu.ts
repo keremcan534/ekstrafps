@@ -6,6 +6,8 @@ import { playerConfig } from '../player/PlayerConfig';
 import { Showcase } from './Showcase';
 import { PERKS, SIDEARMS, levelOf, loadProfile, perkSlots, saveProfile, type PerkId } from '../game/Progress';
 import { FPS_CAPS, loadGraphics, maxResolution, presetSettings, type GraphicsSettings } from '../config/Graphics';
+import { isTouchDevice } from '../core/math';
+import { applyHudLayout, editHudLayout, loadHudLayout, saveHudLayout } from './HudLayout';
 
 /**
  * Main menu + pause menu (liquid glass). Behind it the loaded map renders live
@@ -29,12 +31,14 @@ interface Prefs {
   gfx: GraphicsSettings;
   /** 4 Teams: match length in minutes. */
   matchMinutes: number;
+  /** Touch aim assist strength (× the tuned default; 0 = off). */
+  aimAssist: number;
 }
 
 const PREFS_KEY = 'site9.prefs';
 
 export function loadPrefs(mobile: boolean): Prefs {
-  const d: Prefs = { volume: feel.masterVolume, sensitivity: 1, fov: playerConfig.baseFov, gfx: loadGraphics(mobile), matchMinutes: 15 };
+  const d: Prefs = { volume: feel.masterVolume, sensitivity: 1, fov: playerConfig.baseFov, gfx: loadGraphics(mobile), matchMinutes: 15, aimAssist: 1 };
   try {
     const saved = JSON.parse(localStorage.getItem(PREFS_KEY) ?? '{}') as Partial<Prefs>;
     return { ...d, ...saved, gfx: d.gfx };
@@ -65,6 +69,8 @@ function reload(q: URLSearchParams): void {
 }
 
 const BASE_SENS = playerConfig.mouseSensitivity;
+const BASE_TOUCH_SENS = playerConfig.touchSensitivity;
+const BASE_ASSIST = playerConfig.touchAimAssist;
 
 /** Apply saved preferences to the running game. */
 export function applyPrefs(game: Game, p: Prefs): void {
@@ -72,6 +78,8 @@ export function applyPrefs(game: Game, p: Prefs): void {
   game.audio?.setVolume(p.volume);
   matchClock.minutes = p.matchMinutes;
   playerConfig.mouseSensitivity = BASE_SENS * p.sensitivity;
+  playerConfig.touchSensitivity = BASE_TOUCH_SENS * p.sensitivity;
+  playerConfig.touchAimAssist = Math.min(1, BASE_ASSIST * p.aimAssist);
   playerConfig.baseFov = p.fov;
   game.applyGraphics(p.gfx);
 }
@@ -89,6 +97,16 @@ const KEYS: [string, string][] = [
   ['W A S D', 'Move'], ['Mouse', 'Look'], ['Shift', 'Sprint'], ['Space', 'Jump'], ['C', 'Crouch'],
   ['Q / E', 'Lean'], ['V', 'Swap shoulder'], ['LMB', 'Fire'], ['RMB', 'Aim down sights'], ['R', 'Reload'],
   ['B', 'Fire mode'], ['1 – 0', 'Weapons'], ['F', 'Use / buy'], ['M', 'Map'], ['L', 'Flashlight / laser'], ['Esc', 'Pause'],
+  ['P', 'Tuning panel (Weapon Lab)'],
+];
+
+/** Phones: what each control does. */
+const TOUCH_HELP: [string, string][] = [
+  ['Left side', 'Move (the stick appears under your thumb). Push up past the ring to lock sprint.'],
+  ['Right side', 'Look'],
+  ['Fire', 'Shoot; drag while holding to aim'],
+  ['◎', 'Aim down sights'], ['↻', 'Reload'], ['⤒ / ⤓', 'Jump / crouch'], ['◀ ▶', 'Lean'],
+  ['Weapon card', 'Swap weapon'], ['USE', 'Appears next to things you can buy or use'], ['❚❚', 'Pause / settings'],
 ];
 
 const el = <K extends keyof HTMLElementTagNameMap>(tag: K, cls: string, parent?: HTMLElement, html?: string) => {
@@ -336,12 +354,14 @@ export class MainMenu {
       });
     };
     slider('MASTER VOLUME', 0, 1, 0.01, p.volume, (v) => `${Math.round(v * 100)}`, (v) => (p.volume = v));
-    slider('MOUSE SENSITIVITY', 0.3, 2.5, 0.05, p.sensitivity, (v) => v.toFixed(2), (v) => (p.sensitivity = v));
+    slider(this.opts.mobile ? 'LOOK SENSITIVITY' : 'MOUSE SENSITIVITY', 0.3, 2.5, 0.05, p.sensitivity, (v) => v.toFixed(2), (v) => (p.sensitivity = v));
     slider('FIELD OF VIEW', 70, 110, 1, p.fov, (v) => `${v}°`, (v) => (p.fov = v));
     this.renderGraphics(el('div', 'gfx', this.panel));
     el('div', 'panel-label', this.panel, 'CONTROL SCHEME');
     const seg = el('div', 'gseg', this.panel);
-    for (const [id, label] of [['auto', 'AUTO'], ['pc', 'KEYBOARD + MOUSE'], ['mobile', 'TOUCH']]) {
+    // AUTO shows what it found on this device.
+    const found = isTouchDevice() ? 'PHONE' : 'PC';
+    for (const [id, label] of [['auto', `AUTO · ${found}`], ['pc', 'KEYBOARD + MOUSE'], ['mobile', 'TOUCH']]) {
       const b = el('button', `gseg-btn ${this.opts.controls === id ? 'active' : ''}`, seg, label);
       b.addEventListener('click', (e) => {
         e.stopPropagation();
@@ -385,7 +405,8 @@ export class MainMenu {
 
     el('div', 'panel-label', box, 'GRAPHICS PRESET');
     const ps = el('div', 'gseg', box);
-    for (const [id, text] of [['performance', 'LOW'], ['balanced', 'MEDIUM'], ['quality', 'HIGH'], ['custom', 'CUSTOM']] as const) {
+    const presets = [['auto', 'AUTO'], ['performance', 'LOW'], ['balanced', 'MEDIUM'], ['quality', 'HIGH'], ['custom', 'CUSTOM']] as const;
+    for (const [id, text] of presets.filter(([id]) => id !== 'auto' || this.opts.mobile)) {
       const b = el('button', `gseg-btn ${g.preset === id ? 'active' : ''}`, ps, text);
       b.dataset.preset = id;
       if (id === 'custom') {
@@ -400,6 +421,7 @@ export class MainMenu {
         this.renderGraphics(box);
       });
     }
+    if (g.preset === 'auto') el('div', 'panel-note', box, 'AUTO raises the quality while your phone holds 60 fps and lowers it when it can’t. It remembers what your phone handles.');
 
     // Resolution: shows the real render size.
     const maxR = maxResolution(this.opts.mobile);
@@ -516,12 +538,69 @@ export class MainMenu {
 
   private renderControls(): void {
     this.panel.innerHTML = '<div class="panel-head">CONTROLS<i></i></div>';
+    if (this.opts.mobile) return this.renderTouchControls();
     const grid = el('div', 'keys', this.panel);
     for (const [k, what] of KEYS) {
       const caps = k.split(' / ').map((c) => `<kbd>${c}</kbd>`).join('<em>/</em>');
       el('div', 'key-row', grid, `<span class="caps">${caps}</span><span>${what}</span>`);
     }
     if (this.opts.mobile) el('div', 'panel-note', this.panel, 'Touch: left side moves, right side looks. FIRE also aims while held.');
+  }
+
+  /** Phones: what the buttons do, their size / opacity / layout, aim assist. */
+  private renderTouchControls(): void {
+    const p = this.prefs;
+    const hud = loadHudLayout();
+    const edit = el('button', 'gbtn hud-edit-btn', this.panel, '<span class="gbtn-label">CUSTOMIZE HUD LAYOUT</span><span class="gbtn-shine"></span>');
+    edit.addEventListener('click', (e) => {
+      e.stopPropagation();
+      this.root.classList.add('hidden');
+      editHudLayout(() => {
+        this.root.classList.remove('hidden');
+        this.renderControls();
+      });
+    });
+    const slider = (label: string, min: number, max: number, value: number, set: (v: number) => void) => {
+      const row = el('label', 'gslider', this.panel, `<span>${label}</span><output>${Math.round(value * 100)}%</output>`);
+      const input = el('input', '', row) as HTMLInputElement;
+      input.type = 'range';
+      input.min = String(min);
+      input.max = String(max);
+      input.step = '0.05';
+      input.value = String(value);
+      const paint = () => input.style.setProperty('--fill', `${((Number(input.value) - min) / (max - min)) * 100}%`);
+      paint();
+      input.addEventListener('input', () => {
+        const v = Number(input.value);
+        row.querySelector('output')!.textContent = `${Math.round(v * 100)}%`;
+        paint();
+        set(v);
+      });
+    };
+    slider('BUTTON SIZE', 0.6, 1.4, hud.size, (v) => {
+      hud.size = v;
+      saveHudLayout(hud);
+      applyHudLayout(hud);
+    });
+    slider('BUTTON OPACITY', 0.3, 1, hud.opacity, (v) => {
+      hud.opacity = v;
+      saveHudLayout(hud);
+      applyHudLayout(hud);
+    });
+    el('div', 'panel-label', this.panel, 'AIM ASSIST');
+    const seg = el('div', 'gseg', this.panel);
+    for (const [v, label] of [[0, 'OFF'], [0.6, 'LOW'], [1, 'NORMAL'], [1.5, 'STRONG']] as const) {
+      const b = el('button', `gseg-btn ${Math.abs(p.aimAssist - v) < 0.01 ? 'active' : ''}`, seg, label);
+      b.addEventListener('click', (e) => {
+        e.stopPropagation();
+        p.aimAssist = v;
+        seg.querySelectorAll('.gseg-btn').forEach((x) => x.classList.toggle('active', x === b));
+        savePrefs(p);
+        if (this.game) applyPrefs(this.game, p);
+      });
+    }
+    const grid = el('div', 'keys', this.panel);
+    for (const [k, what] of TOUCH_HELP) el('div', 'key-row', grid, `<span class="caps"><kbd>${k}</kbd></span><span>${what}</span>`);
   }
 
   // ---------------------------------------------------------------- live backdrop

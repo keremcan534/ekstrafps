@@ -2,6 +2,7 @@ import { trailerMode } from '../production/trailer/capture/determinism';
 import { Game } from './core/Game';
 import { loadGraphics, noGlass } from './config/Graphics';
 import { MainMenu } from './ui/MainMenu';
+import { applyHudLayout, loadHudLayout } from './ui/HudLayout';
 import './ui/glass.css';
 
 const app = document.getElementById('app')!;
@@ -53,6 +54,8 @@ document.body.classList.toggle('is-touch', game.mobile);
 // Phones: no frosted glass (a blur pass per panel every frame). The game keeps this in sync with Settings.
 document.body.classList.toggle('no-glass', noGlass(game.mobile, loadGraphics(game.mobile)));
 // Phones: the UI is laid out for ~640 px of height; scale it to the real screen (a phone in landscape is ~400).
+// Phones: the button size / opacity / positions set in Settings → Controls → CUSTOMIZE HUD.
+if (game.mobile) applyHudLayout(loadHudLayout());
 const uiScale = () => document.documentElement.style.setProperty('--ui-zoom', String(Math.max(0.58, Math.min(1, window.innerHeight / 640))));
 uiScale();
 window.addEventListener('resize', uiScale);
@@ -61,6 +64,7 @@ window.addEventListener('resize', uiScale);
 const begin = () => {
   game.start();
   if (game.mobile) {
+    game.setFrozen(false);
     menu.close();
     // Android back gesture: pause instead of leaving the page (one guard entry in the history).
     if (!(history.state as { site9?: boolean } | null)?.site9) history.pushState({ site9: true }, '');
@@ -77,9 +81,18 @@ window.addEventListener('popstate', () => {
     return;
   }
   history.pushState({ site9: true }, '');
+  pause();
+});
+
+/** Phones: the pause button / back gesture. The raid holds still until RESUME. */
+function pause(): void {
+  game.setFrozen(true);
   menu.setPaused(true);
   menu.open();
-});
+}
+game.onPauseRequest = () => {
+  if (game.running && !game.ended) pause();
+};
 
 game
   .init((msg) => menu.setStatus(msg))

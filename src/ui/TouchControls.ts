@@ -115,7 +115,8 @@ export class TouchControls {
       this.useBtn.style.display = 'none';
     }
     if (actions.onMap) this.button('btn btn-small btn-map', 'MAP', actions.onMap);
-    this.button('btn btn-small btn-tune', '⚙', actions.onTune);
+    // Pause (the settings menu); the tuning panel with ?dev.
+    this.button('btn btn-small btn-tune', dev ? '⚙' : '❚❚', actions.onTune);
     if (!survival && dev) {
       this.button('btn btn-small btn-debug', 'DBG', actions.onDebug);
       const rays = this.button('btn btn-small btn-rays', 'RAY', () => rays.classList.toggle('on', actions.onRays()));

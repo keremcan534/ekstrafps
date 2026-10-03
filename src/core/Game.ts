@@ -51,7 +51,8 @@ import { MuzzleLights } from '../fx/MuzzleLights';
 import { Lighting } from '../game/Lighting';
 import { buildWeaponModel } from '../weapons/WeaponModels';
 import { WeaponLights, weaponLight } from '../fx/WeaponLights';
-import { MOBILE_ANISOTROPY, VIEW_DISTANCE, loadGraphics, noGlass, type GraphicsSettings } from '../config/Graphics';
+import { AUTO_TIERS, MOBILE_ANISOTROPY, VIEW_DISTANCE, loadAutoTier, loadGraphics, noGlass, presetSettings, type GraphicsSettings } from '../config/Graphics';
+import { AutoQuality } from './AutoQuality';
 import { setTextureAnisotropy } from '../fx/Textures';
 import { DustMotes } from '../fx/DustMotes';
 import { Ambience } from '../audio/Ambience';
@@ -121,6 +122,13 @@ export class Game {
   debug!: DebugHUD;
   tuning!: TuningPanel;
   touch: TouchControls | null = null;
+  /** Phones: the pause button (main.ts opens the pause menu). */
+  onPauseRequest: (() => void) | null = null;
+  /** Phones, pause menu open: nothing simulates (see setFrozen). */
+  private frozen = false;
+  private frozenDraw = 0;
+  /** Graphics preset AUTO on phones. */
+  private autoQ: AutoQuality | null = null;
   health = new PlayerHealth();
   status!: StatusHUD;
   nav!: NavGrid;
@@ -441,7 +449,8 @@ export class Game {
 
     if (this.mobile) {
       this.touch = new TouchControls(ui, this.input, this.weapons.weapons.map((w) => w.data.short), {
-        onTune: () => this.tuning.toggle(),
+        // Phones: pause (settings); the tuning panel is a ?dev tool there (P in the Weapon Lab on a PC).
+        onTune: () => (this.dev ? this.tuning.toggle() : this.onPauseRequest?.()),
         onDebug: () => this.debug.toggle(),
         onRays: () => this.toggleRays(),
         onLaser: () => this.toggleLaser(),
@@ -1301,7 +1310,9 @@ export class Game {
     const w = this.weapons;
     const devOnly = ['KeyH', 'Tab', 'KeyP', 'F1', 'Slash', 'KeyG', 'KeyJ', 'KeyO', 'KeyU', 'F2', 'F4', 'F8'];
     // J is build mode on Site-9 (a player key there), the debug crosshair elsewhere.
-    if (!this.dev && devOnly.includes(code) && !(code === 'KeyJ' && this.survival)) return;
+    // P / Tab (tuning panel) also work in the Weapon Lab without ?dev.
+    const labTuning = (code === 'KeyP' || code === 'Tab') && !(this.arena instanceof Site9);
+    if (!this.dev && devOnly.includes(code) && !(code === 'KeyJ' && this.survival) && !labTuning) return;
     switch (code) {
       case 'KeyH':
         this.debug.toggle();
@@ -1438,6 +1449,10 @@ export class Game {
    * framebuffer is created with the renderer: next start).
    */
   applyGraphics(s: GraphicsSettings): void {
+    // AUTO: the fields come from the current tier (the menu may hold an older copy).
+    if (s.preset === 'auto') s = { ...presetSettings('auto', this.mobile), fpsCap: s.fpsCap, showFps: s.showFps };
+    if (s.preset === 'auto' && this.mobile) this.autoQ ??= new AutoQuality(loadAutoTier(), () => this.autoTierChanged());
+    else this.autoQ = null;
     this.gfx = s;
     if (!s.dynamicResolution) this.dyn.scale = 1;
     this.nextFrameAt = 0;
@@ -1495,6 +1510,30 @@ export class Game {
     }
     if (this.fpsEl) this.fpsEl.style.display = s.showFps ? '' : 'none';
     this.setQuality(s.resolution, s.shadows !== 'off');
+  }
+
+  /** AUTO moved a tier: fresh dynamic resolution, then the tier's settings. */
+  private autoTierChanged(): void {
+    const d = this.dyn;
+    d.scale = 1;
+    d.prevAvg = 0;
+    d.freeze = 0;
+    d.strikes = 0;
+    d.floorT = 0;
+    d.cooldown = 2;
+    this.applyGraphics(this.gfx);
+  }
+
+  /**
+   * Phones: the pause menu is open. Nothing simulates (a raid doesn't go on without
+   * you while you change a setting); the scene is redrawn twice a second, since a
+   * settings change can resize the canvas.
+   */
+  setFrozen(v: boolean): void {
+    if (!this.mobile || this.frozen === v) return;
+    this.frozen = v;
+    this.frozenDraw = 0;
+    if (!v) this.dyn.skip = 1;
   }
 
   setQuality(pixelRatio: number, shadows: boolean): void {
@@ -1650,11 +1689,24 @@ export class Game {
   private frame(now: number): void {
     const rawDt = (now - this.lastTime) / 1000;
     this.lastTime = now;
+    if (this.frozen) {
+      if ((this.frozenDraw -= rawDt) <= 0) {
+        this.frozenDraw = 0.5;
+        this.renderer.clear();
+        this.renderer.render(this.scene, this.camera.camera);
+      }
+      return;
+    }
     // Clamp: never negative (clock hiccups) and never huge (tab switch, breakpoints).
     const realDt = Math.min(Math.max(rawDt, 0), 0.1);
     const dt = realDt * this.timeScale;
     this.fps += (1 / Math.max(rawDt, 1e-4) - this.fps) * 0.05;
     if (this.gfx.dynamicResolution && !this.trailer && !this.resOverride && !(this.bench && !this.bench.done)) this.dynamicResolution(rawDt);
+    if (this.autoQ && !this.trailer && !this.resOverride && !(this.bench && !this.bench.done)) {
+      // Hold 60 (or the cap, or the screen's own rate when that is lower).
+      const v = Math.min(this.dyn.minCur, this.dyn.minPrev);
+      this.autoQ.frame(rawDt, Math.min(this.fpsCap || 60, 60, v < Infinity ? Math.max(45, 1 / v) : 60), this.dyn.scale);
+    }
     if (this.benchIn > 0 && (this.benchIn -= rawDt) <= 0) this.startBench();
     this.bench?.frame(rawDt);
     this.frameMs += (rawDt * 1000 - this.frameMs) * 0.05;
@@ -2034,7 +2086,7 @@ export class Game {
     const pr = this.resOverride ? `${this.resOverride.toFixed(2)} (?res)` : `${this.quality.pixelRatio.toFixed(2)}×${Math.round(this.dyn.scale * 100)}%`;
     const gpu = gl.gpu.length > 56 ? `${gl.gpu.slice(0, 55)}…` : gl.gpu;
     return [
-      `${this.mobile ? 'MOBILE' : 'DESKTOP'} · dpr ${devicePixelRatio.toFixed(2)} · px ${pr} · ${gl.webgl2 ? 'WebGL2' : 'WebGL1'} · AA ${gl.aa ? 'on' : 'off'}`,
+      `${this.mobile ? 'MOBILE' : 'DESKTOP'}${this.autoQ ? ` · AUTO ${this.autoQ.tier + 1}/${AUTO_TIERS}` : ''} · dpr ${devicePixelRatio.toFixed(2)} · px ${pr} · ${gl.webgl2 ? 'WebGL2' : 'WebGL1'} · AA ${gl.aa ? 'on' : 'off'}`,
       gpu,
       `${r.info.render.calls} calls · ${(r.info.render.triangles / 1000).toFixed(0)}k tris${flags.length ? ` · ${flags.join(' ')}` : ''}`,
     ];
