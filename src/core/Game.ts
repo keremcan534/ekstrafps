@@ -452,6 +452,7 @@ export class Game {
       audio: this.audio,
       scene: this.scene,
       lowSpec: this.mobile,
+      weaponData: (id) => this.weapons.weapons.find((w) => w.data.id === id)?.data,
     };
     for (const spawn of this.arena.squads) {
       const squad = new BlackDivision(

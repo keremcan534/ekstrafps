@@ -87,9 +87,13 @@ export class BlackDivision {
           },
           say: (s, line) => this.say(s, line),
           onThud: (at, st) => this.deps.audio.play('robot.fall', { position: at, volume: 0.25 + 0.5 * st }),
-        }),
+        }, 'bd', i === 0 ? 'bdboss' : 'bd'),
       );
     }
+    // The squad leader is The Warden (as in the Site-9 raids): heavy kit, suppressed AS VAL, a better shot.
+    const val = deps.weaponData?.('asval');
+    if (val) this.soldiers[0].setWeapon(val);
+    this.soldiers[0].skill = 1.3;
     this.spawn();
   }
 
