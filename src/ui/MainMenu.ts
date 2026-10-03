@@ -33,12 +33,14 @@ interface Prefs {
   matchMinutes: number;
   /** Touch aim assist strength (× the tuned default; 0 = off). */
   aimAssist: number;
+  /** Room tone and distant building noises under everything. */
+  ambience: boolean;
 }
 
 const PREFS_KEY = 'site9.prefs';
 
 export function loadPrefs(mobile: boolean): Prefs {
-  const d: Prefs = { volume: feel.masterVolume, sensitivity: 1, fov: playerConfig.baseFov, gfx: loadGraphics(mobile), matchMinutes: 15, aimAssist: 1 };
+  const d: Prefs = { volume: feel.masterVolume, sensitivity: 1, fov: playerConfig.baseFov, gfx: loadGraphics(mobile), matchMinutes: 15, aimAssist: 1, ambience: false };
   try {
     const saved = JSON.parse(localStorage.getItem(PREFS_KEY) ?? '{}') as Partial<Prefs>;
     return { ...d, ...saved, gfx: d.gfx };
@@ -82,6 +84,7 @@ export function applyPrefs(game: Game, p: Prefs): void {
   playerConfig.touchAimAssist = Math.min(1, BASE_ASSIST * p.aimAssist);
   playerConfig.baseFov = p.fov;
   game.applyGraphics(p.gfx);
+  game.ambienceOn = p.ambience;
 }
 
 const MAPS = {
@@ -356,6 +359,14 @@ export class MainMenu {
     slider('MASTER VOLUME', 0, 1, 0.01, p.volume, (v) => `${Math.round(v * 100)}`, (v) => (p.volume = v));
     slider(this.opts.mobile ? 'LOOK SENSITIVITY' : 'MOUSE SENSITIVITY', 0.3, 2.5, 0.05, p.sensitivity, (v) => v.toFixed(2), (v) => (p.sensitivity = v));
     slider('FIELD OF VIEW', 70, 110, 1, p.fov, (v) => `${v}°`, (v) => (p.fov = v));
+    const amb = el('button', `gtoggle ${p.ambience ? 'on' : ''}`, el('div', 'gtoggles', this.panel), '<span>BACKGROUND AMBIENCE</span><i></i>');
+    amb.addEventListener('click', (e) => {
+      e.stopPropagation();
+      p.ambience = !p.ambience;
+      amb.classList.toggle('on', p.ambience);
+      savePrefs(p);
+      if (this.game) applyPrefs(this.game, p);
+    });
     this.renderGraphics(el('div', 'gfx', this.panel));
     el('div', 'panel-label', this.panel, 'CONTROL SCHEME');
     const seg = el('div', 'gseg', this.panel);

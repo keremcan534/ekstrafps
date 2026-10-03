@@ -260,6 +260,8 @@ export class Game {
   private dust!: DustMotes;
   /** Room tone, machines, wind; the building creaking in the dark. */
   private ambience: Ambience | null = null;
+  /** Room tone and distant building noises (Settings → BACKGROUND AMBIENCE; off by default). */
+  ambienceOn = false;
   /** The ambience beds are in the deferred audio set: the room tone starts once it's loaded. */
   private ambienceOk = false;
   private resizeQueued = false;
@@ -1822,7 +1824,11 @@ export class Game {
     // Lights out: muzzle flashes light the room (and give shooters away).
     const darkness = this.lighting?.darkness ?? 0;
     this.dust.update(dt, this.camera.eye, darkness);
-    if (!this.ambience && this.ambienceOk && this.audio.ready && !this.trailer) this.ambience = new Ambience(this.audio);
+    if (!this.ambienceOn && this.ambience) {
+      this.ambience.stop();
+      this.ambience = null;
+    }
+    if (this.ambienceOn && !this.ambience && this.ambienceOk && this.audio.ready && !this.trailer) this.ambience = new Ambience(this.audio);
     this.ambience?.update(dt, this.arena instanceof Site9 ? this.arena.ambienceAt(this.player.feet.x, this.player.feet.z) : null, darkness, this.camera.eye);
     if (this.survival && !this.health.dead && !this.ended) raid.alive += dt;
     // Broken lamps spark when they stutter back on (only the ones near you).

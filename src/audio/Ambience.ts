@@ -50,6 +50,16 @@ export class Ambience {
     }
   }
 
+  /** Silence it for good (Settings → BACKGROUND AMBIENCE off). */
+  stop(): void {
+    for (const bed of this.beds.values()) {
+      bed.src.stop();
+      bed.src.disconnect();
+      bed.gain.disconnect();
+    }
+    this.beds.clear();
+  }
+
   update(dt: number, spot: AmbienceSpot | null, darkness: number, listener: THREE.Vector3): void {
     if (this.beds.size < AMBIENCE_LOOPS.length) {
       this.retry -= dt;

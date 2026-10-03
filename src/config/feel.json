@@ -1,6 +1,6 @@
 {
-  "recoilScale": 1,
-  "cameraRecoilScale": 1,
+  "recoilScale": 0.75,
+  "cameraRecoilScale": 0.75,
   "adsRecoilRearward": 0.85,
   "inertiaScale": 1,
   "swayScale": 1,

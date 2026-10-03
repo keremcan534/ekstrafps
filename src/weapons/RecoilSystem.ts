@@ -18,6 +18,9 @@ import { rearwardShare, type RecoilKick } from './Viewmodel';
  * original pixel. Pulling the mouse against recoil first eats into the
  * recovering offset, so compensation never overshoots.
  */
+/** Share of each weapon's cameraKeep (permanent climb) that stays; the rest recovers. */
+const KEEP_SCALE = 0.6;
+
 export class RecoilSystem {
   private recoverPitch = 0;
   private recoverYaw = 0;
@@ -48,19 +51,22 @@ export class RecoilSystem {
     const t = (r.cameraTransfer + 0.42 * rw) * feel.cameraRecoilScale * soft * this.viewScale;
     const v = kick.vertical * t * DEG;
     const h = kick.horizontal * t * 0.6 * DEG;
-    this.keepPitch += v * r.cameraKeep;
-    this.keepYaw -= h * r.cameraKeep;
-    this.recoverPitch += v * (1 - r.cameraKeep);
-    this.recoverYaw -= h * (1 - r.cameraKeep);
+    // Like Tarkov's re-levelling, most of the climb comes back on its own: only part of
+    // the weapon's "keep" stays in the view for the player to pull down.
+    const keep = r.cameraKeep * KEEP_SCALE;
+    this.keepPitch += v * keep;
+    this.keepYaw -= h * keep;
+    this.recoverPitch += v * (1 - keep);
+    this.recoverYaw -= h * (1 - keep);
     this.sinceShot = 0;
 
     // Small visual-only punch: the gun moving dominates, the view barely flinches.
     const s = Math.sqrt(camera.punch.stiffness) * 1.9 * DEG * feel.cameraRecoilScale * (1 - 0.4 * adsAmount - 0.35 * rw);
     camera.addPunch(r.punch * s, r.punch * 0.3 * s * (Math.random() * 2 - 1), r.punch * 0.8 * s * (Math.random() < 0.5 ? -1 : 1));
     camera.addShake(Math.min(0.35, kick.vertical * 0.012 + r.punch * 0.06) * feel.cameraRecoilScale);
-    // Brief FOV kick sells the blast of big cartridges without moving the aim.
-    // Aimed rework: a slightly stronger FOV kick sells the gun slamming back.
-    camera.addFovPunch(r.punch * 25 * (1 - 0.5 * adsAmount + 0.35 * rw) * feel.cameraRecoilScale);
+    // Brief FOV kick sells the blast of big cartridges from the hip. None when aimed: a
+    // zoom pulse there reads as the sights swelling and shrinking every shot.
+    camera.addFovPunch(r.punch * 25 * (1 - adsAmount) * feel.cameraRecoilScale);
   }
 
   /**

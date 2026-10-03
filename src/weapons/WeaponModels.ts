@@ -215,6 +215,24 @@ function ironFront(root: THREE.Object3D, z: number, line: number, base: number):
   root.add(dot);
 }
 
+/**
+ * Front sight hood (rifles) open at the back and front: two side wings and a bridge
+ * over the post, so the post and its bead show through when aimed.
+ */
+function openHood(root: THREE.Object3D, z: number, line: number, width: number, depth: number): void {
+  for (const sx of [-1, 1]) box(root, mat.blued, [0.003, 0.026, depth], [sx * (width / 2), line - 0.003, z]);
+  box(root, mat.blued, [width + 0.003, 0.003, depth], [0, line + 0.0115, z]);
+}
+
+/** A blade across the sight line (rear leaf, range slider) with a U notch the front post sits in. */
+function notchedBlade(root: THREE.Object3D, material: THREE.Material, width: number, y0: number, y1: number, z: number, depth: number, line: number, gap = 0.009): void {
+  const side = (width - gap) / 2;
+  for (const sx of [-1, 1]) box(root, material, [side, y1 - y0, depth], [sx * (gap / 2 + side / 2), (y0 + y1) / 2, z]);
+  // Solid below the notch.
+  const top = line - 0.004;
+  if (top > y0 + 0.001) box(root, material, [width, top - y0, depth], [0, (y0 + top) / 2, z]);
+}
+
 // ------------------------------------------------------------------ detail kit
 
 /**
@@ -431,14 +449,13 @@ function buildMosin(): WeaponRig {
   // Barrel bands with springs, globe front sight hood, cleaning rod, box magazine + trigger guard.
   for (const z of [-0.29, -0.6]) rivets(R, mat.steel, [[0.03, 0.012, z]], 0.004);
   ringZ(R, mat.blued, 0.012, 0.004, [0, 0.03, -0.86]);
-  box(R, mat.blued, [0.024, 0.024, 0.024], [0, 0.064, -0.862]);
-  box(R, mat.darkHole, [0.016, 0.016, 0.026], [0, 0.066, -0.862]);
+  openHood(R, -0.862, 0.068, 0.024, 0.024);
   tube(R, mat.steel, 0.003, 0.28, [0, 0.016, -0.73]);
   box(R, mat.blued, [0.036, 0.036, 0.11], [0, -0.06, -0.08]); // magazine box
   box(R, mat.blued, [0.03, 0.006, 0.12], [0, -0.08, -0.08]); // floorplate
   triggerGuard(R, mat.blued, -0.02, 0.06, -0.075, 0.03);
-  box(R, mat.blued, [0.04, 0.006, 0.12], [0, 0.064, -0.235], [-0.05, 0, 0]); // rear sight ramp leaf
-  box(R, mat.steel, [0.036, 0.008, 0.012], [0, 0.07, -0.24]); // range slider
+  box(R, mat.blued, [0.04, 0.006, 0.12], [0, 0.058, -0.235], [-0.05, 0, 0]); // rear sight ramp leaf (under the line)
+  notchedBlade(R, mat.steel, 0.036, 0.064, 0.072, -0.24, 0.012, 0.068); // range slider
   box(R, mat.darkHole, [0.004, 0.02, 0.04], [0.024, -0.02, 0.18]); // sling slot
   box(R, mat.darkHole, [0.004, 0.02, 0.04], [-0.024, -0.02, 0.18]);
   tube(R, mat.steel, 0.014, 0.03, [0, 0.03, 0.085]); // cocking knob
@@ -479,14 +496,13 @@ function buildKar98(): WeaponRig {
   const rightHand = hand(R, [0, -0.05, 0.035], [0.1, -0.26, 0.38], [0.05, 0.085, 0.085]);
   const leftHand = hand(R, [-0.005, -0.042, -0.34], [-0.22, -0.27, -0.04], [0.056, 0.05, 0.1]);
   ringZ(R, mat.blued, 0.012, 0.004, [0, 0.03, -0.755]);
-  box(R, mat.blued, [0.026, 0.028, 0.022], [0, 0.062, -0.755]); // front sight hood
-  box(R, mat.darkHole, [0.018, 0.02, 0.024], [0, 0.064, -0.755]);
+  openHood(R, -0.755, 0.07, 0.026, 0.022); // front sight hood
   box(R, mat.blued, [0.012, 0.012, 0.03], [0, -0.008, -0.62]); // bayonet lug
   tube(R, mat.steel, 0.003, 0.24, [0, 0.014, -0.63]);
   box(R, mat.blued, [0.03, 0.006, 0.12], [0, -0.052, -0.08]); // floorplate
   triggerGuard(R, mat.blued, -0.02, 0.06, -0.05, 0.03);
   box(R, mat.blued, [0.034, 0.006, 0.1], [0, 0.062, -0.23], [-0.05, 0, 0]); // tangent sight
-  box(R, mat.steel, [0.03, 0.008, 0.012], [0, 0.068, -0.24]);
+  notchedBlade(R, mat.steel, 0.03, 0.064, 0.074, -0.24, 0.012, 0.07);
   box(R, mat.darkHole, [0.004, 0.012, 0.03], [0.024, -0.03, 0.12]); // sling slot
   box(R, mat.darkHole, [0.004, 0.012, 0.03], [-0.024, -0.03, 0.12]);
   slingLoop(R, [-0.026, 0.0, -0.52]);
@@ -760,7 +776,7 @@ function buildPPSh(): WeaponRig {
   box(R, mat.blued, [0.046, 0.05, 0.03], [0, 0.05, -0.5], [-0.5, 0, 0]); // slanted compensator nose
   box(R, mat.darkHole, [0.014, 0.004, 0.01], [0, 0.07, -0.49]); // brake port
   box(R, mat.blued, [0.03, 0.012, 0.03], [0, 0.083, -0.03]); // rear L-flip sight
-  box(R, mat.blued, [0.014, 0.022, 0.006], [0, 0.09, -0.025]);
+  notchedBlade(R, mat.blued, 0.014, 0.079, 0.101, -0.025, 0.006, 0.093, 0.007);
   box(R, mat.blued, [0.05, 0.02, 0.04], [0, 0.07, -0.055]); // receiver hinge cap
   rivets(R, mat.steel, [[0.026, 0.06, -0.07], [-0.026, 0.06, -0.07]], 0.0035);
   box(R, mat.steel, [0.006, 0.01, 0.02], [0.028, 0.06, -0.15]); // safety on the bolt handle slot
@@ -849,7 +865,7 @@ function buildPistol(): WeaponRig {
   slide.add(frontDot);
   for (const x of [0.0095, -0.0095]) {
     const rearDot = new THREE.Mesh(new THREE.CircleGeometry(0.0018, 8), mat.bead);
-    rearDot.position.set(x, 0.0565, 0.0242);
+    rearDot.position.set(x, 0.0575, 0.0242);
     slide.add(rearDot);
   }
   const mag = group(R, [0, -0.03, 0.0]);
@@ -871,7 +887,7 @@ function buildPistol(): WeaponRig {
     muzzle: point(R, [0, 0.03, -0.205]),
     ejectPort: point(R, [0.02, 0.045, -0.05]),
     laser: point(R, [0, -0.022, -0.156]),
-    sight: point(R, [0, 0.06, 0.02]),
+    sight: point(R, [0, 0.0575, 0.02]), // three dots level: the front dot is the aim
     mag, bolt: slide, pump: null, leftHand, rightHand, heldShell: null, shellType: 'pistol',
     // Pistols have no stock: recoil pivots around the wrists.
     butt: [0, -0.06, 0.06],
@@ -1008,7 +1024,7 @@ function buildGlock(): WeaponRig {
   slide.add(frontDot);
   for (const x of [0.0095, -0.0095]) {
     const rearDot = new THREE.Mesh(new THREE.CircleGeometry(0.0018, 8), mat.bead);
-    rearDot.position.set(x, 0.0565, 0.0242);
+    rearDot.position.set(x, 0.0575, 0.0242);
     slide.add(rearDot);
   }
   // Extended magazine sticks well out of the grip.
@@ -1025,7 +1041,7 @@ function buildGlock(): WeaponRig {
     muzzle: point(R, [0, 0.03, -0.185]),
     ejectPort: point(R, [0.02, 0.045, -0.05]),
     laser: point(R, [0, -0.02, -0.13]),
-    sight: point(R, [0, 0.06, 0.02]),
+    sight: point(R, [0, 0.0575, 0.02]), // three dots level: the front dot is the aim
     mag, bolt: slide, pump: null, leftHand, rightHand, heldShell: null, shellType: 'pistol',
     butt: [0, -0.06, 0.06],
   });
@@ -1154,7 +1170,7 @@ function buildM249(): WeaponRig {
   box(R, B, [0.012, 0.012, 0.14], [0.042, 0.075, -0.39]);
   box(R, B, [0.016, 0.04, 0.03], [0, 0.04, -0.69]);
   ironFront(R, -0.69, 0.118, 0.06);
-  box(R, B, [0.012, 0.06, 0.02], [0, 0.088, -0.69]);
+  box(R, B, [0.012, 0.048, 0.02], [0, 0.082, -0.69]); // post block, top 1 cm under the line
   tube(R, mat.blued, 0.016, 0.06, [0, 0.03, -0.745]);
   row(R, mat.darkHole, 3, [0.034, 0.004, 0.008], [0, 0.03, -0.73], [0, 0, -0.014]);
   // Folded bipod under the barrel.

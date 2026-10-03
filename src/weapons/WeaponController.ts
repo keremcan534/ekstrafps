@@ -310,7 +310,7 @@ export class WeaponController implements WeaponListener {
 
     const rig = vm.activeRig!;
     vm.toWorld(rig.muzzle, cam, this.muzzleWorld);
-    vm.forwardWorld(rig.muzzle, cam, this.muzzleDir);
+    vm.forwardWorld(rig.muzzle, cam, this.muzzleDir, true);
     this.aimErrorDeg = Math.acos(Math.min(1, this.muzzleDir.dot(this.aim))) / DEG;
 
     // Test laser: parallel to the bore, from the emitter under the barrel.

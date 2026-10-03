@@ -114,6 +114,14 @@ export class Viewmodel {
   private tmp = new THREE.Vector3();
   private v = new THREE.Vector3();
   private v2 = new THREE.Vector3();
+  private v3 = new THREE.Vector3();
+  /**
+   * The zero: how far the bore points above / beside the sight line (rad, pitch / yaw).
+   * Aimed, the sights line up with the eye and the bore keeps this angle to them, like
+   * a zeroed rifle; the shot direction adds it back (forwardWorld(…, true)).
+   */
+  readonly zero = { pitch: 0, yaw: 0 };
+  private zeroEuler = new THREE.Euler(0, 0, 0, 'YXZ');
   private euler = new THREE.Euler(0, 0, 0, 'YXZ');
   private q = new THREE.Quaternion();
 
@@ -313,8 +321,18 @@ export class Viewmodel {
     // --- Aim alignment: point the bore at the aim point (+ zero drop compensation) ---
     const muzzleRest = this.v.copy(pos).add(rig.muzzle.position);
     const toAim = this.v2.copy(input.aimPoint).sub(muzzleRest);
-    const alignYaw = Math.atan2(-toAim.x, -toAim.z);
-    const alignPitch = Math.atan2(toAim.y, Math.hypot(toAim.x, toAim.z)) + input.dropAngle;
+    const boreYaw = Math.atan2(-toAim.x, -toAim.z);
+    const borePitch = Math.atan2(toAim.y, Math.hypot(toAim.x, toAim.z)) + input.dropAngle;
+    // Aimed, the sights line up instead (rear notch, front post and eye on one line; the
+    // sights sit 5-7 cm over the bore, so pointing the bore tipped them off the eye line).
+    // The bore keeps its angle to them, the zero, which the shot direction adds back.
+    const toSight = this.v3.copy(input.aimPoint).sub(this.v.copy(pos).add(rig.sight.position));
+    const sightYaw = Math.atan2(-toSight.x, -toSight.z);
+    const sightPitch = Math.atan2(toSight.y, Math.hypot(toSight.x, toSight.z));
+    const alignYaw = boreYaw + (sightYaw - boreYaw) * adsEase;
+    const alignPitch = borePitch + (sightPitch - borePitch) * adsEase;
+    this.zero.pitch = borePitch - alignPitch;
+    this.zero.yaw = boreYaw - alignYaw;
 
     // --- Inertia: lag ≈ turn rate × inertia time; the follow spring settles it ---
     const rate = this.lookRate;
@@ -425,9 +443,10 @@ export class Viewmodel {
         HIP_CANT * (1 - adsEase) * (1 - sb) * sideSign,
     );
     this.pivot.quaternion.setFromEuler(this.euler);
-    // The shoulder stops the gun: rearward travel is capped (less when aimed, where the
-    // sights are already at the eye), so recoil can never shove the weapon into the camera.
-    const maxBack = 0.03 - 0.018 * ads + 0.024 * rearwardShare(ads);
+    // The shoulder stops the gun: rearward travel is capped, so recoil can never shove the
+    // weapon into the camera. Aimed, barely at all (6 mm): the sight picture keeps its
+    // size shot after shot instead of swelling toward the eye and back.
+    const maxBack = 0.03 - 0.024 * ads;
     const backZ = rp.z > 0 ? maxBack * Math.tanh(rp.z / maxBack) : Math.max(rp.z, -0.02);
     this.recoilPivot.position.set(rig.butt.x + clamp(rp.x, -0.01, 0.01), rig.butt.y + clamp(rp.y, -0.015, 0.015), rig.butt.z + backZ);
     this.recoilPivot.rotation.set(rr.x, rr.y, rr.z);
@@ -456,9 +475,12 @@ export class Viewmodel {
   }
 
   /** World-space forward (bore direction, -Z of the weapon) of a weapon part. */
-  forwardWorld(local: THREE.Object3D, mainCamera: THREE.PerspectiveCamera, out: THREE.Vector3): THREE.Vector3 {
+  forwardWorld(local: THREE.Object3D, mainCamera: THREE.PerspectiveCamera, out: THREE.Vector3, zeroed = false): THREE.Vector3 {
     local.getWorldQuaternion(this.q);
-    return out.set(0, 0, -1).applyQuaternion(this.q).transformDirection(mainCamera.matrixWorld);
+    out.set(0, 0, -1).applyQuaternion(this.q);
+    // The bore's zero (see `zero`): small turns in the weapon's view space.
+    if (zeroed) out.applyEuler(this.zeroEuler.set(this.zero.pitch, this.zero.yaw, 0));
+    return out.transformDirection(mainCamera.matrixWorld);
   }
 
   setAspect(aspect: number): void {
