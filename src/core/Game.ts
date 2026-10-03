@@ -2016,7 +2016,7 @@ export class Game {
   }
 
   /** Aim assist state (touch): the target being tracked, the ADS snap window. */
-  private assist = { target: new THREE.Vector3(), has: false, snap: 0, wasAds: false };
+  private assist = { target: new THREE.Vector3(), has: false, snap: 0, wasAds: false, wantYaw: 0, wantPitch: 0, tracking: false };
   private assistPts: THREE.Vector3[] = [];
   private assistPool: THREE.Vector3[] = [];
 
@@ -2035,6 +2035,8 @@ export class Game {
     a.wasAds = ads;
     a.snap = Math.max(0, a.snap - dt);
     this.weapons.recoil.viewScale = 1;
+    // Near misses on a body land within 10 cm at NORMAL (15 STRONG, 6 LOW, none OFF).
+    this.weapons.touchHitAssist = 0.1 * Math.min(1.5, strength / BASE_TOUCH_ASSIST);
     if (strength <= 0) return [yaw, pitch];
     this.camera.getAimDirection(this.player, this.aimDir);
     const eye = this.camera.eye;
@@ -2071,6 +2073,7 @@ export class Game {
     if (bestP && !this.physics.lineOfSight(eye, bestP, GROUPS.sight)) bestP = null;
     if (!bestP) {
       a.has = false;
+      a.tracking = false;
       return [yaw, pitch];
     }
     // Friction (only while your finger is moving the view).
@@ -2081,10 +2084,22 @@ export class Game {
     }
     // Tracking pull / ADS snap toward the target's chest.
     const engaged = a.snap > 0 || ads || input.fireHeld || input.lookFromTouch;
+    const to = this.tmp2.subVectors(bestP, eye);
+    const wantYaw = Math.atan2(-to.x, -to.z);
+    const wantPitch = Math.atan2(to.y, Math.hypot(to.x, to.z));
+    // Rotational assist: while aiming or firing on a target, its motion across the view
+    // (it runs, or you strafe) carries the aim along, so tracking holds without chasing
+    // it with the thumb. The same target as last frame: it can't jump more than 1.5 m.
+    const same = a.tracking && a.target.distanceToSquared(bestP) < 2.25;
+    if (same && engaged) {
+      const follow = (ads ? 0.8 : input.fireHeld ? 0.65 : 0.4) * Math.min(1, strength / BASE_TOUCH_ASSIST);
+      yaw += Math.atan2(Math.sin(wantYaw - a.wantYaw), Math.cos(wantYaw - a.wantYaw)) * follow;
+      pitch += (wantPitch - a.wantPitch) * follow;
+    }
+    a.wantYaw = wantYaw;
+    a.wantPitch = wantPitch;
+    a.tracking = true;
     if (engaged && bestAngle > 0.2 * DEG) {
-      const to = this.tmp2.subVectors(bestP, eye);
-      const wantYaw = Math.atan2(-to.x, -to.z);
-      const wantPitch = Math.atan2(to.y, Math.hypot(to.x, to.z));
       let dy = wantYaw - this.player.yaw;
       dy = Math.atan2(Math.sin(dy), Math.cos(dy));
       const dp = wantPitch - this.player.pitch;

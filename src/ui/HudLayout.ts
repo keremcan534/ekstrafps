@@ -35,6 +35,8 @@ export interface HudLayoutData {
   opacity: number;
   /** The player's changes on top of the preset. */
   items: Record<string, HudItem>;
+  /** A held fire button drifts with the thumb (COD Mobile style). */
+  floatFire: boolean;
 }
 
 interface Control {
@@ -127,9 +129,9 @@ export function loadHudLayout(): HudLayoutData {
     const d = JSON.parse(localStorage.getItem(KEY) ?? '{}') as Partial<HudLayoutData>;
     const preset = d.preset && d.preset in HUD_PRESETS ? d.preset : 'standard';
     // Version 1 kept offsets from the old stylesheet layout: those don't carry over.
-    return { v: 2, preset, size: d.size ?? 1, opacity: d.opacity ?? 1, items: d.v === 2 ? (d.items ?? {}) : {} };
+    return { v: 2, preset, size: d.size ?? 1, opacity: d.opacity ?? 1, items: d.v === 2 ? (d.items ?? {}) : {}, floatFire: d.floatFire ?? true };
   } catch {
-    return { v: 2, preset: 'standard', size: 1, opacity: 1, items: {} };
+    return { v: 2, preset: 'standard', size: 1, opacity: 1, items: {}, floatFire: true };
   }
 }
 
@@ -153,6 +155,7 @@ export function applyHudLayout(d: HudLayoutData): void {
   const W = innerWidth / z;
   const H = innerHeight / z;
   document.documentElement.style.setProperty('--hud-alpha', String(d.opacity));
+  document.documentElement.dataset.floatFire = d.floatFire ? '1' : '0';
   for (const c of CONTROLS) {
     const it = itemOf(d, c.key);
     const placed = it.ax !== undefined && it.ay !== undefined && it.x !== undefined && it.y !== undefined;

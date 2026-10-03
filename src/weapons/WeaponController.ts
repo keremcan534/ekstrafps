@@ -50,6 +50,8 @@ const ZERO_STEPS = [25, 50, 100, 150, 200, 300];
  *                  recoil impulses go into the weapon and (partly) the view
  */
 export class WeaponController implements WeaponListener {
+  /** Touch aim assist's hit catch (m): a near miss this close to a body still lands (Game sets it). */
+  touchHitAssist = 0;
   readonly weapons: Weapon[];
   readonly recoil = new RecoilSystem();
   readonly viewmodel: Viewmodel;
@@ -429,8 +431,9 @@ export class WeaponController implements WeaponListener {
         oy += (Math.sin(pa) * ring + (Math.random() - 0.5) * 0.3) * pelletRad;
       }
       this.pelletDir.copy(this.muzzleDir).addScaledVector(this.right, ox).addScaledVector(this.up, oy).normalize();
-      // Bolt actions: a slightly wider "catch" (4 cm) so near misses on a body still land.
-      const assist = d.fireModes.includes('bolt') ? 0.04 : 0;
+      // Bolt actions: a slightly wider "catch" (4 cm) so near misses on a body still land;
+      // touch aim assist widens it for every gun (thumbs can't place a pistol tap that finely).
+      const assist = Math.max(d.fireModes.includes('bolt') ? 0.04 : 0, this.touchHitAssist);
       this.projectiles.fire(this.origin, this.pelletDir, v0 * (0.985 + Math.random() * 0.03), ammo, this.shotId, tracer && i === 0, i < 3, null, false, false, 'alpha', assist);
     }
 

@@ -18,6 +18,8 @@ export interface TouchActions {
 
 const DEADZONE = 0.1;
 const JOY_RADIUS = 64;
+/** How far a held fire button drifts with the thumb (HUD px). */
+const FLOAT = 36;
 
 /** Compact tactical icons (stroke = currentColor). */
 const svg = (body: string, size = 24): string =>
@@ -259,6 +261,12 @@ export class TouchControls {
   private fireButton(cls: string, icon: string): void {
     const b = el(cls, this.root);
     b.innerHTML = icon;
+    // Floating fire (Settings → Controls, on by default): while held, the button drifts
+    // with the thumb (up to FLOAT px) so it stays under it as you drag to aim.
+    let fx = 0;
+    let fy = 0;
+    let zoom = 1;
+    let float = false;
     b.addEventListener('pointerdown', (e) => {
       e.preventDefault();
       e.stopPropagation();
@@ -266,10 +274,26 @@ export class TouchControls {
       b.classList.add('pressed');
       this.input.pressFire(true);
       this.lookIds.set(e.pointerId, { x: e.clientX, y: e.clientY, t: performance.now() });
+      fx = e.clientX;
+      fy = e.clientY;
+      zoom = uiZoom();
+      float = document.documentElement.dataset.floatFire !== '0';
     });
-    b.addEventListener('pointermove', (e) => this.look(e));
+    b.addEventListener('pointermove', (e) => {
+      this.look(e);
+      if (!float || !this.lookIds.has(e.pointerId)) return;
+      let dx = (e.clientX - fx) / zoom;
+      let dy = (e.clientY - fy) / zoom;
+      const len = Math.hypot(dx, dy);
+      if (len > FLOAT) {
+        dx *= FLOAT / len;
+        dy *= FLOAT / len;
+      }
+      b.style.transform = `translate(${dx.toFixed(1)}px, ${dy.toFixed(1)}px) scale(0.94)`;
+    });
     const up = (e: PointerEvent) => {
       b.classList.remove('pressed');
+      b.style.transform = '';
       this.lookIds.delete(e.pointerId);
       // Only release fire if no other fire button is held.
       if (![...this.root.querySelectorAll('.btn-fire.pressed, .btn-fire-left.pressed')].length) this.input.pressFire(false);

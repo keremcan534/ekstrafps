@@ -603,6 +603,14 @@ export class MainMenu {
       saveHudLayout(hud);
       applyHudLayout(hud);
     });
+    const ff = el('button', `gtoggle ${hud.floatFire ? 'on' : ''}`, el('div', 'gtoggles', this.panel), '<span>FLOATING FIRE BUTTON</span><i></i>');
+    ff.addEventListener('click', (e) => {
+      e.stopPropagation();
+      hud.floatFire = !hud.floatFire;
+      ff.classList.toggle('on', hud.floatFire);
+      saveHudLayout(hud);
+      applyHudLayout(hud);
+    });
     el('div', 'panel-label', this.panel, 'AIM ASSIST');
     const seg = el('div', 'gseg', this.panel);
     for (const [v, label] of [[0, 'OFF'], [0.6, 'LOW'], [1, 'NORMAL'], [1.5, 'STRONG']] as const) {
