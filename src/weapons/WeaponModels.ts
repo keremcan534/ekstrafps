@@ -179,11 +179,12 @@ function hand(parent: THREE.Object3D, pos: V3, elbow: V3, size: V3): THREE.Group
 function redDot(root: THREE.Object3D, z: number, railTop: number): THREE.Object3D {
   const y = railTop + 0.04;
   box(root, mat.polymer, [0.03, 0.026, 0.05], [0, railTop + 0.013, z]);
-  box(root, mat.polymer, [0.004, 0.036, 0.022], [0.019, y, z - 0.01]);
-  box(root, mat.polymer, [0.004, 0.036, 0.022], [-0.019, y, z - 0.01]);
-  box(root, mat.polymer, [0.042, 0.004, 0.022], [0, y + 0.019, z - 0.01]);
-  box(root, mat.polymer, [0.042, 0.004, 0.022], [0, y - 0.019, z - 0.01]);
-  const lens = new THREE.Mesh(new THREE.PlaneGeometry(0.034, 0.034), mat.lens);
+  // Thin walls (they frame the view when aiming): a clean window, not a black box.
+  box(root, mat.polymer, [0.0025, 0.038, 0.022], [0.0195, y, z - 0.01]);
+  box(root, mat.polymer, [0.0025, 0.038, 0.022], [-0.0195, y, z - 0.01]);
+  box(root, mat.polymer, [0.0415, 0.0025, 0.022], [0, y + 0.0195, z - 0.01]);
+  box(root, mat.polymer, [0.0415, 0.0025, 0.022], [0, y - 0.0195, z - 0.01]);
+  const lens = new THREE.Mesh(new THREE.PlaneGeometry(0.037, 0.037), mat.lens);
   lens.position.set(0, y, z - 0.02);
   root.add(lens);
   const dot = new THREE.Mesh(new THREE.CircleGeometry(0.0014, 12), mat.dot);
@@ -198,18 +199,18 @@ function redDot(root: THREE.Object3D, z: number, railTop: number): THREE.Object3
 /** Rear notch (two posts). `line` = height of the sight line. Returns the sight point. */
 function ironRear(root: THREE.Object3D, z: number, line: number): THREE.Object3D {
   box(root, mat.blued, [0.03, 0.006, 0.014], [0, line - 0.009, z]);
-  box(root, mat.blued, [0.009, 0.014, 0.008], [0.0085, line - 0.004, z]);
-  box(root, mat.blued, [0.009, 0.014, 0.008], [-0.0085, line - 0.004, z]);
+  box(root, mat.blued, [0.006, 0.013, 0.006], [0.008, line - 0.0045, z]);
+  box(root, mat.blued, [0.006, 0.013, 0.006], [-0.008, line - 0.0045, z]);
   return point(root, [0, line, z]);
 }
 
 /** Front post (with protective ears) whose tip sits on the sight line. */
 function ironFront(root: THREE.Object3D, z: number, line: number, base: number): void {
   const h = line - base;
-  box(root, mat.blued, [0.004, h, 0.005], [0, base + h / 2, z]);
-  box(root, mat.blued, [0.003, h + 0.006, 0.01], [0.011, base + (h + 0.006) / 2, z]);
-  box(root, mat.blued, [0.003, h + 0.006, 0.01], [-0.011, base + (h + 0.006) / 2, z]);
-  const dot = new THREE.Mesh(new THREE.CircleGeometry(0.0016, 8), mat.bead);
+  box(root, mat.blued, [0.003, h, 0.004], [0, base + h / 2, z]);
+  box(root, mat.blued, [0.0022, h + 0.005, 0.008], [0.011, base + (h + 0.005) / 2, z]);
+  box(root, mat.blued, [0.0022, h + 0.005, 0.008], [-0.011, base + (h + 0.005) / 2, z]);
+  const dot = new THREE.Mesh(new THREE.CircleGeometry(0.0019, 12), mat.bead);
   dot.position.set(0, line - 0.0012, z + 0.0026);
   root.add(dot);
 }
@@ -302,17 +303,18 @@ function holoSight(root: THREE.Object3D, z: number, railTop: number): THREE.Obje
   box(root, P, [0.032, 0.018, 0.034], [0, railTop + 0.014, z - 0.034]); // battery housing
   box(root, mat.gunmetal, [0.01, 0.01, 0.012], [0.019, railTop + 0.016, z - 0.034]); // battery cap
   // Hood: side wings, curved top, front + rear window frames.
-  for (const sx of [-1, 1]) box(root, P, [0.005, 0.044, 0.07], [0.0205 * sx, y, z - 0.002]);
-  box(root, P, [0.046, 0.007, 0.074], [0, y + 0.024, z - 0.002]);
-  box(root, P, [0.036, 0.006, 0.006], [0, y - 0.016, z - 0.034]);
-  box(root, P, [0.036, 0.006, 0.006], [0, y + 0.017, z - 0.034]);
-  box(root, P, [0.036, 0.006, 0.006], [0, y - 0.016, z + 0.03]);
-  box(root, P, [0.036, 0.006, 0.006], [0, y + 0.017, z + 0.03]);
+  // Thin hood and window frames: aimed, they're all you see around the reticle.
+  for (const sx of [-1, 1]) box(root, P, [0.0032, 0.044, 0.07], [0.0212 * sx, y, z - 0.002]);
+  box(root, P, [0.046, 0.0045, 0.074], [0, y + 0.0235, z - 0.002]);
+  box(root, P, [0.039, 0.0035, 0.004], [0, y - 0.0178, z - 0.034]);
+  box(root, P, [0.039, 0.0035, 0.004], [0, y + 0.0185, z - 0.034]);
+  box(root, P, [0.039, 0.0035, 0.004], [0, y - 0.0178, z + 0.03]);
+  box(root, P, [0.039, 0.0035, 0.004], [0, y + 0.0185, z + 0.03]);
   // Rear control buttons.
   for (const bx of [-0.01, 0.0, 0.01]) box(root, mat.rubber, [0.007, 0.006, 0.004], [bx, railTop + 0.01, z + 0.04]);
   // Windows + reticle (65 MOA ring, 1 MOA dot).
   for (const wz of [z - 0.034, z + 0.03]) {
-    const glass = new THREE.Mesh(new THREE.PlaneGeometry(0.034, 0.03), mat.holoGlass);
+    const glass = new THREE.Mesh(new THREE.PlaneGeometry(0.038, 0.034), mat.holoGlass);
     glass.position.set(0, y, wz);
     root.add(glass);
   }

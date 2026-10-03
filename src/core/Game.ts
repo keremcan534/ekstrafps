@@ -1479,13 +1479,15 @@ export class Game {
       sh.map = null;
     }
     // Lighting: full image-based lighting, or the probe (frame loop sets its intensity).
-    // The weapon keeps its reflections except on phones with fast lighting (a probe copy there).
-    const ibl = s.lighting === 'full' || !this.mobile ? this.envMap() : null;
+    // The weapon in hand keeps its reflections at every setting: it's mostly metal, and
+    // metal lit by a probe alone renders near black (a dark blob over the sights). It
+    // covers a small part of the screen, so the reflections there cost little.
+    const ibl = this.envMap();
     const env = s.lighting === 'full' ? ibl : null;
     if (this.scene.environment !== env) this.scene.environment = env;
     this.probe.intensity = env ? 0 : this.scene.environmentIntensity * 1.1;
     const vm = this.weapons.viewmodel.scene;
-    const vmEnv = this.mobile && s.lighting === 'fast' ? null : ibl;
+    const vmEnv = ibl;
     if (vm.environment !== vmEnv) vm.environment = vmEnv;
     if (!vmEnv && !this.vmProbe) {
       this.vmProbe = new THREE.LightProbe().copy(this.probe);

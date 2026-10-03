@@ -147,8 +147,9 @@ export class Viewmodel {
     }
     this.side.reset(1);
     // Lighting tuned to roughly match the arena.
-    this.scene.add(new THREE.HemisphereLight(0xdfe8ff, 0x3a3530, 1.1));
-    const key = new THREE.DirectionalLight(0xfff2e0, 2.2);
+    // A touch brighter than the room: aimed, the gun reads as parts and edges, not a black mass.
+    this.scene.add(new THREE.HemisphereLight(0xdfe8ff, 0x4a4540, 1.35));
+    const key = new THREE.DirectionalLight(0xfff2e0, 2.5);
     key.position.set(0.6, 1, 0.4);
     this.scene.add(key);
     const rim = new THREE.DirectionalLight(0x9fc4ff, 0.9);
