@@ -258,6 +258,15 @@ export class Site9 implements GameMap {
   private emergency = new THREE.MeshStandardMaterial({ color: 0x200000, emissive: 0xff1a0a, emissiveIntensity: 0.01 }); // non-zero: keeps it out of the vertex-colour merge
   private lampBase = new Map<THREE.MeshStandardMaterial, number>();
   private blackout = 0;
+  /** Floor footprints of everything standing on the floor (clutter keeps clear of them). */
+  private footprints: [number, number, number, number][] = [];
+  /** Broken, flickering lamp fixtures (one shared flicker) and their light pools. */
+  private brokenLampMat = new THREE.MeshStandardMaterial({ color: 0x000000, emissive: 0xf2f6ff, emissiveIntensity: 2.6 });
+  private brokenPool = new THREE.MeshBasicMaterial({ map: glowTexture(), color: 0xeef4ff, transparent: true, opacity: 0.42, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false });
+  /** Where the broken lamps spark from (Game sprays sparks when one stutters back on). */
+  readonly brokenLamps: THREE.Vector3[] = [];
+  /** 0..1 brightness of the broken lamps this frame. */
+  brokenLevel = 0;
   private coreGlow: THREE.MeshStandardMaterial;
   private time = 0;
   private mobile: boolean;
@@ -302,6 +311,14 @@ export class Site9 implements GameMap {
       contBlue: std({ map: corrugatedTexture('#2b4766'), roughness: 0.7, metalness: 0.35 }),
       contRust: std({ map: corrugatedTexture('#7a3b22'), roughness: 0.75, metalness: 0.3 }),
       tire: std({ color: 0x141414, roughness: 0.9 }),
+      paper: std({ color: 0xe6e1d6, roughness: 0.9 }),
+      cardboard: std({ color: 0x9a774e, roughness: 0.9 }),
+      rubble: std({ color: 0x86827b, roughness: 0.95 }),
+      stain: std({ color: 0x17140f, roughness: 0.25, metalness: 0.1 }),
+      trash: std({ color: 0x121315, roughness: 0.35 }),
+      sand: std({ color: 0x8b7b58, roughness: 1 }),
+      extinguisher: std({ color: 0xb3141a, roughness: 0.4, metalness: 0.3 }),
+      drumBlue: std({ color: 0x2f5f9e, metalness: 0.55, roughness: 0.45 }),
     };
     const m = this.mats;
     const styles: Record<string, RoomStyle> = {
@@ -346,6 +363,7 @@ export class Site9 implements GameMap {
     this.collectWallSpots();
     this.buildDetails();
     this.buildServices();
+    this.buildClutter();
     this.buildSigns();
     this.layout.build(this.group);
     // Ceiling lamps (the practical lights near you come from these).
@@ -397,6 +415,268 @@ export class Site9 implements GameMap {
       point(0xffb060, 70, 30, [0, 8, -76]); // reactor
       point(0xff4030, 30, 18, [100, 4, 50]); // barracks
     }
+  }
+
+  // ---------------------------------------------------------------- clutter
+
+  /**
+   * Lived-in, abandoned-facility clutter, the same every game (seeded):
+   *  - floor litter (papers, rubble, cable runs, oil stains, fallen ceiling tiles): flat, walk over it
+   *  - wall-side props (box stacks, cabinets, crates, drums, trash bags): solid, never in a doorway
+   *  - barricade remains in the big rooms (an overturned table + sandbags): new cover
+   *  - extinguishers, vents, hanging cables, and the odd broken lamp that flickers and sparks
+   * Everything merges into the room meshes (no extra draw calls) except the broken lamps.
+   */
+  private buildClutter(): void {
+    let seed = 0x5173;
+    const rnd = () => {
+      seed = (seed + 0x6d2b79f5) >>> 0;
+      let t = seed;
+      t = Math.imul(t ^ (t >>> 15), t | 1);
+      t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+    const pick = <T>(a: readonly T[]): T => a[Math.floor(rnd() * a.length)];
+    const industrial = new Set(['factory', 'hangar', 'servers']);
+    const starts = Object.values(TEAM_STARTS).map((s) => Wp(s.pos[0], s.pos[1]));
+
+    for (const room of ROOMS) {
+      const R = room.id;
+      const [x0, z0, x1, z1] = room.rect;
+      const w = x1 - x0;
+      const d = z1 - z0;
+      const ind = industrial.has(room.style);
+      // Keep-outs: doorways, buy spots / stations, spawns, team starts.
+      const keep: [number, number, number][] = [];
+      for (const l of LINKS) {
+        if (l.a !== R && l.b !== R) continue;
+        const o = ROOM_OF.get(l.a === R ? l.b : l.a)!;
+        const vertical = room.rect[2] === o.rect[0] || room.rect[0] === o.rect[2];
+        if (vertical) keep.push([room.rect[2] === o.rect[0] ? x1 : x0, l.at, l.width / 2 + 3]);
+        else keep.push([l.at, room.rect[3] === o.rect[1] ? z1 : z0, l.width / 2 + 3]);
+      }
+      for (const p of this.reserved) keep.push([p.x, p.z, 1.9]);
+      for (const sp of this.spawnPoints) keep.push([sp.pos.x, sp.pos.z, 3]);
+      for (const [sx, sz] of starts) keep.push([sx, sz, 5]);
+      const clearOf = (x: number, z: number, hx: number, hz: number, pad: number) => {
+        if (x - hx < x0 + 0.05 || x + hx > x1 - 0.05 || z - hz < z0 + 0.05 || z + hz > z1 - 0.05) return false;
+        for (const [kx, kz, r] of keep) if (Math.hypot(kx - x, kz - z) < r + Math.max(hx, hz)) return false;
+        for (const f of this.footprints) if (x + hx + pad > f[0] && x - hx - pad < f[2] && z + hz + pad > f[1] && z - hz - pad < f[3]) return false;
+        return true;
+      };
+
+      // --- Floor litter (flat; you walk over it).
+      const litter = Math.max(8, Math.min(110, Math.round((w * d) / 10)));
+      for (let i = 0; i < litter; i++) {
+        const x = x0 + 1 + rnd() * (w - 2);
+        const z = z0 + 1 + rnd() * (d - 2);
+        if (!clearOf(x, z, 0.4, 0.4, 0)) continue;
+        const k = rnd();
+        if (k < 0.4) {
+          for (let j = 0, n = 1 + Math.floor(rnd() * 4); j < n; j++) {
+            this.boxW(R, 'paper', [0.21, 0.004, 0.29], [x + (rnd() - 0.5) * 0.9, 0.006 + j * 0.001, z + (rnd() - 0.5) * 0.9], false, [0, rnd() * Math.PI, 0]);
+          }
+        } else if (k < 0.62) {
+          for (let j = 0, n = 3 + Math.floor(rnd() * 5); j < n; j++) {
+            const s = 0.05 + rnd() * 0.17;
+            this.boxW(R, rnd() < 0.7 ? 'rubble' : 'gunmetal', [s, s * (0.5 + rnd() * 0.6), s * (0.7 + rnd() * 0.6)], [x + (rnd() - 0.5) * 1.1, s * 0.3, z + (rnd() - 0.5) * 1.1], false, [rnd() * 0.6, rnd() * 3, rnd() * 0.6]);
+          }
+        } else if (k < 0.77) {
+          this.cylW(R, 'stain', 0.4 + rnd() * 0.9, 0.002, [x, 0.003, z], false, [0, 0, 0], 14);
+        } else if (k < 0.9) {
+          // Cable run: three kinked segments.
+          let cx = x;
+          let cz = z;
+          let yaw = rnd() * Math.PI * 2;
+          for (let j = 0; j < 3; j++) {
+            const len = 0.8 + rnd() * 1.4;
+            const mx = cx + Math.sin(yaw) * len * 0.5;
+            const mz = cz + Math.cos(yaw) * len * 0.5;
+            if (mx < x0 + 0.3 || mx > x1 - 0.3 || mz < z0 + 0.3 || mz > z1 - 0.3) break;
+            this.boxW(R, 'dark', [0.035, 0.03, len], [mx, 0.016, mz], false, [0, yaw, 0]);
+            cx += Math.sin(yaw) * len;
+            cz += Math.cos(yaw) * len;
+            yaw += (rnd() - 0.5) * 1.4;
+          }
+        } else if (!room.sky && !room.skylight) {
+          // Fallen ceiling tile, one edge on the floor, plus a broken piece.
+          const yaw = rnd() * Math.PI;
+          this.boxW(R, 'offwhite', [0.6, 0.025, 0.6], [x, 0.1, z], false, [0.32, yaw, 0]);
+          this.boxW(R, 'offwhite', [0.28, 0.025, 0.2], [x + 0.5, 0.013, z - 0.3], false, [0, yaw + 0.7, 0]);
+        }
+      }
+
+      // --- Wall-side props (solid).
+      const walls: [number, number, number, number, number, number][] = [
+        [x0, z0, x1, z0, 0, 1], [x0, z1, x1, z1, 0, -1], [x0, z0, x0, z1, 1, 0], [x1, z0, x1, z1, -1, 0],
+      ];
+      const props = Math.round((2 * (w + d)) / (ind ? 7 : 9));
+      let along = -1;
+      let wall = walls[0];
+      for (let i = 0, placed = 0; i < props * 5 && placed < props; i++) {
+        // Half the time the next prop goes right beside the last one (props come in groups).
+        const pair = along >= 0 && rnd() < 0.5;
+        if (!pair) wall = pick(walls);
+        const [ax, az, bx, bz, nx, nz] = wall;
+        const len = Math.hypot(bx - ax, bz - az);
+        const s = pair ? along + (rnd() < 0.5 ? -1.55 : 1.55) : 1.5 + rnd() * (len - 3);
+        along = -1;
+        const ux = (bx - ax) / len;
+        const uz = (bz - az) / len;
+        const yaw = Math.atan2(nx, nz) + (rnd() - 0.5) * 0.25;
+        const type = ind ? pick(['crate', 'crate', 'pallet', 'drums', 'cylinders', 'boxes'] as const) : pick(['boxes', 'boxes', 'cabinet', 'bags', 'chair'] as const);
+        const depth = type === 'crate' || type === 'pallet' ? 0.6 : type === 'drums' ? 0.35 : 0.32;
+        const x = ax + ux * s + nx * (depth + 0.2);
+        const z = az + uz * s + nz * (depth + 0.2);
+        const half = type === 'pallet' || type === 'drums' ? 0.7 : 0.6;
+        if (!clearOf(x, z, nx ? depth : half, nx ? half : depth, 0.15)) continue;
+        this.wallProp(R, type, x, z, yaw, rnd);
+        placed++;
+        along = s;
+      }
+
+      // --- Barricade remains in big rooms (cover in the open).
+      if (w * d > 900) {
+        for (let tries = 0, made = 0; tries < 30 && made < Math.round((w * d) / 1800); tries++) {
+          const x = x0 + 6 + rnd() * (w - 12);
+          const z = z0 + 6 + rnd() * (d - 12);
+          if (!clearOf(x, z, 1.4, 1.4, 1.2)) continue;
+          this.barricade(R, x, z, rnd() * Math.PI, rnd);
+          made++;
+        }
+      }
+
+      // --- Wall details: extinguishers and vents (flush, above the kick plate).
+      for (const [ax, az, bx, bz, nx, nz] of walls) {
+        const len = Math.hypot(bx - ax, bz - az);
+        const ux = (bx - ax) / len;
+        const uz = (bz - az) / len;
+        for (let s = 5 + rnd() * 6; s < len - 4; s += 13 + rnd() * 9) {
+          // Wall faces sit 0.15 m inside the room boundary.
+          const x = ax + ux * s + nx * 0.25;
+          const z = az + uz * s + nz * 0.25;
+          if (!clearOf(x, z, 0.2, 0.2, 0)) continue;
+          if (rnd() < 0.55) {
+            this.cylW(R, 'extinguisher', 0.085, 0.5, [x, 0.55, z], false, [0, 0, 0], 10);
+            this.cylW(R, 'dark', 0.03, 0.08, [x, 0.84, z], false, [0, 0, 0], 6);
+            this.boxW(R, 'gunmetal', nx ? [0.03, 0.14, 0.22] : [0.22, 0.14, 0.03], [x - nx * 0.08, 0.7, z - nz * 0.08], false);
+          } else {
+            const along = nz !== 0;
+            this.boxW(R, 'dark', along ? [0.7, 0.32, 0.03] : [0.03, 0.32, 0.7], [x - nx * 0.085, 0.42, z - nz * 0.085], false);
+            for (let k = 0; k < 4; k++) this.boxW(R, 'gunmetal', along ? [0.66, 0.025, 0.035] : [0.035, 0.025, 0.66], [x - nx * 0.07, 0.3 + k * 0.08, z - nz * 0.07], false);
+          }
+        }
+      }
+
+      // --- Hanging cables (well above head height) and a broken lamp.
+      if (!room.sky) {
+        for (let i = 0, n = Math.round((w * d) / 260); i < n; i++) {
+          const x = x0 + 2 + rnd() * (w - 4);
+          const z = z0 + 2 + rnd() * (d - 4);
+          const len = Math.min(room.h - 2.6, 0.8 + rnd() * 2.2);
+          if (len < 0.4) continue;
+          this.boxW(R, 'dark', [0.025, len, 0.025], [x, room.h - len / 2, z], false, [(rnd() - 0.5) * 0.25, 0, (rnd() - 0.5) * 0.25]);
+        }
+        if (!room.skylight && rnd() < 0.75) {
+          for (let tries = 0; tries < 10; tries++) {
+            const x = x0 + 3 + rnd() * (w - 6);
+            const z = z0 + 3 + rnd() * (d - 6);
+            if (!clearOf(x, z, 0.8, 0.8, 0)) continue;
+            this.brokenLamp(R, x, z, Math.min(room.h - 1.1, 4.2), room.h, rnd() * Math.PI);
+            break;
+          }
+        }
+      }
+    }
+  }
+
+  /** One solid wall-side prop (world position; yaw faces into the room). */
+  private wallProp(R: string, type: 'crate' | 'pallet' | 'drums' | 'cylinders' | 'boxes' | 'cabinet' | 'bags' | 'chair', x: number, z: number, yaw: number, rnd: () => number): void {
+    const s = Math.sin(yaw);
+    const c = Math.cos(yaw);
+    // Local (right, forward) offset → world.
+    const P = (r: number, y: number, f: number): V3 => [x + c * r + s * f, y, z - s * r + c * f];
+    const rot = (dy = 0): V3 => [0, yaw + dy, 0];
+    switch (type) {
+      case 'crate': {
+        const k = 0.9 + rnd() * 0.3;
+        this.boxW(R, 'woodDark', [k, k, k], [x, k / 2, z], true, rot((rnd() - 0.5) * 0.3));
+        if (rnd() < 0.45) this.boxW(R, 'woodDark', [0.7, 0.7, 0.7], [x, k + 0.35, z], true, rot(rnd()));
+        break;
+      }
+      case 'pallet': {
+        this.boxW(R, 'wood', [1.2, 0.14, 1.0], [x, 0.07, z], true, rot());
+        for (let i = 0, n = 2 + Math.floor(rnd() * 3); i < n; i++) {
+          const b = 0.42 + rnd() * 0.12;
+          this.boxW(R, 'cardboard', [b, b * 0.8, b], P((i % 2) * 0.5 - 0.25, 0.14 + b * 0.4 + Math.floor(i / 2) * b * 0.8, 0), true, rot((rnd() - 0.5) * 0.4));
+        }
+        break;
+      }
+      case 'drums':
+        for (const r of [-0.34, 0.34]) this.cylW(R, rnd() < 0.5 ? 'vanta' : 'drumBlue', 0.3, 0.9, P(r, 0.45, 0), true, [0, 0, 0], 14);
+        break;
+      case 'cylinders':
+        for (const r of [-0.22, 0, 0.22]) this.cylW(R, 'steel', 0.11, 1.4, P(r, 0.7, -0.15), true, [0, 0, (rnd() - 0.5) * 0.08], 10);
+        this.boxW(R, 'yellow', [0.75, 0.05, 0.05], P(0, 1.05, 0.0), false, rot());
+        break;
+      case 'boxes':
+        for (let i = 0, n = 1 + Math.floor(rnd() * 3); i < n; i++) {
+          const b = 0.42 + rnd() * 0.2;
+          this.boxW(R, 'cardboard', [b, b * 0.85, b], P((rnd() - 0.5) * 0.3, b * 0.425 + i * b * 0.8, 0), true, rot((rnd() - 0.5) * 0.6));
+        }
+        break;
+      case 'cabinet':
+        this.boxW(R, 'gunmetal', [0.5, 1.32, 0.6], [x, 0.66, z], true, rot());
+        for (let i = 0; i < 4; i++) this.boxW(R, 'dark', [0.16, 0.025, 0.02], P(0, 0.25 + i * 0.32, 0.31), false, rot());
+        if (rnd() < 0.5) this.boxW(R, 'gunmetal', [0.44, 0.26, 0.5], P(0, 0.9, 0.42), false, rot()); // drawer pulled out
+        break;
+      case 'bags':
+        for (let i = 0, n = 2 + Math.floor(rnd() * 3); i < n; i++) {
+          const r = 0.22 + rnd() * 0.1;
+          this.room(R).b.add(this.mats.trash, new THREE.IcosahedronGeometry(r, 1), P((rnd() - 0.5) * 0.8, r * 0.8, (rnd() - 0.5) * 0.3), [rnd(), rnd() * 3, 0], [1, 0.8, 1]);
+        }
+        this.physics.addStaticBox(new THREE.Vector3(x, 0.3, z), new THREE.Vector3(0.5, 0.3, 0.35), new THREE.Quaternion().setFromEuler(new THREE.Euler(...rot())));
+        this.footprints.push([x - 0.55, z - 0.55, x + 0.55, z + 0.55]);
+        break;
+      case 'chair': {
+        // Knocked over: seat on its side, legs pointing out.
+        this.boxW(R, 'fabric', [0.5, 0.08, 0.5], P(0, 0.27, 0), true, [Math.PI / 2, yaw, 0]);
+        this.boxW(R, 'fabric', [0.5, 0.5, 0.08], P(0, 0.04, 0.25), false, rot());
+        for (const r of [-0.2, 0.2]) this.boxW(R, 'gunmetal', [0.03, 0.03, 0.42], P(r, 0.12, -0.2), false, rot());
+        break;
+      }
+    }
+  }
+
+  /** Overturned table with sandbags piled against it: waist-high cover. */
+  private barricade(R: string, x: number, z: number, yaw: number, rnd: () => number): void {
+    const s = Math.sin(yaw);
+    const c = Math.cos(yaw);
+    const P = (r: number, y: number, f: number): V3 => [x + c * r + s * f, y, z - s * r + c * f];
+    this.boxW(R, 'woodDark', [2.0, 0.95, 0.07], P(0, 0.475, 0), true, [0, yaw, 0]);
+    for (const r of [-0.85, 0.85]) {
+      for (const y of [0.2, 0.75]) this.boxW(R, 'gunmetal', [0.05, 0.05, 0.7], P(r, y, -0.38), false, [0, yaw, 0]);
+    }
+    for (let i = 0; i < 5; i++) {
+      const row = i < 3 ? 0 : 1;
+      this.boxW(R, 'sand', [0.62, 0.2, 0.36], P(-0.62 + (i % 3) * 0.62 + row * 0.31, 0.1 + row * 0.2, 0.25), true, [0, yaw + (rnd() - 0.5) * 0.2, 0]);
+    }
+    this.boxW(R, 'rubble', [0.3, 0.12, 0.25], P(1.2, 0.06, 0.6), false, [0, rnd() * 3, 0]);
+  }
+
+  /** A lamp fixture hanging off one cable, flickering (Site9.update) over a flickering pool. */
+  private brokenLamp(R: string, x: number, z: number, y: number, ceiling: number, yaw: number): void {
+    const s = Math.sin(yaw);
+    const c = Math.cos(yaw);
+    this.room(R).ceil.box(this.mats.gunmetal, [1.2, 0.08, 0.3], [x, y, z], [0, yaw, 0.55]);
+    this.room(R).ceil.box(this.brokenLampMat, [1.0, 0.02, 0.2], [x, y - 0.05, z], [0, yaw, 0.55]);
+    // The cable that held: from the high end up to the ceiling.
+    const hx = x + c * 0.5;
+    const hz = z - s * 0.5;
+    const top = y + 0.28;
+    this.room(R).ceil.box(this.mats.dark, [0.02, ceiling - top, 0.02], [hx, (ceiling + top) / 2, hz]);
+    this.room(R).clear.add(this.brokenPool, new THREE.PlaneGeometry(5, 5), [x, 0.025, z], [-Math.PI / 2, 0, 0]);
+    this.brokenLamps.push(new THREE.Vector3(x - c * 0.5, y - 0.3, z + s * 0.5));
   }
 
   private pool(color: number): THREE.Material {
@@ -491,6 +771,12 @@ export class Site9 implements GameMap {
   /** Visual box in a room + optional collider (world coordinates). */
   private boxW(room: string, mat: string, size: V3, pos: V3, solid = true, rot?: V3, receiver?: HitReceiver): void {
     this.room(room).b.box(this.mats[mat], size, pos, rot);
+    if (pos[1] - size[1] / 2 < 1.2 && size[1] > 0.25) {
+      const turned = !!rot && (Math.abs(rot[0]) + Math.abs(rot[1]) + Math.abs(rot[2]) > 0.01);
+      const hx = turned ? Math.max(size[0], size[2]) / 2 : size[0] / 2;
+      const hz = turned ? Math.max(size[0], size[2]) / 2 : size[2] / 2;
+      this.footprints.push([pos[0] - hx, pos[2] - hz, pos[0] + hx, pos[2] + hz]);
+    }
     if (solid) {
       const q = rot ? new THREE.Quaternion().setFromEuler(new THREE.Euler(...rot)) : undefined;
       this.physics.addStaticBox(new THREE.Vector3(...pos), new THREE.Vector3(size[0] / 2, size[1] / 2, size[2] / 2), q, receiver);
@@ -500,6 +786,9 @@ export class Site9 implements GameMap {
   /** Cylinder (Y axis unless rotated) + an approximate box collider (world coordinates). */
   private cylW(room: string, mat: string, r: number, h: number, pos: V3, solid = true, rot: V3 = [0, 0, 0], segments = 16): void {
     this.room(room).b.cylinder(this.mats[mat], r, h, pos, rot, segments);
+    const lying = Math.abs(rot[0]) > 0.1 || Math.abs(rot[2]) > 0.1;
+    const e = lying ? Math.max(r, h / 2) : r;
+    if (pos[1] - (lying ? r : h / 2) < 1.2 && (h > 0.25 || r > 0.5)) this.footprints.push([pos[0] - e, pos[2] - e, pos[0] + e, pos[2] + e]);
     if (solid) {
       const q = new THREE.Quaternion().setFromEuler(new THREE.Euler(...rot));
       this.physics.addStaticBox(new THREE.Vector3(...pos), new THREE.Vector3(r * 0.85, h / 2, r * 0.85), q);
@@ -1581,6 +1870,13 @@ export class Site9 implements GameMap {
     this.serverLeds.emissiveIntensity = 1.4 + Math.sin(this.time * 9) * Math.sin(this.time * 23.7) * 0.9;
     this.coreGlow.emissiveIntensity = 2.6 + Math.sin(this.time * 1.7) * 0.6;
     this.emergency.emissiveIntensity = this.blackout > 0.05 ? this.blackout * 3 * this.emergencyPulse : 0;
+    // Broken lamps: dead most of the time, stuttering back on in bursts.
+    const t = this.time;
+    const burst = Math.sin(t * 0.9) * Math.sin(t * 2.3 + 1.3) > 0.2;
+    const on = burst ? (Math.sin(t * 61) * Math.sin(t * 23) > -0.35 ? 1 : 0.08) : Math.sin(t * 37) > 0.985 ? 0.7 : 0.03;
+    this.brokenLevel = on * (1 - this.blackout);
+    this.brokenLampMat.emissiveIntensity = 0.02 + 2.6 * this.brokenLevel;
+    this.brokenPool.opacity = 0.42 * this.brokenLevel;
     // Shadow camera follows the player (texel-snapped so shadows don't swim).
     if (focus) {
       const r = this.mobile ? 26 : 38;

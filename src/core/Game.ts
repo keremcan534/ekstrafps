@@ -52,6 +52,7 @@ import { Lighting } from '../game/Lighting';
 import { buildWeaponModel } from '../weapons/WeaponModels';
 import { WeaponLights, weaponLight } from '../fx/WeaponLights';
 import { VIEW_DISTANCE, loadGraphics, type GraphicsSettings } from '../config/Graphics';
+import { DustMotes } from '../fx/DustMotes';
 
 const FIXED_DT = 1 / 120;
 
@@ -196,6 +197,9 @@ export class Game {
   private env: THREE.Texture | null = null;
   private probe = new THREE.LightProbe(undefined, 0);
   private fpsEl: HTMLDivElement | null = null;
+  /** Dust hanging in the air around you. */
+  private dust!: DustMotes;
+  private prevBroken = 0;
   private fpsTimer = 0;
   private stationIndex = 0;
   private helpEl!: HTMLPreElement;
@@ -263,6 +267,8 @@ export class Game {
     // View distance: fewer distant rooms drawn, a closer haze hides where they stop.
     const vd = VIEW_DISTANCE[this.gfx.viewDistance];
     this.scene.fog = new THREE.Fog(this.arena.skyColor, vd.fogNear, vd.fogFar);
+    this.dust = new DustMotes(this.mobile ? 220 : 600);
+    this.scene.add(this.dust.points);
 
     onProgress('Rendering placeholder audio…');
     this.audio = new AudioSystem();
@@ -1378,6 +1384,13 @@ export class Game {
     this.probe.intensity = this.scene.environment ? 0 : this.scene.environmentIntensity * 1.1;
     // Lights out: muzzle flashes light the room (and give shooters away).
     const darkness = this.lighting?.darkness ?? 0;
+    this.dust.update(dt, this.camera.eye, darkness);
+    // Broken lamps spark when they stutter back on (only the ones near you).
+    if (this.arena instanceof Site9) {
+      const lvl = this.arena.brokenLevel;
+      if (lvl > 0.6 && this.prevBroken < 0.3) for (const p of this.arena.brokenLamps) if (p.distanceToSquared(this.player.feet) < 30 * 30) this.impacts.shortOut(p, false);
+      this.prevBroken = lvl;
+    }
     this.muzzleLights.boost = 1 + 3 * darkness;
     this.weapons.flashBoost = 1 + 2 * darkness;
     if (this.arena instanceof Site9) {

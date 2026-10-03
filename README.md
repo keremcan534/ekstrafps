@@ -182,6 +182,8 @@ Vanta Dynamics' research campus, single level, about 176 × 138 m (built at 0.8 
 
 **Facility extras (random spots each game, on the map).** Medical stations ($400, full heal), armor lockers ($1000, plates soak 60% of damage), power breakers (cut the lights / restore power), a supply crate ($950, random weapon, moves after a few uses), sentry turrets ($1500, 60 s for whoever paid), plus ten extra wall weapons. **L** toggles your flashlight (it switches on when the power dies). Site-9 runs at night: a dim fill and moonlight through the skylights, with the light coming from the lamps (pools on the floor, real lights on the fixtures nearest you). With the power out it goes almost black: a few emergency beacons pulse dim red, the air turns to a dark red haze, and on desktop a colour grade (cold shadows, reds kept saturated, heavier vignette) deepens with the dark. Enemy operators who fire show up on the minimap for a moment.
 
+**An abandoned facility.** Seeded clutter (the same every game, kept out of doorways, spawns and buy spots): papers, rubble, cable runs, oil stains and fallen ceiling tiles on the floor; box stacks, cabinets, crates, pallets, drums, gas cylinders and trash bags along the walls (solid); overturned-table-and-sandbag barricades in the big rooms (cover); extinguishers, vents and hanging cables; and a broken lamp in most rooms, hanging off one cable, flickering and sparking. Dust hangs in the air around you.
+
 **Map.** **M** opens the full map: zones, shutter prices, weapons, terminal, you, allies, robots. A rotating minimap sits in the corner. **F** (or **USE** on touch) buys or uses whatever you are looking at.
 
 **Performance.**
