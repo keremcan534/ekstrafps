@@ -36,6 +36,11 @@ export class AudioSystem {
   private lastPick = new WeakMap<object, number>();
   /** 0 = small room (short tails) … 1 = huge hall (long tails, more reverb). Set by the game. */
   space = 0.5;
+  /**
+   * Walls between you and a sound: 0 = clear line … 1 = behind walls. Set by the
+   * game (a ray through the level). Occluded sounds come through muffled and quieter.
+   */
+  occlusion: ((at: THREE.Vector3) => number) | null = null;
 
   constructor() {
     this.ctx = new AudioContext({ latencyHint: 'interactive' });
@@ -194,6 +199,7 @@ export class AudioSystem {
     let gain = opts?.volume ?? 1;
     let pan = 0;
     let dist = 0;
+    let occluded = 0;
     if (opts?.position && ev.bus !== 'ui') {
       const d = this.tmp.subVectors(opts.position, this.listenerPos);
       dist = d.length();
@@ -213,6 +219,10 @@ export class AudioSystem {
         gain *= (1 - k * k) / (1 + dist * 0.12);
       }
       if (dist > 0.01) pan = Math.max(-0.8, Math.min(0.8, d.dot(this.listenerRight) / dist));
+      if (dist > 2.5 && this.occlusion) {
+        occluded = this.occlusion(opts.position);
+        gain *= 1 - 0.42 * occluded;
+      }
     }
     if (gain < 0.01) return;
 
@@ -239,11 +249,40 @@ export class AudioSystem {
       p.connect(bus);
       out = p;
     }
-    // Room reverb send (distant sounds are relatively wetter).
+    // Air and walls: the further a sound travels the more of its top end it loses
+    // (a far gunshot is a dull thump), and through walls it comes out muffled.
+    // The reverb send is taken after the filter (what you hear of another room is muffled too).
+    if (dist > 4) {
+      const gunfire = ev.layers.some((l) => l.range === 'far');
+      let cutoff = 20000 * Math.exp(-dist / (gunfire ? 55 : 30));
+      if (occluded > 0) cutoff *= 1 - 0.78 * occluded;
+      cutoff = Math.max(occluded > 0.5 ? 380 : 900, cutoff);
+      if (cutoff < 16000) {
+        const lp = this.ctx.createBiquadFilter();
+        lp.type = 'lowpass';
+        lp.frequency.value = cutoff;
+        lp.Q.value = 0.6;
+        lp.connect(out);
+        out = lp;
+        if (occluded > 0.5) {
+          // Behind walls: a second pole (steeper) and the body of the sound kept.
+          const lp2 = this.ctx.createBiquadFilter();
+          lp2.type = 'lowpass';
+          lp2.frequency.value = cutoff * 1.4;
+          lp2.Q.value = 0.5;
+          const body = this.ctx.createBiquadFilter();
+          body.type = 'lowshelf';
+          body.frequency.value = 160;
+          body.gain.value = 3;
+          lp2.connect(body).connect(lp);
+          out = lp2;
+        }
+      }
+    }
     let send: GainNode | null = null;
     if (ev.reverb) {
       send = this.ctx.createGain();
-      send.gain.value = ev.reverb * Math.min(1.5, (opts?.volume ?? 1) * 0.6 + 0.4 + (1 - gain) * 0.5) * (0.7 + 0.6 * this.space);
+      send.gain.value = ev.reverb * Math.min(1.5, (opts?.volume ?? 1) * 0.6 + 0.4 + (1 - gain) * 0.5) * (0.7 + 0.6 * this.space) * (1 + 0.5 * occluded);
       send.connect(this.reverbIn);
     }
     // Distance bands: the close blast gives way to the distant report.
@@ -277,7 +316,7 @@ export class AudioSystem {
       const g = this.ctx.createGain();
       g.gain.value = layer.gain * gain * band;
       src.connect(g).connect(out);
-      if (send && !layer.dry) g.connect(send);
+      if (send && !layer.dry) (out === bus || out instanceof StereoPannerNode ? g : out).connect(send);
       src.start(now + (layer.delay ?? 0));
       longest = Math.max(longest, (layer.delay ?? 0) + buf.duration / pitch);
     }

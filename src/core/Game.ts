@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import { LightProbeGenerator } from 'three/examples/jsm/lights/LightProbeGenerator.js';
-import { Physics } from './Physics';
+import { GROUPS, Physics } from './Physics';
 import { Input } from './Input';
 import { DEG, controlPreference, hfovToVfov, isTouchDevice } from './math';
 import { HELP_TEXT, loadSettings, saveSettings } from './LabTools';
@@ -279,6 +279,10 @@ export class Game {
     onProgress('Rendering placeholder audio…');
     this.audio = new AudioSystem();
     await this.audio.init();
+    // Sound through walls: one ray from your ear to the source (a little above it, so a
+    // waist-high counter doesn't count as a wall).
+    const occ = new THREE.Vector3();
+    this.audio.occlusion = (at) => (this.physics.lineOfSight(this.camera.eye, occ.copy(at).setY(Math.max(at.y, 0.6) + 0.4), GROUPS.sight) ? 0 : 1);
 
     this.impacts = new ImpactSystem(this.audio, this.mobile);
     this.scene.add(this.impacts.group);
