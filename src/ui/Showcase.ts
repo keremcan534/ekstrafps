@@ -5,7 +5,8 @@ import type { SoldierPalette } from '../enemies/SoldierSkin';
 import type { WeaponData } from '../weapons/WeaponData';
 import type { Physics } from '../core/Physics';
 import type { NavGrid } from '../ai/NavGrid';
-import type { Humanoid } from '../targets/Humanoid';
+import { Humanoid, defaultPose, type HumanoidPose, type HumanoidSkin } from '../targets/Humanoid';
+import { choirSkin, choirEyes, labSkin } from '../enemies/CivilianSkin';
 
 /** What the showcase needs from the game (Game.showcaseDeps). */
 export interface ShowcaseDeps {
@@ -142,6 +143,57 @@ export class Showcase {
       members: robots.map((r) => r.body.root),
       update: (dt) => robots.forEach((r) => r.update(dt, [], robots)),
     });
+
+    const scav = squad('salvage', ['salvage', 'salvage', 'salvage'], ['saiga12', 'mosin', 'ppsh'], 82);
+    this.lineups.push({ name: 'SALVAGERS', tag: 'SCAVENGERS', text: 'Whatever guns they found, whatever gear still fits. They come for the loot and shoot anyone in the way.', rim: 0xd8a060, key: 0xfff0dc, ...scav });
+
+    // Bodies without a weapon (lab staff, The Choir): posed straight through Humanoid.
+    const posed = (skins: HumanoidSkin[], pose: (i: number, t: number, p: HumanoidPose) => void) => {
+      const bodies = skins.map((skin, i) => {
+        const b = new Humanoid(d.physics, S, skin, {}, {});
+        b.root.position.copy(STAGE).add(new THREE.Vector3((i - 1) * 1.4, 0, i === 1 ? 0.3 : -0.3));
+        b.root.rotation.y = (i - 1) * -0.25;
+        b.reset(false);
+        this.bodies.push(b);
+        return b;
+      });
+      const poses = bodies.map(() => defaultPose());
+      let t = 0;
+      return {
+        members: bodies.map((b) => b.root),
+        update: (dt: number) => {
+          t += dt;
+          bodies.forEach((b, i) => {
+            pose(i, t, poses[i]);
+            b.update(dt, poses[i]);
+          });
+        },
+      };
+    };
+    const choir = posed([choirSkin(0), choirSkin(1), choirSkin(2)], (i, t, p) => {
+      p.idle = false;
+      p.crouch = i === 1 ? 0.15 : 0.4;
+      p.spineX = i === 1 ? 0.2 : 0.42;
+      p.headX = -0.2;
+      p.headY = Math.sin(t * 0.7 + i * 2) * 0.3; // slow, wrong head tilts
+      p.armL = -0.35;
+      p.armR = i === 1 ? -2.6 : -0.75; // the middle one has the blade up
+      p.elbows = i === 1 ? 0.6 : 0.9;
+      choirEyes.emissiveIntensity = 1.4 + Math.sin(t * 3.1) * 0.4;
+    });
+    this.lineups.push({ name: 'THE CHOIR', tag: 'WHEN THE LIGHTS DIE', text: 'They worship the machines. In a blackout they creep up in the dark and rush you with a blade. Keep your flashlight on them.', rim: 0xff1424, key: 0x8a6464, ...choir });
+    const staff = posed([labSkin(0), labSkin(1), labSkin(4)], (i, t, p) => {
+      p.idle = false;
+      const cower = i === 0;
+      p.crouch = cower ? 0.75 : 0.05;
+      p.spineX = cower ? 0.62 : 0.1;
+      p.headX = cower ? 0.45 : 0;
+      p.headY = Math.sin(t * 1.3 + i * 2) * 0.5; // looking round, scared
+      p.armL = cower ? -1.45 : -0.2;
+      p.armR = cower ? -1.45 : -0.2;
+      p.elbows = cower ? 2.45 : 0.4;
+    });
+    this.lineups.push({ name: 'LAB STAFF', tag: 'STILL HIDING IN THE LABS', text: 'The ones who didn’t get out. They panic and run at gunfire; robots hunt them. Shooting one costs you.', rim: 0x9fc4ff, key: 0xf0f6ff, ...staff });
 
     for (const l of this.lineups) for (const m of l.members) m.visible = false;
     this.show(0);

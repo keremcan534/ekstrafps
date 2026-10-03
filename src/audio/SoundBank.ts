@@ -322,6 +322,11 @@ export const SOUND_BANK: Record<string, SoundEvent> = {
   'lift.arrive': { reverb: 0.4, layers: [{ synth: 'lift_ding', gain: 0.7 }, { synth: 'lift_doors', gain: 0.6, delay: 0.5 }], maxDist: 26, maxVoices: 3 },
   'robot.wake': { reverb: 0.3, layers: [{ synth: 'robot_wake', gain: 0.7 }], pitchVariance: 0.12, maxDist: 28, maxVoices: 4 },
   'power.down': { reverb: 0.7, layers: [{ file: 'audio/guns/power_out.wav', gain: 1.0 }, { synth: 'power_down', gain: 0.3, delay: 0.12 }], maxVoices: 1, bus: 'ui' },
+  // The Choir (blackout cult): the rush sting is for you alone (no position), the rest is in the room.
+  'choir.sting': { layers: [{ file: 'audio/guns/choir_sting.wav', gain: 1.0 }], maxVoices: 1, bus: 'ui' },
+  'choir.hiss': { layers: [{ file: 'audio/guns/choir_hiss.wav', gain: 0.9 }], pitchVariance: 0.1, maxVoices: 2, reverb: 0.4, maxDist: 26 },
+  'choir.whisper': { layers: [{ files: ['audio/guns/choir_whisper0.wav', 'audio/guns/choir_whisper1.wav', 'audio/guns/choir_whisper2.wav'], gain: 0.75 }], pitchVariance: 0.08, maxVoices: 3, reverb: 0.5, maxDist: 20 },
+  'choir.slash': { layers: [{ file: 'audio/guns/choir_slash.wav', gain: 1.0 }, { synth: 'impact_flesh', gain: 0.5, delay: 0.15 }], pitchVariance: 0.06, maxVoices: 2, reverb: 0.2, maxDist: 20 },
   'bd.encounter': { layers: [{ files: ['audio/guns/bd_encounter.wav', 'audio/guns/bd_encounter2.wav'], gain: 0.9 }], maxVoices: 1, bus: 'ui' },
   // Extraction: helicopter, evac bunker doors, countdown heartbeat, the theme.
   'heli.approach': { layers: [{ file: 'audio/guns/heli_approach.wav', gain: 1.0 }], maxVoices: 1, bus: 'ui' },

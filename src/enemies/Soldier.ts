@@ -390,7 +390,8 @@ export class Soldier implements LightSource {
     this.state = 'dead';
     // Career stats: only your own kills.
     if (byPlayer(info.hit) && this.team !== 'alpha') {
-      if (this.team !== 'bd') raid.soldiers++;
+      if (this.team === 'salvage') raid.salvage++;
+      else if (this.team !== 'bd') raid.soldiers++;
       else if (this.boss) raid.warden++;
       else raid.bd++;
       if (info.zone === 'head') raid.headshots++;

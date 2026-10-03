@@ -3,8 +3,9 @@
  * the browser. A raid tracks what *you* did (not your AI squad); the end screen
  * turns it into XP and credits:
  *
- *   XP   kills (robot 15, brute 45, rival operator 60, Black Division 90,
- *        The Warden 400, +10 per headshot kill) + 10 per minute alive
+ *   XP   kills (robot 15, brute 45, salvager 50, rival operator 60, Black Division 90,
+ *        The Choir 120, The Warden 400, +10 per headshot kill) + 10 per minute alive
+ *        − 100 per civilian you killed
  *        + placement (4 Teams: 600 / 350 / 200 / 100)
  *        × fate: extracted ×1.5, killed in action ×0.75 (Survival: ×1)
  *   VC   XP / 5, plus 10 % of the cash you carry out (extracted only)
@@ -87,11 +88,14 @@ export const raid = {
   soldiers: 0,
   bd: 0,
   warden: 0,
+  salvage: 0,
+  choir: 0,
+  civilians: 0,
   headshots: 0,
   /** Seconds you were alive (and not in the menu). */
   alive: 0,
   reset(): void {
-    this.robots = this.brutes = this.soldiers = this.bd = this.warden = this.headshots = 0;
+    this.robots = this.brutes = this.soldiers = this.bd = this.warden = this.salvage = this.choir = this.civilians = this.headshots = 0;
     this.alive = 0;
   },
 };
@@ -128,13 +132,16 @@ export function settleRaid(r: RaidResult): Payout {
   add(`Robots destroyed ×${raid.robots}`, raid.robots * 15);
   add(`Brutes destroyed ×${raid.brutes}`, raid.brutes * 45);
   add(`Rival operators ×${raid.soldiers}`, raid.soldiers * 60);
+  add(`Salvagers ×${raid.salvage}`, raid.salvage * 50);
   add(`Black Division ×${raid.bd}`, raid.bd * 90);
+  add(`The Choir ×${raid.choir}`, raid.choir * 120);
   add('The Warden', raid.warden * 400);
   add(`Headshot kills ×${raid.headshots}`, raid.headshots * 10);
   add(`Time alive ${Math.floor(raid.alive / 60)} min`, Math.floor(raid.alive / 60) * 10);
   if (r.place) add(`Placed #${r.place}`, [600, 350, 200, 100][r.place - 1] ?? 0);
   const mult = r.fate === 'extracted' ? 1.5 : r.fate === 'kia' ? 0.75 : 1;
-  const base = lines.reduce((s, [, n]) => s + n, 0);
+  if (raid.civilians) lines.push([`Civilians killed ×${raid.civilians}`, -100 * raid.civilians]);
+  const base = Math.max(0, lines.reduce((s, [, n]) => s + n, 0));
   const xp = Math.round(base * mult);
   const carried = r.fate === 'extracted' ? Math.round(r.cash * 0.1) : 0;
   const credits = Math.round(xp / 5) + carried;
@@ -146,14 +153,14 @@ export function settleRaid(r: RaidResult): Payout {
   p.credits += credits;
   p.raids++;
   if (r.fate === 'extracted') p.extractions++;
-  p.kills += raid.robots + raid.brutes + raid.soldiers + raid.bd + raid.warden;
+  p.kills += raid.robots + raid.brutes + raid.soldiers + raid.bd + raid.warden + raid.salvage + raid.choir;
   saveProfile(p);
   return { lines, mult, xp, credits, before, after: levelOf(p.xp), profile: p };
 }
 
 /** End-screen block for a payout (HTML). */
 export function payoutHtml(pay: Payout): string {
-  const rows = pay.lines.map(([l, n]) => `<div class="pr-row"><span>${l}</span><b>${l.startsWith('Cash') ? `+${n} VC` : `+${n}`}</b></div>`).join('');
+  const rows = pay.lines.map(([l, n]) => `<div class="pr-row${n < 0 ? ' neg' : ''}"><span>${l}</span><b>${l.startsWith('Cash') ? `+${n} VC` : n < 0 ? `${n}` : `+${n}`}</b></div>`).join('');
   const multTxt = pay.mult === 1.5 ? '×1.5 EXTRACTED' : pay.mult === 0.75 ? '×0.75 KILLED IN ACTION' : '';
   const up = pay.after.level > pay.before.level;
   const pct = (pay.after.into / pay.after.need) * 100;

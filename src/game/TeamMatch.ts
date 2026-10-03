@@ -23,8 +23,8 @@ export const TEAM_ROWS: TeamRow[] = [
   { id: 'charlie', name: 'CHARLIE', color: '#9dff4a' },
   { id: 'delta', name: 'DELTA', color: '#d06aff' },
 ];
-const NAME: Record<string, string> = { alpha: 'Vanta', bravo: 'Bravo', charlie: 'Charlie', delta: 'Delta', bd: 'Black Division', robots: 'Robots' };
-const COLOR: Record<string, string> = { alpha: '#4fa8ff', bravo: '#ffa040', charlie: '#9dff4a', delta: '#d06aff', bd: '#ff3b2f', robots: '#bbb' };
+const NAME: Record<string, string> = { alpha: 'Vanta', bravo: 'Bravo', charlie: 'Charlie', delta: 'Delta', bd: 'Black Division', robots: 'Robots', salvage: 'Salvagers', cult: 'The Choir' };
+const COLOR: Record<string, string> = { alpha: '#4fa8ff', bravo: '#ffa040', charlie: '#9dff4a', delta: '#d06aff', bd: '#ff3b2f', robots: '#bbb', salvage: '#c8a070', cult: '#a01020' };
 
 /** Seconds of power-out per raid (the raid ends early when Black Division is wiped). */
 const RAID_TIME = 150;
@@ -88,6 +88,13 @@ export class TeamMatch {
   private time = 0;
   private lastSting = -99;
   private probe = new THREE.Vector3();
+  /**
+   * Salvagers: three scavengers in mismatched gear with whatever guns they found,
+   * roaming for loot and shooting anyone (no score; +$150 a head for whoever
+   * drops them). A crew turns up a few minutes in and again after it's wiped.
+   */
+  readonly scavs: AITeam[] = [];
+  private scavTimer = 150;
   /** Called when the match ends (release the mouse etc.). */
   onEnd: (() => void) | null = null;
   /** Extraction phase: the exits are open. */
@@ -124,7 +131,7 @@ export class TeamMatch {
         const t = info.hit.team;
         this.d.svHud.showBanner('COMMANDER DOWN', 'clear');
         this.d.status.radio(`The Warden is down${t ? ` (${NAME[t] ?? t})` : ''}. +1000 to whoever dropped him.`);
-        if (t && t !== 'bd' && t !== 'robots') this.d.survival.award(t, 1000, info.hit.owner);
+        if (t && t !== 'bd' && t !== 'robots' && t !== 'salvage' && t !== 'cult') this.d.survival.award(t, 1000, info.hit.owner);
       },
       onRaiderSpotsPlayer: () => {
         // The sting: once per encounter, not every time someone re-acquires you.
@@ -177,7 +184,7 @@ export class TeamMatch {
       return new THREE.Vector3(p.x + (Math.random() - 0.5) * err, 0, p.z + (Math.random() - 0.5) * err);
     };
     for (const [a, t] of this.lastShot) {
-      if (this.time - t > 20 || !a.alive || a.team === team || a.team === 'bd') continue;
+      if (this.time - t > 20 || !a.alive || a.team === team || a.team === 'bd' || a.team === 'salvage') continue;
       const d = heard(a.soldier.pos);
       if (d < 90) out.push({ team: a.team, pos: fuzzy(a.soldier.pos, d) });
     }
@@ -213,6 +220,7 @@ export class TeamMatch {
   *agents(): Generator<TeamAgent> {
     for (const t of this.teams) yield* t.agents;
     for (const t of this.raiders) yield* t.agents;
+    for (const t of this.scavs) yield* t.agents;
   }
 
   pushCombatants(out: Combatant[]): void {
@@ -274,6 +282,29 @@ export class TeamMatch {
       this.d.svHud.showBanner('BLACK DIVISION INCOMING', 'raid');
       this.d.status.radio(`Black Division breach: ${where}. They kill everyone. Breakers restore power.`);
     }, 4500);
+  }
+
+  /** Salvagers: one crew at a time, back a while after it's wiped. */
+  private updateScavs(dt: number): void {
+    if (this.extracting) return;
+    const crew = this.scavs[0];
+    if (crew && crew.aliveCount > 0) return;
+    this.scavTimer -= dt;
+    if (this.scavTimer > 0) return;
+    this.scavTimer = 200 + Math.random() * 80;
+    const at = this.raidPoint(null);
+    if (crew) crew.redeploy(at);
+    else {
+      const def: TeamDef = { id: 'salvage', name: 'Salvagers', color: COLOR.salvage, palette: 'salvage', style: 'reckless', start: at, economy: false };
+      this.scavs.push(new AITeam(def, this.ctx, 3));
+    }
+    // Scavenged guns: cheap and mixed.
+    const junk = ['pump_shotgun', 'mosin', 'kar98', 'ppsh', 'glock18', 'mp5', 'saiga12', 'heavy_pistol'];
+    for (const a of this.scavs[0].agents) {
+      a.arm(junk[(Math.random() * junk.length) | 0]);
+      a.baseSkill = a.soldier.skill = 0.75;
+    }
+    this.d.status.radio(`Salvagers spotted near ${this.d.map.rooms.find((r) => at.x >= r.rect[0] && at.x <= r.rect[2] && at.z >= r.rect[1] && at.z <= r.rect[3])?.name ?? 'the facility'}. Scavengers: they shoot anyone.`, 'VANTA OPS', true);
   }
 
   /** Returns where they landed (radio). */
@@ -608,6 +639,8 @@ export class TeamMatch {
     }
     for (const t of this.teams) t.update(dt, world);
     for (const t of this.raiders) t.update(dt, world);
+    for (const t of this.scavs) t.update(dt, world);
+    this.updateScavs(dt);
     for (const a of [...this.agents(), ...this.d.allies()]) {
       const ammo = a.soldier.ammo;
       const prev = this.lastAmmo.get(a);

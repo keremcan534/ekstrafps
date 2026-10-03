@@ -156,7 +156,7 @@ export class Survival {
    * gets a small share, and the team's race score goes up (raids, the win).
    */
   award(team: string, n: number, owner?: object | null): void {
-    if (!team || team === 'bd' || team === 'robots' || this.over) return;
+    if (!team || team === 'bd' || team === 'robots' || team === 'salvage' || team === 'cult' || this.over) return;
     const members = this.deps.members?.(team);
     if (!members) {
       if (team === 'alpha') this.addPoints(n);

@@ -37,7 +37,7 @@ export interface SoldierMaterials {
 }
 
 /** Black Division (all black, green NVG) or Vanta Security (navy, white helmet, cyan NVG). */
-export type SoldierPalette = 'bd' | 'bdboss' | 'vanta' | 'bravo' | 'charlie' | 'delta';
+export type SoldierPalette = 'bd' | 'bdboss' | 'vanta' | 'bravo' | 'charlie' | 'delta' | 'salvage';
 
 const shared = new Map<SoldierPalette, SoldierMaterials>();
 
@@ -55,6 +55,8 @@ export function soldierMaterials(palette: SoldierPalette = 'bd'): SoldierMateria
     bravo: [0x8a7458, 0x6e5c44, 0x5d4e3a, 0xa38a68, 0xffa040, 0xffa040],
     charlie: [0x4a5536, 0x3a4429, 0x313a23, 0x55613c, 0x9dff4a, 0x9dff4a],
     delta: [0x5a5f6a, 0x444852, 0x3a3e46, 0x7a7f8a, 0xd06aff, 0xd06aff],
+    // Salvagers: faded denim / workwear, a dirty orange vest, a scuffed olive helmet.
+    salvage: [0x4c5a6b, 0x8a4a1e, 0x5b4a36, 0x55603f, 0xffb84a, 0xffb84a],
   };
   const [cFab, cGear, cPlate, cHelm, cGlow, cStrobe] = P[palette];
   m = {
@@ -152,12 +154,14 @@ const UPPER = 0.29;
  */
 export function soldierSkin(health: number, palette: SoldierPalette = 'bd', kit = 0): HumanoidSkin {
   const m = soldierMaterials(palette);
-  const team = palette === 'bravo' || palette === 'charlie' || palette === 'delta';
+  const team = palette === 'bravo' || palette === 'charlie' || palette === 'delta' || palette === 'salvage';
   // Your team wears a hooded field kit instead of helmet + NVG.
   const hooded = palette === 'vanta';
   // Black Division: respirators under the NVG; the commander adds a fur-hooded parka and heavier plates.
   const bd = palette === 'bd' || palette === 'bdboss';
   const boss = palette === 'bdboss';
+  // Salvagers: scavenged gear, no night vision or IR strobe.
+  const scav = palette === 'salvage';
   const legs = ([-1, 1] as const).flatMap((side): PartDef[] => [
     {
       name: side === 1 ? 'thighR' : 'thighL', parent: 'pelvis', pos: [0.1 * side, -0.05, 0], side,
@@ -382,15 +386,17 @@ export function soldierSkin(health: number, palette: SoldierPalette = 'bd', kit 
               b.cylinder(m.steel, 0.023, 0.008, [x, 0.375, 0.2], [-0.5, 0, 0], 12);
               b.cylinder(m.lens, 0.018, 0.004, [x, 0.378, 0.205], [-0.5, 0, 0], 12);
             }
-          } else {
+          } else if (!scav) {
             // Quad NVG on a flip-down mount: four faintly glowing tubes.
             rbox(b, m.gear, [0.05, 0.05, 0.035], [0, 0.275, 0.135]);
             rbox(b, m.gear, [0.15, 0.055, 0.045], [0, 0.205, 0.135]);
             for (const x of [-0.055, -0.019, 0.019, 0.055]) b.cylinder(m.helmet, 0.018, 0.05, [x, 0.19, 0.17], [Math.PI / 2, 0, 0], 10);
             for (const x of [-0.055, -0.019, 0.019, 0.055]) b.cylinder(m.tubes, 0.014, 0.005, [x, 0.19, 0.196], [Math.PI / 2, 0, 0], 10);
           }
-          rbox(b, m.gear, [0.07, 0.04, 0.05], [0, 0.29, -0.13]); // counterweight
-          rbox(b, m.strobe, [0.022, 0.022, 0.022], [0.0, 0.322, -0.12]);
+          if (!scav) {
+            rbox(b, m.gear, [0.07, 0.04, 0.05], [0, 0.29, -0.13]); // counterweight
+            rbox(b, m.strobe, [0.022, 0.022, 0.022], [0.0, 0.322, -0.12]);
+          } else rbox(b, m.trim, [0.26, 0.03, 0.26], [0, 0.245, -0.005]); // taped band round the helmet
         },
         colliders: hooded
           ? [{ half: [0.115, 0.14, 0.125], center: [0, 0.16, 0], mass: 4, zone: 'head', surface: 'flesh' }]

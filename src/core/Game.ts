@@ -54,6 +54,7 @@ import { WeaponLights, weaponLight } from '../fx/WeaponLights';
 import { VIEW_DISTANCE, loadGraphics, type GraphicsSettings } from '../config/Graphics';
 import { DustMotes } from '../fx/DustMotes';
 import { raid } from '../game/Progress';
+import { Inhabitants } from '../game/Inhabitants';
 import type { ShowcaseDeps } from '../ui/Showcase';
 
 const FIXED_DT = 1 / 120;
@@ -135,6 +136,9 @@ export class Game {
   private giveUpBtn: HTMLButtonElement | null = null;
   /** Facility power + flashlight (Site-9). */
   lighting: Lighting | null = null;
+  /** Lab staff and The Choir (Site-9). */
+  inhabitants: Inhabitants | null = null;
+  private prey = { feet: new THREE.Vector3(), eye: new THREE.Vector3(), look: new THREE.Vector3(0, 0, -1), alive: true };
   /** You picking a downed operator up. */
   private reviving: { a: TeamAgent; t: number } | null = null;
   private reviveBar: HTMLDivElement | null = null;
@@ -584,6 +588,25 @@ export class Game {
       },
       walletOf: (owner) => (owner === this.player ? this.survival!.playerWallet : (agentBySoldier.get(owner) ?? null)),
     });
+    this.inhabitants = new Inhabitants({
+      physics: this.physics,
+      scene: this.scene,
+      nav: this.nav,
+      map,
+      audio: this.audio,
+      lighting: this.lighting,
+      survival: this.survival,
+      mobile: this.mobile,
+      prey: this.prey,
+      hurtPlayer: (d, from) => this.hurtPlayer(d, from),
+      jolt: () => {
+        this.camera.addPunch(0.09, (Math.random() - 0.5) * 0.12, (Math.random() - 0.5) * 0.2);
+        this.camera.addShake(0.9);
+        Haptics.pulse(120);
+      },
+      toast: (t) => this.hud.toast(t, 2),
+      radio: (t) => this.status.radio(t, 'VANTA OPS', true),
+    });
     this.health.autoRespawn = false;
     const onDeath = this.health.onDeath;
     this.health.onDeath = () => {
@@ -851,6 +874,14 @@ export class Game {
     }
     this.match?.pushCombatants(w);
     for (const r of sv.robots) if (r.alive) w.push(this.robotCombatant(r));
+    // Lab staff and The Choir (they come out in the dark).
+    const prey = this.prey;
+    prey.feet.copy(this.player.feet);
+    prey.eye.copy(this.camera.eye);
+    this.camera.getAimDirection(this.player, prey.look);
+    prey.alive = !this.health.dead;
+    this.inhabitants?.update(dt);
+    this.inhabitants?.combatants(w);
 
     // Your squad's brain; your spot counts as taken (they don't stand on you).
     this.allySquad?.update(dt);
@@ -960,6 +991,7 @@ export class Game {
     bodies.length = 0;
     for (const c of w) if (c.kind === 'soldier') bodies.push(c);
     sv.allyBodies = bodies;
+    this.inhabitants?.meleeTargets(bodies);
   }
 
   /** Vanta contractor from the security terminal (max 3 alive). */

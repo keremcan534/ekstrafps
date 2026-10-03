@@ -395,3 +395,4 @@ kbd, .sv-key {
 .pr-level em { font-style: normal; color: rgba(255, 255, 255, 0.55); }
 .pr-level.up b { color: #ffb05a; }
 .menu-panel:not(.closed) ~ .showcase-cap { display: none; }
+.pr-row.neg b, .pr-row.neg span { color: #ff6a5a; }
