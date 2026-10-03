@@ -13,11 +13,12 @@ const base = THREE.Object3D.prototype.updateMatrixWorld;
  */
 export function skipHiddenMatrices(scene: THREE.Object3D): void {
   scene.updateMatrixWorld = function (force = false) {
-    update(this, force);
+    updateVisibleMatrices(this, force);
   };
 }
 
-function update(o: THREE.Object3D, force: boolean): void {
+/** updateMatrixWorld for `o` and its visible descendants (hidden ones are flagged to catch up when shown). */
+export function updateVisibleMatrices(o: THREE.Object3D, force: boolean): void {
   if (o.matrixAutoUpdate) o.updateMatrix();
   if (o.matrixWorldNeedsUpdate || force) {
     if (o.parent === null) o.matrixWorld.copy(o.matrix);
@@ -35,6 +36,6 @@ function update(o: THREE.Object3D, force: boolean): void {
     if (!c.matrixWorldAutoUpdate && !force) continue;
     // Classes with their own pass (skinned meshes keep their bind matrix, cameras their inverse): theirs.
     if (Object.getPrototypeOf(c).updateMatrixWorld !== base) c.updateMatrixWorld(force);
-    else update(c, force);
+    else updateVisibleMatrices(c, force);
   }
 }

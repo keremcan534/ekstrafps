@@ -58,6 +58,8 @@ export interface Part {
   group: THREE.Bone;
   body: RAPIER.RigidBody;
   colliders: RAPIER.Collider[];
+  /** What the colliders are built from (rebuilt when a pooled body comes back). */
+  shapes: PartDef['colliders'];
   worldPos: THREE.Vector3;
   worldQuat: THREE.Quaternion;
   prevPos: THREE.Vector3;
@@ -316,15 +318,24 @@ export class Humanoid {
     def.build(b);
     this.pendingGeo.push(b.take());
 
+    const part = {
+      name: def.name, side: def.side, parent, group, colliders: [], shapes: def.colliders,
+      worldPos: new THREE.Vector3(), worldQuat: new THREE.Quaternion(), prevPos: new THREE.Vector3(), vel: new THREE.Vector3(), prevVy: 0,
+    } as unknown as Part;
+    this.createBody(part);
+    this.parts.push(part);
+    this.byName.set(def.name, part);
+  }
+
+  /** A part's kinematic hitbox body and its colliders (registered for bullet hits). */
+  private createBody(part: Part): void {
     const body = this.physics.world.createRigidBody(
       // CCD only once it falls as a ragdoll (die()); kinematic hitboxes don't need it.
       RAPIER.RigidBodyDesc.kinematicPositionBased().setLinearDamping(0.08).setAngularDamping(1.1),
     );
-    const part: Part = {
-      name: def.name, side: def.side, parent, group, body, colliders: [],
-      worldPos: new THREE.Vector3(), worldQuat: new THREE.Quaternion(), prevPos: new THREE.Vector3(), vel: new THREE.Vector3(), prevVy: 0,
-    };
-    for (const c of def.colliders) {
+    part.body = body;
+    part.colliders = [];
+    for (const c of part.shapes) {
       const col = this.physics.world.createCollider(
         RAPIER.ColliderDesc.cuboid(...c.half)
           .setTranslation(...c.center)
@@ -345,8 +356,29 @@ export class Humanoid {
         onBulletHit: (h, o) => this.onHit(h, part, c, surface, o),
       });
     }
-    this.parts.push(part);
-    this.byName.set(def.name, part);
+  }
+
+  /**
+   * Pooled and out of play: no bodies in the physics world at all. Rapier walks every
+   * body and collider each step, disabled ones too (~370 parked hitboxes cost as much as
+   * the live ones); they're rebuilt from the same shapes when the body comes back.
+   */
+  private detached = false;
+
+  private detach(): void {
+    if (this.detached) return;
+    this.detached = true;
+    for (const part of this.parts) {
+      for (const c of part.colliders) this.physics.unregister(c);
+      this.physics.world.removeRigidBody(part.body);
+      part.colliders = [];
+    }
+  }
+
+  private attach(): void {
+    if (!this.detached) return;
+    this.detached = false;
+    for (const part of this.parts) this.createBody(part);
   }
 
   // ---------------------------------------------------------------- hits
@@ -439,6 +471,7 @@ export class Humanoid {
 
   /** Teammate got them up. */
   revive(): void {
+    this.attach();
     if (!this.downed) return;
     this.downed = false;
     this.health.health = this.health.maxHealth * 0.5;
@@ -446,6 +479,7 @@ export class Humanoid {
 
   /** Bleed-out ticking (call every frame). */
   tickDowned(dt: number): void {
+    if (this.detached) return;
     if (!this.downed) return;
     this.bleed -= dt;
     if (this.bleed <= 0) {
@@ -460,6 +494,7 @@ export class Humanoid {
 
   /** Melee blow (rogue robot swing): body damage + a hard shove. */
   meleeHit(damage: number, from: THREE.Vector3, impulse = 1.8): void {
+    if (this.detached) return;
     if (!this.alive) return;
     const torso = this.part('torso');
     torso.group.getWorldPosition(this.tmp);
@@ -572,6 +607,7 @@ export class Humanoid {
   // ---------------------------------------------------------------- death
 
   private die(hit: BulletHit, struck: Part, zone: HitZone): void {
+    this.attach();
     // A hidden body may be a frame behind (LOD): pose it now so the ragdoll starts
     // from the current pose with fresh velocities.
     this.setFrozen(false);
@@ -679,12 +715,16 @@ export class Humanoid {
   setActive(active: boolean): void {
     this.setFrozen(false);
     this.root.visible = active;
-    for (const part of this.parts) {
-      for (const c of part.colliders) c.setEnabled(active);
-      if (!active) part.body.setEnabled(false);
-      else part.body.setEnabled(true);
+    if (!active) {
+      this.removeJoints();
+      this.detach();
+      return;
     }
-    if (!active) this.removeJoints();
+    this.attach();
+    for (const part of this.parts) {
+      for (const c of part.colliders) c.setEnabled(true);
+      part.body.setEnabled(true);
+    }
   }
 
   /** Phones: many bodies in the shadow pass get expensive. */
@@ -694,6 +734,7 @@ export class Humanoid {
 
   /** Back to a living, standing body at the root's current transform. */
   reset(fromFloor: boolean): void {
+    this.attach();
     this.removeJoints();
     this.setFrozen(false);
     this.lodDt = 0;
@@ -728,6 +769,8 @@ export class Humanoid {
    *              phones a hidden body that hasn't moved then skips posing entirely.
    */
   update(dt: number, pose: HumanoidPose, still = false): void {
+    // Pooled (out of play): nothing to pose, no hitboxes to move.
+    if (this.detached) return;
     if (!this.alive) {
       // A settled corpse costs nothing until something wakes it (once the knees are limp;
       // the frame it falls asleep still syncs the bones one last time).

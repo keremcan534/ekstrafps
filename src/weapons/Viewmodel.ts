@@ -5,6 +5,7 @@ import { DEG, clamp, damp, randSign, smoothstep } from '../core/math';
 import { feel } from '../config/Feel';
 import { MuzzleFlash } from '../fx/MuzzleFlash';
 import { buildWeaponModel, compactViewRig, type WeaponRig } from './WeaponModels';
+import { updateVisibleMatrices } from '../core/VisibleMatrices';
 import { WeaponAnimator, type PoseOffset } from './WeaponAnimator';
 import type { Weapon } from './Weapon';
 import type { WeaponData } from './WeaponData';
@@ -442,7 +443,9 @@ export class Viewmodel {
       this.camera.updateProjectionMatrix();
     }
     this.flash.update(dt);
-    this.pivot.updateMatrixWorld(true);
+    // The weapon in hand only: the fifteen holstered rigs (and the parts merged into
+    // their anchors) are hidden. Points under hidden parts are read with getWorldPosition.
+    updateVisibleMatrices(this.pivot, true);
   }
 
   /** World position of a point on the weapon (muzzle, eject port, laser). */

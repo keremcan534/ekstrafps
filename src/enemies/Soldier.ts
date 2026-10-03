@@ -109,6 +109,8 @@ export class Soldier implements LightSource {
   private pathIndex = 0;
   private steerPt = v3();
   private steerPath = [this.steerPt];
+  /** A path asked of the path worker (see setPath): where to, and the goal it was asked for. */
+  private pathWant: { to: THREE.Vector3; asked: THREE.Vector3 } | null = null;
   moveSpeed = WALK;
   /** Explicit destination for combat/search positions. */
   readonly goal = v3();
@@ -485,17 +487,54 @@ export class Soldier implements LightSource {
 
   // ------------------------------------------------------------ movement
 
+  /**
+   * Walk to `to` along a path. The search runs on the path worker: until its answer is
+   * in (a frame or two), the soldier keeps to the path it has and update() collects the
+   * answer, so this reports success for a request in flight (a "not yet" is no failure).
+   */
   setPath(to: THREE.Vector3, speed: number): boolean {
+    this.moveSpeed = speed;
+    if (this.pathWant) {
+      this.pathWant.to.copy(to);
+      return true;
+    }
+    return this.askPath(to);
+  }
+
+  private askPath(to: THREE.Vector3): boolean {
     // Around other teams' barricades when there's a way; through them (breaching) when there isn't.
     const nav = this.deps.nav;
-    let p = nav.findPath(this.pos, to, 6000, OBSTACLES.length ? this.team : undefined);
+    let p = nav.findPathFor(this, this.pos, to, 6000, OBSTACLES.length ? this.team : undefined);
+    if (!p && nav.lastTruncated) {
+      // Asked (or the frame's search budget is spent): keep walking, update() asks again.
+      const w = (this.pathWant ??= { to: v3(), asked: v3() });
+      w.to.copy(to);
+      w.asked.copy(to);
+      return true;
+    }
+    this.pathWant = null;
     // A search that ran out of nodes would only run out again without the barricades:
-    // retry only when the way was really blocked. (NavGrid.lastTruncated may not exist yet.)
-    if (!p && OBSTACLES.length && !(nav as { lastTruncated?: boolean }).lastTruncated) p = nav.findPath(this.pos, to);
+    // retry only when the way was really blocked.
+    if (!p && OBSTACLES.length) p = nav.findPath(this.pos, to);
     this.path = p;
     this.pathIndex = 0;
-    this.moveSpeed = speed;
     return !!p;
+  }
+
+  /** Collect a path asked for in setPath; the goal moved meanwhile (> 2 m): ask again. */
+  private pollPath(): void {
+    const w = this.pathWant;
+    if (!w) return;
+    const nav = this.deps.nav;
+    const p = nav.findPathFor(this, this.pos, w.asked, 6000, OBSTACLES.length ? this.team : undefined);
+    if (!p && nav.lastTruncated) return;
+    this.pathWant = null;
+    if (w.to.distanceToSquared(w.asked) > 4) {
+      this.askPath(w.to);
+      return;
+    }
+    this.path = p ?? (OBSTACLES.length ? nav.findPath(this.pos, w.asked) : null);
+    this.pathIndex = 0;
   }
 
   get pathDone(): boolean {
@@ -504,10 +543,12 @@ export class Soldier implements LightSource {
 
   stop(): void {
     this.path = null;
+    this.pathWant = null;
   }
 
   /** Steer toward `target` directly (formation following on the leader's trail). */
   steerTo(target: THREE.Vector3, speed: number): void {
+    this.pathWant = null;
     // One persistent single-point path (no allocation every frame while following).
     this.steerPt.copy(target);
     this.path = this.steerPath;
@@ -527,6 +568,7 @@ export class Soldier implements LightSource {
       this.beamOn = false;
     }
     this.time += dt;
+    this.pollPath();
     if (!this.alive) {
       this.body.update(dt, this.pose);
       return;

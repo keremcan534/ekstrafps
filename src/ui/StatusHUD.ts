@@ -145,8 +145,8 @@ export class StatusHUD {
     const hurt = Math.max(0, 0.4 - health / max) * 1.2;
     this.dmgShown = this.setVignette(this.dmg, this.dmgLevel + hurt, this.dmgShown);
     this.suppShown = this.setVignette(this.supp, this.suppLevel, this.suppShown);
-    this.commsTime -= dt;
-    if (this.commsTime <= 0) this.comms.classList.remove('show');
+    // Once: classList.remove writes the class attribute (a style recalc) even when it's absent.
+    if (this.commsTime > 0 && (this.commsTime -= dt) <= 0) this.comms.classList.remove('show');
 
     // Indicators: angle of the shooter relative to where we look, on screen.
     const yaw = Math.atan2(camera.matrixWorld.elements[8], camera.matrixWorld.elements[10]);

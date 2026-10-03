@@ -323,9 +323,12 @@ export class RogueRobot {
           this.path = null;
           this.repath = 1.5 + Math.random();
         } else if (this.repath <= 0) {
-          this.path = this.nav.findPath(this.pos, best.pos, 4000);
-          this.pathIndex = 0;
-          this.repath = this.path ? 0.7 + Math.random() * 0.4 : 1.2 + Math.random() * 0.8;
+          const path = this.nav.findPathFor(this, this.pos, best.pos, 4000);
+          if (path || !this.nav.lastTruncated) {
+            this.path = path;
+            this.pathIndex = 0;
+            this.repath = path ? 0.7 + Math.random() * 0.4 : 1.2 + Math.random() * 0.8;
+          } else this.repath = 0.05; // asked the path worker: keep the current path, collect the answer next frame
         }
         if (this.path && this.pathIndex < this.path.length) {
           const wp = this.path[this.pathIndex];

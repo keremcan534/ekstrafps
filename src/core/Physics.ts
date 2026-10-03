@@ -150,6 +150,11 @@ export class Physics {
     this.receivers.set(collider.handle, receiver);
   }
 
+  /** Forget a collider about to be removed (Rapier reuses handles: a stale entry would take a new collider's hits). */
+  unregister(collider: RAPIER.Collider): void {
+    this.receivers.delete(collider.handle);
+  }
+
   /** Keep a mesh in sync with a dynamic rigid body. */
   addSynced(body: RAPIER.RigidBody, object: THREE.Object3D): void {
     this.synced.push({ body, object });

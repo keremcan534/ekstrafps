@@ -1,8 +1,8 @@
 import * as THREE from 'three';
 import { RAPIER, G, groups, type Physics } from '../core/Physics';
-import { OBSTACLES, obstacleAt } from '../game/Obstacles';
-
-const BLOCKED = 255;
+import { OBSTACLES } from '../game/Obstacles';
+import { trailerMode } from '../../production/trailer/capture/determinism';
+import { BLOCKED, PathSearch } from './PathSearch';
 /** Path nodes per frame on desktop (phones set a lower NavGrid.frameBudget). */
 const DESKTOP_FRAME_BUDGET = 9000;
 
@@ -12,21 +12,18 @@ const DESKTOP_FRAME_BUDGET = 9000;
  * body-sized box above it. Cells next to walls cost more, so paths keep a
  * little distance from cover instead of scraping along it.
  *
- * findPath(): 8-way A* + line-of-sight smoothing (string pulling).
+ * findPath(): 8-way A* + line-of-sight smoothing (string pulling), on this thread
+ * under a per-frame budget. findPathFor(): the same search on the path worker's own
+ * CPU core (src/ai/pathWorker.ts): the answer comes a frame or two later, without
+ * costing this thread anything. The search code is shared (src/ai/PathSearch.ts).
  */
 export class NavGrid {
   readonly cols: number;
   readonly rows: number;
   /** 0 = walkable (higher = closer to walls), BLOCKED = solid. */
   private cost: Uint8Array;
-  // A* scratch, reused between searches.
-  private g: Float32Array;
-  private parent: Int32Array;
-  private stamp: Uint32Array;
-  private closed: Uint32Array;
-  private search = 0;
-  private heap: number[] = [];
-  private heapF: number[] = [];
+  /** The A* (scratch arrays reused between searches). */
+  private searcher!: PathSearch;
   private physicsRef: Physics;
   private agentRadius: number;
 
@@ -46,10 +43,6 @@ export class NavGrid {
     this.rows = Math.ceil((maxZ - minZ) / cell);
     const n = this.cols * this.rows;
     this.cost = new Uint8Array(n);
-    this.g = new Float32Array(n);
-    this.parent = new Int32Array(n);
-    this.stamp = new Uint32Array(n);
-    this.closed = new Uint32Array(n);
 
     const world = physics.world;
     // Scene queries only see colliders after a step (the broad phase is built there).
@@ -99,6 +92,8 @@ export class NavGrid {
       }
     }
     for (let i = 0; i < n; i++) if (this.cost[i] !== BLOCKED) this.cost[i] = near[i];
+    this.searcher = new PathSearch({ cost: this.cost, cols: this.cols, rows: this.rows, minX, minZ, cell });
+    this.startWorker();
   }
 
   /** Re-probe cells in a rectangle (a door opened / an obstacle moved). Call after a physics step. */
@@ -116,6 +111,12 @@ export class NavGrid {
         const blocked = !!world.intersectionWithShape({ x, y: 1.0, z }, rot, body, undefined, solid);
         this.cost[r * this.cols + c] = blocked ? BLOCKED : 0;
       }
+    }
+    // The worker's copy of the grid.
+    if (this.worker) {
+      const i0 = Math.max(0, r0) * this.cols;
+      const i1 = (Math.min(this.rows - 1, r1) + 1) * this.cols;
+      this.worker.postMessage({ type: 'cells', at: i0, cost: this.cost.slice(i0, i1) });
     }
   }
 
@@ -167,53 +168,16 @@ export class NavGrid {
 
   /** Nearest walkable cell centre (spiral search), or null. */
   nearestWalkable(x: number, z: number, out: THREE.Vector3, maxRadius = 6): THREE.Vector3 | null {
-    const [c0, r0] = this.cellOf(x, z);
-    const maxR = Math.ceil(maxRadius / this.cell);
-    for (let rad = 0; rad <= maxR; rad++) {
-      let best = -1;
-      let bestD = Infinity;
-      for (let dr = -rad; dr <= rad; dr++) {
-        for (let dc = -rad; dc <= rad; dc++) {
-          if (Math.max(Math.abs(dc), Math.abs(dr)) !== rad) continue;
-          const c = c0 + dc;
-          const r = r0 + dr;
-          if (!this.inside(c, r) || this.cost[r * this.cols + c] === BLOCKED) continue;
-          const d = dc * dc + dr * dr;
-          if (d < bestD) {
-            bestD = d;
-            best = r * this.cols + c;
-          }
-        }
-      }
-      if (best >= 0) return this.center(best, out);
-    }
-    return null;
+    const p = this.nearTmp;
+    if (!this.searcher.nearestWalkable(x, z, p, maxRadius)) return null;
+    return out.set(p.x, 0, p.z);
   }
-
-  private center(i: number, out: THREE.Vector3): THREE.Vector3 {
-    const c = i % this.cols;
-    const r = (i / this.cols) | 0;
-    return out.set(this.minX + (c + 0.5) * this.cell, 0, this.minZ + (r + 0.5) * this.cell);
-  }
+  private nearTmp = { x: 0, z: 0 };
 
   /** Straight walk a → b stays on walkable cells (supercover DDA). */
   clearLine(ax: number, az: number, bx: number, bz: number): boolean {
-    const dx = bx - ax;
-    const dz = bz - az;
-    const len = Math.hypot(dx, dz);
-    const steps = Math.ceil(len / (this.cell * 0.4));
-    for (let k = 0; k <= steps; k++) {
-      const t = steps === 0 ? 0 : k / steps;
-      if (!this.walkable(ax + dx * t, az + dz * t)) {
-        this.samples += k + 1;
-        return false;
-      }
-    }
-    this.samples += steps + 1;
-    return true;
+    return this.searcher.clearLine(ax, az, bx, bz);
   }
-  /** Cell probes made by clearLine / blockedByObstacle (findPath charges its smoothing to the frame budget). */
-  private samples = 0;
 
   /**
    * Smoothed path from a to b (world XZ). Returns waypoints excluding the start,
@@ -238,6 +202,7 @@ export class NavGrid {
   beginFrame(): void {
     this.frameUsed = 0;
     this.lateSearches = 0;
+    if (this.worker && OBSTACLES.length + this.obstacleSig.length > 0) this.syncObstacles();
   }
 
   /**
@@ -245,7 +210,6 @@ export class NavGrid {
    *                  know them: robots walk into them on purpose and tear them down).
    */
   findPath(from: THREE.Vector3, to: THREE.Vector3, maxNodes = 6000, avoidTeam?: string): THREE.Vector3[] | null {
-    const avoid = avoidTeam !== undefined && OBSTACLES.length > 0;
     this.lastTruncated = false;
     const strict = this.lowSpec || this.frameBudget < DESKTOP_FRAME_BUDGET;
     const wanted = maxNodes;
@@ -262,148 +226,99 @@ export class NavGrid {
       // Budget spent this frame: short searches still go through (nearby moves never starve).
       maxNodes = Math.min(maxNodes, 700);
     }
-    const start = this.nearestWalkable(from.x, from.z, new THREE.Vector3(), 2);
-    const goal = this.nearestWalkable(to.x, to.z, new THREE.Vector3(), 4);
-    if (!start || !goal) return null;
-    const [sc, sr] = this.cellOf(start.x, start.z);
-    const [gc, gr] = this.cellOf(goal.x, goal.z);
-    const si = sr * this.cols + sc;
-    const gi = gr * this.cols + gc;
-    const id = ++this.search;
-    const h = (i: number) => {
-      const dc = Math.abs((i % this.cols) - gc);
-      const dr = Math.abs(((i / this.cols) | 0) - gr);
-      return Math.max(dc, dr) + 0.414 * Math.min(dc, dr);
-    };
-    this.heap.length = 0;
-    this.heapF.length = 0;
-    this.stamp[si] = id;
-    this.g[si] = 0;
-    this.parent[si] = -1;
-    this.push(si, h(si));
-    let expanded = 0;
-    let found = false;
-    while (this.heap.length) {
-      const cur = this.pop();
-      if (this.closed[cur] === id) continue;
-      this.closed[cur] = id;
-      if (cur === gi) {
-        found = true;
-        break;
-      }
-      if (++expanded > maxNodes) {
-        // Cut short by the frame budget rather than the caller's own limit.
-        if (maxNodes < wanted) this.lastTruncated = true;
-        break;
-      }
-      const c = cur % this.cols;
-      const r = (cur / this.cols) | 0;
-      for (let dr = -1; dr <= 1; dr++) {
-        for (let dc = -1; dc <= 1; dc++) {
-          if (!dc && !dr) continue;
-          const nc = c + dc;
-          const nr = r + dr;
-          if (!this.inside(nc, nr)) continue;
-          const ni = nr * this.cols + nc;
-          if (this.cost[ni] === BLOCKED || this.closed[ni] === id) continue;
-          if (avoid && obstacleAt(this.minX + (nc + 0.5) * this.cell, this.minZ + (nr + 0.5) * this.cell, 0.4, avoidTeam)) continue;
-          // No corner cutting.
-          if (dc && dr && (this.cost[r * this.cols + nc] === BLOCKED || this.cost[nr * this.cols + c] === BLOCKED)) continue;
-          const step = (dc && dr ? 1.414 : 1) * (1 + this.cost[ni] * 0.6);
-          const ng = this.g[cur] + step;
-          if (this.stamp[ni] !== id || ng < this.g[ni]) {
-            this.stamp[ni] = id;
-            this.g[ni] = ng;
-            this.parent[ni] = cur;
-            this.push(ni, ng + h(ni));
-          }
-        }
-      }
-    }
-    this.frameUsed += expanded + 50;
-    if (!found) return null;
-    const cells: number[] = [];
-    for (let i = gi; i !== -1; i = this.parent[i]) cells.push(i);
-    cells.reverse();
-    // String pulling: keep only the corners we can't walk straight past.
-    const pts = cells.map((i) => this.center(i, new THREE.Vector3()));
-    pts[pts.length - 1].set(to.x, 0, to.z);
-    if (!this.walkable(to.x, to.z)) pts[pts.length - 1].copy(goal);
-    const out: THREE.Vector3[] = [];
-    let anchor = new THREE.Vector3(from.x, 0, from.z);
-    let k = 0;
-    this.samples = 0;
-    while (k < pts.length - 1) {
-      let far = k + 1;
-      // Look ahead at most ~20 m: full-length scans are quadratic on long paths.
-      for (let j = Math.min(pts.length - 1, k + 40); j > k + 1; j--) {
-        if (this.clearLine(anchor.x, anchor.z, pts[j].x, pts[j].z) && !(avoid && this.blockedByObstacle(anchor, pts[j], avoidTeam))) {
-          far = j;
-          break;
-        }
-      }
-      out.push(pts[far]);
-      anchor = pts[far];
-      k = far;
-    }
+    const r = this.searcher.find(from.x, from.z, to.x, to.z, maxNodes, avoidTeam !== undefined && OBSTACLES.length ? OBSTACLES : null, avoidTeam);
+    this.frameUsed += r.expanded + 50;
     // Phones: smoothing is real work too (long paths probe thousands of cells): ~4 probes per node.
-    if (strict) this.frameUsed += Math.ceil(this.samples / 4);
-    if (!out.length) out.push(pts[pts.length - 1]);
-    return out;
+    if (strict) this.frameUsed += Math.ceil(r.samples / 4);
+    // Cut short by the frame budget rather than the caller's own limit: retry next frame.
+    if (r.stopped && maxNodes < wanted) this.lastTruncated = true;
+    return r.pts ? toPath(r.pts) : null;
   }
 
-  private blockedByObstacle(a: THREE.Vector3, b: THREE.Vector3, team?: string): boolean {
-    const len = Math.hypot(b.x - a.x, b.z - a.z);
-    const n = Math.max(1, Math.ceil(len / 0.4));
-    for (let k = 0; k <= n; k++) {
-      const t = k / n;
-      if (obstacleAt(a.x + (b.x - a.x) * t, a.z + (b.z - a.z) * t, 0.4, team)) {
-        this.samples += k + 1;
-        return true;
+  // ------------------------------------------------------------ path worker
+
+  private worker: Worker | null = null;
+  private nextRequest = 1;
+  /** Per asker: the request in flight (its id) or its answer. */
+  private asks = new Map<object, { id: number; at: number; pts?: number[] | null }>();
+  private byId = new Map<number, object>();
+  private obstacleSig = '';
+
+  private startWorker(): void {
+    // Trailer capture must be deterministic (same paths, same frame); ?syncnav (bisecting) too.
+    if (trailerMode || typeof Worker === 'undefined' || new URLSearchParams(location.search).has('syncnav')) return;
+    try {
+      const w = new Worker(new URL('./pathWorker.ts', import.meta.url), { type: 'module' });
+      w.onmessage = (e: MessageEvent<{ id: number; pts: number[] | null }>) => {
+        const owner = this.byId.get(e.data.id);
+        this.byId.delete(e.data.id);
+        if (!owner) return;
+        const ask = this.asks.get(owner);
+        if (ask && ask.id === e.data.id) ask.pts = e.data.pts;
+      };
+      w.onerror = () => this.stopWorker();
+      w.postMessage({ type: 'init', cost: this.cost.slice(), cols: this.cols, rows: this.rows, minX: this.minX, minZ: this.minZ, cell: this.cell });
+      this.worker = w;
+    } catch {
+      this.worker = null;
+    }
+  }
+
+  /** The worker failed (or never answers): everything goes back to findPath on this thread. */
+  private stopWorker(): void {
+    this.worker?.terminate();
+    this.worker = null;
+    this.asks.clear();
+    this.byId.clear();
+  }
+
+  /**
+   * Path for one asker (an agent), searched on the path worker. Returns the answer to
+   * this asker's last request once it is in (one request in flight per asker), else
+   * null with lastTruncated set: "not yet, ask again next frame". Without the worker it
+   * is findPath. The answer may be for where the asker stood a frame or two ago.
+   */
+  findPathFor(asker: object, from: THREE.Vector3, to: THREE.Vector3, maxNodes = 6000, avoidTeam?: string): THREE.Vector3[] | null {
+    if (!this.worker) return this.findPath(from, to, maxNodes, avoidTeam);
+    const now = performance.now();
+    const ask = this.asks.get(asker);
+    if (ask && ask.pts !== undefined) {
+      this.asks.delete(asker);
+      this.lastTruncated = false;
+      return ask.pts ? toPath(ask.pts) : null;
+    }
+    if (ask) {
+      // No answer in 3 s: the worker is stuck. Search here from now on.
+      if (now - ask.at > 3000) {
+        this.stopWorker();
+        return this.findPath(from, to, maxNodes, avoidTeam);
       }
+      this.lastTruncated = true;
+      return null;
     }
-    this.samples += n + 1;
-    return false;
+    const id = this.nextRequest++;
+    this.asks.set(asker, { id, at: now });
+    this.byId.set(id, asker);
+    this.worker.postMessage({ type: 'find', id, fx: from.x, fz: from.z, tx: to.x, tz: to.z, maxNodes, team: avoidTeam });
+    this.lastTruncated = true;
+    return null;
   }
 
-  // Binary min-heap on f.
-  private push(i: number, f: number): void {
-    const h = this.heap;
-    const hf = this.heapF;
-    h.push(i);
-    hf.push(f);
-    let k = h.length - 1;
-    while (k > 0) {
-      const p = (k - 1) >> 1;
-      if (hf[p] <= hf[k]) break;
-      [h[p], h[k]] = [h[k], h[p]];
-      [hf[p], hf[k]] = [hf[k], hf[p]];
-      k = p;
-    }
+  /** Keep the worker's copy of the team barricades current (cheap when nothing changed). */
+  private syncObstacles(): void {
+    if (!this.worker) return;
+    let sig = String(OBSTACLES.length);
+    for (const o of OBSTACLES) sig += `|${o.x.toFixed(2)},${o.z.toFixed(2)},${o.alive ? 1 : 0}`;
+    if (sig === this.obstacleSig) return;
+    this.obstacleSig = sig;
+    this.worker.postMessage({ type: 'obstacles', list: OBSTACLES.map((o) => ({ x: o.x, z: o.z, hx: o.hx, hz: o.hz, cos: o.cos, sin: o.sin, alive: o.alive, team: o.team })) });
   }
 
-  private pop(): number {
-    const h = this.heap;
-    const hf = this.heapF;
-    const top = h[0];
-    const lastI = h.pop()!;
-    const lastF = hf.pop()!;
-    if (h.length) {
-      h[0] = lastI;
-      hf[0] = lastF;
-      let k = 0;
-      for (;;) {
-        const l = 2 * k + 1;
-        const r = l + 1;
-        let m = k;
-        if (l < h.length && hf[l] < hf[m]) m = l;
-        if (r < h.length && hf[r] < hf[m]) m = r;
-        if (m === k) break;
-        [h[m], h[k]] = [h[k], h[m]];
-        [hf[m], hf[k]] = [hf[k], hf[m]];
-        k = m;
-      }
-    }
-    return top;
-  }
+}
+
+/** Flat x, z pairs → waypoints on the ground. */
+function toPath(pts: number[]): THREE.Vector3[] {
+  const out: THREE.Vector3[] = [];
+  for (let i = 0; i < pts.length; i += 2) out.push(new THREE.Vector3(pts[i], 0, pts[i + 1]));
+  return out;
 }

@@ -175,9 +175,12 @@ export class Cultist {
         const direct = dist < 14 && this.nav.clearLine(this.pos.x, this.pos.z, prey.feet.x, prey.feet.z);
         if (direct) this.path = null;
         else if (this.repath <= 0) {
-          this.path = this.nav.findPath(this.pos, prey.feet, 3000);
-          this.pathIndex = 0;
-          this.repath = 0.9;
+          const path = this.nav.findPathFor(this, this.pos, prey.feet, 3000);
+          if (path || !this.nav.lastTruncated) {
+            this.path = path;
+            this.pathIndex = 0;
+            this.repath = 0.9;
+          } else this.repath = 0.05; // asked the path worker: keep creeping, collect the answer next frame
         }
         const speed = dist < 9 ? CREEP * 0.75 : CREEP;
         if (direct && dist > 1.2) desired.set(dx / dist, 0, dz / dist).multiplyScalar(speed);
