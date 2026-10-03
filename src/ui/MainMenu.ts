@@ -4,6 +4,7 @@ import type { Game } from '../core/Game';
 import { feel } from '../config/Feel';
 import { playerConfig } from '../player/PlayerConfig';
 import { Showcase } from './Showcase';
+import { PERKS, SIDEARMS, levelOf, loadProfile, perkSlots, saveProfile, type PerkId } from '../game/Progress';
 import { FPS_CAPS, loadGraphics, maxResolution, presetSettings, type GraphicsSettings } from '../config/Graphics';
 
 /**
@@ -116,6 +117,7 @@ export class MainMenu {
     this.playBtn = this.button('PLAY', 'primary', () => this.play());
     this.playBtn.disabled = true;
     this.button('OPERATIONS', '', () => this.show('operations'), 'operations');
+    this.button('ARMORY', '', () => this.show('armory'), 'armory');
     this.button('SETTINGS', '', () => this.show('settings'), 'settings');
     this.button('CONTROLS', '', () => this.show('controls'), 'controls');
     this.button('MAIN MENU', 'tomenu', () => {
@@ -126,6 +128,8 @@ export class MainMenu {
     // Desktop build (Electron): a real quit.
     if (navigator.userAgent.includes('Electron')) this.button('QUIT', 'quit', () => window.close());
     this.status = el('div', 'menu-status', left, 'Loading…');
+    this.profileEl = el('div', 'menu-profile', left);
+    this.paintProfile();
     this.panel = el('div', 'menu-panel glass', this.root);
     el('div', 'menu-foot', this.root, '<span>IN DEVELOPMENT</span><span>BUILD 0.3</span>');
     // The panel opens from the nav; until then the unit showcase has the stage.
@@ -209,8 +213,16 @@ export class MainMenu {
   }
 
   private section: string | null = null;
+  private profileEl: HTMLDivElement;
 
-  private show(section: 'operations' | 'settings' | 'controls'): void {
+  /** Level / XP / credits chip under the nav. */
+  private paintProfile(): void {
+    const p = loadProfile();
+    const l = levelOf(p.xp);
+    this.profileEl.innerHTML = `<b>LV ${l.level}</b><i style="--p:${((l.into / l.need) * 100).toFixed(1)}%"></i><span>${p.credits} VC</span>`;
+  }
+
+  private show(section: 'operations' | 'settings' | 'controls' | 'armory'): void {
     // The same button again closes the panel (back to the showcase).
     if (this.section === section && !this.panel.classList.contains('closed') && !this.paused) {
       this.panel.classList.add('closed');
@@ -226,6 +238,7 @@ export class MainMenu {
     this.panel.classList.add('enter');
     if (section === 'operations') this.renderOperations();
     else if (section === 'settings') this.renderSettings();
+    else if (section === 'armory') this.renderArmory();
     else this.renderControls();
   }
 
@@ -413,6 +426,66 @@ export class MainMenu {
     toggle('POST EFFECTS', g.postFx, (v) => (g.postFx = v));
     toggle('ANTI-ALIASING (RESTART)', g.antialias, (v) => (g.antialias = v));
     toggle('SHOW FPS', g.showFps, (v) => (g.showFps = v), false);
+  }
+
+  /** Spend Vanta Credits: starting sidearm and perks (they apply from the next raid). */
+  private renderArmory(): void {
+    const p = loadProfile();
+    const lv = levelOf(p.xp);
+    this.panel.innerHTML = `<div class="panel-head">ARMORY<i></i></div>
+      <div class="arm-top"><b>LEVEL ${lv.level}</b><i style="--p:${((lv.into / lv.need) * 100).toFixed(1)}%"></i><em>${lv.into} / ${lv.need} XP</em><span>${p.credits} VC</span></div>
+      <div class="panel-note">Earn XP and Vanta Credits (VC) from every raid: kills, time alive, placement. Extract for ×1.5 and to carry 10 % of your cash out. Changes apply from your next raid.</div>`;
+    const card = (parent: HTMLElement, u: { id: string; name: string; text: string; level: number; cost: number }, state: 'equipped' | 'owned' | 'buy' | 'locked', onClick: () => void) => {
+      const tag = state === 'equipped' ? 'EQUIPPED' : state === 'owned' ? 'EQUIP' : state === 'buy' ? `${u.cost} VC` : `LEVEL ${u.level}`;
+      const c = el('button', `gcard small arm ${state}`, parent, `<b>${u.name}</b><p>${u.text}</p><span class="arm-tag">${tag}</span><span class="gbtn-shine"></span>`);
+      c.addEventListener('click', (e) => {
+        e.stopPropagation();
+        onClick();
+      });
+    };
+    const redraw = () => {
+      saveProfile(p);
+      this.paintProfile();
+      this.renderArmory();
+    };
+    el('div', 'panel-label', this.panel, 'STARTING SIDEARM');
+    const side = el('div', 'gcards', this.panel);
+    for (const w of SIDEARMS) {
+      const owned = p.owned.includes(w.id);
+      const state = p.sidearm === w.id ? 'equipped' : owned ? 'owned' : lv.level < w.level ? 'locked' : 'buy';
+      card(side, w, state, () => {
+        if (state === 'locked' || state === 'equipped') return;
+        if (state === 'buy') {
+          if (p.credits < w.cost) return;
+          p.credits -= w.cost;
+          p.owned.push(w.id);
+        }
+        p.sidearm = w.id;
+        redraw();
+      });
+    }
+    const slots = perkSlots(lv.level);
+    el('div', 'panel-label', this.panel, `PERKS · ${p.perks.length} / ${slots} EQUIPPED${slots < 2 ? ' · SECOND SLOT AT LEVEL 8' : ''}`);
+    const perks = el('div', 'gcards', this.panel);
+    for (const k of PERKS) {
+      const owned = p.owned.includes(k.id);
+      const on = p.perks.includes(k.id);
+      const state = on ? 'equipped' : owned ? 'owned' : lv.level < k.level ? 'locked' : 'buy';
+      card(perks, k, state, () => {
+        if (state === 'locked') return;
+        if (state === 'buy') {
+          if (p.credits < k.cost) return;
+          p.credits -= k.cost;
+          p.owned.push(k.id);
+        }
+        if (on) p.perks = p.perks.filter((x) => x !== k.id);
+        else {
+          p.perks = [...p.perks, k.id as PerkId];
+          while (p.perks.length > slots) p.perks.shift();
+        }
+        redraw();
+      });
+    }
   }
 
   private renderControls(): void {

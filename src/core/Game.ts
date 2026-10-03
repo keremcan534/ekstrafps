@@ -53,6 +53,7 @@ import { buildWeaponModel } from '../weapons/WeaponModels';
 import { WeaponLights, weaponLight } from '../fx/WeaponLights';
 import { VIEW_DISTANCE, loadGraphics, type GraphicsSettings } from '../config/Graphics';
 import { DustMotes } from '../fx/DustMotes';
+import { raid } from '../game/Progress';
 import type { ShowcaseDeps } from '../ui/Showcase';
 
 const FIXED_DT = 1 / 120;
@@ -1024,6 +1025,7 @@ export class Game {
     }
     if (!this.started) {
       this.started = true;
+      this.survival?.applyCareer();
       this.lastTime = performance.now();
       this.renderer.setAnimationLoop((t) => {
         // Frame cap (phones default to 60: 90/120 Hz screens would otherwise run the whole
@@ -1391,6 +1393,7 @@ export class Game {
     // Lights out: muzzle flashes light the room (and give shooters away).
     const darkness = this.lighting?.darkness ?? 0;
     this.dust.update(dt, this.camera.eye, darkness);
+    if (this.survival && !this.health.dead && !this.ended) raid.alive += dt;
     // Broken lamps spark when they stutter back on (only the ones near you).
     if (this.arena instanceof Site9) {
       const lvl = this.arena.brokenLevel;

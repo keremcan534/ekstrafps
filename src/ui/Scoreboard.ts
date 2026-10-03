@@ -79,7 +79,7 @@ export class Scoreboard {
     while (this.feed.children.length > 5) this.feed.firstChild?.remove();
   }
 
-  showEnd(winner: TeamRow, youWon: boolean, scores: Map<string, number>, tags?: Map<string, string>, sub = ''): void {
+  showEnd(winner: TeamRow, youWon: boolean, scores: Map<string, number>, tags?: Map<string, string>, sub = '', report = ''): void {
     this.setHold(null);
     const rows = [...this.teams]
       .sort((a, b) => (scores.get(b.id) ?? 0) - (scores.get(a.id) ?? 0))
@@ -88,7 +88,7 @@ export class Scoreboard {
         return `<div class="me-row"><b style="color:${t.color}">${t.name}</b>${tag ? `<em class="${tag === 'EXTRACTED' ? 'ok' : 'bad'}">${tag}</em>` : ''}<span>${scores.get(t.id) ?? 0}</span></div>`;
       })
       .join('');
-    this.end.innerHTML = `<div class="me-title ${youWon ? 'win' : 'lose'}">${youWon ? 'VICTORY' : `${winner.name.toUpperCase()} WINS`}</div>${sub ? `<div class="me-sub">${sub}</div>` : ''}${rows}<button class="sv-restart">PLAY AGAIN</button>`;
+    this.end.innerHTML = `<div class="me-title ${youWon ? 'win' : 'lose'}">${youWon ? 'VICTORY' : `${winner.name.toUpperCase()} WINS`}</div>${sub ? `<div class="me-sub">${sub}</div>` : ''}${rows}${report}<button class="sv-restart">PLAY AGAIN</button>`;
     this.end.classList.add('show');
     this.end.querySelector('button')!.addEventListener('click', () => location.reload());
   }

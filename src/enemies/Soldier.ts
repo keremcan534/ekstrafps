@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { byPlayer, raid } from '../game/Progress';
 import { RAPIER, GROUPS, type Physics } from '../core/Physics';
 import { Spring } from '../core/Spring';
 import { Noise1D } from '../core/Noise';
@@ -88,6 +89,8 @@ export class Soldier implements LightSource {
   readonly body: Humanoid;
   rig: WeaponRig;
   readonly index: number;
+  /** The Warden (Black Division boss kit). */
+  readonly boss: boolean;
   state: BrainState = 'patrol';
   role: Role = 'anchor';
 
@@ -218,6 +221,7 @@ export class Soldier implements LightSource {
     palette: SoldierPalette = team === 'alpha' ? 'vanta' : team === 'bd' ? 'bd' : (team as SoldierPalette),
   ) {
     this.index = index;
+    this.boss = palette === 'bdboss';
     this.mats = soldierMaterials(palette);
     this.voicePitch = 0.94 + index * 0.035;
     this.errNoise = new Noise1D(index * 17 + 3);
@@ -384,6 +388,13 @@ export class Soldier implements LightSource {
 
   private onKilled(info: DamageInfo): void {
     this.state = 'dead';
+    // Career stats: only your own kills.
+    if (byPlayer(info.hit) && this.team !== 'alpha') {
+      if (this.team !== 'bd') raid.soldiers++;
+      else if (this.boss) raid.warden++;
+      else raid.bd++;
+      if (info.zone === 'head') raid.headshots++;
+    }
     this.flash.update(1);
     // Drop the rifle as a physics object.
     this.rifleRoot.updateMatrixWorld(true);

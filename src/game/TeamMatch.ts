@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { payoutHtml, settleRaid } from './Progress';
 import { BunkerExit, HeliExit, type CameraShot, type ExtractSite } from './Extraction';
 import { ExtractUI } from '../ui/ExtractUI';
 import { AITeam, type TeamContext, type TeamDef } from './AITeam';
@@ -384,7 +385,12 @@ export class TeamMatch {
     this.finished = true;
     const row = TEAM_ROWS.find((t) => t.id === team) ?? TEAM_ROWS[0];
     this.d.audio.play(team === 'alpha' ? 'lift.arrive' : 'director.horde');
-    this.board.showEnd(row, team === 'alpha', this.d.survival.score, tags, sub);
+    // Career payout: your place by score, your fate (in the field when someone hit the target = no multiplier).
+    const sc = this.d.survival.score;
+    const place = 1 + [...sc.entries()].filter(([id, s]) => id !== 'alpha' && s > (sc.get('alpha') ?? 0)).length;
+    const f = this.fate.get('alpha');
+    const pay = settleRaid({ mode: 'teams', place, fate: f === 'extracted' ? 'extracted' : f === 'kia' ? 'kia' : 'survival', cash: this.d.survival.points });
+    this.board.showEnd(row, team === 'alpha', this.d.survival.score, tags, sub, payoutHtml(pay));
     this.onEnd?.();
   }
 

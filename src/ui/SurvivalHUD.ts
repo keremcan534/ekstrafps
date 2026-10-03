@@ -84,11 +84,12 @@ export class SurvivalHUD {
     this.prompt.classList.add('deny');
   }
 
-  gameOver(seconds: number, kills: number, points: number): void {
+  gameOver(seconds: number, kills: number, points: number, report = ''): void {
     const m = Math.floor(seconds / 60);
     const s = Math.floor(seconds % 60).toString().padStart(2, '0');
     this.over.innerHTML = `<div class="sv-over-title">GAME OVER</div>
       <div class="sv-over-sub">Survived ${m}:${s} · ${kills} robots destroyed · $ ${points}</div>
+      ${report}
       <button class="sv-restart">PLAY AGAIN</button>`;
     this.over.classList.add('show');
     this.over.querySelector('button')!.addEventListener('click', () => location.reload());

@@ -368,3 +368,30 @@ kbd, .sv-key {
 @media (max-width: 900px) { .showcase-cap { display: none; } }
 .menu-panel { transition: opacity 0.3s, transform 0.3s; }
 .menu-panel.closed { opacity: 0; transform: translateX(24px); pointer-events: none; }
+
+/* Career: menu chip, armory, end-of-raid operation report. */
+.menu-profile { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 10px; margin-top: 14px; max-width: 300px; font: 600 12px var(--g-mono); letter-spacing: 0.16em; color: rgba(255, 255, 255, 0.8); }
+.menu-profile b, .arm-top b { color: #fff; }
+.menu-profile i, .arm-top i, .pr-level i { position: relative; height: 4px; border-radius: 4px; background: rgba(255, 255, 255, 0.12); overflow: hidden; }
+.menu-profile i::after, .arm-top i::after, .pr-level i::after { content: ''; position: absolute; inset: 0; width: var(--p); background: linear-gradient(90deg, #ff5a2a, #ffb05a); }
+.menu-profile span, .arm-top span { color: #ffb05a; }
+.arm-top { display: grid; grid-template-columns: auto 1fr auto auto; align-items: center; gap: 12px; font: 600 13px var(--g-mono); letter-spacing: 0.14em; }
+.arm-top em { font-style: normal; color: var(--g-dim); }
+.gcard.arm { position: relative; min-height: 104px; }
+.gcard.arm b { font-size: 16px; }
+.gcard.arm p { font-size: 13px; padding-bottom: 22px; }
+.arm-tag { position: absolute; right: 12px; bottom: 10px; padding: 3px 9px; border-radius: 8px; font: 700 10px var(--g-mono); letter-spacing: 0.18em; background: rgba(255, 255, 255, 0.1); }
+.gcard.arm.equipped { border-color: rgba(255, 120, 60, 0.7); }
+.gcard.arm.equipped .arm-tag { background: #ff5a2a; color: #fff; }
+.gcard.arm.buy .arm-tag { background: rgba(255, 176, 90, 0.2); color: #ffb05a; }
+.gcard.arm.locked { opacity: 0.45; cursor: default; }
+.pr { margin: 16px auto 8px; max-width: 420px; padding: 14px 16px; border-radius: 14px; background: rgba(0, 0, 0, 0.45); border: 1px solid rgba(255, 255, 255, 0.12); text-align: left; }
+.pr-head { margin-bottom: 8px; font: 700 12px var(--g-mono, monospace); letter-spacing: 0.3em; color: #ffb05a; }
+.pr-row { display: flex; justify-content: space-between; gap: 12px; padding: 3px 0; font-size: 13px; color: rgba(255, 255, 255, 0.78); }
+.pr-row b { color: #fff; font-variant-numeric: tabular-nums; }
+.pr-row.mult span { color: #ffb05a; font-weight: 700; letter-spacing: 0.1em; }
+.pr-total { display: flex; justify-content: space-between; margin-top: 8px; padding-top: 8px; border-top: 1px solid rgba(255, 255, 255, 0.15); font: 700 18px var(--g-font, sans-serif); letter-spacing: 0.08em; color: #fff; }
+.pr-level { display: grid; gap: 6px; margin-top: 10px; font-size: 12px; letter-spacing: 0.12em; }
+.pr-level em { font-style: normal; color: rgba(255, 255, 255, 0.55); }
+.pr-level.up b { color: #ffb05a; }
+.menu-panel:not(.closed) ~ .showcase-cap { display: none; }

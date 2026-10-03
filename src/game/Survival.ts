@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { SIDEARMS, byPlayer, loadProfile, payoutHtml, raid, settleRaid } from './Progress';
 import type { Physics, RAPIER } from '../core/Physics';
 import type { Site9, SpawnPoint, WallBuy, AmmoSpot, HazardSpot } from '../world/Site9';
 import type { ImpactSystem } from '../fx/ImpactSystem';
@@ -161,7 +162,7 @@ export class Survival {
       if (team === 'alpha') this.addPoints(n);
     } else {
       const earner = (owner && this.deps.walletOf?.(owner)) || (team === 'alpha' && !owner ? this.playerWallet : null);
-      earner?.add(n);
+      earner?.add(earner === this.playerWallet && this.perks.has('scavenger') ? Math.round(n * 1.1) : n);
       const share = Math.round(n * TEAM_SHARE);
       if (share > 0) for (const m of members) if (m !== earner) m.add(share);
     }
@@ -218,6 +219,8 @@ export class Survival {
   private focus: Interactable | null = null;
   private over = false;
   private kills = 0;
+  /** Career perks equipped for this raid. */
+  private perks = new Set<string>();
   private elapsed = 0;
   // Director
   private phase: DirectorPhase = 'relax';
@@ -294,6 +297,11 @@ export class Survival {
           onDamage: (_r, info) => this.award(info.hit.team || 'alpha', POINTS.hit, info.hit.owner),
           onDeath: (r, info) => {
             if (info.hit.team === 'alpha' || !info.hit.team) this.kills++;
+            if (byPlayer(info.hit)) {
+              if (r.variant === 'brute') raid.brutes++;
+              else raid.robots++;
+              if (info.zone === 'head') raid.headshots++;
+            }
             if (r.pos.distanceTo(deps.player.feet) < 12) this.intensity = Math.min(1, this.intensity + 0.04);
             const bonus = r.variant === 'brute' ? 3 : 1;
             this.award(info.hit.team || 'alpha', (info.zone === 'head' ? POINTS.headKill : POINTS.kill) * bonus, info.hit.owner);
@@ -906,10 +914,28 @@ export class Survival {
     }
   }
 
+  /**
+   * Career loadout (ARMORY in the main menu): sidearm and perks. Applied when the
+   * raid starts (PLAY), so changes made in the menu count straight away.
+   */
+  applyCareer(): void {
+    raid.reset();
+    const prof = loadProfile();
+    const sidearm = SIDEARMS.find((w) => w.id === prof.sidearm && prof.owned.includes(w.id))?.weapon ?? 'heavy_pistol';
+    this.perks = new Set(prof.perks);
+    if (this.perks.has('pockets')) this.addPoints(300);
+    if (this.perks.has('plates')) this.deps.health.armor = this.deps.health.maxArmor * 0.5;
+    if (sidearm !== 'heavy_pistol') {
+      this.deps.weapons.infiniteReserve.add(sidearm);
+      this.deps.weapons.startLoadout(sidearm);
+    }
+  }
+
   onPlayerDeath(): void {
     if (this.over || this.deps.mode === 'teams') return;
     this.over = true;
-    this.deps.hud.gameOver(this.elapsed, this.kills, this.points);
+    const pay = settleRaid({ mode: 'solo', fate: 'survival', cash: this.points });
+    this.deps.hud.gameOver(this.elapsed, this.kills, this.points, payoutHtml(pay));
   }
 
   get activeRobots(): number {
