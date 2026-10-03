@@ -880,14 +880,18 @@ export class Soldier implements LightSource {
       const d = i === 0 ? this.dir : this.tmp2.copy(this.dir).add(this.tmp.set(gauss() * spread, gauss() * spread, gauss() * spread)).normalize();
       this.deps.projectiles.fire(this.muzzle, d, this.ammoData.muzzleVelocity * (0.985 + Math.random() * 0.03), this.ammoData, 0, tracer && i === 0, i < 2, this, hostile, ally, this.team);
     }
-    this.flash.trigger(1.3 * (1 + 0.15 * ((this.deps.muzzleLights?.boost ?? 1) - 1)));
-    if (this.deps.muzzleLights) this.deps.muzzleLights.flash(this.muzzle, this.deps.listener ?? this.muzzle);
-    this.deps.impacts.muzzleBlast(this.muzzle, this.dir, 1.1);
-    this.deps.impacts.muzzleSmoke(this.muzzle, this.dir, 0.6);
     this.deps.audio.play(this.fireSound, { position: this.muzzle });
     aiWorld.emit(this.suppressed ? 'gunshot_sup' : 'gunshot', this.muzzle, this.team, this);
     this.recoilPitch.impulse(0.55 + Math.random() * 0.3);
     this.recoilYaw.impulse((Math.random() - 0.5) * 0.5);
+    // What only shows: the flash, the light, smoke and brass. Out of sight (a room the
+    // portal culling doesn't draw) they'd cost particles, a muzzle light from the pool
+    // and physics bodies for casings nobody sees.
+    if (!this.body.root.visible) return;
+    this.flash.trigger(1.3 * (1 + 0.15 * ((this.deps.muzzleLights?.boost ?? 1) - 1)));
+    if (this.deps.muzzleLights) this.deps.muzzleLights.flash(this.muzzle, this.deps.listener ?? this.muzzle);
+    this.deps.impacts.muzzleBlast(this.muzzle, this.dir, 1.1);
+    this.deps.impacts.muzzleSmoke(this.muzzle, this.dir, 0.6);
     // Brass out to the right.
     this.rig.ejectPort.getWorldPosition(this.tmp);
     this.tmp2.set(2.2, 1.5, 0.3).applyQuaternion(this.q).add(this.vel);

@@ -118,6 +118,7 @@ const MAX_TILT = 24 * DEG;
 const ONE = new THREE.Vector3(1, 1, 1);
 /** Phones (cheap characters): hidden bodies pose less often, corpses keep fewer CCD bodies. */
 const lowSpec = (): boolean => skinDetail.low;
+const speedSq = (v: { x: number; y: number; z: number }): number => v.x * v.x + v.y * v.y + v.z * v.z;
 
 /**
  * A physical humanoid body shared by robots and soldiers.
@@ -195,9 +196,9 @@ export class Humanoid {
   private tmpM = new THREE.Matrix4();
   private tmpScale = new THREE.Vector3();
   private linvel = { x: 0, y: 0, z: 0 };
-  // Hidden-body LOD (phones): time not yet posed, frame parity, root at the last pose.
+  // Hidden-body LOD (phones): time not yet posed, skipped frames, root at the last pose.
   private lodDt = 0;
-  private lodOdd = false;
+  private lodSkip = 0;
   private frozen = false;
   private lastPose: HumanoidPose | null = null;
   private lastRootPos = new THREE.Vector3();
@@ -750,10 +751,11 @@ export class Humanoid {
         return;
       }
       this.setFrozen(false);
-      // Hidden and moving: pose every other frame, over the time of both.
+      // Hidden and moving: pose every third frame, over the time of all three (the
+      // hitboxes trail by at most two frames, only in rooms you can't see).
       this.lodDt += dt;
-      this.lodOdd = !this.lodOdd;
-      if (this.lodOdd) return;
+      if (++this.lodSkip < 3) return;
+      this.lodSkip = 0;
       dt = this.lodDt;
     } else {
       // Visible (or just reset): always a full update, including any skipped time.
@@ -951,6 +953,11 @@ export class Humanoid {
     }
     // Attachments still on the bones (chest markers...) follow.
     for (const part of this.parts) for (const c of part.group.children) if (!(c as THREE.Bone).isBone) c.updateMatrixWorld(true);
+    // Joint jitter keeps a corpse awake long after it has come to rest (a dozen bodies
+    // in the solver each): once it's barely moving, put it to sleep (sooner on phones).
+    if (this.ragdollTime > (lowSpec() ? 3.5 : 6) && this.parts.every((p) => p.body.isSleeping() || speedSq(p.body.linvel(this.linvel)) < 0.25)) {
+      for (const part of this.parts) part.body.sleep();
+    }
     // Knees only buckle at the moment of death; afterwards the body is fully limp.
     if (this.ragdollTime > 0.45 && this.knees.length) {
       for (const k of this.knees) k.configureMotorPosition(0, 0, 1);

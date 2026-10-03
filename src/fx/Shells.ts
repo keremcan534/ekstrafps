@@ -39,7 +39,8 @@ export class Shells {
   /** Called the first time a shell lands, with its position (for clink audio). */
   onClink: ((type: ShellType, pos: THREE.Vector3) => void) | null = null;
 
-  constructor(physics: Physics, perType: number) {
+  /** @param ccd Continuous collision (desktop): phones skip it, a casing's few cm per step don't tunnel through floors. */
+  constructor(physics: Physics, perType: number, ccd = true) {
     for (const type of Object.keys(SHAPES) as ShellType[]) {
       const s = SHAPES[type];
       const geo = new THREE.CylinderGeometry(s.r, s.r, s.len, 8);
@@ -51,7 +52,7 @@ export class Shells {
       for (let i = 0; i < perType; i++) {
         mesh.setMatrixAt(i, this.zero);
         const body = physics.world.createRigidBody(
-          RAPIER.RigidBodyDesc.dynamic().setCcdEnabled(true).setLinearDamping(0.3).setAngularDamping(0.6).setEnabled(false),
+          RAPIER.RigidBodyDesc.dynamic().setCcdEnabled(ccd).setLinearDamping(0.3).setAngularDamping(0.6).setEnabled(false),
         );
         physics.world.createCollider(
           RAPIER.ColliderDesc.cuboid(s.r, s.r, s.len / 2)

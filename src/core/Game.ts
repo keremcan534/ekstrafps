@@ -53,6 +53,7 @@ import { buildWeaponModel } from '../weapons/WeaponModels';
 import { WeaponLights, weaponLight } from '../fx/WeaponLights';
 import { AUTO_TIERS, MOBILE_ANISOTROPY, VIEW_DISTANCE, loadAutoTier, loadGraphics, noGlass, presetSettings, type GraphicsSettings } from '../config/Graphics';
 import { AutoQuality } from './AutoQuality';
+import { skipHiddenMatrices } from './VisibleMatrices';
 import { setTextureAnisotropy } from '../fx/Textures';
 import { DustMotes } from '../fx/DustMotes';
 import { Ambience } from '../audio/Ambience';
@@ -187,6 +188,8 @@ export class Game {
   private resOverride = 0;
   /** ?cap=N: frame cap override (bisecting). */
   private capOverride: number | null = null;
+  /** The cap to put back when the benchmark ends (it runs uncapped: a capped frame hides what things cost). */
+  private benchCapSaved: number | null | undefined;
   /** Frame cap: earliest timestamp for the next frame. */
   private nextFrameAt = 0;
   private prevWeaponState = '';
@@ -367,7 +370,7 @@ export class Game {
 
     this.impacts = new ImpactSystem(this.audio, this.mobile);
     this.scene.add(this.impacts.group);
-    this.shells = new Shells(this.physics, this.mobile ? 16 : 30);
+    this.shells = new Shells(this.physics, this.mobile ? 16 : 30, !this.mobile);
     this.scene.add(this.shells.group);
     this.shells.onClink = (type, pos) => this.audio.play(type === 'shotgun' ? 'shell.plastic' : 'shell.brass', { position: pos });
 
@@ -429,6 +432,9 @@ export class Game {
       debugDraw: this.debugDraw,
     });
     this.weapons.viewmodel.scene.environmentIntensity = 0.6;
+    // Hidden subtrees (the weapons not in hand, pooled squads) skip the per-frame matrix pass.
+    skipHiddenMatrices(this.scene);
+    skipHiddenMatrices(this.weapons.viewmodel.scene);
     this.status = new StatusHUD(ui);
     this.initBlackDivision();
     if (this.arena instanceof Site9) this.initSurvival(ui, this.arena);
@@ -1261,6 +1267,8 @@ export class Game {
 
   private startBench(): void {
     const g = this;
+    this.benchCapSaved = this.capOverride;
+    this.capOverride = 0;
     this.bench = new PerfBench({
       renderer: this.renderer,
       scene: this.scene,
@@ -1709,6 +1717,10 @@ export class Game {
     }
     if (this.benchIn > 0 && (this.benchIn -= rawDt) <= 0) this.startBench();
     this.bench?.frame(rawDt);
+    if (this.bench?.done && this.benchCapSaved !== undefined) {
+      this.capOverride = this.benchCapSaved;
+      this.benchCapSaved = undefined;
+    }
     this.frameMs += (rawDt * 1000 - this.frameMs) * 0.05;
     if (this.fpsText && this.gfx.showFps && (this.fpsTimer -= rawDt) <= 0) {
       this.fpsTimer = 0.25;
