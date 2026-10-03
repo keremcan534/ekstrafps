@@ -10,9 +10,6 @@ export type CommanderCategory =
   | 'firstcontact' | 'threat' | 'search' | 'lost' | 'command' | 'allydown' | 'personal'
   | 'hit' | 'lowhp' | 'reload' | 'retreat' | 'close' | 'neardeath' | 'kill' | 'rare';
 
-/** Categories whose audio exists in public/audio/voice. Add the rest once they are generated. */
-const READY = new Set<CommanderCategory>(['firstcontact', 'threat', 'search', 'lost', 'command', 'allydown', 'personal', 'hit', 'lowhp', 'reload', 'retreat', 'close']);
-
 export interface CommanderLine {
   id: string;
   text: string;
@@ -24,7 +21,6 @@ for (const raw of RAW.split(/\r?\n/)) {
   if (i < 0) continue;
   const id = raw.slice(0, i).trim();
   const cat = id.split('_')[1] as CommanderCategory;
-  if (!READY.has(cat)) continue;
   const text = raw.slice(i + 1).replace(/\[[^\]]*\]/g, '').replace(/\s+/g, ' ').trim();
   const list = BY_CATEGORY.get(cat) ?? [];
   list.push({ id, text });
@@ -35,7 +31,7 @@ export const COMMANDER_LINES: readonly CommanderLine[] = [...BY_CATEGORY.values(
 
 const lastPick = new Map<CommanderCategory, string>();
 
-/** A random line of the category (never the same one twice in a row), or null if it has no audio yet. */
+/** A random line of the category (never the same one twice in a row). */
 export function pickCommanderLine(cat: CommanderCategory): CommanderLine | null {
   const list = BY_CATEGORY.get(cat);
   if (!list?.length) return null;

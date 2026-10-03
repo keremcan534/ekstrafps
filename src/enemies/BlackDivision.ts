@@ -59,7 +59,13 @@ export class BlackDivision {
   private cmdClose = 0;
   private cmdLastHit = -99;
   private cmdLowHp = false;
+  private cmdNearDeath = false;
   private cmdPersonal = false;
+  /** Retreat check: player distance from the Warden a moment ago. */
+  private cmdDistCheck = 0;
+  private cmdLastDist = -1;
+  private cmdRetreat = 0;
+  private cmdLastRare = -99;
   private respawnTimer = -1;
   private resumeTimer = -1;
   private aimPoint = new THREE.Vector3();
@@ -143,7 +149,10 @@ export class BlackDivision {
     this.cmdChatter = 0;
     this.cmdClose = 0;
     this.cmdLowHp = false;
+    this.cmdNearDeath = false;
     this.cmdPersonal = false;
+    this.cmdLastDist = -1;
+    this.cmdRetreat = 0;
     this.assignRoles();
   }
 
@@ -181,8 +190,11 @@ export class BlackDivision {
 
   onPlayerKilled(): void {
     if (this.state === 'patrol') return;
-    const s = this.nearestAlive(this.lastKnown);
-    if (s) this.say(s, 'target_down', 0.8);
+    if (this.commander) this.sayCmd('kill', 0.8);
+    else {
+      const s = this.nearestAlive(this.lastKnown);
+      if (s) this.say(s, 'target_down', 0.8);
+    }
     this.resumeTimer = 4;
   }
 
@@ -211,7 +223,10 @@ export class BlackDivision {
 
   private commanderHurt(w: Soldier): void {
     const hp = w.body.health;
-    if (!this.cmdLowHp && hp.health < hp.maxHealth * 0.35) {
+    if (!this.cmdNearDeath && hp.health < hp.maxHealth * 0.15) {
+      this.cmdNearDeath = this.cmdLowHp = true;
+      this.sayCmd('neardeath', 0.3);
+    } else if (!this.cmdLowHp && hp.health < hp.maxHealth * 0.35) {
       this.cmdLowHp = true;
       this.sayCmd('lowhp', 0.3);
     } else if (this.time - this.cmdLastHit > 6 && Math.random() < 0.5) {
@@ -226,12 +241,33 @@ export class BlackDivision {
     if (!w || this.state === 'patrol' || !player.alive) return;
     this.cmdChatter -= dt;
     this.cmdClose -= dt;
-    if (this.state === 'combat' && w.sees && this.cmdClose <= 0 && w.pos.distanceTo(player.feet) < 7) {
+    this.cmdRetreat -= dt;
+    const dist = w.pos.distanceTo(player.feet);
+    if (this.state === 'combat' && w.sees && this.cmdClose <= 0 && dist < 7) {
       this.cmdClose = 18;
       this.sayCmd('close');
       return;
     }
+    // Backing off from him in plain sight (5+ m further away within 2 s).
+    this.cmdDistCheck -= dt;
+    if (this.cmdDistCheck <= 0) {
+      this.cmdDistCheck = 2;
+      const backing = this.cmdLastDist >= 0 && dist - this.cmdLastDist > 5;
+      this.cmdLastDist = w.sees ? dist : -1;
+      if (this.state === 'combat' && w.sees && backing && this.cmdRetreat <= 0) {
+        this.cmdRetreat = 25;
+        this.sayCmd('retreat');
+        return;
+      }
+    }
     if (this.cmdChatter > 0) return;
+    // Now and then a longer monologue instead (at most one every 90 s).
+    if (this.time - this.cmdLastRare > 90 && Math.random() < 0.15) {
+      this.cmdLastRare = this.time;
+      this.cmdChatter = 16 + Math.random() * 8;
+      this.sayCmd('rare');
+      return;
+    }
     if (this.state === 'search') {
       this.cmdChatter = 10 + Math.random() * 7;
       this.sayCmd('search');
