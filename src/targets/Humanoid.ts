@@ -111,6 +111,14 @@ export interface HumanoidPose {
   elbows: number;
 }
 
+/**
+ * Ground covered by one full walk cycle (m) at a stride amount: what the legs' swing
+ * actually sweeps (two steps, each 2 × leg × sin(swing)). Advancing the phase by
+ * distance / this keeps the planted foot still on the floor: a fixed cycle length
+ * made slow walkers skate (half the swing for the same distance) and runners overreach.
+ */
+export const strideLength = (amount: number): number => Math.max(0.45, 4 * 0.9 * Math.sin(0.42 * Math.max(0.25, amount)));
+
 export const defaultPose = (): HumanoidPose => ({
   crouch: 0, stridePhase: 0, strideAmount: 0, strideSide: 0, spineX: 0, spineY: 0, headX: 0, headY: 0, gripL: null, gripR: null, idle: true,
   armL: 0, armR: 0, elbows: 0,
@@ -145,6 +153,8 @@ export class Humanoid {
   readonly root = new THREE.Group();
   readonly health: Damageable;
   readonly parts: Part[] = [];
+  /** Ankle bones (left, right): visual only, posed flat in updatePose. */
+  private feet: THREE.Bone[] = [];
   private byName = new Map<PartName, Part>();
   private pivot = new THREE.Group();
   /** The whole body is ONE skinned mesh (a draw call per material), parts are bones. */
@@ -253,6 +263,20 @@ export class Humanoid {
    * vertex-coloured merge material; the rest become material groups.
    */
   private buildSkin(): void {
+    // Feet: a bone at each ankle (no physics body), so boots stay flat on the floor as
+    // the leg swings instead of tipping with the shin. Boot pieces (built at the shin's
+    // lower end) are skinned to it.
+    const ankleY = -this.skin.shinLength * 0.8;
+    const footOf = new Map<Part, number>();
+    for (const name of ['shinL', 'shinR'] as const) {
+      const shin = this.byName.get(name);
+      if (!shin) continue;
+      const foot = new THREE.Bone();
+      foot.position.set(0, ankleY, 0);
+      shin.group.add(foot);
+      footOf.set(shin, this.parts.length + this.feet.length);
+      this.feet.push(foot);
+    }
     this.root.updateMatrixWorld(true);
     const merge = this.skin.merge;
     const byMat = new Map<THREE.Material, THREE.BufferGeometry[]>();
@@ -266,13 +290,20 @@ export class Humanoid {
         const target = plain(mat) ? merge! : mat;
         const color = plain(mat) ? (mat as THREE.MeshStandardMaterial).color : new THREE.Color(1, 1, 1);
         for (const g of geos) {
+          // Below the ankle (in the shin's own space): the foot's.
+          let bone = idx;
+          const foot = footOf.get(part);
+          if (foot !== undefined) {
+            g.computeBoundingBox();
+            if ((g.boundingBox!.min.y + g.boundingBox!.max.y) / 2 < ankleY + 0.05) bone = foot;
+          }
           g.applyMatrix4(part.group.matrixWorld);
           const n = g.getAttribute('position').count;
           const si = new Uint16Array(n * 4);
           const sw = new Float32Array(n * 4);
           const col = new Float32Array(n * 3);
           for (let i = 0; i < n; i++) {
-            si[i * 4] = idx;
+            si[i * 4] = bone;
             sw[i * 4] = 1;
             col[i * 3] = color.r;
             col[i * 3 + 1] = color.g;
@@ -306,7 +337,7 @@ export class Humanoid {
     this.mesh.receiveShadow = true;
     this.root.add(this.mesh);
     this.mesh.updateMatrixWorld(true);
-    this.mesh.bind(new THREE.Skeleton(this.parts.map((p) => p.group)));
+    this.mesh.bind(new THREE.Skeleton([...this.parts.map((p) => p.group), ...this.feet]));
   }
 
   part(name: PartName): Part {
@@ -918,10 +949,14 @@ export class Humanoid {
     // height follows the legs so the feet stay near the floor.
     const crouchTheta = pose.crouch * 0.95;
     const stride = pose.strideAmount;
+    // Standing with a gun: an athletic stance (knees soft, feet apart, the off-side foot a
+    // half step forward) instead of a mannequin's locked knees and heels together.
+    const armed = pose.gripL || pose.gripR ? 1 : 0.4;
+    const stance = Math.max(0, 1 - stride * 2.5) * armed * (1 - pose.crouch);
     const theta = [0, 0];
     const height = [0, 0];
     for (let i = 0; i < 2; i++) {
-      theta[i] = this.idleKnee + crouchTheta + spring(this.knee[i], 0, 1.1);
+      theta[i] = this.idleKnee + crouchTheta + spring(this.knee[i], 0, 1.1) + 0.1 * stance;
       height[i] = (this.thigh + this.shin) * Math.cos(theta[i]);
     }
     const roll = clamp(Math.atan2(height[1] - height[0], this.hipHalf * 2), -0.25, 0.25);
@@ -935,13 +970,24 @@ export class Humanoid {
       const ph = pose.stridePhase + i * Math.PI;
       const swing = Math.sin(ph) * 0.42 * stride;
       const lift = Math.max(0, Math.cos(ph)) * 0.75 * stride;
-      const abduct = Math.sin(ph) * 0.18 * stride * pose.strideSide;
-      this.part(`thigh${s}`).group.rotation.set(-theta[i] - swing * fwd - lift * 0.35, 0, -roll + abduct);
-      this.part(`shin${s}`).group.rotation.set(2 * theta[i] + lift, 0, 0);
+      const abduct = Math.sin(ph) * 0.3 * stride * pose.strideSide;
+      const thigh = this.part(`thigh${s}`).group;
+      // Feet apart (outward is away from the body's centre) and staggered: left ahead.
+      const out = Math.sign(thigh.position.x) * 0.06 * stance;
+      const stagger = (i === 0 ? -0.16 : 0.1) * stance;
+      const tx = -theta[i] - swing * fwd - lift * 0.35 + stagger;
+      const sx = 2 * theta[i] + lift;
+      thigh.rotation.set(tx, 0, -roll + abduct + out);
+      this.part(`shin${s}`).group.rotation.set(sx, 0, 0);
+      // The foot stays level: it takes back the thigh's and shin's pitch and the body's
+      // tilt, then toes up a little through the swing.
+      const foot = this.feet[i];
+      if (foot) foot.rotation.set(-(tx + sx) - tiltX - lift * 0.25, 0, -out);
     }
 
     const torso = this.part('torso').group;
-    torso.rotation.set(spineX + pose.spineX + pose.crouch * 0.18, spineY + pose.spineY - pelvis.rotation.y, spineZ - roll * 0.6);
+    // Leaning into the run; a slight forward lean over the gun when standing to shoot.
+    torso.rotation.set(spineX + pose.spineX + pose.crouch * 0.18 + stride * 0.1 + stance * 0.05, spineY + pose.spineY - pelvis.rotation.y, spineZ - roll * 0.6);
     this.part('head').group.rotation.set(headX + pose.headX, headY + pose.headY, headZ);
     // Grip targets are read in torso space: one matrix pass serves both arms.
     if (pose.gripL || pose.gripR) torso.updateMatrixWorld(true);
@@ -961,8 +1007,11 @@ export class Humanoid {
         upper.quaternion.multiply(this.qa.setFromEuler(this.euler.set(ax * 0.6, 0, az * 0.6)));
         fore.quaternion.multiply(this.qa.setFromEuler(this.euler.set(-Math.max(0, el) * 0.5, 0, 0)));
       } else {
-        upper.rotation.set(ax + (i === 1 ? pose.armR : pose.armL), 0, az + side * (0.06 + hurt * 0.04));
-        fore.rotation.set(-(0.15 + el + pose.elbows), 0, 0);
+        // Walking arms swing opposite the legs (this arm forward with the other leg),
+        // elbows bending more as the pace picks up.
+        const armSwing = -Math.sin(pose.stridePhase + (1 - i) * Math.PI) * 0.38 * stride;
+        upper.rotation.set(ax + (i === 1 ? pose.armR : pose.armL) + armSwing, 0, az + side * (0.06 + hurt * 0.04));
+        fore.rotation.set(-(0.15 + el + pose.elbows + stride * 0.35), 0, 0);
       }
     }
   }
@@ -1025,6 +1074,7 @@ export class Humanoid {
     }
     // Attachments still on the bones (chest markers...) follow.
     for (const part of this.parts) for (const c of part.group.children) if (!(c as THREE.Bone).isBone) c.updateMatrixWorld(true);
+    for (const f of this.feet) f.updateMatrixWorld(true);
     // Joint jitter keeps a corpse awake long after it has come to rest (a dozen bodies
     // in the solver each): once it's barely moving, put it to sleep (sooner on phones).
     if (this.ragdollTime > (lowSpec() ? 3.5 : 6) && this.parts.every((p) => p.body.isSleeping() || speedSq(p.body.linvel(this.linvel)) < 0.25)) {

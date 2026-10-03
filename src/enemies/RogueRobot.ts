@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import type { Physics } from '../core/Physics';
 import { clamp } from '../core/math';
-import { Humanoid, defaultPose, type DamageInfo } from '../targets/Humanoid';
+import { Humanoid, defaultPose, type DamageInfo, strideLength } from '../targets/Humanoid';
 import { robotSkin } from '../targets/RobotTarget';
 import { skinDetail } from './SoldierSkin';
 import type { NavGrid } from '../ai/NavGrid';
@@ -381,7 +381,7 @@ export class RogueRobot {
     this.yaw += clamp(da, -6 * dt, 6 * dt);
 
     // Animation: heavy stomping walk, arms reaching forward; swing on attack.
-    this.stride += (v * dt * Math.PI * 2) / (this.speed > 2.6 ? 2.2 : 1.6);
+    this.stride += (v * dt * Math.PI * 2) / strideLength(this.strideAmount);
     this.strideAmount += (clamp(v / 1.6, 0, 1.2) - this.strideAmount) * Math.min(1, dt * 8);
     const p = this.pose;
     p.headX = 0;

@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import type { Physics } from '../core/Physics';
 import { clamp } from '../core/math';
-import { Humanoid, defaultPose, type DamageInfo } from '../targets/Humanoid';
+import { Humanoid, defaultPose, type DamageInfo, strideLength } from '../targets/Humanoid';
 import type { NavGrid } from '../ai/NavGrid';
 import { labSkin } from './CivilianSkin';
 
@@ -153,7 +153,7 @@ export class Civilian {
       const want = Math.atan2(this.vel.x, this.vel.z);
       this.yaw += clamp(Math.atan2(Math.sin(want - this.yaw), Math.cos(want - this.yaw)), -8 * dt, 8 * dt);
     }
-    this.stride += (v * dt * Math.PI * 2) / 2.2;
+    this.stride += (v * dt * Math.PI * 2) / strideLength(this.strideAmount);
     this.strideAmount += (clamp(v / 1.6, 0, 1.25) - this.strideAmount) * Math.min(1, dt * 8);
 
     p.idle = false;

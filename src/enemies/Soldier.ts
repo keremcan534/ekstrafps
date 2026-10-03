@@ -5,7 +5,7 @@ import { Spring } from '../core/Spring';
 import { Noise1D } from '../core/Noise';
 import { clamp, DEG } from '../core/math';
 import { feel } from '../config/Feel';
-import { Humanoid, defaultPose, type DamageInfo } from '../targets/Humanoid';
+import { Humanoid, defaultPose, type DamageInfo, strideLength } from '../targets/Humanoid';
 import { bakedRig, buildEnemyRifle, type WeaponRig } from '../weapons/WeaponModels';
 import type { WeaponData } from '../weapons/WeaponData';
 import { getAmmo, type AmmoData } from '../weapons/AmmoData';
@@ -739,9 +739,9 @@ export class Soldier implements LightSource {
     const turn = (faceTarget ? 7 : 4) * dt;
     this.yaw += clamp(wrap(wantYaw - this.yaw), -turn, turn);
 
-    // Walk cycle: phase advances with distance; sideways share from local velocity.
-    const strideLen = v > 3 ? 2.3 : 1.55;
-    this.stride += (v * dt * Math.PI * 2) / strideLen;
+    // Walk cycle: phase advances with distance over what the legs sweep (feet don't skate);
+    // sideways share from local velocity.
+    this.stride += (v * dt * Math.PI * 2) / strideLength(this.strideAmount);
     // A footfall every half stride: gear rustle (only heard up close).
     const step = Math.floor(this.stride / Math.PI);
     if (step !== this.lastStep) {
