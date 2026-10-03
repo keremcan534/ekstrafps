@@ -1,0 +1,144 @@
+commander_firstcontact_01|[echoing] [low, commanding voice] [muffled through a respirator] There you are.
+commander_firstcontact_02|[echoing] [low, commanding voice] [muffled through a respirator] Well... look what we found.
+commander_firstcontact_03|[echoing] [low, commanding voice] [muffled through a respirator] [sniffs] So that's what all the noise was.
+commander_firstcontact_04|[echoing] [cold, commanding voice] [muffled through a respirator] You shouldn't have come here.
+commander_firstcontact_05|[echoing] [low, commanding voice] [muffled through a respirator] I've been expecting you.
+commander_firstcontact_06|[echoing] [muffled through a respirator] [inhales deeply] Right then. Let's get this over with.
+commander_firstcontact_07|[echoing] [commanding] [muffled through a respirator] Contact confirmed. He's mine.
+commander_firstcontact_08|[echoing] [low, commanding voice] [muffled through a respirator] Took you long enough.
+commander_firstcontact_09|[echoing] [low, commanding voice] [muffled through a respirator] You've come an awfully long way... just to die here.
+
+commander_threat_01|[echoing] [cold, commanding voice] [muffled through a respirator] This is where it ends.
+commander_threat_02|[echoing] [low, commanding voice] [muffled through a respirator] You don't leave this place.
+commander_threat_03|[echoing] [muffled through a respirator] [inhales deeply] No extraction. No rescue. Just us.
+commander_threat_04|[echoing] [low, commanding voice] [muffled through a respirator] No one's coming for you.
+commander_threat_05|[echoing] [cold, commanding voice] [muffled through a respirator] You've reached the end of the line.
+commander_threat_06|[echoing] [muffled through a respirator] [sniffs] Afraid this is your last stop.
+commander_threat_07|[echoing] [cold, commanding voice] [muffled through a respirator] There is nowhere left to run.
+commander_threat_08|[echoing] [low, commanding voice] [muffled through a respirator] You're finished.
+commander_threat_09|[echoing] [quietly threatening] [muffled through a respirator] You were dead the moment you came through that door.
+commander_threat_10|[echoing] [low, commanding voice] [muffled through a respirator] Let's see how long you last.
+
+commander_search_01|[echoing] [quietly threatening] [muffled through a respirator] Keep breathing. I can still hear you.
+commander_search_02|[echoing] [low, commanding voice] [muffled through a respirator] [sniffs] You've gone very quiet.
+commander_search_03|[echoing] [low whisper] [muffled through a respirator] I know you're close.
+commander_search_04|[echoing] [quietly threatening] [muffled through a respirator] Stay there. I'll come to you.
+commander_search_05|[echoing] [muffled through a respirator] [inhales deeply] Take your time. I'm not going anywhere.
+commander_search_06|[echoing] [low, commanding voice] [muffled through a respirator] You can hide. You cannot disappear.
+commander_search_07|[echoing] [muffled through a respirator] [sniffs] I heard that.
+commander_search_08|[echoing] [low, commanding voice] [muffled through a respirator] Still there?
+commander_search_09|[echoing] [low whisper] [muffled through a respirator] Don't move. That's better.
+commander_search_10|[echoing] [quietly threatening] [muffled through a respirator] One mistake. That's all I need.
+commander_search_11|[echoing] [low, commanding voice] [muffled through a respirator] That corner won't save you.
+commander_search_12|[echoing] [muffled through a respirator] [sniffs] You're making this far too easy.
+
+commander_lost_01|[echoing] [commanding] [muffled through a respirator] Lost visual. He hasn't gone far.
+commander_lost_02|[echoing] [commanding] [muffled through a respirator] Spread out. Find him.
+commander_lost_03|[echoing] [low, commanding voice] [muffled through a respirator] Check every corner.
+commander_lost_04|[echoing] [low, commanding voice] [muffled through a respirator] He's still here.
+commander_lost_05|[echoing] [muffled through a respirator] [sniffs] Somewhere close.
+commander_lost_06|[echoing] [commanding] [muffled through a respirator] Don't rush him. Close the exits.
+commander_lost_07|[echoing] [quietly threatening] [muffled through a respirator] Let him think he's escaped. Then take him.
+commander_lost_08|[echoing] [commanding] [muffled through a respirator] Sweep the area.
+commander_lost_09|[echoing] [low, commanding voice] [muffled through a respirator] He'll make a mistake eventually.
+
+commander_command_01|[echoing] [commanding] [muffled through a respirator] Two left. One with me.
+commander_command_02|[echoing] [commanding] [muffled through a respirator] Hold that angle.
+commander_command_03|[echoing] [commanding] [muffled through a respirator] Keep him pinned.
+commander_command_04|[echoing] [commanding] [muffled through a respirator] Suppress that doorway.
+commander_command_05|[echoing] [commanding] [muffled through a respirator] Don't bunch up.
+commander_command_06|[echoing] [commanding] [muffled through a respirator] Cut off his exit.
+commander_command_07|[echoing] [commanding] [muffled through a respirator] Take the other side.
+commander_command_08|[echoing] [commanding] [muffled through a respirator] Force him out.
+commander_command_09|[echoing] [commanding] [muffled through a respirator] Grenade. Then move.
+commander_command_10|[echoing] [commanding] [muffled through a respirator] Flank right. Quietly.
+commander_command_11|[echoing] [commanding] [muffled through a respirator] Nobody fires blind.
+commander_command_12|[echoing] [commanding] [muffled through a respirator] Watch your spacing.
+commander_command_13|[echoing] [commanding] [muffled through a respirator] Close the distance.
+commander_command_14|[echoing] [low, commanding voice] [muffled through a respirator] No rush. He's trapped.
+commander_command_15|[echoing] [cold, commanding voice] [muffled through a respirator] Don't chase him. Box him in.
+commander_command_16|[echoing] [commanding] [muffled through a respirator] Keep the pressure on.
+commander_command_17|[echoing] [low, commanding voice] [muffled through a respirator] I'll take him from here.
+
+commander_allydown_01|[echoing] [low, commanding voice] [muffled through a respirator] One down. Understood.
+commander_allydown_02|[echoing] [cold, commanding voice] [muffled through a respirator] Leave him. Stay on target.
+commander_allydown_03|[echoing] [low, commanding voice] [muffled through a respirator] Good shot. Won't happen twice.
+commander_allydown_04|[echoing] [low, commanding voice] [muffled through a respirator] You've got our attention now.
+commander_allydown_05|[echoing] [muffled through a respirator] [sniffs] That was one. There are more.
+commander_allydown_06|[echoing] [cold, commanding voice] [muffled through a respirator] Don't give him another.
+commander_allydown_07|[echoing] [low, commanding voice] [muffled through a respirator] Noted.
+commander_allydown_08|[echoing] [low, commanding voice] [muffled through a respirator] He's trying to thin us out.
+commander_allydown_09|[echoing] [commanding] [muffled through a respirator] Keep moving.
+
+commander_personal_01|[echoing] [low, commanding voice] [muffled through a respirator] You killed one of mine.
+commander_personal_02|[echoing] [cold, commanding voice] [muffled through a respirator] That was a mistake.
+commander_personal_03|[echoing] [muffled through a respirator] [exhales slowly] Very well. No more restraint.
+commander_personal_04|[echoing] [low, commanding voice] [muffled through a respirator] I was going to make this quick. Not anymore.
+
+commander_hit_01|[echoing] [muffled through a respirator] [grunts softly] I'm hit. Still operational.
+commander_hit_02|[echoing] [muffled through a respirator] [exhales sharply] Fine.
+commander_hit_03|[echoing] [low, commanding voice] [muffled through a respirator] That one nearly mattered.
+commander_hit_04|[echoing] [muffled through a respirator] Better. Try again.
+commander_hit_05|[echoing] [muffled through a respirator] [breathing heavily] Good. Again.
+commander_hit_06|[echoing] [low, commanding voice] [muffled through a respirator] You've got some fight in you after all.
+commander_hit_07|[echoing] [muffled through a respirator] [grunts] Is that the best you've got?
+commander_hit_08|[echoing] [muffled through a respirator] [exhales slowly] You're beginning to irritate me.
+
+commander_lowhp_01|[echoing] [muffled through a respirator] [breathing heavily] Right... enough of that.
+commander_lowhp_02|[echoing] [controlled anger] [muffled through a respirator] You've pushed your luck far enough.
+commander_lowhp_03|[echoing] [muffled through a respirator] [breathing heavily] No more games.
+commander_lowhp_04|[echoing] [cold, commanding voice] [muffled through a respirator] All units. Kill him.
+commander_lowhp_05|[echoing] [controlled anger] [muffled through a respirator] Forget the objective. Put him down.
+commander_lowhp_06|[echoing] [muffled through a respirator] [inhales deeply] Let's finish this properly.
+commander_lowhp_07|[echoing] [low, commanding voice] [muffled through a respirator] You wanted my attention. Now you have it.
+commander_lowhp_08|[echoing] [muffled through a respirator] [breathing heavily] Come on, then.
+commander_lowhp_09|[echoing] [quietly threatening] [muffled through a respirator] Let's see who walks away.
+
+commander_reload_01|[echoing] [commanding] [muffled through a respirator] He's reloading. Move.
+commander_reload_02|[echoing] [muffled through a respirator] [sniffs] Empty? Unfortunate.
+commander_reload_03|[echoing] [low, commanding voice] [muffled through a respirator] Wrong time to run dry.
+commander_reload_04|[echoing] [quietly threatening] [muffled through a respirator] I heard that magazine drop.
+commander_reload_05|[echoing] [commanding] [muffled through a respirator] Push him. Now.
+
+commander_retreat_01|[echoing] [low, commanding voice] [muffled through a respirator] Running already?
+commander_retreat_02|[echoing] [low, commanding voice] [muffled through a respirator] Don't turn your back on me.
+commander_retreat_03|[echoing] [muffled through a respirator] [sniffs] There it is. Fear.
+commander_retreat_04|[echoing] [quietly threatening] [muffled through a respirator] Go on. Run.
+commander_retreat_05|[echoing] [cold, commanding voice] [muffled through a respirator] You won't get far.
+commander_retreat_06|[echoing] [commanding] [muffled through a respirator] Let him run. We know where he's going.
+
+commander_close_01|[echoing] [low, commanding voice] [muffled through a respirator] Too close.
+commander_close_02|[echoing] [low, commanding voice] [muffled through a respirator] Bad decision.
+commander_close_03|[echoing] [muffled through a respirator] [sniffs] There you are.
+commander_close_04|[echoing] [quietly threatening] [muffled through a respirator] Look at me.
+commander_close_05|[echoing] [cold, commanding voice] [muffled through a respirator] It's over.
+commander_close_06|[echoing] [low whisper] [muffled through a respirator] Got you.
+
+commander_neardeath_01|[echoing] [muffled through a respirator] [breathing heavily] Impressive. Genuinely.
+commander_neardeath_02|[echoing] [low, commanding voice] [muffled through a respirator] Almost had me.
+commander_neardeath_03|[echoing] [muffled through a respirator] [exhales slowly] You're better than the others.
+commander_neardeath_04|[echoing] [cold, commanding voice] [muffled through a respirator] Shame it won't matter.
+commander_neardeath_05|[echoing] [muffled through a respirator] [breathing heavily] One of us is leaving this room. And it isn't you.
+
+commander_kill_01|[echoing] [quietly threatening] [muffled through a respirator] You were warned.
+commander_kill_02|[echoing] [cold, commanding voice] [muffled through a respirator] Clear.
+commander_kill_03|[echoing] [cold, commanding voice] [muffled through a respirator] Clean it up.
+commander_kill_04|[echoing] [low, commanding voice] [muffled through a respirator] Threat removed.
+commander_kill_05|[echoing] [low, commanding voice] [muffled through a respirator] That's that.
+commander_kill_06|[echoing] [muffled through a respirator] [sniffs] Waste of everyone's time.
+commander_kill_07|[echoing] [commanding] [muffled through a respirator] Check the body.
+commander_kill_08|[echoing] [quietly threatening] [muffled through a respirator] Should've stayed home.
+commander_kill_09|[echoing] [low, commanding voice] [muffled through a respirator] Next.
+commander_kill_10|[echoing] [low, commanding voice] [muffled through a respirator] All that effort... for nothing.
+commander_kill_11|[echoing] [quietly threatening] [muffled through a respirator] And that's the end of you.
+
+commander_rare_01|[echoing] [low, commanding voice] [muffled through a respirator] [inhales deeply] Can you hear me? Good. Then listen carefully. You're not getting out.
+commander_rare_02|[echoing] [muffled through a respirator] [sniffs] Keep breathing. It makes you easier to find.
+commander_rare_03|[echoing] [low, commanding voice] [muffled through a respirator] Do you know what your problem is? You still think this is a fight.
+commander_rare_04|[echoing] [quietly threatening] [muffled through a respirator] I've watched you come this far. I wanted to see if you were worth my time.
+commander_rare_05|[echoing] [muffled through a respirator] [inhales deeply] You've survived longer than expected. Let's correct that.
+commander_rare_06|[echoing] [quietly threatening] [muffled through a respirator] They're all gone. Just you and me now.
+commander_rare_07|[echoing] [muffled through a respirator] [slow, controlled breathing] No radio. No reinforcements. No way out. Perfect.
+commander_rare_08|[echoing] [quietly threatening] [muffled through a respirator] Don't worry. It'll be quick. [sniffs] Probably.
+commander_rare_09|[echoing] [low, commanding voice] [muffled through a respirator] Look around you. This is as far as you ever get.
+commander_rare_10|[echoing] [quietly threatening] [muffled through a respirator] I don't need to know your name. I only need to know where you're standing.

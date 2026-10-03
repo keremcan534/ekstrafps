@@ -1976,7 +1976,10 @@ export class Game {
     // --- UI ---
     const cw = this.weapons.current;
     const reload = cw.state === 'reloading' ? (cw.data.reload.kind === 'magazine' ? cw.stateProgress : cw.ammo / cw.data.magazineSize) : -1;
-    if (cw.state === 'reloading' && this.prevWeaponState !== 'reloading') aiWorld.emit('reload', this.player.feet, 'alpha', this.player);
+    if (cw.state === 'reloading' && this.prevWeaponState !== 'reloading') {
+      aiWorld.emit('reload', this.player.feet, 'alpha', this.player);
+      if (feel.enemyAI && !this.health.dead) for (const s of this.squads) s.hearReload(this.player.feet);
+    }
     this.prevWeaponState = cw.state;
     // Phones: the compact strip (short name, the fire-mode chip alone).
     const mode = cw.fireMode.toUpperCase();

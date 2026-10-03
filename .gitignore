@@ -10,3 +10,6 @@ production/trailer/music/*.mp3
 production/trailer/build/
 production/trailer/frames/
 release/
+
+# Secrets (ElevenLabs key for scripts/gen-commander-voice.mjs)
+.env

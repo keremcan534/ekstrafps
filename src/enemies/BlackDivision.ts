@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { GROUPS } from '../core/Physics';
 import { JOG, RUN, WALK, Soldier, type PlayerTarget, type Role, type SoldierDeps, type VoiceLine } from './Soldier';
+import { pickCommanderLine, type CommanderCategory } from '../audio/CommanderVoice';
 
 type SquadState = 'patrol' | 'combat' | 'search';
 
@@ -22,7 +23,9 @@ const SPACING = 2.6;
 interface PendingLine {
   at: number;
   soldier: Soldier;
-  line: VoiceLine;
+  /** An operator's stock line, or a line from the Warden's own voice pack. */
+  line: VoiceLine | CommanderCategory;
+  commander: boolean;
 }
 
 /**
@@ -51,6 +54,12 @@ export class BlackDivision {
   /** Facility alarm + announcement played once per deployment. */
   private announced = false;
   private searchTime = 0;
+  /** The Warden's chatter: next combat / search taunt, next "too close" line, one-shot lines. */
+  private cmdChatter = 0;
+  private cmdClose = 0;
+  private cmdLastHit = -99;
+  private cmdLowHp = false;
+  private cmdPersonal = false;
   private respawnTimer = -1;
   private resumeTimer = -1;
   private aimPoint = new THREE.Vector3();
@@ -74,11 +83,17 @@ export class BlackDivision {
           onDamaged: (s) => {
             if (this.state === 'patrol') this.engage(s, false);
             this.lastSeenAgo = Math.min(this.lastSeenAgo, 1);
-            if (Math.random() < 0.35) this.say(s, 'hit', 0.25);
+            if (s === this.commander) this.commanderHurt(s);
+            else if (Math.random() < 0.35) this.say(s, 'hit', 0.25);
           },
           onKilled: (s) => {
+            const warden = this.commander;
             const mate = this.nearestAlive(s.pos);
-            if (mate) this.say(mate, 'man_down', 0.7);
+            if (warden) {
+              // The first loss is personal; after that he just acknowledges it.
+              this.sayCmd(this.cmdPersonal ? 'allydown' : 'personal', 0.9);
+              this.cmdPersonal = true;
+            } else if (mate) this.say(mate, 'man_down', 0.7);
             if (this.state === 'patrol') {
               if (mate) this.engage(mate, false);
             }
@@ -125,6 +140,10 @@ export class BlackDivision {
     this.respawnTimer = -1;
     this.resumeTimer = -1;
     this.pending.length = 0;
+    this.cmdChatter = 0;
+    this.cmdClose = 0;
+    this.cmdLowHp = false;
+    this.cmdPersonal = false;
     this.assignRoles();
   }
 
@@ -153,6 +172,13 @@ export class BlackDivision {
     }
   }
 
+  /** Player reloading within earshot: the Warden calls it. */
+  hearReload(pos: THREE.Vector3): void {
+    const w = this.commander;
+    if (this.state !== 'combat' || !w || w.pos.distanceTo(pos) > 30 || Math.random() > 0.6) return;
+    this.sayCmd('reload', 0.2);
+  }
+
   onPlayerKilled(): void {
     if (this.state === 'patrol') return;
     const s = this.nearestAlive(this.lastKnown);
@@ -163,28 +189,87 @@ export class BlackDivision {
   // ------------------------------------------------------------ voice
 
   private say(s: Soldier, line: VoiceLine, delay = 0): void {
-    this.pending.push({ at: this.time + delay, soldier: s, line });
+    // The Warden only speaks his own lines: an operator makes the stock call for him.
+    if (s === this.commander) {
+      const other = this.nearestAlive(s.pos, s);
+      if (!other) return;
+      s = other;
+    }
+    this.pending.push({ at: this.time + delay, soldier: s, line, commander: false });
+  }
+
+  /** The Warden: squad leader with his own voice pack (null once he is down). */
+  private get commander(): Soldier | null {
+    const w = this.soldiers[0];
+    return w.boss && w.alive ? w : null;
+  }
+
+  private sayCmd(cat: CommanderCategory, delay = 0): void {
+    const w = this.commander;
+    if (w) this.pending.push({ at: this.time + delay, soldier: w, line: cat, commander: true });
+  }
+
+  private commanderHurt(w: Soldier): void {
+    const hp = w.body.health;
+    if (!this.cmdLowHp && hp.health < hp.maxHealth * 0.35) {
+      this.cmdLowHp = true;
+      this.sayCmd('lowhp', 0.3);
+    } else if (this.time - this.cmdLastHit > 6 && Math.random() < 0.5) {
+      this.cmdLastHit = this.time;
+      this.sayCmd('hit', 0.25);
+    }
+  }
+
+  /** Taunts and orders between the event lines, plus a line when you get close to him. */
+  private commanderChatter(dt: number, player: PlayerTarget): void {
+    const w = this.commander;
+    if (!w || this.state === 'patrol' || !player.alive) return;
+    this.cmdChatter -= dt;
+    this.cmdClose -= dt;
+    if (this.state === 'combat' && w.sees && this.cmdClose <= 0 && w.pos.distanceTo(player.feet) < 7) {
+      this.cmdClose = 18;
+      this.sayCmd('close');
+      return;
+    }
+    if (this.cmdChatter > 0) return;
+    if (this.state === 'search') {
+      this.cmdChatter = 10 + Math.random() * 7;
+      this.sayCmd('search');
+    } else {
+      this.cmdChatter = 13 + Math.random() * 10;
+      this.sayCmd(Math.random() < 0.6 ? 'command' : 'threat');
+    }
   }
 
   private flushVoice(): void {
     if (this.voiceCooldown > 0 || !this.pending.length) return;
     const i = this.pending.findIndex((p) => p.at <= this.time);
     if (i < 0) return;
-    const { soldier, line } = this.pending.splice(i, 1)[0];
+    const { soldier, line, commander } = this.pending.splice(i, 1)[0];
     if (!soldier.alive) return;
     const head = soldier.headPos;
+    const near = head.distanceTo(this.listener()) < 60;
+    if (commander) {
+      const cmd = pickCommanderLine(line as CommanderCategory);
+      if (!cmd) return;
+      this.deps.audio.play(`bd.cmd.${cmd.id}`, { position: head, volume: 1.4 });
+      if (near) this.onRadio?.(cmd.text);
+      // Long lines hold the channel so nobody talks over him.
+      this.voiceCooldown = 1.25 + cmd.text.length * 0.045;
+      return;
+    }
     this.deps.audio.play(`bd.${line}`, { position: head, pitch: soldier.voicePitch * 0.88, volume: 1.4 });
-    if (head.distanceTo(this.listener()) < 60) this.onRadio?.(LINES[line]);
+    if (near) this.onRadio?.(LINES[line as VoiceLine]);
     this.voiceCooldown = 1.25;
   }
 
   // ------------------------------------------------------------ squad brain
 
-  private nearestAlive(p: THREE.Vector3): Soldier | null {
+  private nearestAlive(p: THREE.Vector3, except?: Soldier): Soldier | null {
     let best: Soldier | null = null;
     let bd = Infinity;
     for (const s of this.soldiers) {
-      if (!s.alive) continue;
+      if (!s.alive || s === except) continue;
       const d = s.pos.distanceToSquared(p);
       if (d < bd) {
         bd = d;
@@ -211,6 +296,7 @@ export class BlackDivision {
     this.assignRoles();
     this.enterCombat();
     this.say(spotter, spotted ? 'see_enemy' : 'contact');
+    if (this.commander) this.sayCmd(spotted ? 'firstcontact' : 'threat', 3.2);
     if (spotted) this.deps.audio.play('bd.encounter');
     if (spotted && !this.announced) {
       this.announced = true;
@@ -231,6 +317,7 @@ export class BlackDivision {
 
   private enterCombat(): void {
     this.state = 'combat';
+    this.cmdChatter = 12 + Math.random() * 6;
     this.searchTime = 0;
     this.resumeTimer = -1;
     for (const s of this.soldiers) {
@@ -246,7 +333,10 @@ export class BlackDivision {
     this.state = 'search';
     this.searchTime = 0;
     const a = this.anchor;
-    if (a) this.say(a, 'lost_visual');
+    if (this.commander) {
+      this.sayCmd('lost');
+      this.cmdChatter = 8 + Math.random() * 4;
+    } else if (a) this.say(a, 'lost_visual');
     for (const s of this.soldiers) {
       if (!s.alive) continue;
       s.state = 'search';
@@ -320,6 +410,7 @@ export class BlackDivision {
       this.searchTime += dt;
       if (this.searchTime > 40) this.resumePatrol();
     }
+    this.commanderChatter(dt, target);
 
     switch (this.state) {
       case 'patrol':

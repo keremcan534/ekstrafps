@@ -7,6 +7,7 @@
  * Phones fetch WAVs in audio/guns and audio/voice as their .mp3 twins (compressedUrl):
  * run `node scripts/encode-audio.mjs` after adding or regenerating one.
  */
+import { COMMANDER_LINES } from './CommanderVoice';
 export interface SoundLayer {
   /** Synth recipe name from Synth.ts. */
   synth?: string;
@@ -360,6 +361,11 @@ for (let sp = 0; sp < 6; sp++) {
     const files = VOICE_FILES.filter((f) => f.startsWith(`civ_${kind}_${sp}`)).map((f) => `audio/voice/${f}`);
     SOUND_BANK[`civ.${kind}.${sp}`] = { layers: [{ files, gain }], reverb: 0.35, pitchVariance: 0.03, maxVoices: 2, maxDist, voice: true };
   }
+}
+
+// The Warden (SABLE commander): one event per line, so BlackDivision can subtitle it.
+for (const { id } of COMMANDER_LINES) {
+  SOUND_BANK[`bd.cmd.${id}`] = { reverb: 0.8, layers: [{ synth: 'radio_click', gain: 0.5, dry: true }, { file: `audio/voice/${id}.wav`, gain: 1.15, delay: 0.06 }], maxVoices: 1, maxDist: 150, voice: true };
 }
 
 /**
