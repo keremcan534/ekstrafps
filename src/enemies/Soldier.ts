@@ -542,7 +542,9 @@ export class Soldier implements LightSource {
     this.pathIndex = 0;
   }
 
+  /** Arrived (or no path): not while a path is still being worked out (that's no arrival). */
   get pathDone(): boolean {
+    if (this.pathWant) return false;
     return !this.path || this.pathIndex >= this.path.length;
   }
 
@@ -646,7 +648,25 @@ export class Soldier implements LightSource {
         p.headX += 0.25;
         p.headY = -0.2;
       }
-    } else this.checking = 0;
+    } else {
+      this.checking = 0;
+      // On the move: a body that walks, not a mannequin sliding. Shoulders counter the
+      // hips each step, the head nods with the footfalls, a lean into a run, and eyes
+      // that check the sides when there's nothing to aim at.
+      const sa = Math.min(1.25, this.strideAmount);
+      p.spineY += Math.sin(this.stride) * 0.09 * sa;
+      p.spineX += 0.07 * Math.max(0, sa - 0.75);
+      p.headX += Math.sin(this.stride * 2) * 0.035 * sa;
+      if (aimMode !== 'aim') {
+        this.glanceTimer -= dt;
+        if (this.glanceTimer <= 0) {
+          this.glanceTimer = 1.2 + Math.random() * 2.5;
+          this.glanceTarget = Math.random() < 0.5 ? 0 : (Math.random() * 2 - 1) * 0.6;
+        }
+        this.glance += (this.glanceTarget - this.glance) * Math.min(1, dt * 3);
+        p.headY += this.glance;
+      } else this.glance *= 1 - Math.min(1, dt * 6);
+    }
     this.roll += (rollWant - this.roll) * Math.min(1, dt * 5);
     p.gripR = this.rig.rightHand;
     const reloading = this.reloadTimer > 0;
@@ -804,7 +824,11 @@ export class Soldier implements LightSource {
     // The body's own lean (crouch, spine) is part of the parent chain.
     // Cancel the animated spine lean (not the hit reactions: those throw the aim off).
     const lean = (mode === 'low' || mode === 'high' ? 0.04 : 0.1) + this.crouch * 0.85 * 0.18;
-    this.aimNode.rotation.set(-(this.aimPitch + this.recoilPitch.value) - lean, this.aimYaw + this.recoilYaw.value, this.roll);
+    // The gun rides the gait: a bob per footfall and a sway per stride (steadied when aiming).
+    const sa = Math.min(1.25, this.strideAmount) * (mode === 'aim' ? 0.3 : 1);
+    const bobP = Math.sin(this.stride * 2) * 0.035 * sa;
+    const bobY = Math.sin(this.stride) * 0.05 * sa;
+    this.aimNode.rotation.set(-(this.aimPitch + this.recoilPitch.value) - lean + bobP, this.aimYaw + this.recoilYaw.value + bobY, this.roll + bobY * 0.6);
     // Where the gun sits in the hands. Handguns: two-handed out in front to aim
     // (centred under the eyes), compressed at the chest at the ready, low while
     // running. Long guns stay shouldered (the holder origin is the shoulder pocket).

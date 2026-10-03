@@ -96,6 +96,13 @@ const MODES = {
   solo: { name: 'SURVIVAL', tag: 'SOLO', text: 'Classic survival. Open the facility zone by zone; death ends the run.' },
 };
 
+/** Spectator scenarios: sit back and watch the AI squads fight (free camera). */
+const WATCH = {
+  J: { q: 'aitest=J', name: '3v3 FIREFIGHT', tag: 'AI vs AI', text: 'Two squads, even start, long fight. Cover, flanks, suppression, callouts.' },
+  E: { q: 'aitest=E', name: 'SQUAD BATTLE', tag: 'AI vs AI', text: 'Three on three across the yard. Fly around while they fight it out.' },
+  match: { q: 'map=site9&mode=teams&watch', name: 'AI TEAM MATCH', tag: 'SITE-9 · NO PLAYER', text: 'Three AI squads race for supply drops. Live stats on screen (F6).' },
+};
+
 const KEYS: [string, string][] = [
   ['W A S D', 'Move'], ['Mouse', 'Look'], ['Shift', 'Sprint'], ['Space', 'Jump'], ['C', 'Crouch'],
   ['Q / E', 'Lean'], ['V', 'Swap shoulder'], ['LMB', 'Fire'], ['RMB', 'Aim down sights'], ['R', 'Reload'],
@@ -293,10 +300,25 @@ export class MainMenu {
         if (id === o.map) return;
         store('weaponlab.map', id);
         const p = new URLSearchParams(location.search);
+        p.delete('aitest');
+        p.delete('watch');
         if (id === 'site9') p.set('map', 'site9');
         else p.delete('map');
         p.set('menu', '1');
         reload(p);
+      });
+    }
+    // Watch the AI: spectator scenarios (WASD fly, Shift fast, Space / C up and down).
+    el('div', 'panel-label', this.panel, 'AI WATCH');
+    const watch = el('div', 'gcards', this.panel);
+    const here = new URLSearchParams(location.search);
+    for (const [id, w] of Object.entries(WATCH)) {
+      const on = id === 'match' ? here.has('watch') : here.get('aitest') === id;
+      const c = el('button', `gcard small ${on ? 'active' : ''}`, watch, `<b>${w.name}</b><em>${w.tag}</em><p>${w.text}</p><span class="gbtn-shine"></span>`);
+      c.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (on) return;
+        reload(new URLSearchParams(w.q));
       });
     }
     if (o.map === 'site9') {
@@ -309,6 +331,8 @@ export class MainMenu {
           if (id === o.mode) return;
           store('weaponlab.mode', id);
           const p = new URLSearchParams(location.search);
+          p.delete('aitest');
+          p.delete('watch');
           if (id === 'solo') p.set('mode', 'solo');
           else p.delete('mode');
           p.set('menu', '1');

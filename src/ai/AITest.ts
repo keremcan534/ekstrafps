@@ -14,6 +14,7 @@ import { SquadBrain } from './Squad';
 import type { Bot, Decision } from './Bot';
 import { AI_TUNING } from './Tuning';
 import { aiWorld } from './World';
+import { SquadVoice } from './SquadVoice';
 
 export interface AITestDeps {
   soldierDeps: SoldierDeps;
@@ -70,9 +71,12 @@ export class AITest {
   private obstacle: Obstacle | null = null;
   private lastKnown = new THREE.Vector3();
   private soundAt = new THREE.Vector3();
+  /** Encounter sting + radio callouts, so a firefight sounds like one. */
+  private voice: SquadVoice;
 
   constructor(private d: AITestDeps, readonly id: string) {
     d.clearLab();
+    this.voice = new SquadVoice(d.soldierDeps.audio);
     feel.godMode = !new URLSearchParams(location.search).has('mortal');
     this.panel = document.createElement('div');
     this.panel.className = 'ai-test-panel';
@@ -285,6 +289,7 @@ export class AITest {
       const mates = t.agents.map((a) => a.soldier);
       for (const a of t.agents) a.update(dt, w, mates);
     }
+    this.voice.update(this.time, this.bots());
     this.script(this.time, dt);
     this.panelTimer -= dt;
     if (this.panelTimer <= 0) {

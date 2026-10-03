@@ -107,6 +107,8 @@ export class Bot implements AIListener {
   private retreatedAt = -1e9;
   private lastReposition = -1e9;
   private strafeTimer = 0;
+  /** Fighting from full cover on one knee (a few shots at a time). */
+  private kneel = false;
   private crouchCycle = 0;
   private standUp = true;
   private kiteTimer = 0;
@@ -141,6 +143,11 @@ export class Bot implements AIListener {
   }
 
   // ------------------------------------------------------------ identity (AIListener)
+
+  /** When this bot last took a hit (aiWorld time). */
+  get hurtAt(): number {
+    return this.lastHurt;
+  }
 
   get team(): string {
     return this.agent.team;
@@ -942,8 +949,18 @@ export class Bot implements AIListener {
           this.fire = false;
         } else this.navigator.stop();
       } else {
-        this.navigator.stop();
         if (!this.atPeek) this.peek.until = 0;
+        // Behind full cover: shuffle along it now and then and drop to a knee for a few
+        // shots (a man fighting from cover keeps adjusting; a statue doesn't).
+        this.strafeTimer -= dt;
+        if (this.strafeTimer <= 0) {
+          this.strafeTimer = rand(1.4, 3.2);
+          this.kneel = !this.cover.low && Math.random() < 0.35;
+          // Along the cover: whichever way is open (one side is usually the wall).
+          const side = Math.random() < 0.5 ? -1 : 1;
+          const dist = rand(0.6, 1.1);
+          if (Math.random() < 0.15 || !(this.sideStep(t.pos, dist, WALK, side) || this.sideStep(t.pos, dist, WALK, -side))) this.navigator.stop();
+        }
       }
       if (this.cover.low) {
         // Low cover: up to shoot, down to reload / when the fire gets heavy.
@@ -955,15 +972,21 @@ export class Bot implements AIListener {
         const up = this.standUp && s.reloadTimer <= 0 && this.suppression < 1;
         s.crouchTarget = up ? 0 : 1;
         if (!up) this.fire = false;
-      } else s.crouchTarget = 0;
+      } else s.crouchTarget = this.kneel && !this.navigator.hasDest && s.reloadTimer <= 0 ? 0.6 : 0;
     } else {
       this.action = 'shooting';
-      // In the open: aggressive bots side-step to spoil aim; careful ones get small.
+      // In the open nobody stands still (a standing man is an easy shot): side-steps to
+      // spoil aim, the pushy ones edging in, the careful ones giving ground up close,
+      // a beat of stillness now and then to settle the aim.
       this.strafeTimer -= dt;
       if (this.strafeTimer <= 0) {
-        this.strafeTimer = rand(1.8, 3.4) / Math.max(0.6, this.profile.push);
-        if (this.profile.push > 1.1 || now - this.lastThreatAt < 2) this.sideStep(t.pos, rand(1.5, 3), WALK);
-        else this.navigator.stop();
+        this.strafeTimer = rand(0.8, 1.9) / Math.max(0.7, Math.sqrt(this.profile.push));
+        const pushy = this.profile.push > 1.05;
+        const r = Math.random();
+        if (r < 0.15 && now - this.lastThreatAt > 2) this.navigator.stop();
+        else if (r < 0.35 && pushy && d > 10) this.navigator.go(this.tmp2.copy(s.pos).lerp(t.pos, Math.min(0.35, 3 / d)), WALK, 0.4);
+        else if (r < 0.35 && !pushy && d < 9) this.stepAway(t.pos, 2.5, WALK);
+        else this.sideStep(t.pos, rand(1.4, 3.2), this.suppression > 0.5 || now - this.lastThreatAt < 2 ? JOG : WALK);
       }
       s.crouchTarget = this.profile.cover > 1.2 && d > 15 && !this.navigator.hasDest ? 1 : 0;
     }
@@ -1466,14 +1489,16 @@ export class Bot implements AIListener {
   }
 
   /** Side-step across the line to `from` (spoils their aim). */
-  private sideStep(from: THREE.Vector3, dist: number, speed: number, side = Math.random() < 0.5 ? -1 : 1): void {
+  private sideStep(from: THREE.Vector3, dist: number, speed: number, side = Math.random() < 0.5 ? -1 : 1): boolean {
     const s = this.soldier;
     const dx = from.x - s.pos.x;
     const dz = from.z - s.pos.z;
     const l = Math.hypot(dx, dz) || 1;
     const x = s.pos.x + (-dz / l) * side * dist;
     const z = s.pos.z + (dx / l) * side * dist;
-    if (this.deps.nav.clearLine(s.pos.x, s.pos.z, x, z)) this.navigator.go(this.tmp2.set(x, 0, z), speed, 0.4);
+    if (!this.deps.nav.clearLine(s.pos.x, s.pos.z, x, z)) return false;
+    this.navigator.go(this.tmp2.set(x, 0, z), speed, 0.4);
+    return true;
   }
 
   /** Debug label text. */
