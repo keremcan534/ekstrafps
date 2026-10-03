@@ -441,7 +441,8 @@ export class WeaponController implements WeaponListener {
     const kick = vm.kick(d, ammo, player.crouching);
     this.recoil.onShot(d, kick, camera, this.adsAmount);
 
-    audio.play(d.audio.fire);
+    // Your own gun a little over everything else (+2 dB).
+    audio.play(d.audio.fire, { volume: 1.25 });
     this.onPlayerShot?.(this.muzzleWorld, d.model === 'asval');
     Haptics.pulse(d.animSet === 'bolt' ? 35 : HAPTIC_MS[d.category]);
     if (feel.muzzleFlash && d.fx.muzzleFlashScale > 0.3) {

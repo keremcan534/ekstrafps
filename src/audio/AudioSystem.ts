@@ -13,7 +13,8 @@ const OCCLUSION_TTL = 200;
 export interface AudioOptions {
   /**
    * Phones: half the voices held for their real length, no per-shot room tails, far
-   * gunfire culled, occlusion rays cached, a shorter mono reverb, no bus compressor,
+   * gunfire culled, occlusion rays cached, a shorter mono reverb, a louder bus (more
+   * presence and make-up gain for small speakers),
    * 22.05 kHz files kept at 22.05 kHz in memory, audio suspended in the background,
    * compressed .mp3 twins fetched instead of the WAVs.
    */
@@ -217,18 +218,23 @@ export class AudioSystem {
     limiter.ratio.value = 20;
     limiter.attack.value = 0.001;
     limiter.release.value = 0.08;
-    const tone = this.master.connect(low).connect(high);
-    if (this.lowSpec) tone.connect(limiter).connect(this.ctx.destination);
-    else {
-      const comp = this.ctx.createDynamicsCompressor();
-      // Gentle bus compression: shots keep their transient (the punch) instead of being squashed.
-      comp.threshold.value = -8;
-      comp.knee.value = 6;
-      comp.ratio.value = 3;
-      comp.attack.value = 0.002;
-      comp.release.value = 0.12;
-      tone.connect(comp).connect(limiter).connect(this.ctx.destination);
-    }
+    // Presence where small speakers live (2-3 kHz): gunfire on a phone was all peak and
+    // no body. Then bus compression with make-up gain, so shots sound as loud as they
+    // peak (the slow attack lets the crack through); the limiter still stops clipping.
+    const presence = this.ctx.createBiquadFilter();
+    presence.type = 'peaking';
+    presence.frequency.value = 2400;
+    presence.Q.value = 0.8;
+    presence.gain.value = this.lowSpec ? 3.5 : 1.5;
+    const comp = this.ctx.createDynamicsCompressor();
+    comp.threshold.value = this.lowSpec ? -20 : -14;
+    comp.knee.value = 8;
+    comp.ratio.value = this.lowSpec ? 4 : 3;
+    comp.attack.value = 0.004;
+    comp.release.value = 0.15;
+    const makeup = this.ctx.createGain();
+    makeup.gain.value = this.lowSpec ? 1.8 : 1.35;
+    this.master.connect(low).connect(high).connect(presence).connect(comp).connect(makeup).connect(limiter).connect(this.ctx.destination);
     this.world = this.ctx.createGain();
     this.world.connect(this.master);
 
