@@ -26,6 +26,8 @@ export const GROUPS = {
   debris: groups(G.DEBRIS, G.WORLD | G.PROP | G.SHELL | G.DEBRIS | G.HITBOX | G.RAY),
   /** Robot ragdoll parts: like debris, but ragdolls never collide with each other or themselves. */
   ragdoll: groups(G.DEBRIS, G.WORLD | G.PROP | G.SHELL | G.HITBOX | G.RAY),
+  /** Phones: ragdolls ignore living hitboxes too, so walkers don't keep waking settled corpses. */
+  ragdollLite: groups(G.DEBRIS, G.WORLD | G.PROP | G.SHELL | G.RAY),
   /** Query groups for bullets. */
   bullet: groups(G.RAY, G.WORLD | G.PROP | G.HITBOX | G.DEBRIS),
   /** Enemy bullets can also hit the player. */
@@ -97,7 +99,10 @@ export class Physics {
   readonly world: RAPIER.World;
   readonly receivers = new Map<number, HitReceiver>();
   private synced: { body: RAPIER.RigidBody; object: THREE.Object3D }[] = [];
+  /** One ray reused by every query (origin/dir are written in place). */
   private ray = new RAPIER.Ray({ x: 0, y: 0, z: 0 }, { x: 0, y: 0, z: 1 });
+  private syncPos = { x: 0, y: 0, z: 0 };
+  private syncRot = { x: 0, y: 0, z: 0, w: 1 };
   private rayHit: RayHit = {
     collider: null as unknown as RAPIER.Collider,
     receiver: undefined,
@@ -115,11 +120,21 @@ export class Physics {
     const len = d.length();
     if (len < 1e-4) return true;
     d.divideScalar(len);
-    this.ray.origin = { x: a.x, y: a.y, z: a.z };
-    this.ray.dir = { x: d.x, y: d.y, z: d.z };
+    this.setRay(a, d);
     return !this.world.castRay(this.ray, len, true, undefined, queryGroups);
   }
   private losDir = new THREE.Vector3();
+
+  private setRay(origin: THREE.Vector3, dir: THREE.Vector3): void {
+    const o = this.ray.origin;
+    const d = this.ray.dir;
+    o.x = origin.x;
+    o.y = origin.y;
+    o.z = origin.z;
+    d.x = dir.x;
+    d.y = dir.y;
+    d.z = dir.z;
+  }
 
   static async create(timestep: number): Promise<Physics> {
     await RAPIER.init();
@@ -148,8 +163,9 @@ export class Physics {
     for (let i = 0; i < this.synced.length; i++) {
       const { body, object } = this.synced[i];
       if (!body.isEnabled() || body.isSleeping()) continue;
-      const t = body.translation();
-      const r = body.rotation();
+      // Scratch out-objects: no allocation per synced body per frame.
+      const t = body.translation(this.syncPos);
+      const r = body.rotation(this.syncRot);
       object.position.set(t.x, t.y, t.z);
       object.quaternion.set(r.x, r.y, r.z, r.w);
     }
@@ -171,8 +187,7 @@ export class Physics {
    * Cast a bullet ray. Returns a shared result object (do not keep a reference).
    */
   raycast(origin: THREE.Vector3, dir: THREE.Vector3, maxDist: number, queryGroups: number = GROUPS.bullet, ignoreOwner?: object | null): RayHit | null {
-    this.ray.origin = { x: origin.x, y: origin.y, z: origin.z };
-    this.ray.dir = { x: dir.x, y: dir.y, z: dir.z };
+    this.setRay(origin, dir);
     this.ignoreOwner = ignoreOwner ?? null;
     const hit = this.world.castRayAndGetNormal(
       this.ray, maxDist, true, undefined, queryGroups, undefined, undefined, this.ignoreOwner ? this.ownerFilter : undefined,

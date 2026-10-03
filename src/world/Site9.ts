@@ -1,7 +1,8 @@
 import * as THREE from 'three';
 import type { HitReceiver, Physics } from '../core/Physics';
 import { PhysicsProps } from './PhysicsProps';
-import { corrugatedTexture, glowTexture, grimeRoughness, gridTexture, woodTexture } from '../fx/Textures';
+import { MOBILE_ANISOTROPY } from '../config/Graphics';
+import { corrugatedTexture, glowTexture, grimeRoughness, gridTexture, gridTint, neutralGridTexture, woodTexture } from '../fx/Textures';
 import type { RobotOptions } from '../targets/RobotTarget';
 import type { GameMap, SquadSpawn, Station } from './GameMap';
 import { LayoutBuilder, type BuiltRoom, type DoorSlot, type LinkDef, type RoomDef, type RoomStyle, type Rect } from './LayoutBuilder';
@@ -14,6 +15,9 @@ const METAL: HitReceiver = { surface: 'metal', allowDecals: true };
 /** A weapon for sale on a wall (Survival). */
 /** Moonlight through the skylights and over the yard. */
 const SUN = 0.3;
+/** Phones: hemisphere fill with the power on, with / without the moonlight in the scene. */
+const MOBILE_FILL = 0.42;
+const MOBILE_FILL_NO_SUN = 0.5;
 
 export interface WallBuy {
   weapon: string;
@@ -274,8 +278,14 @@ export class Site9 implements GameMap {
   constructor(private physics: Physics, mobile: boolean) {
     this.mobile = mobile;
     const std = (o: THREE.MeshStandardMaterialParameters) => new THREE.MeshStandardMaterial(o);
-    const rough = grimeRoughness();
-    const grid = (a: string, b: string, c: string, r = 0.8, metal = 0.05) => std({ map: gridTexture(a, b, c), roughnessMap: rough, roughness: Math.min(1, r + 0.12), metalness: metal });
+    // Panel grids: one per colour. Phones: one neutral 256² grid tinted per surface
+    // (line / accent colours follow the base), no roughness map.
+    const rough = mobile ? null : grimeRoughness();
+    const gridTex = mobile ? neutralGridTexture(256) : null;
+    const grid = (a: string, b: string, c: string, r = 0.8, metal = 0.05) =>
+      gridTex
+        ? std({ map: gridTex, color: gridTint(a), roughness: Math.min(1, r + 0.12), metalness: metal })
+        : std({ map: gridTexture(a, b, c), roughnessMap: rough, roughness: Math.min(1, r + 0.12), metalness: metal });
     this.serverLeds = std({ color: 0x000000, emissive: 0x38ff8a, emissiveIntensity: 2 });
     this.coreGlow = std({ color: 0x000000, emissive: 0x4fd2ff, emissiveIntensity: 3 });
     const wood = woodTexture();
@@ -381,7 +391,8 @@ export class Site9 implements GameMap {
     // light comes from the lamps (pools on the floor + real lights near you, see Lighting).
     // Ceilings don't cast shadows, so the key light reads as "light from above";
     // its shadow camera follows the player (crisp shadows nearby, cheap).
-    this.ambient = mobile ? 0.42 : 0.24;
+    // Phones: the moonlight is only in the scene with shadows on (see syncSun); without it the fill is a touch higher.
+    this.ambient = mobile ? MOBILE_FILL_NO_SUN : 0.24;
     this.hemi = new THREE.HemisphereLight(0xc4d0e0, 0x3a3631, this.ambient);
     this.group.add(this.hemi);
     for (const k of ['lampCool', 'lampWarm', 'lampBlue', 'screen', 'screenWarm']) {
@@ -401,7 +412,9 @@ export class Site9 implements GameMap {
     cam.far = 90;
     sun.shadow.bias = -0.0005;
     sun.shadow.normalBias = 0.04;
-    this.group.add(sun, sun.target);
+    // Phones: a directional light costs every lit pixel even without shadows, so it
+    // joins the scene only when shadows are switched on (Graphics), see syncSun.
+    if (!mobile) this.group.add(sun, sun.target);
     this.sun = sun;
     if (!mobile) {
       const point = (color: number, intensity: number, dist: number, pos: V3) => {
@@ -1715,6 +1728,13 @@ export class Site9 implements GameMap {
         t = new THREE.CanvasTexture(c);
         t.colorSpace = THREE.SRGBColorSpace;
         t.anisotropy = 4;
+        if (this.mobile) {
+          // Phones: no mip chain (a third more memory per sign, and the upload builds it),
+          // anisotropy at the phone cap (signs aren't in the Textures cache setTextureAnisotropy walks).
+          t.anisotropy = MOBILE_ANISOTROPY;
+          t.generateMipmaps = false;
+          t.minFilter = THREE.LinearFilter;
+        }
         tex.set(text, t);
       }
       return t;
@@ -1854,6 +1874,18 @@ export class Site9 implements GameMap {
     for (const [l, base] of this.accents) l.intensity = base * (1 - 0.7 * k);
   }
 
+  /**
+   * Phones: the moonlight is in the scene only while it casts shadows (Game's
+   * setQuality switches castShadow and already recompiles the materials that
+   * frame, so adding / removing it here costs no extra recompile).
+   */
+  private syncSun(): void {
+    if (this.sun.castShadow) this.group.add(this.sun, this.sun.target);
+    else this.group.remove(this.sun, this.sun.target);
+    this.ambient = this.sun.castShadow ? MOBILE_FILL : MOBILE_FILL_NO_SUN;
+    this.setBlackout(this.blackout);
+  }
+
   /** Emergency lamp pulse 0.06..1 (strips and their lights beat together). */
   get emergencyPulse(): number {
     return 0.53 + 0.47 * Math.sin(this.time * 4);
@@ -1883,6 +1915,7 @@ export class Site9 implements GameMap {
     this.brokenLevel = on * (1 - this.blackout);
     this.brokenLampMat.emissiveIntensity = 0.02 + 2.6 * this.brokenLevel;
     this.brokenPool.opacity = 0.42 * this.brokenLevel;
+    if (this.mobile && this.sun.castShadow !== !!this.sun.parent) this.syncSun();
     // Shadow camera follows the player (texel-snapped so shadows don't swim).
     if (focus) {
       const r = this.mobile ? 26 : 38;

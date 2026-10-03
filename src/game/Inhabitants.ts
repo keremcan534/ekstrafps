@@ -57,6 +57,10 @@ export class Inhabitants {
   /** Lab staff: when each may speak again, and what they were doing last frame. */
   private nextLine = new Map<Civilian, number>();
   private wasFleeing = new Set<Civilian>();
+  /** Phones: The Choir's line of sight to you, re-cast round-robin at 10 Hz each. */
+  private losClock = 0;
+  private losNext: number[] = [];
+  private losSeen: boolean[] = [];
 
   constructor(private d: InhabitantDeps) {
     const civHooks = {
@@ -108,6 +112,9 @@ export class Inhabitants {
       const c = new Cultist(d.physics, d.scene, d.nav, i, cultHooks);
       if (d.mobile) c.body.setCastShadow(false);
       this.cult.push(c);
+      // Staggered so the casts land on different frames.
+      this.losNext.push(i * 0.035);
+      this.losSeen.push(false);
     }
   }
 
@@ -218,6 +225,7 @@ export class Inhabitants {
         const at = this.darkSpot();
         if (at) {
           c.spawn(at, Math.atan2(prey.feet.x - at.x, prey.feet.z - at.z));
+          this.losNext[this.cult.indexOf(c)] = 0; // no line of sight left over from its last life
           if (!this.announced) {
             this.announced = true;
             d.radio('Movement in the dark. Not robots. Keep your light on them.');
@@ -233,13 +241,27 @@ export class Inhabitants {
     // Eyes: a dim ember, brighter when they rush.
     const rushing = alive.some((c) => c.state === 'lunge' || c.state === 'slash');
     choirEyes.emissiveIntensity = rushing ? 3.2 : 0.9 + Math.sin(now * 3.1) * 0.25;
-    for (const c of this.cult) {
+    this.losClock += dt;
+    for (let i = 0; i < this.cult.length; i++) {
+      const c = this.cult[i];
       if (c.state === 'gone') continue;
       const chest = this.chest.copy(c.pos).setY(1.35);
       const to = this.tmp.subVectors(chest, prey.eye);
       const dist = to.length();
       const cos = to.dot(prey.look) / Math.max(dist, 1e-3);
-      const los = dist < 40 && d.physics.lineOfSight(prey.eye, chest, GROUPS.sight);
+      // The dead don't need a ray (their update ignores it and the vanish check is skipped).
+      let los = false;
+      if (c.alive && dist < 40) {
+        if (!d.mobile) los = d.physics.lineOfSight(prey.eye, chest, GROUPS.sight);
+        else if (!c.body.root.visible) this.losNext[i] = 0; // in a room nobody is drawing: out of sight; re-cast once shown
+        else {
+          if (this.losClock >= this.losNext[i]) {
+            this.losSeen[i] = d.physics.lineOfSight(prey.eye, chest, GROUPS.sight);
+            this.losNext[i] = this.losClock + 0.1;
+          }
+          los = this.losSeen[i];
+        }
+      }
       const lit = d.lighting.flashlightOn && dist < 18 && cos > Math.cos(0.33) && los;
       const seen = cos > Math.cos(0.8) && los;
       c.update(dt, prey, lit, seen);

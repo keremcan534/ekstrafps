@@ -6,7 +6,7 @@ import { Noise1D } from '../core/Noise';
 import { clamp, DEG } from '../core/math';
 import { feel } from '../config/Feel';
 import { Humanoid, defaultPose, type DamageInfo } from '../targets/Humanoid';
-import { bakeRig, buildEnemyRifle, buildWeaponModel, type WeaponRig } from '../weapons/WeaponModels';
+import { bakedRig, buildEnemyRifle, type WeaponRig } from '../weapons/WeaponModels';
 import type { WeaponData } from '../weapons/WeaponData';
 import { getAmmo, type AmmoData } from '../weapons/AmmoData';
 import type { MuzzleLights } from '../fx/MuzzleLights';
@@ -107,6 +107,8 @@ export class Soldier implements LightSource {
   // Movement
   path: THREE.Vector3[] | null = null;
   private pathIndex = 0;
+  private steerPt = v3();
+  private steerPath = [this.steerPt];
   moveSpeed = WALK;
   /** Explicit destination for combat/search positions. */
   readonly goal = v3();
@@ -120,6 +122,8 @@ export class Soldier implements LightSource {
   private aimNode = new THREE.Group();
   /** Holds the current weapon model (synced to the dropped-rifle body on death). */
   private rifleRoot = new THREE.Group();
+  /** Weapon models this soldier has carried, by model (re-arming reuses them). */
+  private rigs = new Map<string, WeaponRig>();
   private flash: MuzzleFlash;
   private aimYaw = 0;
   private aimPitch = -0.5;
@@ -312,11 +316,15 @@ export class Soldier implements LightSource {
     this.reserve = this.maxReserve = reserve;
     this.rifleRoot.remove(this.rig.root);
     // Third person: a low-detail build on phones, always baked to ~2 draw calls.
-    const rig = buildWeaponModel(data.model, !!this.deps.lowSpec);
-    bakeRig(rig);
-    rig.leftHand.visible = false;
-    rig.rightHand.visible = false;
-    rig.root.traverse((o) => ((o as THREE.Mesh).isMesh && ((o as THREE.Mesh).castShadow = !this.deps.lowSpec)));
+    // Shared baked geometry, and each model kept once per soldier (re-arming the
+    // sidearm on every respawn builds nothing).
+    let rig = this.rigs.get(data.model);
+    if (!rig) {
+      rig = bakedRig(data.model, !!this.deps.lowSpec);
+      rig.root.traverse((o) => ((o as THREE.Mesh).isMesh && ((o as THREE.Mesh).castShadow = !this.deps.lowSpec)));
+      this.rigs.set(data.model, rig);
+    }
+    if (rig.mag) rig.mag.visible = true;
     this.rig = rig;
     this.mountRig();
     this.weaponId = data.id;
@@ -366,16 +374,31 @@ export class Soldier implements LightSource {
     this.crouch = this.crouchTarget = 0;
     this.aimPitch = -0.5;
     this.aimYaw = -0.3;
+    this.stowRifle();
+    if (this.beam) lightSources.add(this);
+    if (this.rig.mag) this.rig.mag.visible = true;
+    this.body.root.position.copy(this.pos);
+    this.body.root.rotation.y = this.yaw;
+    this.body.reset(false);
+  }
+
+  /** The dropped rifle back in the hands (no physics body). */
+  private stowRifle(): void {
     this.rifleBody.setEnabled(false);
     if (this.rifleRoot.parent !== this.aimNode) {
       this.aimNode.add(this.rifleRoot);
       this.rifleRoot.position.set(0, 0, 0);
       this.rifleRoot.quaternion.identity();
     }
-    if (this.rig.mag) this.rig.mag.visible = true;
-    this.body.root.position.copy(this.pos);
-    this.body.root.rotation.y = this.yaw;
-    this.body.reset(false);
+  }
+
+  /**
+   * Off the map (extracted, or a spare kept for reuse): no longer a light source,
+   * and a dropped rifle goes away with the body. spawn() brings both back.
+   */
+  dispose(): void {
+    lightSources.delete(this);
+    this.stowRifle();
   }
 
   private onDamaged(info: DamageInfo): void {
@@ -464,8 +487,11 @@ export class Soldier implements LightSource {
 
   setPath(to: THREE.Vector3, speed: number): boolean {
     // Around other teams' barricades when there's a way; through them (breaching) when there isn't.
-    let p = this.deps.nav.findPath(this.pos, to, 6000, OBSTACLES.length ? this.team : undefined);
-    if (!p && OBSTACLES.length) p = this.deps.nav.findPath(this.pos, to);
+    const nav = this.deps.nav;
+    let p = nav.findPath(this.pos, to, 6000, OBSTACLES.length ? this.team : undefined);
+    // A search that ran out of nodes would only run out again without the barricades:
+    // retry only when the way was really blocked. (NavGrid.lastTruncated may not exist yet.)
+    if (!p && OBSTACLES.length && !(nav as { lastTruncated?: boolean }).lastTruncated) p = nav.findPath(this.pos, to);
     this.path = p;
     this.pathIndex = 0;
     this.moveSpeed = speed;
@@ -482,7 +508,9 @@ export class Soldier implements LightSource {
 
   /** Steer toward `target` directly (formation following on the leader's trail). */
   steerTo(target: THREE.Vector3, speed: number): void {
-    this.path = [target.clone()];
+    // One persistent single-point path (no allocation every frame while following).
+    this.steerPt.copy(target);
+    this.path = this.steerPath;
     this.pathIndex = 0;
     this.moveSpeed = speed;
   }

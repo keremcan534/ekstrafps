@@ -6,6 +6,7 @@ import type { AudioSystem } from '../audio/AudioSystem';
 import type { ImpactSystem } from '../fx/ImpactSystem';
 import type { Physics } from '../core/Physics';
 import type { TeamAgent } from './TeamAgent';
+import type { Lighting } from './Lighting';
 import type { WeaponData } from '../weapons/WeaponData';
 import { Soldier, type PlayerTarget, type SoldierDeps } from '../enemies/Soldier';
 import { metalTexture } from '../fx/Textures';
@@ -36,6 +37,13 @@ export interface ExtractDeps {
   playerPos: THREE.Vector3;
   /** The weapon in your hands (the stand-in carries it in the cinematic). */
   playerWeapon(): string;
+  /**
+   * Phones: no lights of their own (a new light recompiles every shader, and each
+   * one costs every lit pixel); the emissive lamps and additive beams carry the look.
+   */
+  mobile: boolean;
+  /** Phones: the bunker borrows one of the practical lights for its red floor light. */
+  lighting?: Lighting;
 }
 
 export interface CameraShot {
@@ -144,10 +152,11 @@ export class HeliExit implements ExtractSite {
   private rotors: THREE.Object3D[] = [];
   private nav: THREE.Mesh[] = [];
   private strobe: THREE.Mesh;
-  private search: THREE.SpotLight;
-  private cabin: THREE.PointLight;
+  private search: THREE.SpotLight | null;
+  private cabin: THREE.PointLight | null;
   private flare: THREE.Group;
-  private flareLight: THREE.PointLight;
+  /** Outside the (toggled) flare group: a light that appears changes the light count. */
+  private flareLight: THREE.PointLight | null = null;
   private crew: Soldier[] = [];
   private posts: THREE.Vector3[] = [];
   private t = 0;
@@ -168,18 +177,21 @@ export class HeliExit implements ExtractSite {
     d.nav.nearestWalkable(this.pos.x, this.pos.z, this.pos, 4);
     this.build();
     this.strobe = this.group.getObjectByName('strobe') as THREE.Mesh;
-    this.search = this.group.getObjectByName('search') as THREE.SpotLight;
-    this.cabin = this.group.getObjectByName('cabin') as THREE.PointLight;
+    this.search = (this.group.getObjectByName('search') as THREE.SpotLight | undefined) ?? null;
+    this.cabin = (this.group.getObjectByName('cabin') as THREE.PointLight | undefined) ?? null;
     // Flare (the crewman's hand) + its light.
     this.flare = new THREE.Group();
     const stick = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.025, 0.3, 8), new THREE.MeshStandardMaterial({ color: 0x8a1a10, roughness: 0.6 }));
     const tip = new THREE.Mesh(new THREE.SphereGeometry(0.05, 10, 8), new THREE.MeshBasicMaterial({ color: new THREE.Color(0xff3a1a).multiplyScalar(6) }));
     tip.position.y = 0.17;
     this.flare.add(stick, tip);
-    this.flareLight = new THREE.PointLight(0xff3216, 0, 18, 1.4);
-    this.flare.add(this.flareLight);
     this.flare.visible = false;
     d.scene.add(this.flare);
+    if (!d.mobile) {
+      // In the scene from the start at intensity 0 (the MuzzleFlash way): no recompile when the flare shows up.
+      this.flareLight = new THREE.PointLight(0xff3216, 0, 18, 1.4);
+      d.scene.add(this.flareLight);
+    }
     this.group.visible = true;
     d.scene.add(this.group);
     d.audio.play('heli.approach');
@@ -261,6 +273,10 @@ export class HeliExit implements ExtractSite {
     }
     const strobe = add(new THREE.SphereGeometry(0.11, 8, 6), new THREE.MeshBasicMaterial({ color: new THREE.Color(0xffffff).multiplyScalar(8) }), 0, 6.5, 5.2);
     strobe.name = 'strobe';
+    if (this.d.mobile) {
+      g.rotation.y = this.yaw;
+      return;
+    }
     const search = new THREE.SpotLight(0xe8f0ff, 0, 70, 0.28, 0.5, 1.1);
     search.name = 'search';
     search.position.set(0, 0.9, -6.8);
@@ -303,21 +319,21 @@ export class HeliExit implements ExtractSite {
         this.flightPos(t, this.group.position);
         const k = t / LAND_T;
         this.group.rotation.set(k > 0.6 && k < 0.95 ? -0.12 * Math.sin(((k - 0.6) / 0.35) * Math.PI) : 0.06, this.yaw, Math.sin(t * 0.6) * 0.03);
-        this.search.intensity = 260;
+        if (this.search) this.search.intensity = 260;
         const h = this.group.position.y;
         if (h < 14) wash(this.d.impacts, this.lz, 1 - h / 14, 3);
       } else if (!this.landed) {
         this.landed = true;
         this.group.position.copy(this.lz);
         this.group.rotation.set(0, this.yaw, 0);
-        this.search.intensity = 0;
+        if (this.search) this.search.intensity = 0;
       }
     }
     if (this.landed && this.leaving < 0) {
       wash(this.d.impacts, this.lz, 0.35, 1);
       // Ramp down, cabin glows, crew out.
       this.rampAngle = Math.min(1.18, this.rampAngle + dt * 0.9);
-      this.cabin.intensity = 8 * (this.rampAngle / 1.18);
+      if (this.cabin) this.cabin.intensity = 8 * (this.rampAngle / 1.18);
       if (this.rampAngle > 1.0 && !this.crewOut) {
         this.crewOut = true;
         this.crew.forEach((c, i) => {
@@ -341,6 +357,7 @@ export class HeliExit implements ExtractSite {
     // The flare man waves the flare overhead at you.
     const fm = this.crew[2];
     this.flare.visible = fm.body.root.visible;
+    if (this.flareLight && !this.flare.visible) this.flareLight.intensity = 0;
     if (this.flare.visible) {
       const t = this.t;
       const toYou = this.d.playerPos.clone().sub(fm.pos).setY(0).normalize();
@@ -348,7 +365,10 @@ export class HeliExit implements ExtractSite {
       const swing = Math.sin(t * 5.2) * 0.75;
       this.flare.position.copy(fm.pos).addScaledVector(right, 0.35 + swing * 0.5).add(v(0, 2.05 + Math.cos(t * 5.2) * 0.12, 0)).addScaledVector(toYou, 0.15);
       this.flare.rotation.set(0, 0, swing * 0.8);
-      this.flareLight.intensity = 9 + Math.random() * 3;
+      if (this.flareLight) {
+        this.flareLight.position.copy(this.flare.position);
+        this.flareLight.intensity = 9 + Math.random() * 3;
+      }
       if (Math.random() < 0.5) {
         const sparks = (this.d.impacts as unknown as { sparks: { spawn(p: object): void } }).sparks;
         sparks.spawn({ x: this.flare.position.x, y: this.flare.position.y + 0.17, z: this.flare.position.z, vx: (Math.random() - 0.5) * 1.2, vy: Math.random() * 1.5, vz: (Math.random() - 0.5) * 1.2, life: 0.3 + Math.random() * 0.3, size: 0.05, sizeEnd: 0.01, stretch: 0.02, r: 1, g: 0.35, b: 0.15, alpha: 1, gravity: 2, drag: 1 });
@@ -391,7 +411,7 @@ export class HeliExit implements ExtractSite {
         const l = this.leaving;
         this.group.position.copy(this.lz).add(v(0, 1.6 * l * l, 0)).addScaledVector(v(-Math.sin(this.yaw), 0, -Math.cos(this.yaw)), 0.9 * l * l);
         this.group.rotation.set(-0.16 * Math.min(1, l / 1.5), this.yaw + 0.05 * l, -0.1 * Math.min(1, l));
-        this.cabin.intensity = Math.max(0, this.cabin.intensity - dt * 6);
+        if (this.cabin) this.cabin.intensity = Math.max(0, this.cabin.intensity - dt * 6);
         wash(d.impacts, this.lz, Math.max(0, 1 - l / 3), 4);
       }
       // Camera: low wide side · behind the boarding · looking up at the lift-off.
@@ -427,7 +447,7 @@ export class BunkerExit implements ExtractSite {
   private doorL: THREE.Mesh;
   private doorR: THREE.Mesh;
   private beacons: THREE.Group[] = [];
-  private beaconLight: THREE.PointLight;
+  private beaconLight: THREE.PointLight | null = null;
   private t = 0;
   private open = 0;
   private closing = -1;
@@ -449,9 +469,15 @@ export class BunkerExit implements ExtractSite {
     const doors = this.build();
     this.doorL = doors[0];
     this.doorR = doors[1];
-    this.beaconLight = new THREE.PointLight(0xff2a10, 0, 22, 1.4);
-    this.beaconLight.position.copy(this.origin).addScaledVector(this.fwd, 4.6).setY(6.2);
-    d.scene.add(this.group, this.beaconLight);
+    d.scene.add(this.group);
+    if (!d.mobile) {
+      this.beaconLight = new THREE.PointLight(0xff2a10, 0, 22, 1.4);
+      this.beaconLight.position.copy(this.origin).addScaledVector(this.fwd, 4.6).setY(6.2);
+      d.scene.add(this.beaconLight);
+    } else {
+      // Phones: a borrowed practical light just inside the doors instead of the inner light.
+      d.lighting?.park(this.origin.clone().addScaledVector(this.fwd, 0.5).setY(2.5), 0xff2010, 10, 10);
+    }
     d.audio.play('blastdoor.open', { position: this.pos });
   }
 
@@ -503,9 +529,11 @@ export class BunkerExit implements ExtractSite {
       strip.position.set(0, 4.9 - i * 0.55, 3.2 - i * 1.5);
       g.add(strip);
     }
-    const inner = new THREE.PointLight(0xff2010, 6, 10, 1.6);
-    inner.position.set(0, 2.5, 0.5);
-    g.add(inner);
+    if (!this.d.mobile) {
+      const inner = new THREE.PointLight(0xff2010, 6, 10, 1.6);
+      inner.position.set(0, 2.5, 0.5);
+      g.add(inner);
+    }
     // Blast doors (slide sideways into the walls).
     const dl = add(2.4, 5.3, 0.6, -1.2, 2.65, 4.35, steel, false);
     const dr = add(2.4, 5.3, 0.6, 1.2, 2.65, 4.35, steel, false);
@@ -533,7 +561,7 @@ export class BunkerExit implements ExtractSite {
   update(dt: number): void {
     this.t += dt;
     for (const [i, b] of this.beacons.entries()) b.rotation.y = this.t * 4 * (i ? -1 : 1);
-    this.beaconLight.intensity = 30 * (0.4 + 0.6 * Math.max(0, Math.sin(this.t * 8)));
+    if (this.beaconLight) this.beaconLight.intensity = 30 * (0.4 + 0.6 * Math.max(0, Math.sin(this.t * 8)));
     if (this.closing < 0) this.open = Math.min(1, this.open + dt * 0.35);
     const slide = 2.35 * smoothstep(this.open);
     this.doorL.position.x = -1.2 - slide;
@@ -590,6 +618,8 @@ export class BunkerExit implements ExtractSite {
       }
       if (t >= this.cinematicLength && !finished) {
         finished = true;
+        // Phones: give the borrowed practical light back (doors are shut, the raid is over).
+        if (d.mobile) d.lighting?.park(null);
         done();
       }
       return shot;

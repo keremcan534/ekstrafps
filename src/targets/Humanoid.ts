@@ -5,6 +5,7 @@ import { clamp, DEG } from '../core/math';
 import { feel } from '../config/Feel';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { MeshBuilder } from '../world/MeshBuilder';
+import { skinDetail } from '../enemies/SoldierSkin';
 import { Damageable } from './Damageable';
 
 export type PartName = 'pelvis' | 'torso' | 'head' | 'upperArmL' | 'upperArmR' | 'foreArmL' | 'foreArmR' | 'thighL' | 'thighR' | 'shinL' | 'shinR';
@@ -115,6 +116,8 @@ export const defaultPose = (): HumanoidPose => ({
 
 const MAX_TILT = 24 * DEG;
 const ONE = new THREE.Vector3(1, 1, 1);
+/** Phones (cheap characters): hidden bodies pose less often, corpses keep fewer CCD bodies. */
+const lowSpec = (): boolean => skinDetail.low;
 
 /**
  * A physical humanoid body shared by robots and soldiers.
@@ -190,6 +193,17 @@ export class Humanoid {
   private tmp = new THREE.Vector3();
   private tmp2 = new THREE.Vector3();
   private tmpM = new THREE.Matrix4();
+  private tmpScale = new THREE.Vector3();
+  private linvel = { x: 0, y: 0, z: 0 };
+  // Hidden-body LOD (phones): time not yet posed, frame parity, root at the last pose.
+  private lodDt = 0;
+  private lodOdd = false;
+  private frozen = false;
+  private lastPose: HumanoidPose | null = null;
+  private lastRootPos = new THREE.Vector3();
+  private lastRootQuat = new THREE.Quaternion();
+  /** Every ragdoll part asleep: the bones already sit where the bodies are. */
+  private settled = false;
   private qa = new THREE.Quaternion();
   private qb = new THREE.Quaternion();
   private euler = new THREE.Euler();
@@ -302,7 +316,8 @@ export class Humanoid {
     this.pendingGeo.push(b.take());
 
     const body = this.physics.world.createRigidBody(
-      RAPIER.RigidBodyDesc.kinematicPositionBased().setLinearDamping(0.08).setAngularDamping(1.1).setCcdEnabled(true),
+      // CCD only once it falls as a ragdoll (die()); kinematic hitboxes don't need it.
+      RAPIER.RigidBodyDesc.kinematicPositionBased().setLinearDamping(0.08).setAngularDamping(1.1),
     );
     const part: Part = {
       name: def.name, side: def.side, parent, group, body, colliders: [],
@@ -556,18 +571,29 @@ export class Humanoid {
   // ---------------------------------------------------------------- death
 
   private die(hit: BulletHit, struck: Part, zone: HitZone): void {
+    // A hidden body may be a frame behind (LOD): pose it now so the ragdoll starts
+    // from the current pose with fresh velocities.
+    this.setFrozen(false);
+    if (this.lodDt > 0 && this.lastPose) {
+      this.updatePose(this.lodDt, this.lastPose);
+      this.updateHitboxes(this.lodDt);
+    }
+    this.lodDt = 0;
+    this.settled = false;
+    const lite = lowSpec();
     this.root.updateMatrixWorld(true);
     for (const part of this.parts) {
-      part.group.getWorldPosition(part.worldPos);
-      part.group.getWorldQuaternion(part.worldQuat);
+      part.group.matrixWorld.decompose(part.worldPos, part.worldQuat, this.tmpScale);
       const b = part.body;
       b.setBodyType(RAPIER.RigidBodyType.Dynamic, true);
+      // Phones: CCD on the heavy core only (the joints hold the limbs to it).
+      b.enableCcd(!lite || part.name === 'torso' || part.name === 'pelvis');
       b.setTranslation(part.worldPos, true);
       b.setRotation(part.worldQuat, true);
       part.vel.clampLength(0, 6);
       b.setLinvel(part.vel, true);
       b.setAngvel({ x: 0, y: 0, z: 0 }, true);
-      for (const c of part.colliders) c.setCollisionGroups(GROUPS.ragdoll);
+      for (const c of part.colliders) c.setCollisionGroups(lite ? GROUPS.ragdollLite : GROUPS.ragdoll);
       // From now on the bones follow the physics bodies directly.
       part.group.matrixWorldAutoUpdate = false;
       part.prevVy = 0;
@@ -650,6 +676,7 @@ export class Humanoid {
    * blocking). Reactivate with reset().
    */
   setActive(active: boolean): void {
+    this.setFrozen(false);
     this.root.visible = active;
     for (const part of this.parts) {
       for (const c of part.colliders) c.setEnabled(active);
@@ -667,8 +694,12 @@ export class Humanoid {
   /** Back to a living, standing body at the root's current transform. */
   reset(fromFloor: boolean): void {
     this.removeJoints();
+    this.setFrozen(false);
+    this.lodDt = 0;
+    this.settled = false;
     for (const part of this.parts) {
       part.body.setBodyType(RAPIER.RigidBodyType.KinematicPositionBased, true);
+      part.body.enableCcd(false);
       part.body.setLinvel({ x: 0, y: 0, z: 0 }, false);
       part.body.setAngvel({ x: 0, y: 0, z: 0 }, false);
       for (const c of part.colliders) c.setCollisionGroups(GROUPS.hitbox);
@@ -691,13 +722,71 @@ export class Humanoid {
 
   // ---------------------------------------------------------------- update
 
-  update(dt: number, pose: HumanoidPose): void {
+  /**
+   * @param still The owner is standing still (dormant, idle, holding a spot): on
+   *              phones a hidden body that hasn't moved then skips posing entirely.
+   */
+  update(dt: number, pose: HumanoidPose, still = false): void {
     if (!this.alive) {
+      // A settled corpse costs nothing until something wakes it (once the knees are limp;
+      // the frame it falls asleep still syncs the bones one last time).
+      if (this.settled || this.knees.length === 0) {
+        const was = this.settled;
+        this.settled = this.allAsleep();
+        if (this.settled && was) {
+          this.ragdollTime += dt;
+          return;
+        }
+      }
       this.updateRagdoll(dt);
       return;
     }
+    this.lastPose = pose;
+    if (lowSpec() && !this.root.visible && !this.teleport) {
+      if (still && this.root.position.equals(this.lastRootPos) && this.root.quaternion.equals(this.lastRootQuat)) {
+        // Hidden and standing still: the hitboxes already sit where the pose put them.
+        this.lodDt = 0;
+        this.setFrozen(true);
+        return;
+      }
+      this.setFrozen(false);
+      // Hidden and moving: pose every other frame, over the time of both.
+      this.lodDt += dt;
+      this.lodOdd = !this.lodOdd;
+      if (this.lodOdd) return;
+      dt = this.lodDt;
+    } else {
+      // Visible (or just reset): always a full update, including any skipped time.
+      dt += this.lodDt;
+      this.setFrozen(false);
+    }
+    this.lodDt = 0;
     this.updatePose(dt, pose);
     this.updateHitboxes(dt);
+    this.lastRootPos.copy(this.root.position);
+    this.lastRootQuat.copy(this.root.quaternion);
+  }
+
+  private allAsleep(): boolean {
+    for (const part of this.parts) if (!part.body.isSleeping()) return false;
+    return true;
+  }
+
+  /**
+   * Hidden and unposed: the renderer's per-frame matrix pass stops recomposing the
+   * rig (its matrices are still right). Anything that poses it unfreezes it first.
+   */
+  private setFrozen(on: boolean): void {
+    if (this.frozen === on) return;
+    this.frozen = on;
+    const auto = !on;
+    this.root.matrixAutoUpdate = this.root.matrixWorldAutoUpdate = auto;
+    this.pivot.matrixAutoUpdate = this.pivot.matrixWorldAutoUpdate = auto;
+    for (const part of this.parts) {
+      part.group.matrixAutoUpdate = part.group.matrixWorldAutoUpdate = auto;
+      // Standing still: nothing for a ragdoll to inherit.
+      if (on) part.vel.set(0, 0, 0);
+    }
   }
 
   /** Current world-space knee/hip offset caused by reactions (AI aim disruption). */
@@ -780,6 +869,8 @@ export class Humanoid {
     const torso = this.part('torso').group;
     torso.rotation.set(spineX + pose.spineX + pose.crouch * 0.18, spineY + pose.spineY - pelvis.rotation.y, spineZ - roll * 0.6);
     this.part('head').group.rotation.set(headX + pose.headX, headY + pose.headY, headZ);
+    // Grip targets are read in torso space: one matrix pass serves both arms.
+    if (pose.gripL || pose.gripR) torso.updateMatrixWorld(true);
 
     for (let i = 0; i < 2; i++) {
       const side = i === 1 ? 1 : -1;
@@ -802,10 +893,9 @@ export class Humanoid {
     }
   }
 
-  /** Two-bone IK in torso space: shoulder → elbow → hand on `grip`. */
+  /** Two-bone IK in torso space: shoulder → elbow → hand on `grip` (torso matrices already current). */
   private solveArm(upper: THREE.Object3D, fore: THREE.Object3D, grip: THREE.Object3D, side: number): void {
     const torso = upper.parent!;
-    torso.updateMatrixWorld(true);
     const target = this.ik.target.setFromMatrixPosition(this.tmpM.copy(torso.matrixWorld).invert().multiply(grip.matrixWorld));
     const S = upper.position;
     const L1 = this.upperLen;
@@ -830,8 +920,8 @@ export class Humanoid {
   private updateHitboxes(dt: number): void {
     this.root.updateMatrixWorld(true);
     for (const part of this.parts) {
-      part.group.getWorldPosition(part.worldPos);
-      part.group.getWorldQuaternion(part.worldQuat);
+      // The pass above made every matrixWorld current: read it, don't walk the parents again.
+      part.group.matrixWorld.decompose(part.worldPos, part.worldQuat, this.tmpScale);
       if (this.teleport) {
         part.body.setTranslation(part.worldPos, true);
         part.body.setRotation(part.worldQuat, true);
@@ -855,10 +945,8 @@ export class Humanoid {
     this.ragdollTime += dt;
     // Bones = physics bodies (body origin = bone pivot).
     for (const part of this.parts) {
-      const t = part.body.translation();
-      const r = part.body.rotation();
-      part.worldPos.set(t.x, t.y, t.z);
-      part.worldQuat.set(r.x, r.y, r.z, r.w);
+      part.body.translation(part.worldPos);
+      part.body.rotation(part.worldQuat);
       part.group.matrixWorld.compose(part.worldPos, part.worldQuat, ONE);
     }
     // Attachments still on the bones (chest markers...) follow.
@@ -871,11 +959,10 @@ export class Humanoid {
     // Body-fall sounds: a heavy part that was falling fast and suddenly stopped.
     this.thudCooldown -= dt;
     for (const part of this.parts) {
-      const vy = part.body.linvel().y;
+      const vy = part.body.linvel(this.linvel).y;
       const heavy = part.name === 'torso' || part.name === 'pelvis' || part.name === 'head';
       if (heavy && this.thudCooldown <= 0 && part.prevVy < -2.2 && vy > part.prevVy * 0.35) {
-        const p = part.body.translation();
-        this.tmp.set(p.x, p.y, p.z);
+        this.tmp.copy(part.worldPos);
         this.hooks.onThud?.(this.tmp, Math.min(1, -part.prevVy / 7));
         this.thudCooldown = 0.12;
       }

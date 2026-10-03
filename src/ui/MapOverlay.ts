@@ -48,11 +48,13 @@ const S = 4; // static layer: pixels per metre
  */
 export class MapOverlay {
   private staticCanvas = document.createElement('canvas');
-  private staticKey = '';
+  private staticSet: Set<string> | null = null;
+  private staticSize = -1;
   private full: HTMLDivElement;
   private fullCanvas: HTMLCanvasElement;
   private mini: HTMLCanvasElement;
   private miniTimer = 0;
+  private fullTimer = 0;
   visible = false;
 
   constructor(parent: HTMLElement, private data: MapData) {
@@ -96,6 +98,7 @@ export class MapOverlay {
   toggle(): boolean {
     this.visible = !this.visible;
     this.full.classList.toggle('show', this.visible);
+    this.fullTimer = 0; // draw on the next update, not after the throttle
     return this.visible;
   }
 
@@ -105,9 +108,10 @@ export class MapOverlay {
 
   /** Rooms + walls; redrawn only when the set of unlocked zones changes. (Names are drawn upright on top.) */
   private drawStatic(state: MapState): void {
-    const key = [...state.unlocked].sort().join(',');
-    if (key === this.staticKey) return;
-    this.staticKey = key;
+    // Zones only ever unlock (the set only grows), so its size is its version.
+    if (state.unlocked === this.staticSet && state.unlocked.size === this.staticSize) return;
+    this.staticSet = state.unlocked;
+    this.staticSize = state.unlocked.size;
     const g = this.staticCanvas.getContext('2d')!;
     g.clearRect(0, 0, this.staticCanvas.width, this.staticCanvas.height);
     for (const r of this.data.rooms) {
@@ -299,17 +303,25 @@ export class MapOverlay {
 
   update(dt: number, state: MapState): void {
     this.drawStatic(state);
-    if (this.visible) this.drawFull(state);
+    // Phones: full map at 15 Hz and minimap at 15 Hz (canvas uploads every frame cost raster time).
+    const touch = document.body.classList.contains('is-touch');
+    if (this.visible) {
+      this.fullTimer -= dt;
+      if (this.fullTimer <= 0) {
+        this.fullTimer = touch ? 1 / 15 : 0;
+        this.drawFull(state, touch);
+      }
+    }
     this.miniTimer -= dt;
     if (this.miniTimer <= 0) {
-      this.miniTimer = 1 / 20;
+      this.miniTimer = touch ? 1 / 15 : 1 / 20;
       this.drawMini(state);
     }
   }
 
-  private drawFull(state: MapState): void {
+  private drawFull(state: MapState, touch: boolean): void {
     const c = this.fullCanvas;
-    const dpr = Math.min(2, window.devicePixelRatio || 1);
+    const dpr = Math.min(touch ? 1.5 : 2, window.devicePixelRatio || 1);
     const maxW = window.innerWidth * 0.92;
     const maxH = window.innerHeight * 0.82;
     const sc = Math.min(maxW / this.staticCanvas.width, maxH / this.staticCanvas.height);

@@ -51,10 +51,11 @@ import { MuzzleLights } from '../fx/MuzzleLights';
 import { Lighting } from '../game/Lighting';
 import { buildWeaponModel } from '../weapons/WeaponModels';
 import { WeaponLights, weaponLight } from '../fx/WeaponLights';
-import { VIEW_DISTANCE, loadGraphics, type GraphicsSettings } from '../config/Graphics';
+import { MOBILE_ANISOTROPY, VIEW_DISTANCE, loadGraphics, noGlass, type GraphicsSettings } from '../config/Graphics';
+import { setTextureAnisotropy } from '../fx/Textures';
 import { DustMotes } from '../fx/DustMotes';
 import { Ambience } from '../audio/Ambience';
-import { PerfBench, type BenchFlags } from './PerfBench';
+import { PerfBench, benchFlagsFromUrl, glInfo, type BenchFlags } from './PerfBench';
 import { raid } from '../game/Progress';
 import { Inhabitants } from '../game/Inhabitants';
 import type { ShowcaseDeps } from '../ui/Showcase';
@@ -76,6 +77,11 @@ function grainDataUrl(): string {
   return c.toDataURL();
 }
 const MAX_STEPS = 6;
+/** Dynamic resolution never goes below half the chosen resolution. */
+const DYN_FLOOR = 0.5;
+
+/** Let the browser paint (loading status) between startup phases. */
+const paint = (): Promise<void> => new Promise((r) => setTimeout(r, 0));
 
 /**
  * Trailer capture (?trailer): a director drives frames on a fixed clock, can
@@ -160,14 +166,29 @@ export class Game {
   spectator = false;
   /** Physics step (120 Hz; 60 Hz on phones). */
   private fixedDt = FIXED_DT;
-  /** Phones: dynamic resolution (fraction of the quality preset's pixel ratio). */
-  private dyn = { t: 0, acc: 0, n: 0, cooldown: 2, scale: 1 };
+  /**
+   * Dynamic resolution (fraction of the chosen pixel ratio): measuring window, the display's
+   * fastest frame (vsync), the last drop on probation, and the compositor-bound check.
+   */
+  private dyn = {
+    t: 0, acc: 0, n: 0, cooldown: 2, scale: 1, skip: 1,
+    minCur: Infinity, minPrev: Infinity, minT: 0,
+    prevAvg: 0, prevScale: 1, freeze: 0, strikes: 0, floorT: 0, lite: false,
+  };
+  /** ?res=x: fixed render pixel ratio (bisecting; no dynamic resolution). */
+  private resOverride = 0;
+  /** ?cap=N: frame cap override (bisecting). */
+  private capOverride: number | null = null;
   /** Frame cap: earliest timestamp for the next frame. */
   private nextFrameAt = 0;
   private prevWeaponState = '';
   private lastImpactShare = 0;
   /** Your squad: name, role, money, weapon. */
   private squadEl: HTMLDivElement | null = null;
+  /** One row per operator, built once; cells are only written when their value changes. */
+  private squadRows: { a: TeamAgent; el: HTMLDivElement; gun: HTMLSpanElement; pts: HTMLElement; st: HTMLElement; vals: string[] }[] = [];
+  /** Hired contractors who died: their bodies left the map; the next hire reuses one (no rebuild). */
+  private spareAllies: TeamAgent[] = [];
   private squadTimer = 0;
   private errandTimer = 0;
   /** The three operators you start with (they come back when you redeploy, or as reinforcements). */
@@ -179,6 +200,9 @@ export class Game {
   private grade: ScreenGrade | null = null;
   mapOverlay: MapOverlay | null = null;
   private mapState: MapState | null = null;
+  /** Map markers (phones: at the minimap's rate), from pooled points. */
+  private mapTimer = 0;
+  private mapPool: { x: number; z: number }[] = [];
   private target: PlayerTarget = {
     feet: new THREE.Vector3(), head: new THREE.Vector3(), chest: new THREE.Vector3(), velocity: new THREE.Vector3(),
     sprinting: false, crouching: false, alive: true,
@@ -203,19 +227,30 @@ export class Game {
   private gfx: GraphicsSettings;
   /** Image-based lighting (lighting: full) and its cheap stand-in (lighting: fast). */
   private env: THREE.Texture | null = null;
+  private envFailed = false;
   private probe = new THREE.LightProbe(undefined, 0);
+  /** The weapon's copy of the probe (phones, lighting: fast: no cube-map lookups on the gun either). */
+  private vmProbe: THREE.LightProbe | null = null;
   private fpsEl: HTMLDivElement | null = null;
+  private fpsText: HTMLSpanElement | null = null;
   /** Frame-time history for the FPS readout's graph (seconds). */
   private fpsHist: number[] = [];
   private fpsCanvas: HTMLCanvasElement | null = null;
   /** On-device benchmark (Settings → Graphics → RUN BENCHMARK). */
-  readonly benchFlags: BenchFlags = { noWorld: false, noSim: false };
+  readonly benchFlags: BenchFlags = benchFlagsFromUrl(new URLSearchParams(location.search));
   private bench: PerfBench | null = null;
   private benchIn = -1;
   /** Dust hanging in the air around you. */
   private dust!: DustMotes;
   /** Room tone, machines, wind; the building creaking in the dark. */
   private ambience: Ambience | null = null;
+  /** The ambience beds are in the deferred audio set: the room tone starts once it's loaded. */
+  private ambienceOk = false;
+  private resizeQueued = false;
+  private size = { w: 0, h: 0 };
+  /** ?nodraw clear colour (and the renderer's own, put back after). */
+  private clearTint = new THREE.Color();
+  private clearBase = new THREE.Color();
   private prevBroken = 0;
   private fpsTimer = 0;
   private stationIndex = 0;
@@ -242,9 +277,14 @@ export class Game {
       AI_TUNING.decisionInterval = 0.28;
       AI_TUNING.squadInterval = 0.6;
     }
+    // Bisect flags: ?res=x fixes the render resolution, ?cap=N the frame cap.
+    const res = Number(params.get('res'));
+    if (res > 0) this.resOverride = Math.min(4, res);
+    const cap = params.has('cap') ? Number(params.get('cap')) : NaN;
+    if (cap >= 0) this.capOverride = Math.round(cap);
     const antialias = params.has('trailer') ? !this.mobile : this.gfx.antialias;
     this.renderer = new THREE.WebGLRenderer({ antialias, powerPreference: 'high-performance', preserveDrawingBuffer: params.has('trailer') });
-    this.renderer.setPixelRatio(this.quality.pixelRatio);
+    this.renderer.setPixelRatio(this.resOverride || this.quality.pixelRatio);
     this.renderer.setSize(window.innerWidth, window.innerHeight);
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1.05;
@@ -253,28 +293,50 @@ export class Game {
     this.renderer.autoClear = false;
     this.renderer.info.autoReset = false;
     container.appendChild(this.renderer.domElement);
+    // GPU reset (phones under memory pressure): render targets come back empty, rebuild the reflections.
+    this.renderer.domElement.addEventListener('webglcontextrestored', () => {
+      this.env?.dispose();
+      this.env = null;
+      this.envFailed = false;
+      if (this.weapons) this.applyGraphics(this.gfx);
+    });
+    // Back from the background: the first frame's time is the time away, not a measurement.
+    document.addEventListener('visibilitychange', () => {
+      const d = this.dyn;
+      d.skip = 1;
+      d.t = d.acc = d.n = 0;
+    });
   }
 
   async init(onProgress: (msg: string) => void): Promise<void> {
+    // Audio renders and decodes alongside the physics and the map build; only its core set
+    // is awaited (further down). The rest (voices, ambience beds) arrives later.
+    this.audio = new AudioSystem({ lowSpec: this.mobile, disabled: new URLSearchParams(location.search).has('noaudio') });
+    const audioReady = this.audio.init();
+    audioReady.catch(() => {}); // reported where it's awaited
+    void this.audio.deferred.then(() => (this.ambienceOk = true));
+
     onProgress('Starting physics…');
+    await paint();
     this.physics = await Physics.create(this.fixedDt);
     this.input = new Input(this.renderer.domElement);
 
-    const pmrem = new THREE.PMREMGenerator(this.renderer);
+    // Lighting "fast": the room light as spherical harmonics (a few multiply-adds per
+    // pixel instead of cube-map lookups). Same fill, no reflections. The image-based
+    // version (lighting: full) is built from the same room when first needed (envMap).
     const room = new RoomEnvironment();
-    const env = pmrem.fromScene(room, 0.04).texture;
-    this.env = env;
-    // Lighting "fast": the same room light as spherical harmonics (a few multiply-adds per
-    // pixel instead of cube-map lookups). Same fill, no reflections.
     const cube = new THREE.WebGLCubeRenderTarget(32, { type: THREE.HalfFloatType });
     new THREE.CubeCamera(0.1, 100, cube).update(this.renderer, room);
     this.probe.copy(await LightProbeGenerator.fromCubeRenderTarget(this.renderer, cube));
     cube.dispose();
+    room.dispose();
     this.scene.add(this.probe);
-    this.scene.environment = this.gfx.lighting === 'full' ? env : null;
     this.scene.environmentIntensity = 0.35;
 
     onProgress('Building map…');
+    await paint();
+    // Phones: low anisotropy (every extra tap is texture bandwidth on each floor and wall pixel).
+    if (this.mobile) setTextureAnisotropy(MOBILE_ANISOTROPY);
     const mapId = new URLSearchParams(location.search).get('map');
     this.arena = mapId === 'site9' ? new Site9(this.physics, this.mobile) : new Arena(this.physics, this.mobile);
     this.scene.add(this.arena.group);
@@ -288,8 +350,8 @@ export class Game {
     this.scene.add(this.dust.points);
 
     onProgress('Rendering placeholder audio…');
-    this.audio = new AudioSystem();
-    await this.audio.init();
+    await paint();
+    await audioReady;
     // Sound through walls: one ray from your ear to the source (a little above it, so a
     // waist-high counter doesn't count as a wall).
     const occ = new THREE.Vector3();
@@ -358,12 +420,13 @@ export class Game {
       worldScene: this.scene,
       debugDraw: this.debugDraw,
     });
-    this.weapons.viewmodel.scene.environment = env;
+    this.weapons.viewmodel.scene.environmentIntensity = 0.6;
     this.status = new StatusHUD(ui);
     this.initBlackDivision();
     if (this.arena instanceof Site9) this.initSurvival(ui, this.arena);
+    // ?nohud (bisecting): no interface at all.
+    if (new URLSearchParams(location.search).has('nohud')) ui.style.display = 'none';
     this.applyGraphics(this.gfx);
-    this.weapons.viewmodel.scene.environmentIntensity = 0.6;
 
     this.tuning = new TuningPanel({
       getWeapon: () => this.weapons.current.data,
@@ -410,15 +473,27 @@ export class Game {
     this.input.onKey = (code) => this.onKey(code);
     this.input.onLockFailed = () =>
       this.hud.toast('Mouse capture unavailable: free-mouse look. Click the game to try again.', 4);
-    window.addEventListener('resize', () => this.onResize());
+    // One resize per frame at most (a rotating phone fires several), none when nothing changed.
+    window.addEventListener('resize', () => {
+      if (this.resizeQueued) return;
+      this.resizeQueued = true;
+      requestAnimationFrame(() => {
+        this.resizeQueued = false;
+        this.onResize();
+      });
+    });
 
     // Compile all shaders up front so the first shot never hitches.
     onProgress('Compiling shaders…');
+    await paint();
     // Every weapon model an AI might buy, compiled now instead of on the first purchase.
-    const warm = new THREE.Group();
-    for (const w of this.weapons.weapons) warm.add(buildWeaponModel(w.data.model).root);
-    warm.position.copy(this.camera.eye).y -= 50;
-    this.scene.add(warm);
+    // Phones: skipped (16 full-detail rigs to build and upload; operators carry baked rigs).
+    const warm = this.mobile ? null : new THREE.Group();
+    if (warm) {
+      for (const w of this.weapons.weapons) warm.add(buildWeaponModel(w.data.model).root);
+      warm.position.copy(this.camera.eye).y -= 50;
+      this.scene.add(warm);
+    }
     // compile() skips invisible objects: pooled robots, muzzle flashes and culled
     // rooms would otherwise compile on first sight (a visible hitch mid-fight).
     const hidden: THREE.Object3D[] = [];
@@ -428,14 +503,15 @@ export class Game {
         o.visible = true;
       }
     });
-    this.renderer.compile(this.scene, this.camera.camera);
+    // Async: with parallel shader compile the page stays responsive (status text paints).
+    await this.renderer.compileAsync(this.scene, this.camera.camera);
     // compile() doesn't build the shadow-map (depth) programs or the final lit
     // variants with shadows: one real render while everything is visible does.
     this.camera.camera.updateMatrixWorld();
     this.renderer.render(this.scene, this.camera.camera);
     for (const o of hidden) o.visible = false;
-    this.scene.remove(warm);
-    this.renderer.compile(this.weapons.viewmodel.scene, this.weapons.viewmodel.camera);
+    if (warm) this.scene.remove(warm);
+    await this.renderer.compileAsync(this.weapons.viewmodel.scene, this.weapons.viewmodel.camera);
     (window as unknown as { __lab: Game }).__lab = this;
   }
 
@@ -444,6 +520,8 @@ export class Game {
     const [x0, z0, x1, z1] = this.arena.navBounds;
     const blockers = this.arena.robotSpawns.filter((r) => !r.rail && r.position.y < 0.5).map((r) => ({ pos: r.position, radius: 0.45 }));
     this.nav = new NavGrid(this.physics, x0, z0, x1, z1, 0.5, 0.32, blockers);
+    // Phones: fewer path nodes per frame (searches that run out continue next frame).
+    if (this.mobile) this.nav.frameBudget = 3500;
     this.muzzleLights = new MuzzleLights(this.mobile ? 0 : 2);
     this.scene.add(this.muzzleLights.group);
     // SABLE rifle lights: a fixed pool of real spots (phones: beams only).
@@ -573,7 +651,7 @@ export class Game {
       speed: this.player.horizontalSpeed,
       alive: !this.health.dead,
     }));
-    this.lighting = new Lighting(this.scene, map, this.camera.eye, (out) => this.camera.getAimDirection(this.player, out), () => !this.health.dead, this.mobile ? 2 : 4);
+    this.lighting = new Lighting(this.scene, map, this.camera.eye, (out) => this.camera.getAimDirection(this.player, out), () => !this.health.dead, this.mobile ? 1 : 4);
     this.survival = new Survival({
       lighting: this.lighting,
       world: () => this.world,
@@ -659,7 +737,7 @@ export class Game {
         this.weapons.refillAll();
         this.health.armor = 0;
         // The core squad comes back with you (bought guns are lost, money is kept).
-        this.allies = this.allies.filter((a) => a.alive || this.core.includes(a));
+        this.dismissDead();
         this.core.forEach((a, i) => {
           if (a.alive) return;
           const p = this.nav.nearestWalkable(at.x + (i - 1) * 1.4, at.z - 1.5, new THREE.Vector3(), 4) ?? at;
@@ -1012,7 +1090,7 @@ export class Game {
 
   /** Vanta contractor from the security terminal (max 3 alive). */
   private hireAlly(at: THREE.Vector3): boolean {
-    this.allies = this.allies.filter((a) => a.alive || this.core.includes(a));
+    this.dismissDead();
     const hired = this.allies.filter((a) => !this.core.includes(a) && a.alive).length;
     if (hired >= 3 || this.allies.filter((a) => a.alive).length >= 5) {
       this.hud.toast('Squad full');
@@ -1024,19 +1102,37 @@ export class Game {
     return true;
   }
 
+  /**
+   * Dead hired contractors leave the map (their bodies stop drawing and colliding) and
+   * wait in the spare list; the core squad stays (it comes back as reinforcements).
+   * Desktop: they only leave the squad list (the bodies stay where they fell).
+   */
+  private dismissDead(): void {
+    if (!this.mobile) {
+      this.allies = this.allies.filter((a) => a.alive || this.core.includes(a));
+      return;
+    }
+    const keep: TeamAgent[] = [];
+    for (const a of this.allies) {
+      if (a.alive || this.core.includes(a)) {
+        keep.push(a);
+        continue;
+      }
+      if (!a.gone) a.leave();
+      this.allySquad?.remove(a.bot);
+      this.spareAllies.push(a);
+    }
+    this.allies = keep;
+  }
+
   /** A Vanta operator on your team: follows you, fights, revives, shops with their own money. */
   private addAlly(at: THREE.Vector3, hired: boolean): TeamAgent {
-    const p = randomPersonality(0);
-    const ally = new TeamAgent(this.soldierDeps, 'alpha', 10 + this.allies.length, p, 'vanta', {
-      onHit: (_a, info, killed) => {
-        // (The hit operator radios what it felt to the squad itself.)
-        this.survival?.onSoldierHit('alpha', info, killed);
-      },
-      onKilled: () => this.audio.play('bd.man_down', { pitch: 1.12 }),
-    });
-    ally.soldier.body.friendly = true;
-    ally.soldier.body.canGoDown = () => !this.health.dead || this.allies.some((a) => a !== ally && a.alive && !a.downed);
-    ally.armory = (id) => this.weapons.weapons.find((w) => w.data.id === id)?.data;
+    // A contractor who died earlier comes back as this hire (no new body, rig and shaders mid-fight).
+    const spare = hired ? this.spareAllies.pop() : undefined;
+    const ally = spare ?? this.createAlly();
+    const p = ally.personality;
+    // Under a new name (the role stays: the bot's tactical profile was built from it).
+    if (spare) p.name = randomPersonality(0).name;
     this.allySquad?.add(ally.bot);
     ally.points = hired ? 0 : START_POINTS;
     ally.spawn(at, this.player.yaw);
@@ -1050,35 +1146,82 @@ export class Game {
     return ally;
   }
 
-  /** Squad panel: who's with you, their role, money and gun. */
+  private createAlly(): TeamAgent {
+    const ally = new TeamAgent(this.soldierDeps, 'alpha', 10 + this.allies.length + this.spareAllies.length, randomPersonality(0), 'vanta', {
+      onHit: (_a, info, killed) => {
+        // (The hit operator radios what it felt to the squad itself.)
+        this.survival?.onSoldierHit('alpha', info, killed);
+      },
+      onKilled: () => this.audio.play('bd.man_down', { pitch: 1.12 }),
+    });
+    ally.soldier.body.friendly = true;
+    ally.soldier.body.canGoDown = () => !this.health.dead || this.allies.some((a) => a !== ally && a.alive && !a.downed);
+    ally.armory = (id) => this.weapons.weapons.find((w) => w.data.id === id)?.data;
+    return ally;
+  }
+
+  /** Squad panel: who's with you, their role, money and gun. Rows are rebuilt only when the squad changes. */
   private updateSquadPanel(): void {
-    if (!this.squadEl) return;
+    const panel = this.squadEl;
+    if (!panel) return;
+    const rows = this.squadRows;
+    if (rows.length !== this.allies.length || rows.some((r, i) => r.a !== this.allies[i])) {
+      panel.textContent = '';
+      rows.length = 0;
+      for (const a of this.allies) {
+        const el = document.createElement('div');
+        el.className = 'sq-row';
+        el.appendChild(document.createElement('b')).textContent = a.personality.name;
+        el.appendChild(document.createElement('i')).textContent = a.personality.role;
+        const gun = el.appendChild(document.createElement('span'));
+        const pts = el.appendChild(document.createElement('em'));
+        const st = el.appendChild(document.createElement('u'));
+        panel.appendChild(el);
+        rows.push({ a, el, gun, pts, st, vals: ['-', '-', '-', '-'] }); // first update writes every cell
+      }
+    }
     const short = (id: string) => this.weapons.weapons.find((w) => w.data.id === id)?.data.short ?? id;
-    this.squadEl.innerHTML = this.allies
-      .map((a) => {
-        const st = !a.alive ? 'dead' : a.downed ? 'down' : a.errand ? a.errand.kind : a.plan ? a.plan.status : a.target ? 'fighting' : '';
-        return `<div class="sq-row ${a.alive ? '' : 'dead'}"><b>${a.personality.name}</b><i>${a.personality.role}</i><span>${a.alive ? short(a.soldier.weaponId) : '✕'}</span><em>${a.points}</em>${st && a.alive ? `<u>${st === 'down' ? 'DOWN' : st}</u>` : ''}</div>`;
-      })
-      .join('');
+    for (const r of rows) {
+      const a = r.a;
+      const st = !a.alive ? '' : a.downed ? 'DOWN' : a.errand ? a.errand.kind : a.plan ? a.plan.status : a.target ? 'fighting' : '';
+      const v = r.vals;
+      const dead = a.alive ? '' : 'dead';
+      if (v[0] !== dead) r.el.classList.toggle('dead', !a.alive);
+      const gun = a.alive ? short(a.soldier.weaponId) : '✕';
+      if (v[1] !== gun) r.gun.textContent = gun;
+      const pts = String(a.points);
+      if (v[2] !== pts) r.pts.textContent = pts;
+      if (v[3] !== st) {
+        r.st.textContent = st;
+        r.st.style.display = st ? '' : 'none';
+      }
+      v[0] = dead;
+      v[1] = gun;
+      v[2] = pts;
+      v[3] = st;
+    }
+  }
+
+  /** Frame cap in use (?cap overrides the setting). */
+  private get fpsCap(): number {
+    return this.capOverride ?? this.gfx.fpsCap;
   }
 
   /** Called from the start overlay click/tap/Enter (a user gesture). */
   start(): void {
     this.audio.unlock();
     if (!this.mobile) this.input.requestPointerLock();
-    else {
-      const el = document.documentElement;
-      el.requestFullscreen?.().catch(() => {});
-      (screen.orientation as unknown as { lock?: (o: string) => Promise<void> }).lock?.('landscape').catch(() => {});
-    }
     if (!this.started) {
       this.started = true;
       this.survival?.applyCareer();
       this.lastTime = performance.now();
+      this.dyn.skip = 1;
+      // ?bench: the benchmark runs on its own after PLAY.
+      if (new URLSearchParams(location.search).has('bench') && !this.bench && this.benchIn < 0) this.runBenchmark();
       this.renderer.setAnimationLoop((t) => {
         // Frame cap (phones default to 60: 90/120 Hz screens would otherwise run the whole
         // game up to twice per 60 Hz frame, heat the phone and get throttled).
-        const cap = this.trailer ? 0 : this.gfx.fpsCap;
+        const cap = this.trailer ? 0 : this.fpsCap;
         if (cap > 0) {
           const step = 1000 / cap;
           if (t < this.nextFrameAt - Math.min(4, step * 0.25)) return;
@@ -1086,6 +1229,18 @@ export class Game {
         }
         this.frame(t);
       });
+    }
+    // Phones: fullscreen without the navigation bar, then landscape (both need this gesture;
+    // iOS has neither on iPhone, older WebKit returns no promise: all optional).
+    if (this.mobile) {
+      try {
+        const el = document.documentElement;
+        el.requestFullscreen?.({ navigationUI: 'hide' })
+          .then(() => (screen.orientation as unknown as { lock?: (o: string) => Promise<void> } | undefined)?.lock?.('landscape'))
+          .catch(() => {});
+      } catch {
+        /* no fullscreen here */
+      }
     }
   }
 
@@ -1111,6 +1266,7 @@ export class Game {
         g.grade?.resize();
       },
       audio: this.audio.ctx,
+      details: () => this.perfDetails(),
       timed: [
         ['Render (draw calls)', this.renderer, 'render'],
         ['Physics', this.physics, 'step'],
@@ -1294,9 +1450,20 @@ export class Game {
       sh.map = null;
     }
     // Lighting: full image-based lighting, or the probe (frame loop sets its intensity).
-    const env = s.lighting === 'full' ? this.env : null;
+    // The weapon keeps its reflections except on phones with fast lighting (a probe copy there).
+    const ibl = s.lighting === 'full' || !this.mobile ? this.envMap() : null;
+    const env = s.lighting === 'full' ? ibl : null;
     if (this.scene.environment !== env) this.scene.environment = env;
     this.probe.intensity = env ? 0 : this.scene.environmentIntensity * 1.1;
+    const vm = this.weapons.viewmodel.scene;
+    const vmEnv = this.mobile && s.lighting === 'fast' ? null : ibl;
+    if (vm.environment !== vmEnv) vm.environment = vmEnv;
+    if (!vmEnv && !this.vmProbe) {
+      this.vmProbe = new THREE.LightProbe().copy(this.probe);
+      vm.add(this.vmProbe);
+    }
+    if (this.vmProbe) this.vmProbe.intensity = vmEnv ? 0 : vm.environmentIntensity * 1.1;
+    document.body.classList.toggle('no-glass', noGlass(this.mobile, s));
     // View distance: haze, camera far plane, how deep rooms are drawn.
     const vd = VIEW_DISTANCE[s.viewDistance];
     const fog = this.scene.fog as THREE.Fog | null;
@@ -1318,7 +1485,8 @@ export class Game {
     if (s.showFps && !this.fpsEl) {
       this.fpsEl = document.createElement('div');
       this.fpsEl.className = 'fps-meter';
-      this.fpsEl.appendChild(document.createTextNode(''));
+      this.fpsText = this.fpsEl.appendChild(document.createElement('span'));
+      this.fpsText.style.whiteSpace = 'pre';
       this.fpsCanvas = document.createElement('canvas');
       this.fpsCanvas.width = 120;
       this.fpsCanvas.height = 28;
@@ -1332,9 +1500,7 @@ export class Game {
   setQuality(pixelRatio: number, shadows: boolean): void {
     this.quality.pixelRatio = pixelRatio;
     this.quality.shadows = shadows;
-    this.renderer.setPixelRatio(pixelRatio * this.dyn.scale);
-    this.renderer.setSize(window.innerWidth, window.innerHeight);
-    this.grade?.resize();
+    this.applyPixelRatio();
     if (this.renderer.shadowMap.enabled === shadows && this.arena.sun.castShadow === shadows) return;
     this.renderer.shadowMap.enabled = shadows;
     this.arena.sun.castShadow = shadows;
@@ -1345,38 +1511,126 @@ export class Game {
     });
   }
 
+  /** Render pixel ratio: the setting times the dynamic scale (?res fixes it). */
+  private applyPixelRatio(): void {
+    this.renderer.setPixelRatio(this.resOverride || this.quality.pixelRatio * this.dyn.scale);
+    this.renderer.setSize(window.innerWidth, window.innerHeight);
+    this.grade?.resize();
+  }
+
+  /** Image-based lighting, built on first use; null if it can't be (the light probe stands in). */
+  private envMap(): THREE.Texture | null {
+    if (this.env || this.envFailed) return this.env;
+    try {
+      const pmrem = new THREE.PMREMGenerator(this.renderer);
+      const room = new RoomEnvironment();
+      this.env = pmrem.fromScene(room, 0.04).texture;
+      room.dispose();
+      pmrem.dispose();
+    } catch (err) {
+      console.warn('[gfx] no image-based lighting, using the light probe', err);
+      this.envFailed = true;
+    }
+    return this.env;
+  }
+
   /**
-   * Dynamic resolution: hold the frame cap by trading resolution. Every second, if
-   * frames ran slower than ~70 % of the cap the render scale drops 12 % (down to 55 %);
-   * with headroom it creeps back up toward the setting. Hysteresis + cooldown: no pumping.
+   * Dynamic resolution: hold the target frame rate by trading resolution. The target is
+   * the frame cap (60 when uncapped), or the display's own rate when that is lower (the
+   * fastest frame of the last few seconds; never taken below 45 Hz, so a slow phone isn't
+   * mistaken for a slow screen). Every second, under ~85 % of the target the scale drops
+   * in proportion to the miss (8-40 % a step, down to 50 %); with headroom it creeps back
+   * up toward the setting. A drop that didn't make frames at least ~8 % faster bought
+   * nothing (the frame isn't fill-bound): it's undone and the scale holds for 15 s.
+   * Stuck at the floor under half the target for 3 s, or two drops that didn't help
+   * there: the page itself costs the frame (compositor), body gets `perf-lite`. Phones only:
+   * desktop keeps the original rule (drop under ~70 % of the cap, recover above ~95 %).
    */
   private dynamicResolution(rawDt: number): void {
     const d = this.dyn;
-    if (rawDt > 0.25) return; // tab switch / hitch: not a measurement
-    d.acc += rawDt;
+    if (!this.mobile) {
+      if (rawDt > 0.25) return; // tab switch / hitch: not a measurement
+      d.acc += rawDt;
+      d.n++;
+      d.t += rawDt;
+      d.cooldown -= rawDt;
+      if (d.t < 1) return;
+      const avg = d.acc / d.n;
+      d.t = d.acc = d.n = 0;
+      if (d.cooldown > 0) return;
+      const target = this.fpsCap || 60;
+      let s = d.scale;
+      if (avg > 1 / (target * 0.7)) s = Math.max(0.55, s * 0.88);
+      else if (avg < 1 / (target * 0.95)) s = Math.min(1, s * 1.06);
+      if (Math.abs(s - d.scale) < 0.01) return;
+      d.scale = s;
+      d.cooldown = 1.5;
+      this.applyPixelRatio();
+      return;
+    }
+    // First frame after start / coming back from the background: the gap isn't a frame.
+    if (d.skip > 0) {
+      d.skip--;
+      return;
+    }
+    const dt = Math.min(Math.max(rawDt, 0), 0.5);
+    if (dt > 0.004) d.minCur = Math.min(d.minCur, dt);
+    if ((d.minT += dt) >= 2) {
+      d.minPrev = d.minCur;
+      d.minCur = Infinity;
+      d.minT = 0;
+    }
+    d.acc += dt;
     d.n++;
-    d.t += rawDt;
-    d.cooldown -= rawDt;
+    d.t += dt;
+    d.cooldown -= dt;
+    d.freeze -= dt;
     if (d.t < 1) return;
     const avg = d.acc / d.n;
+    const span = d.t;
     d.t = d.acc = d.n = 0;
-    if (d.cooldown > 0) return;
+    const vsync = Math.min(d.minCur, d.minPrev);
+    const target = Math.min(this.fpsCap || 60, vsync < Infinity ? Math.max(45, 1 / vsync) : 60);
+    const slow = avg > 2 / target;
+    // Compositor-bound: the floor and still under half the target.
+    if (d.scale <= DYN_FLOOR + 1e-3 && slow) d.floorT += span;
+    else d.floorT = 0;
+    // The last drop, on probation: not ~8 % faster → undo it, hold for 15 s.
+    if (d.prevAvg > 0) {
+      const before = d.prevAvg;
+      d.prevAvg = 0;
+      if (avg > before * 0.92) {
+        if (slow) d.strikes++;
+        d.scale = d.prevScale;
+        d.freeze = 15;
+        this.applyPixelRatio();
+      }
+    }
+    if (!d.lite && (d.floorT >= 3 || d.strikes >= 2)) {
+      d.lite = true;
+      document.body.classList.add('perf-lite');
+      console.info('[gfx] compositor-bound: perf-lite on');
+    }
+    if (d.cooldown > 0 || d.freeze > 0) return;
     let s = d.scale;
-    // Aim for the frame cap (60 when uncapped): drop below ~70 % of it, recover above ~95 %.
-    const target = this.gfx.fpsCap || 60;
-    if (avg > 1 / (target * 0.7)) s = Math.max(0.55, s * 0.88);
+    if (avg > 1 / (target * 0.85)) s = Math.max(DYN_FLOOR, s * Math.min(0.92, Math.max(0.6, Math.sqrt(1 / target / avg))));
     else if (avg < 1 / (target * 0.95)) s = Math.min(1, s * 1.06);
     if (Math.abs(s - d.scale) < 0.01) return;
+    if (s < d.scale) {
+      d.prevAvg = avg;
+      d.prevScale = d.scale;
+    }
     d.scale = s;
     d.cooldown = 1.5;
-    this.renderer.setPixelRatio(this.quality.pixelRatio * s);
-    this.renderer.setSize(window.innerWidth, window.innerHeight);
-    this.grade?.resize();
+    this.applyPixelRatio();
   }
 
   private onResize(): void {
     const w = window.innerWidth;
     const h = window.innerHeight;
+    if (this.size.w === w && this.size.h === h) return;
+    this.size.w = w;
+    this.size.h = h;
     this.renderer.setSize(w, h);
     this.grade?.resize();
     this.camera.camera.aspect = w / h;
@@ -1400,14 +1654,16 @@ export class Game {
     const realDt = Math.min(Math.max(rawDt, 0), 0.1);
     const dt = realDt * this.timeScale;
     this.fps += (1 / Math.max(rawDt, 1e-4) - this.fps) * 0.05;
-    if (this.gfx.dynamicResolution && !this.trailer && !(this.bench && !this.bench.done)) this.dynamicResolution(rawDt);
+    if (this.gfx.dynamicResolution && !this.trailer && !this.resOverride && !(this.bench && !this.bench.done)) this.dynamicResolution(rawDt);
     if (this.benchIn > 0 && (this.benchIn -= rawDt) <= 0) this.startBench();
     this.bench?.frame(rawDt);
     this.frameMs += (rawDt * 1000 - this.frameMs) * 0.05;
-    if (this.fpsEl && this.gfx.showFps && (this.fpsTimer -= rawDt) <= 0) {
+    if (this.fpsText && this.gfx.showFps && (this.fpsTimer -= rawDt) <= 0) {
       this.fpsTimer = 0.25;
       const c = this.renderer.domElement;
-      this.fpsEl.firstChild!.textContent = `${Math.round(this.fps)} FPS · ${this.frameMs.toFixed(1)} ms · ${c.width}×${c.height}`;
+      // The detail lines (device, GPU, draw calls): phones and ?dev; desktop keeps the one line.
+      const line = `${Math.round(this.fps)} FPS · ${this.frameMs.toFixed(1)} ms · ${c.width}×${c.height}`;
+      this.fpsText.textContent = this.mobile || this.dev ? [line, ...this.perfDetails()].join('\n') : line;
       this.drawFpsGraph();
     }
     if (this.fpsEl && this.gfx.showFps) {
@@ -1446,13 +1702,14 @@ export class Game {
     let steps = 0;
     // Small tolerance: at 60 fps two 120 Hz steps fit exactly; float error must not
     // turn that into an alternating 1-step / 3-step pattern (visible micro-stutter).
-    // Phones: at most 2 catch-up steps. On a slow frame, 6 physics steps make the next
-    // frame slower still (spiral of death); dropping sim time keeps it responsive.
-    const maxSteps = this.mobile ? 2 : MAX_STEPS;
+    // Phones (60 Hz physics): at most 3 catch-up steps, so down to 20 fps the game still
+    // runs at full speed. On a slower frame, 6 physics steps would make the next frame
+    // slower still (spiral of death); dropping sim time keeps it responsive.
+    const maxSteps = this.mobile ? 3 : MAX_STEPS;
     while (this.accumulator >= this.fixedDt - 1e-6 && steps < maxSteps) {
       this.player.fixedUpdate(this.fixedDt, input);
       for (const r of this.robots) r.fixedUpdate(this.fixedDt);
-      this.physics.step();
+      if (!this.benchFlags.noPhys) this.physics.step();
       this.accumulator -= this.fixedDt;
       steps++;
     }
@@ -1491,7 +1748,7 @@ export class Game {
     // Lights out: muzzle flashes light the room (and give shooters away).
     const darkness = this.lighting?.darkness ?? 0;
     this.dust.update(dt, this.camera.eye, darkness);
-    if (!this.ambience && this.audio.ready && !this.trailer) this.ambience = new Ambience(this.audio);
+    if (!this.ambience && this.ambienceOk && this.audio.ready && !this.trailer) this.ambience = new Ambience(this.audio);
     this.ambience?.update(dt, this.arena instanceof Site9 ? this.arena.ambienceAt(this.player.feet.x, this.player.feet.z) : null, darkness, this.camera.eye);
     if (this.survival && !this.health.dead && !this.ended) raid.alive += dt;
     // Broken lamps spark when they stutter back on (only the ones near you).
@@ -1534,15 +1791,28 @@ export class Game {
       ms.player.x = this.player.feet.x;
       ms.player.z = this.player.feet.z;
       ms.player.yaw = this.player.yaw;
-      ms.robots.length = 0;
-      for (const r of this.survival.robots) if (r.aggro) ms.robots.push({ x: r.pos.x, z: r.pos.z });
-      ms.enemies.length = 0;
-      for (const sq of this.squads) for (const s of sq.soldiers) if (s.alive) ms.enemies.push({ x: s.pos.x, z: s.pos.z });
-      if (this.match) for (const t of this.match.raiders) for (const a of t.agents) if (a.alive) ms.enemies.push({ x: a.soldier.pos.x, z: a.soldier.pos.z });
-      ms.allies.length = 0;
-      for (const a of this.allies) if (a.alive) ms.allies.push({ x: a.soldier.pos.x, z: a.soldier.pos.z });
-      // Gunfire gives enemy operators away for a moment.
-      this.match?.loud(ms.enemies, 'alpha');
+      // Markers: every frame on desktop; phones at the minimap's rate (15 Hz).
+      if (!this.mobile || (this.mapTimer -= realDt) <= 0) {
+        this.mapTimer = 1 / 15;
+        const pool = this.mapPool;
+        let n = 0;
+        const pt = (x: number, z: number) => {
+          const p = pool[n] ?? (pool[n] = { x: 0, z: 0 });
+          n++;
+          p.x = x;
+          p.z = z;
+          return p;
+        };
+        ms.robots.length = 0;
+        for (const r of this.survival.robots) if (r.aggro) ms.robots.push(pt(r.pos.x, r.pos.z));
+        ms.enemies.length = 0;
+        for (const sq of this.squads) for (const s of sq.soldiers) if (s.alive) ms.enemies.push(pt(s.pos.x, s.pos.z));
+        if (this.match) for (const t of this.match.raiders) for (const a of t.agents) if (a.alive) ms.enemies.push(pt(a.soldier.pos.x, a.soldier.pos.z));
+        ms.allies.length = 0;
+        for (const a of this.allies) if (a.alive) ms.allies.push(pt(a.soldier.pos.x, a.soldier.pos.z));
+        // Gunfire gives enemy operators away for a moment.
+        this.match?.loud(ms.enemies, 'alpha');
+      }
       if (this.match?.extracting && !ms.exits) ms.exits = this.match.exits.map((e) => ({ x: e.pos.x, z: e.pos.z, name: e.name }));
       this.mapOverlay.update(realDt, ms);
     }
@@ -1551,7 +1821,7 @@ export class Game {
     // Their lights come on in the dark: blackouts on Site-9, always in the night yard.
     // Site-9 runs at night: BD weapon lights stay on (stronger once the power dies).
     weaponLight.level = this.lighting ? Math.max(0.6, Math.min(1, this.lighting.darkness * 1.3)) : 1;
-    this.weaponLights.update(this.camera.camera.position);
+    if (this.weaponLights.group.children.length) this.weaponLights.update(this.camera.camera.position);
     this.shells.update(dt);
     this.impacts.update(dt);
     this.right.set(1, 0, 0).applyQuaternion(this.camera.camera.quaternion);
@@ -1597,19 +1867,30 @@ export class Game {
     // --- Render: world, then the weapon on top, then debug lines over everything ---
     this.renderer.info.reset();
     if (!this.director?.render()) {
-      if (this.grade) {
-        this.grade.mood = 0.35 + 0.65 * (this.lighting?.darkness ?? 0);
-        this.grade.begin();
+      // ?nodraw (bisecting): only a clear, in a colour that changes so the canvas still
+      // updates and the compositor does its usual work.
+      const noDraw = this.benchFlags.noDraw;
+      const grade = noDraw ? null : this.grade;
+      if (grade) {
+        grade.mood = 0.35 + 0.65 * (this.lighting?.darkness ?? 0);
+        grade.begin();
+      }
+      if (noDraw) {
+        this.renderer.getClearColor(this.clearBase);
+        this.renderer.setClearColor(this.clearTint.setHSL((now / 4000) % 1, 0.25, 0.12));
       }
       this.renderer.clear();
-      if (!this.benchFlags.noWorld) this.renderer.render(this.scene, this.camera.camera);
+      if (noDraw) this.renderer.setClearColor(this.clearBase);
+      // Phones: the full map covers the screen, nothing behind it needs drawing.
+      const covered = this.mobile && !!this.mapOverlay?.visible;
+      if (!this.benchFlags.noWorld && !noDraw && !covered) this.renderer.render(this.scene, this.camera.camera);
       this.renderer.clearDepth();
-      if (!this.health.dead && !this.cinematic && !this.spectator) this.renderer.render(this.weapons.viewmodel.scene, this.weapons.viewmodel.camera);
+      if (!this.health.dead && !this.cinematic && !this.spectator && !noDraw && !covered) this.renderer.render(this.weapons.viewmodel.scene, this.weapons.viewmodel.camera);
       this.debugDraw.flush(realDt);
-      if (this.debugDraw.enabled) this.renderer.render(this.debugDraw.scene, this.camera.camera);
+      if (this.debugDraw.enabled && !noDraw) this.renderer.render(this.debugDraw.scene, this.camera.camera);
       this.aiDebug.update(realDt);
-      if (this.aiDebug.enabled) this.renderer.render(this.aiDebug.draw.scene, this.camera.camera);
-      this.grade?.end();
+      if (this.aiDebug.enabled && !noDraw) this.renderer.render(this.aiDebug.draw.scene, this.camera.camera);
+      grade?.end();
     }
 
     if (this.debug.visible) {
@@ -1738,6 +2019,25 @@ export class Game {
     a.has = true;
     a.target.copy(bestP);
     return [yaw, pitch];
+  }
+
+  /**
+   * Readout lines (SHOW FPS and the benchmark report): control scheme, device and render
+   * pixel ratio (setting × dynamic scale), the real GPU, WebGL 2, real MSAA, last frame's
+   * draw calls and triangles, and the page-cost classes in force.
+   */
+  private perfDetails(): string[] {
+    const r = this.renderer;
+    const gl = glInfo(r);
+    const flags = ['no-glass', 'perf-lite'].filter((c) => document.body.classList.contains(c));
+    if (this.dyn.lite) flags.push('compositor-bound');
+    const pr = this.resOverride ? `${this.resOverride.toFixed(2)} (?res)` : `${this.quality.pixelRatio.toFixed(2)}×${Math.round(this.dyn.scale * 100)}%`;
+    const gpu = gl.gpu.length > 56 ? `${gl.gpu.slice(0, 55)}…` : gl.gpu;
+    return [
+      `${this.mobile ? 'MOBILE' : 'DESKTOP'} · dpr ${devicePixelRatio.toFixed(2)} · px ${pr} · ${gl.webgl2 ? 'WebGL2' : 'WebGL1'} · AA ${gl.aa ? 'on' : 'off'}`,
+      gpu,
+      `${r.info.render.calls} calls · ${(r.info.render.triangles / 1000).toFixed(0)}k tris${flags.length ? ` · ${flags.join(' ')}` : ''}`,
+    ];
   }
 
   /** Frame-time graph under the FPS readout: last 2 s; green under 16.7 ms, amber to 33, red above. */

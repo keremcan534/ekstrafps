@@ -30,16 +30,34 @@ export class Ambience {
   private rate = 1;
   private next = 10;
   private tmp = new THREE.Vector3();
+  /** Seconds until the next try at starting beds whose files haven't loaded yet (they load after PLAY). */
+  private retry = 1;
 
   constructor(private audio: AudioSystem) {
+    this.startBeds();
+  }
+
+  /** Start every bed whose file is loaded; the rest are retried from update(). */
+  private startBeds(): void {
     for (const file of AMBIENCE_LOOPS) {
       const name = file.split('/').pop()!.replace('.wav', '') as Bed;
-      const bed = audio.startLoop(file);
-      if (bed) this.beds.set(name, bed);
+      if (this.beds.has(name)) continue;
+      const bed = this.audio.startLoop(file);
+      if (!bed) continue;
+      // A bed that joins late picks up the current spin-down (its level is set in update()).
+      if (name === 'hvac' || name === 'servers' || name === 'power') bed.src.playbackRate.value = this.rate;
+      this.beds.set(name, bed);
     }
   }
 
   update(dt: number, spot: AmbienceSpot | null, darkness: number, listener: THREE.Vector3): void {
+    if (this.beds.size < AMBIENCE_LOOPS.length) {
+      this.retry -= dt;
+      if (this.retry <= 0) {
+        this.retry = 1;
+        this.startBeds();
+      }
+    }
     const want: Record<Bed, number> = { room: 0.35, hvac: 0, servers: 0, power: 0, wind: 0, dark: 0 };
     const id = spot?.id ?? '';
     const style = spot?.style ?? 'lab';

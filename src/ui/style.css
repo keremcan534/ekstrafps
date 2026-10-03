@@ -21,6 +21,8 @@ html, body {
   -webkit-touch-callout: none;
   -webkit-tap-highlight-color: transparent;
 }
+/* No double-tap zoom / 300 ms tap delay. Not 'none': the menu panel scrolls itself. */
+body { touch-action: manipulation; }
 
 #app { position: fixed; inset: 0; }
 canvas { display: block; touch-action: none; }
@@ -104,7 +106,7 @@ canvas { display: block; touch-action: none; }
 }
 
 /* ---------- Tuning panel ---------- */
-.lil-gui.tuning { --width: 320px; position: fixed; right: 0; top: 0; max-height: 100vh; overflow-y: auto; z-index: 15; pointer-events: auto; }
+.lil-gui.tuning { --width: 320px; position: fixed; right: 0; top: 0; max-height: 100vh; max-height: 100dvh; overflow-y: auto; z-index: 15; pointer-events: auto; }
 
 /* ---------- Touch controls ---------- */
 .touch-root { position: absolute; inset: 0; pointer-events: none; }
@@ -138,7 +140,7 @@ canvas { display: block; touch-action: none; }
 .is-touch .ammo-count { font-size: 30px; }
 .is-touch .reload-bar { margin: 0 auto; }
 .is-touch .kills { top: 54px; }
-.is-touch .debug-hud { top: 54px; font-size: 8px; line-height: 1.35; padding: 4px 6px; max-height: calc(100vh - 64px); overflow: hidden; }
+.is-touch .debug-hud { top: 54px; font-size: 8px; line-height: 1.35; padding: 4px 6px; max-height: calc(100vh - 64px); max-height: calc(100dvh - 64px); overflow: hidden; }
 .is-touch .help { display: none; }
 
 /* ---------- Player condition (SABLE) ---------- */
@@ -353,6 +355,32 @@ canvas { display: block; touch-action: none; }
    re-blurs the moving 3D view under it every frame, which phone GPUs can't afford. */
 .is-touch .ui-layer { zoom: var(--ui-zoom, 1); }
 .is-touch .ui-layer *, .is-touch .menu * { -webkit-backdrop-filter: none !important; backdrop-filter: none !important; }
+/* The general kill-switch (main.ts sets body.no-glass on phones and when UI blur is off,
+   body.perf-lite for the automatic low-fps fallback): catches every overlay wherever it is
+   parented. The .is-touch rule above stays as a fallback. Readable backgrounds: glass.css. */
+body.no-glass *, body.no-glass *::before, body.no-glass *::after,
+body.perf-lite *, body.perf-lite *::before, body.perf-lite *::after { -webkit-backdrop-filter: none !important; backdrop-filter: none !important; }
+body.perf-lite *, body.perf-lite *::before, body.perf-lite *::after { mix-blend-mode: normal !important; }
+body.perf-lite .post-fx, body.perf-lite .menu-grain { display: none; }
+/* Infinite pulses repaint the HUD every frame: a static colour carries the warning instead. */
+.is-touch .hp.low .hp-text, .is-touch .sb-note.urgent,
+body.perf-lite .hp.low .hp-text, body.perf-lite .sb-note.urgent { animation: none; opacity: 1; }
+body.perf-lite .menu-title, body.perf-lite .menu-sub,
+body.perf-lite .menu-nav .gbtn, body.perf-lite .menu-panel.enter { animation: none; }
+/* Moving overlays get their own layer instead of repainting the HUD around them. StatusHUD
+   must set display:none while a vignette is at 0, or both full-screen layers stay alive. */
+.dmg-vignette, .supp-vignette { will-change: opacity; }
+.hit-ind { will-change: transform, opacity; }
+.is-touch .joy-knob { will-change: transform; }
+/* Safe areas (notch / rounded corners). The HUD is zoomed, so the inset is divided back out. */
+.is-touch .hp { left: calc(16px + env(safe-area-inset-left) / var(--ui-zoom, 1)); }
+.is-touch .sv-points { left: calc(16px + env(safe-area-inset-left) / var(--ui-zoom, 1)); }
+.is-touch .squad-panel { left: calc(12px + env(safe-area-inset-left) / var(--ui-zoom, 1)); }
+.is-touch .minimap { right: calc(12px + env(safe-area-inset-right) / var(--ui-zoom, 1)); }
+.is-touch .killfeed { right: calc(10px + env(safe-area-inset-right) / var(--ui-zoom, 1)); }
+.is-touch .flash-btn { right: calc(150px + env(safe-area-inset-right) / var(--ui-zoom, 1)); }
+.is-touch .squad-btn { right: calc(206px + env(safe-area-inset-right) / var(--ui-zoom, 1)); }
+.is-touch .build-btn { right: calc(150px + env(safe-area-inset-right) / var(--ui-zoom, 1)); }
 .is-touch .menu-panel, .is-touch .gbtn { background-color: rgba(14, 16, 20, 0.82); }
 .btn-lean-l::before { content: '◀'; }
 .btn-lean-r::after { content: '▶'; }
@@ -384,3 +412,8 @@ canvas { display: block; touch-action: none; }
 .bench-row em { font-style: normal; color: rgba(255, 255, 255, 0.5); text-align: right; }
 .bench-btns { display: flex; gap: 10px; margin-top: 12px; }
 .bench-btns button { flex: 1; padding: 10px; border-radius: 8px; border: 1px solid rgba(255, 255, 255, 0.3); background: rgba(255, 255, 255, 0.08); color: #fff; font: 700 12px ui-monospace, Menlo, Consolas, monospace; letter-spacing: 0.12em; }
+/* Phones: the squad list goes under the HP / cash cards, the left fire button below it. */
+.is-touch .squad-panel { top: 150px; }
+.is-touch .btn-fire-left { top: calc(58vh / var(--ui-zoom, 1)); }
+.is-touch .sv-points { top: 122px; }
+.is-touch .squad-panel { top: 166px; }

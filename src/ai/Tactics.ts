@@ -2,6 +2,8 @@ import * as THREE from 'three';
 import type { Physics } from '../core/Physics';
 import type { NavGrid } from './NavGrid';
 import { canSee } from './Cover';
+import { AI_TUNING } from './Tuning';
+import { aiWorld } from './World';
 
 const DEG = Math.PI / 180;
 
@@ -30,7 +32,12 @@ const pathLength = (from: THREE.Vector3, path: THREE.Vector3[]) => {
  * A real flank: a destination 50–120° around the threat from where the squad
  * is, that can see the threat area, reached by a path that is not absurdly
  * long and mostly out of the threat's direct sight. Returns null when the map
- * offers nothing sensible (the bot picks another tactic).
+ * offers nothing sensible (the bot picks another tactic), 'pending' when this
+ * frame's AI ray / path budget ran out before anything usable was found (ask again
+ * shortly; it says nothing about the map).
+ * @param lowSpec phones: the sight lines come out of the shared per-frame AI ray
+ *                budget, and one plan takes at most half of it (everyone else's
+ *                perception keeps the rest).
  */
 export function planFlank(
   nav: NavGrid,
@@ -39,26 +46,35 @@ export function planFlank(
   threat: THREE.Vector3,
   squadPos: THREE.Vector3,
   preferSide: 1 | -1,
-): FlankPlan | null {
+  lowSpec = false,
+): FlankPlan | null | 'pending' {
   const base = Math.atan2(squadPos.x - threat.x, squadPos.z - threat.z);
   const dT = Math.min(26, Math.max(10, Math.hypot(from.x - threat.x, from.z - threat.z)));
   let searches = 0;
   let rays = 0;
   let best: FlankPlan | null = null;
   let bestScore = Infinity;
+  /** A path search was cut short by the frame budget (that candidate is unjudged, not bad). */
+  let starved = false;
+  const maxRays = lowSpec ? Math.min(36, Math.floor(AI_TUNING.rayBudgetPerFrame / 2)) : 36;
+  const takeRay = () => !lowSpec || aiWorld.takeRay();
   for (const side of [preferSide, -preferSide] as (1 | -1)[]) {
     for (const deg of [75, 100, 55, 120]) {
       for (const rk of [1, 0.75, 1.25]) {
-        if (searches >= 5 || rays >= 36) break;
+        if (searches >= 5 || rays >= maxRays) break;
         const b = base + side * deg * DEG;
         const r = dT * rk;
         const cand = nav.nearestWalkable(threat.x + Math.sin(b) * r, threat.z + Math.cos(b) * r, new THREE.Vector3(), 2.5);
         if (!cand) continue;
+        if (!takeRay()) return best ?? 'pending';
         rays++;
         if (!canSee(physics, cand, threat, 1.5, 1.2)) continue; // must be able to see them from there
         searches++;
         const path = nav.findPath(from, cand, 5000);
-        if (!path || !path.length) continue;
+        if (!path || !path.length) {
+          if (nav.lastTruncated) starved = true;
+          continue;
+        }
         const len = pathLength(from, path);
         const straight = Math.hypot(cand.x - from.x, cand.z - from.z);
         if (len > Math.max(32, straight * 2.6)) continue; // no kilometre detours
@@ -69,7 +85,9 @@ export function planFlank(
         for (const p of path) {
           const seg = Math.hypot(p.x - prev.x, p.z - prev.z);
           const n = Math.max(1, Math.min(4, Math.round(seg / 5)));
-          for (let k = 1; k <= n && rays < 36; k++) {
+          for (let k = 1; k <= n && rays < maxRays; k++) {
+            // Out of rays mid-judgement: this candidate stays unjudged; keep what we have.
+            if (!takeRay()) return best ?? 'pending';
             const q = new THREE.Vector3().lerpVectors(prev, p, k / n);
             samples++;
             rays++;
@@ -88,7 +106,7 @@ export function planFlank(
       }
     }
   }
-  return best;
+  return best ?? (starved ? 'pending' : null);
 }
 
 /**

@@ -51,6 +51,19 @@ function savePrefs(p: Prefs): void {
   }
 }
 
+function store(key: string, value: string): void {
+  try {
+    localStorage.setItem(key, value);
+  } catch {
+    /* storage blocked */
+  }
+}
+
+/** Reload with new URL flags, replacing this history entry (Back doesn't walk through menu reloads). */
+function reload(q: URLSearchParams): void {
+  location.replace(`?${q.toString()}`);
+}
+
 const BASE_SENS = playerConfig.mouseSensitivity;
 
 /** Apply saved preferences to the running game. */
@@ -123,7 +136,7 @@ export class MainMenu {
     this.button('MAIN MENU', 'tomenu', () => {
       const q = new URLSearchParams(location.search);
       q.set('menu', '1');
-      location.search = q.toString();
+      reload(q);
     });
     // Desktop build (Electron): a real quit.
     if (navigator.userAgent.includes('Electron')) this.button('QUIT', 'quit', () => window.close());
@@ -134,23 +147,26 @@ export class MainMenu {
     el('div', 'menu-foot', this.root, '<span>IN DEVELOPMENT</span><span>BUILD 0.3</span>');
     // The panel opens from the nav; until then the unit showcase has the stage.
     this.panel.classList.add('closed');
-    // 3D buttons tilt toward the pointer (desktop).
-    this.root.addEventListener('pointermove', (e) => {
-      const b = (e.target as HTMLElement).closest<HTMLElement>('.gbtn, .gcard');
-      if (!b) return;
-      const r = b.getBoundingClientRect();
-      b.style.setProperty('--rx', `${(-(e.clientY - r.top - r.height / 2) / r.height) * 8}deg`);
-      b.style.setProperty('--ry', `${((e.clientX - r.left - r.width / 2) / r.width) * 10}deg`);
-      b.style.setProperty('--mx', `${((e.clientX - r.left) / r.width) * 100}%`);
-      b.style.setProperty('--my', `${((e.clientY - r.top) / r.height) * 100}%`);
-    });
-    this.root.addEventListener('pointerout', (e) => {
-      const b = (e.target as HTMLElement).closest<HTMLElement>('.gbtn, .gcard');
-      if (b && !b.contains(e.relatedTarget as Node)) {
-        b.style.setProperty('--rx', '0deg');
-        b.style.setProperty('--ry', '0deg');
-      }
-    });
+    // 3D buttons tilt toward the pointer (desktop; on touch it only costs layout reads).
+    if (!opts.mobile) {
+      this.root.addEventListener('pointermove', (e) => {
+        if (e.pointerType === 'touch') return;
+        const b = (e.target as HTMLElement).closest<HTMLElement>('.gbtn, .gcard');
+        if (!b) return;
+        const r = b.getBoundingClientRect();
+        b.style.setProperty('--rx', `${(-(e.clientY - r.top - r.height / 2) / r.height) * 8}deg`);
+        b.style.setProperty('--ry', `${((e.clientX - r.left - r.width / 2) / r.width) * 10}deg`);
+        b.style.setProperty('--mx', `${((e.clientX - r.left) / r.width) * 100}%`);
+        b.style.setProperty('--my', `${((e.clientY - r.top) / r.height) * 100}%`);
+      });
+      this.root.addEventListener('pointerout', (e) => {
+        const b = (e.target as HTMLElement).closest<HTMLElement>('.gbtn, .gcard');
+        if (b && !b.contains(e.relatedTarget as Node)) {
+          b.style.setProperty('--rx', '0deg');
+          b.style.setProperty('--ry', '0deg');
+        }
+      });
+    }
     window.addEventListener('keydown', (e) => {
       if (this.visible && this.ready && (e.code === 'Enter' || (e.code === 'Space' && this.paused))) this.play();
     });
@@ -254,11 +270,12 @@ export class MainMenu {
       c.addEventListener('click', (e) => {
         e.stopPropagation();
         if (id === o.map) return;
+        store('weaponlab.map', id);
         const p = new URLSearchParams(location.search);
         if (id === 'site9') p.set('map', 'site9');
         else p.delete('map');
         p.set('menu', '1');
-        location.search = p.toString();
+        reload(p);
       });
     }
     if (o.map === 'site9') {
@@ -269,11 +286,12 @@ export class MainMenu {
         c.addEventListener('click', (e) => {
           e.stopPropagation();
           if (id === o.mode) return;
+          store('weaponlab.mode', id);
           const p = new URLSearchParams(location.search);
           if (id === 'solo') p.set('mode', 'solo');
           else p.delete('mode');
           p.set('menu', '1');
-          location.search = p.toString();
+          reload(p);
         });
       }
     }
@@ -328,16 +346,12 @@ export class MainMenu {
       b.addEventListener('click', (e) => {
         e.stopPropagation();
         if (id === this.opts.controls) return;
-        try {
-          localStorage.setItem('weaponlab.controls', id);
-        } catch {
-          /* storage blocked */
-        }
+        store('weaponlab.controls', id);
         const q = new URLSearchParams(location.search);
         q.delete('touch');
         q.delete('mouse');
         q.set('menu', '1');
-        location.search = q.toString();
+        reload(q);
       });
     }
   }
@@ -534,6 +548,9 @@ export class MainMenu {
       cap.remove();
     }
     let last = performance.now();
+    let nextAt = 0;
+    // Phones: the canvas size of the last frame drawn under a covering panel ('' = not frozen).
+    let frozen = '';
     const tick = () => {
       const b = this.backdrop;
       if (!b || g.running) {
@@ -542,17 +559,31 @@ export class MainMenu {
         show?.dispose();
         return;
       }
+      requestAnimationFrame(tick);
       const now = performance.now();
+      // Frame cap: 30 on phones (a 120 Hz menu heats the SoC before the match), else the FPS limit (MAX = every rAF).
+      const fpsCap = this.prefs.gfx.fpsCap;
+      const step = this.opts.mobile ? 1000 / 30 : fpsCap ? 1000 / fpsCap : 0;
+      if (now < nextAt - Math.min(4, step * 0.25)) return;
+      nextAt = Math.max(nextAt + step, now);
+      const r = g.renderer;
+      // Only on a real resize: setting the canvas size reallocates the framebuffer.
+      if (r.domElement.clientWidth !== innerWidth || r.domElement.clientHeight !== innerHeight) r.setSize(innerWidth, innerHeight);
+      // Phones: settings / armory cover the stage; draw it once, then let the canvas hold that frame.
+      if (this.opts.mobile && (this.section === 'settings' || this.section === 'armory') && !this.panel.classList.contains('closed')) {
+        const size = `${r.domElement.width}x${r.domElement.height}`;
+        if (frozen === size) {
+          last = now;
+          return;
+        }
+        frozen = size;
+      } else frozen = '';
       const dt = Math.min(0.05, (now - last) / 1000);
       last = now;
       if (show) {
         show.update(dt, innerWidth / innerHeight);
-        const r = g.renderer;
-        // Only on a real resize: setting the canvas size reallocates the framebuffer.
-        if (r.domElement.clientWidth !== innerWidth || r.domElement.clientHeight !== innerHeight) r.setSize(innerWidth, innerHeight);
         r.clear();
         r.render(show.scene, show.camera);
-        requestAnimationFrame(tick);
         return;
       }
       const t = (now - b.t0) / 1000;
@@ -561,11 +592,8 @@ export class MainMenu {
       b.cam.position.set(b.center.x + Math.sin(a) * b.radius, b.center.y + b.height + Math.sin(t * 0.21) * 0.6, b.center.z + Math.cos(a) * b.radius);
       b.cam.lookAt(b.center.x, b.center.y + Math.sin(t * 0.17) * 0.4, b.center.z);
       b.cam.updateProjectionMatrix();
-      const r = g.renderer;
-      if (r.domElement.clientWidth !== innerWidth || r.domElement.clientHeight !== innerHeight) r.setSize(innerWidth, innerHeight);
       r.clear();
       r.render(g.scene, b.cam);
-      requestAnimationFrame(tick);
     };
     requestAnimationFrame(tick);
   }

@@ -36,11 +36,6 @@ export const bump = (t: number, a: number, b: number): number => {
 export const hfovToVfov = (hfovDeg: number): number =>
   (2 * Math.atan(Math.tan((hfovDeg * DEG) / 2) / (16 / 9))) / DEG;
 
-/**
- * Phone/tablet detection. Touchscreen laptops also report touch support, so a
- * device with ANY fine pointer (mouse/trackpad) is treated as a PC; `?mouse`
- * forces PC mode, `?touch` forces touch mode (handled by the caller).
- */
 /** Player's control choice from the start menu: 'auto' (detect), 'pc' or 'mobile'. */
 export function controlPreference(): 'auto' | 'pc' | 'mobile' {
   try {
@@ -51,9 +46,25 @@ export function controlPreference(): 'auto' | 'pc' | 'mobile' {
   }
 }
 
+/** Phone/tablet user agent (incl. iPadOS, which reports itself as a Mac with touch points). */
+const isMobileUA = (): boolean => {
+  const uaData = (navigator as Navigator & { userAgentData?: { mobile?: boolean } }).userAgentData;
+  if (uaData?.mobile) return true;
+  const ua = navigator.userAgent;
+  return /Android|iPhone|iPad|Mobile/i.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1);
+};
+
+/**
+ * Phone/tablet detection. Touchscreen laptops also report touch support, so on
+ * a desktop UA a device with ANY fine pointer (mouse/trackpad) is treated as a
+ * PC. A mobile UA only needs a coarse primary pointer: an S-Pen or a paired
+ * mouse adds a fine pointer there but it is still a phone GPU. `?mouse` forces
+ * PC mode, `?touch` forces touch mode (handled by the caller).
+ */
 export const isTouchDevice = (): boolean => {
   if (typeof window === 'undefined') return false;
   if (new URLSearchParams(location.search).has('mouse')) return false;
   const hasTouch = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
-  return hasTouch && matchMedia('(pointer: coarse)').matches && !matchMedia('(any-pointer: fine)').matches;
+  if (!hasTouch || !matchMedia('(pointer: coarse)').matches) return false;
+  return isMobileUA() || !matchMedia('(any-pointer: fine)').matches;
 };

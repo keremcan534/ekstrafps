@@ -30,6 +30,7 @@ interface Lineup {
 /** The stage sits far outside the map (its hitboxes never meet a bullet or a bot). */
 const STAGE = new THREE.Vector3(900, 0, 900);
 const HOLD = 9;
+const HEMI_SKY = 0x2a1012;
 
 /**
  * Main-menu unit showcase: a dark stage with a red-lit floor, the factions of
@@ -51,13 +52,19 @@ export class Showcase {
   private onChange: (l: Lineup) => void;
   /** Every body on the stage (switched off for good when the game starts). */
   private bodies: Humanoid[] = [];
+  private hemi = new THREE.HemisphereLight(HEMI_SKY, 0x050203, 0.6);
+  /** Phones: the current lineup's rim colour, blended into the hemisphere by the reveal. */
+  private rimColor = new THREE.Color();
+  private mobile: boolean;
 
   constructor(d: ShowcaseDeps, onChange: (l: { name: string; tag: string; text: string }) => void) {
     this.onChange = onChange;
     const S = this.scene;
     S.background = new THREE.Color(0x030102);
     S.fog = new THREE.Fog(0x080203, 9, 26);
-    S.add(new THREE.HemisphereLight(0x2a1012, 0x050203, 0.6));
+    S.add(this.hemi);
+    // Phones: one spotlight (the key) and the hemisphere takes the rim colour.
+    this.mobile = !!d.soldierDeps.lowSpec;
 
     // Floor: dark glossy deck, a soft red pool, a thin glowing ring.
     const deck = new THREE.Mesh(new THREE.CircleGeometry(14, 48), new THREE.MeshStandardMaterial({ color: 0x0b0a0b, roughness: 0.32, metalness: 0.6 }));
@@ -76,7 +83,7 @@ export class Showcase {
     S.add(ring);
 
     // Lights: two hard rims from behind, a key from the front-left above.
-    for (const sx of [-1, 1]) {
+    for (const sx of this.mobile ? [] : [-1, 1]) {
       const l = new THREE.SpotLight(0xff2010, 0, 22, 0.42, 0.55, 1.2);
       l.position.copy(STAGE).add(new THREE.Vector3(sx * 4.5, 5.5, -4.5));
       l.target.position.copy(STAGE).add(new THREE.Vector3(0, 1, 0));
@@ -211,6 +218,7 @@ export class Showcase {
     const l = this.lineups[i];
     for (const m of l.members) m.visible = true;
     for (const r of this.rims) r.color.setHex(l.rim);
+    this.rimColor.setHex(l.rim);
     this.key.color.setHex(l.key);
     this.floorGlow.color.setHex(l.rim);
     this.ring.color.setHex(l.rim);
@@ -228,6 +236,11 @@ export class Showcase {
     const out = Math.min(1, Math.max(0, (HOLD - t) / 0.6));
     const rim = (t < 0.25 ? (Math.sin(t * 90) > 0 ? 1 : 0.2) : 1) * Math.min(1, t * 4) * out;
     for (const r of this.rims) r.intensity = 220 * rim;
+    // Phones (no rim spots): the tint follows the reveal, so rim 0 is exactly the desktop hemisphere.
+    if (this.mobile) {
+      this.hemi.color.setHex(HEMI_SKY).lerp(this.rimColor, 0.6 * rim);
+      this.hemi.intensity = 0.6 + 0.6 * rim;
+    }
     this.key.intensity = 110 * Math.min(1, Math.max(0, (t - 0.4) / 1.2)) * out;
     this.floorGlow.opacity = 0.5 * rim;
     this.ring.opacity = 0.85 * rim;

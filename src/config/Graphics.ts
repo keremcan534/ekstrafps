@@ -26,6 +26,8 @@ export interface GraphicsSettings {
   antialias: boolean;
   /** Small fps / frame time / resolution readout. */
   showFps: boolean;
+  /** Frosted-glass blur behind panels and buttons (phones: off, it costs a blur pass per element every frame). */
+  uiBlur: boolean;
 }
 
 export const VIEW_DISTANCE: Record<ViewDistance, { fogNear: number; fogFar: number; rooms: number; roomFar: number; characters: number }> = {
@@ -36,12 +38,18 @@ export const VIEW_DISTANCE: Record<ViewDistance, { fogNear: number; fogFar: numb
 
 export const FPS_CAPS = [30, 60, 90, 120, 0];
 
+/** Phones: texture anisotropy cap (Game passes it to setTextureAnisotropy before the map builds). */
+export const MOBILE_ANISOTROPY = 2;
+
+/** Body class `no-glass` (blur off): phones and blur turned off, unless ?glass keeps it (bisecting). */
+export const noGlass = (mobile: boolean, g: GraphicsSettings): boolean => !new URLSearchParams(location.search).has('glass') && (mobile || !g.uiBlur);
+
 /** Highest render resolution offered (phones: 2x is already far past what they can fill). */
 export const maxResolution = (mobile: boolean): number => (mobile ? Math.min(2, Math.max(1, devicePixelRatio)) : Math.max(2, devicePixelRatio));
 
 export function presetSettings(preset: Exclude<GraphicsPreset, 'custom'>, mobile: boolean): GraphicsSettings {
   const dpr = window.devicePixelRatio || 1;
-  const base = { preset, fpsCap: mobile ? 60 : 0, showFps: false, antialias: !mobile };
+  const base = { preset, fpsCap: mobile ? 60 : 0, showFps: false, antialias: !mobile, uiBlur: !mobile };
   switch (preset) {
     case 'performance':
       return { ...base, resolution: mobile ? 0.9 : 0.75, dynamicResolution: true, shadows: 'off', lighting: 'fast', viewDistance: 'near', postFx: false, antialias: false };
@@ -54,6 +62,8 @@ export function presetSettings(preset: Exclude<GraphicsPreset, 'custom'>, mobile
 }
 
 const PREFS_KEY = 'site9.prefs';
+/** Which control scheme the graphics settings were last loaded for ('mobile' / 'desktop'). */
+const SCHEME_KEY = 'site9.gfxScheme';
 
 /** Saved graphics settings (or the defaults for this device). Old saves carry only a preset name. */
 export function loadGraphics(mobile: boolean): GraphicsSettings {
@@ -69,6 +79,23 @@ export function loadGraphics(mobile: boolean): GraphicsSettings {
   const g = saved.gfx;
   // A named preset always comes from its current definition (fixes travel to old saves);
   // only CUSTOM keeps the stored fields. Fps cap and the readout are kept either way.
-  if (g?.preset && g.preset !== 'custom') return { ...presetSettings(g.preset, mobile), fpsCap: g.fpsCap ?? d.fpsCap, showFps: g.showFps ?? false };
-  return { ...d, ...(g ?? {}) };
+  const out = g?.preset && g.preset !== 'custom' ? { ...presetSettings(g.preset, mobile), fpsCap: g.fpsCap ?? d.fpsCap, showFps: g.showFps ?? false } : { ...d, ...(g ?? {}) };
+  // Switched to phone controls (or a save from before this was tracked): an uncapped or
+  // above-60 cap was picked for a desktop monitor. A phone at 90/120 Hz would run the
+  // whole game up to twice per 60 Hz frame and throttle: back to the phone default.
+  // Written back to the save, so the menu (which loads these again) sees the same cap.
+  // Real phones only (touch-first screen, not ?touch): touch controls on a desktop or a
+  // touchscreen laptop keep the desktop's cap, it's the same save.
+  try {
+    const phone = mobile && !new URLSearchParams(location.search).has('touch') && window.matchMedia('(pointer: coarse)').matches;
+    const scheme = localStorage.getItem(SCHEME_KEY);
+    localStorage.setItem(SCHEME_KEY, phone ? 'mobile' : 'desktop');
+    if (phone && scheme !== 'mobile' && g && (out.fpsCap === 0 || out.fpsCap > 60)) {
+      out.fpsCap = g.fpsCap = 60;
+      localStorage.setItem(PREFS_KEY, JSON.stringify(saved));
+    }
+  } catch {
+    /* storage blocked */
+  }
+  return out;
 }

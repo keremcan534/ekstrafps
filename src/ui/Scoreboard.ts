@@ -22,7 +22,9 @@ export class Scoreboard {
   private feed: HTMLDivElement;
   private end: HTMLDivElement;
   private hold: HTMLDivElement;
+  private holdFill: HTMLElement;
   private holdKey = '';
+  private noteKey: string | null = null;
 
   constructor(parent: HTMLElement, private teams: TeamRow[]) {
     this.root = div('scoreboard', parent);
@@ -43,6 +45,10 @@ export class Scoreboard {
     this.feed = div('killfeed', parent);
     this.end = div('match-end', parent);
     this.hold = div('revive-bar extract-bar', parent);
+    // Built once; setHold only moves the fill.
+    this.hold.textContent = 'EXTRACTING';
+    this.holdFill = document.createElement('i');
+    this.hold.appendChild(this.holdFill);
   }
 
   /** Extraction progress (0..1) or null to hide. */
@@ -51,7 +57,7 @@ export class Scoreboard {
     if (key === this.holdKey) return;
     this.holdKey = key;
     this.hold.classList.toggle('show', p !== null);
-    if (p !== null) this.hold.innerHTML = `EXTRACTING<i style="transform:scaleX(${p.toFixed(3)})"></i>`;
+    if (p !== null) this.holdFill.style.transform = `scaleX(${key})`;
   }
 
   update(scores: Map<string, number>, alive: Map<string, number>, nextRaid: number | null, leader: string | null, clock = '', urgent = false): void {
@@ -67,6 +73,9 @@ export class Scoreboard {
       c.el.classList.toggle('wiped', a === 0);
     }
     const n = [clock, nextRaid ? `RAID AT ${nextRaid}` : ''].filter(Boolean).join(' · ');
+    const noteKey = `${n}|${urgent}`;
+    if (noteKey === this.noteKey) return;
+    this.noteKey = noteKey;
     if (this.note.textContent !== n) this.note.textContent = n;
     this.note.classList.toggle('urgent', urgent);
   }

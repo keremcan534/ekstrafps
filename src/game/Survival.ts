@@ -9,7 +9,8 @@ import type { WeaponController } from '../weapons/WeaponController';
 import type { PlayerController } from '../player/PlayerController';
 import type { PlayerHealth } from '../player/PlayerHealth';
 import type { AudioSystem } from '../audio/AudioSystem';
-import { buildWeaponModel } from '../weapons/WeaponModels';
+import { bakedRig, buildWeaponModel } from '../weapons/WeaponModels';
+import type { ModelKey } from '../weapons/WeaponData';
 import { mergeStatic } from '../world/MeshBuilder';
 import type { LinkDef } from '../world/LayoutBuilder';
 import { RogueRobot, type MeleeTarget, type RobotVariant } from '../enemies/RogueRobot';
@@ -103,6 +104,8 @@ const HAZARD_DPS = { electric: 70, gas: 26, fire: 80 };
 /** Enough to open one starter shutter right away ($750). */
 export const START_POINTS = 800;
 const POINTS = { hit: 10, kill: 60, headKill: 100 };
+/** Wall-buy weapon templates per `${model}|${mobile}` (cloned: shared geometry). */
+const wallModels = new Map<string, THREE.Object3D>();
 
 /**
  * Site-9 survival. Economy is Zombies-style (points for hits and kills, spent on
@@ -237,6 +240,9 @@ export class Survival {
   private spawnTimer = 0;
   private pending: { sp: SpawnPoint; t: number; mob: boolean }[] = [];
   private wakeQueue: { r: RogueRobot; t: number }[] = [];
+  /** Dormant-robot sight checks: rays owed this frame, and whose turn it is. */
+  private wakeBudget = 0;
+  private wakeCursor = 0;
   private playerTarget: MeleeTarget;
   extraTargets: MeleeTarget[] = [];
   /** Shown instead of the nearest interactable (e.g. "Revive Kato"); F does that instead. */
@@ -501,14 +507,7 @@ export class Survival {
     const label = new THREE.Mesh(new THREE.PlaneGeometry(1.5, 0.28), new THREE.MeshBasicMaterial({ map: buyTexture(data.name, wb.cost), toneMapped: false }));
     label.position.copy(wb.pos).addScaledVector(n, 0.025).setY(wb.pos.y - 0.55);
     label.rotation.y = wb.yaw;
-    const rig = buildWeaponModel(data.model);
-    rig.leftHand.visible = false;
-    rig.rightHand.visible = false;
-    rig.root.traverse((o) => {
-      o.frustumCulled = true;
-      if ((o as THREE.Mesh).isMesh) (o as THREE.Mesh).castShadow = true;
-    });
-    const model = mergeStatic(rig.root);
+    const model = this.wallModel(data.model);
     model.position.copy(wb.pos).addScaledVector(n, 0.12);
     model.rotation.y = wb.yaw - Math.PI / 2;
     map.roomGroupAt(wb.pos.x, wb.pos.z).add(board, label, model);
@@ -525,6 +524,36 @@ export class Survival {
         return true;
       },
     });
+  }
+
+  /**
+   * The weapon hung on a wall buy, built once per model and cloned (every board
+   * of the same gun shares its geometry). Phones: the low-detail build baked to
+   * vertex colours (~1-2 draw calls, a few thousand vertices instead of ~100k).
+   */
+  private wallModel(model: ModelKey): THREE.Object3D {
+    const key = `${model}|${this.deps.mobile}`;
+    let t = wallModels.get(key);
+    if (!t) {
+      if (this.deps.mobile) {
+        const rig = bakedRig(model, true);
+        rig.leftHand.removeFromParent();
+        rig.rightHand.removeFromParent();
+        t = rig.root;
+      } else {
+        const rig = buildWeaponModel(model);
+        rig.leftHand.visible = false;
+        rig.rightHand.visible = false;
+        t = mergeStatic(rig.root);
+      }
+      // Static on a wall: cull it off screen again (rigs come with culling off).
+      t.traverse((o) => {
+        o.frustumCulled = true;
+        if ((o as THREE.Mesh).isMesh) (o as THREE.Mesh).castShadow = true;
+      });
+      wallModels.set(key, t);
+    }
+    return t.clone();
   }
 
   // ---------------------------------------------------------------- ammo caches
@@ -992,10 +1021,18 @@ export class Survival {
     // Wanderers notice you (sight, proximity) and wake their neighbours.
     const p = this.deps.player;
     this.eye.set(p.feet.x, p.feet.y + p.eyeHeight, p.feet.z);
-    for (const r of this.robots) {
-      if (!r.dormant || this.deps.health.dead) continue;
-      const d = r.pos.distanceTo(p.feet);
-      if (d < 4 || (d < 11 && this.deps.physics.lineOfSight(this.probe.set(r.pos.x, 1.6, r.pos.z), this.eye))) r.wake();
+    // Proximity every frame; the sight ray round-robin, each robot ~5 times a second.
+    const robots = this.robots;
+    this.wakeBudget = Math.min(robots.length, this.wakeBudget + dt * 5 * robots.length);
+    let rays = this.wakeBudget | 0;
+    this.wakeBudget -= rays;
+    if (!this.deps.health.dead) {
+      for (const r of robots) if (r.dormant && r.pos.distanceToSquared(p.feet) < 16) r.wake();
+      for (; rays > 0 && robots.length; rays--) {
+        this.wakeCursor = (this.wakeCursor + 1) % robots.length;
+        const r = robots[this.wakeCursor];
+        if (r.dormant && r.pos.distanceToSquared(p.feet) < 121 && this.deps.physics.lineOfSight(this.probe.set(r.pos.x, 1.6, r.pos.z), this.eye)) r.wake();
+      }
     }
     for (let i = this.wakeQueue.length - 1; i >= 0; i--) {
       const w = this.wakeQueue[i];

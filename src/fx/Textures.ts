@@ -1,20 +1,43 @@
 import * as THREE from 'three';
 
-/** Procedurally generated textures, so the lab needs zero art assets. */
+/**
+ * Procedurally generated textures, so the lab needs zero art assets.
+ *
+ * Every texture keeps its canvas (texture.image): a lost WebGL context is
+ * restored by re-uploading them, so the canvases are never freed.
+ */
 
-function canvasTexture(size: number, draw: (ctx: CanvasRenderingContext2D, s: number) => void, srgb = true): THREE.CanvasTexture {
+/** Anisotropic filtering cap (Graphics settings / phones); each texture uses min(its own level, this). */
+let anisoCap = Infinity;
+
+function canvasTexture(size: number, draw: (ctx: CanvasRenderingContext2D, s: number) => void, srgb = true, aniso = 4): THREE.CanvasTexture {
   const c = document.createElement('canvas');
   c.width = c.height = size;
   const ctx = c.getContext('2d')!;
   draw(ctx, size);
   const tex = new THREE.CanvasTexture(c);
   if (srgb) tex.colorSpace = THREE.SRGBColorSpace;
-  tex.anisotropy = 4;
+  tex.userData.aniso = aniso;
+  tex.anisotropy = Math.max(1, Math.min(aniso, anisoCap));
   return tex;
 }
 
 const cache: Record<string, THREE.Texture> = {};
 const cached = (key: string, make: () => THREE.Texture): THREE.Texture => (cache[key] ??= make());
+
+/**
+ * Cap anisotropic filtering (1 = off). Applies to the textures made from now on
+ * and to the cached ones (re-uploaded only when their level actually changes).
+ */
+export function setTextureAnisotropy(n: number): void {
+  anisoCap = Math.max(1, n);
+  for (const t of Object.values(cache)) {
+    const want = Math.max(1, Math.min((t.userData.aniso as number | undefined) ?? 4, anisoCap));
+    if (t.anisotropy === want) continue;
+    t.anisotropy = want;
+    t.needsUpdate = true;
+  }
+}
 
 /** Front-facing muzzle flash star. */
 export const flashStarTexture = (): THREE.Texture =>
@@ -103,87 +126,109 @@ export const metalDentTexture = (): THREE.Texture =>
  * holds 2×2 slightly different tiles (spans 2 m) with grime blotches, scuffs and
  * speckle, so large surfaces don't read as clean plastic.
  */
-export const gridTexture = (base: string, line: string, accent: string): THREE.Texture =>
-  cached(`grid_${base}_${line}`, () => {
-    const t = canvasTexture(512, (ctx, s) => {
-      const h = s / 2;
-      ctx.fillStyle = base;
-      ctx.fillRect(0, 0, s, s);
-      // Per-tile tone shift.
-      for (let i = 0; i < 4; i++) {
-        const v = (Math.random() - 0.5) * 14;
-        ctx.fillStyle = v > 0 ? `rgba(255,255,255,${v / 255})` : `rgba(0,0,0,${-v / 255})`;
-        ctx.fillRect((i % 2) * h, Math.floor(i / 2) * h, h, h);
-      }
-      // Low-frequency grime blotches.
-      for (let i = 0; i < 26; i++) {
-        const x = Math.random() * s;
-        const y = Math.random() * s;
-        const r = 20 + Math.random() * 90;
-        const g = ctx.createRadialGradient(x, y, 0, x, y, r);
-        const a = 0.03 + Math.random() * 0.06;
-        g.addColorStop(0, `rgba(40,34,28,${a})`);
-        g.addColorStop(1, 'rgba(40,34,28,0)');
-        ctx.fillStyle = g;
-        ctx.fillRect(x - r, y - r, r * 2, r * 2);
-      }
-      // Speckle.
-      for (let i = 0; i < 5200; i++) {
-        const v = Math.random() * 26 - 13;
-        ctx.fillStyle = v > 0 ? `rgba(255,255,255,${v / 255})` : `rgba(0,0,0,${-v / 255})`;
-        ctx.fillRect(Math.random() * s, Math.random() * s, 2, 2);
-      }
-      // Scuffs and scratches.
-      ctx.lineCap = 'round';
-      for (let i = 0; i < 34; i++) {
-        const x = Math.random() * s;
-        const y = Math.random() * s;
-        const a = Math.random() * Math.PI;
-        const l = 8 + Math.random() * 46;
-        ctx.strokeStyle = Math.random() < 0.7 ? `rgba(0,0,0,${0.05 + Math.random() * 0.08})` : `rgba(255,255,255,${0.04 + Math.random() * 0.06})`;
-        ctx.lineWidth = 1 + Math.random() * 2;
-        ctx.beginPath();
-        ctx.moveTo(x, y);
-        ctx.lineTo(x + Math.cos(a) * l, y + Math.sin(a) * l);
-        ctx.stroke();
-      }
-      // Panel seams: dark line + a thin highlight (reads as a bevel).
-      for (const o of [0, h]) {
-        ctx.strokeStyle = line;
-        ctx.lineWidth = 3;
-        ctx.beginPath();
-        ctx.moveTo(o + 1, 0);
-        ctx.lineTo(o + 1, s);
-        ctx.moveTo(0, o + 1);
-        ctx.lineTo(s, o + 1);
-        ctx.stroke();
-        ctx.strokeStyle = 'rgba(255,255,255,0.10)';
-        ctx.lineWidth = 1;
-        ctx.beginPath();
-        ctx.moveTo(o + 3.5, 0);
-        ctx.lineTo(o + 3.5, s);
-        ctx.moveTo(0, o + 3.5);
-        ctx.lineTo(s, o + 3.5);
-        ctx.stroke();
-      }
-      ctx.strokeStyle = accent;
+export const gridTexture = (base: string, line: string, accent: string): THREE.Texture => cached(`grid_${base}_${line}`, () => makeGrid(512, base, line, accent));
+
+/**
+ * Neutral grey panel grid (the same pattern as gridTexture), tinted per surface
+ * with material.color = gridTint(base): one texture for every room instead of
+ * one per colour. `size` 256 on phones (drawn at 512 scale, scaled down).
+ */
+export const neutralGridTexture = (size = 512): THREE.Texture => cached(`grid_neutral_${size}`, () => makeGrid(size, NEUTRAL, NEUTRAL_LINE, NEUTRAL_ACCENT));
+
+const NEUTRAL = '#a8a8a8';
+/** Seam and accent lines: the per-colour grids use about 86 % / 94 % of the base. */
+const NEUTRAL_LINE = '#919191';
+const NEUTRAL_ACCENT = '#9e9e9e';
+let neutralLinear = 0;
+
+/** Material colour that turns the neutral grid into a `base`-coloured one (linear: may exceed 1). */
+export function gridTint(base: string): THREE.Color {
+  neutralLinear ||= new THREE.Color(NEUTRAL).r;
+  return new THREE.Color(base).multiplyScalar(1 / neutralLinear);
+}
+
+function makeGrid(size: number, base: string, line: string, accent: string): THREE.Texture {
+  const t = canvasTexture(size, (ctx, sz) => {
+    // Drawn in 512 units whatever the size (same pattern at 256).
+    ctx.scale(sz / 512, sz / 512);
+    const s = 512;
+    const h = s / 2;
+    ctx.fillStyle = base;
+    ctx.fillRect(0, 0, s, s);
+    // Per-tile tone shift.
+    for (let i = 0; i < 4; i++) {
+      const v = (Math.random() - 0.5) * 14;
+      ctx.fillStyle = v > 0 ? `rgba(255,255,255,${v / 255})` : `rgba(0,0,0,${-v / 255})`;
+      ctx.fillRect((i % 2) * h, Math.floor(i / 2) * h, h, h);
+    }
+    // Low-frequency grime blotches.
+    for (let i = 0; i < 26; i++) {
+      const x = Math.random() * s;
+      const y = Math.random() * s;
+      const r = 20 + Math.random() * 90;
+      const g = ctx.createRadialGradient(x, y, 0, x, y, r);
+      const a = 0.03 + Math.random() * 0.06;
+      g.addColorStop(0, `rgba(40,34,28,${a})`);
+      g.addColorStop(1, 'rgba(40,34,28,0)');
+      ctx.fillStyle = g;
+      ctx.fillRect(x - r, y - r, r * 2, r * 2);
+    }
+    // Speckle.
+    for (let i = 0; i < 5200; i++) {
+      const v = Math.random() * 26 - 13;
+      ctx.fillStyle = v > 0 ? `rgba(255,255,255,${v / 255})` : `rgba(0,0,0,${-v / 255})`;
+      ctx.fillRect(Math.random() * s, Math.random() * s, 2, 2);
+    }
+    // Scuffs and scratches.
+    ctx.lineCap = 'round';
+    for (let i = 0; i < 34; i++) {
+      const x = Math.random() * s;
+      const y = Math.random() * s;
+      const a = Math.random() * Math.PI;
+      const l = 8 + Math.random() * 46;
+      ctx.strokeStyle = Math.random() < 0.7 ? `rgba(0,0,0,${0.05 + Math.random() * 0.08})` : `rgba(255,255,255,${0.04 + Math.random() * 0.06})`;
+      ctx.lineWidth = 1 + Math.random() * 2;
+      ctx.beginPath();
+      ctx.moveTo(x, y);
+      ctx.lineTo(x + Math.cos(a) * l, y + Math.sin(a) * l);
+      ctx.stroke();
+    }
+    // Panel seams: dark line + a thin highlight (reads as a bevel).
+    for (const o of [0, h]) {
+      ctx.strokeStyle = line;
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.moveTo(o + 1, 0);
+      ctx.lineTo(o + 1, s);
+      ctx.moveTo(0, o + 1);
+      ctx.lineTo(s, o + 1);
+      ctx.stroke();
+      ctx.strokeStyle = 'rgba(255,255,255,0.10)';
       ctx.lineWidth = 1;
       ctx.beginPath();
-      for (const o of [h / 2, h * 1.5]) {
-        ctx.moveTo(o, 0);
-        ctx.lineTo(o, s);
-        ctx.moveTo(0, o);
-        ctx.lineTo(s, o);
-      }
+      ctx.moveTo(o + 3.5, 0);
+      ctx.lineTo(o + 3.5, s);
+      ctx.moveTo(0, o + 3.5);
+      ctx.lineTo(s, o + 3.5);
       ctx.stroke();
-    });
-    t.wrapS = t.wrapT = THREE.RepeatWrapping;
-    t.repeat.set(0.5, 0.5);
-    t.generateMipmaps = true;
-    t.minFilter = THREE.LinearMipmapLinearFilter;
-    t.anisotropy = 8;
-    return t;
-  });
+    }
+    ctx.strokeStyle = accent;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    for (const o of [h / 2, h * 1.5]) {
+      ctx.moveTo(o, 0);
+      ctx.lineTo(o, s);
+      ctx.moveTo(0, o);
+      ctx.lineTo(s, o);
+    }
+    ctx.stroke();
+  }, true, 8);
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  t.repeat.set(0.5, 0.5);
+  t.generateMipmaps = true;
+  t.minFilter = THREE.LinearMipmapLinearFilter;
+  return t;
+}
 
 /** Roughness variation (spans 4 m): smudges and wear break up uniform specular highlights. */
 export const grimeRoughness = (): THREE.Texture =>

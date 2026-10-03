@@ -91,6 +91,11 @@ export class Bot implements AIListener {
   private readonly suppressPt = new THREE.Vector3();
   private flankIndex = 0;
   private flankBanUntil = 0;
+  /** Flank plans put off for lack of AI budget in a row (and when the last was). */
+  private flankPending = 0;
+  private flankPendingAt = -1e9;
+  /** A watchdog re-plan of a running flank was put off: re-enter FLANK at the next evaluation. */
+  private flankRetry = false;
   private search: { pts: THREE.Vector3[]; i: number; pauseUntil: number; target: Contact | null; since: number } | null = null;
   private investigate: { pos: THREE.Vector3; arrived: number; since: number } | null = null;
   private noCoverUntil = 0;
@@ -543,14 +548,15 @@ export class Bot implements AIListener {
     // Commitment: finish what was started unless something interrupts or is much better.
     if (best !== this.decision && now < this.commitUntil && !this.wasInterrupt && !watchdog && sc[best] < sc[this.decision] + 0.35) best = this.decision;
     this.scores = sc;
-    if (best !== this.decision || (watchdog && MOVES.includes(best))) this.enter(best, now);
+    if (best !== this.decision || (watchdog && MOVES.includes(best)) || (this.flankRetry && best === 'FLANK')) this.enter(best, now);
   }
 
   private enter(d: Decision, now: number): void {
     const prev = this.decision;
     this.decision = d;
     this.decisionAt = now;
-    this.stat(d);
+    this.flankRetry = false;
+    if (d !== 'FLANK') this.stat(d); // FLANK: counted once a plan is in (see below)
     if (prev === 'FLANK' && d !== 'FLANK') this.squad?.flankDone(this, false);
     if (d !== 'SEARCH') this.search = null;
     if (d !== 'INVESTIGATE') this.investigate = null;
@@ -580,12 +586,50 @@ export class Bot implements AIListener {
         this.agent.say(pick(["I'm hit, falling back!", 'Falling back!', 'Moving to cover, back!']), true);
         break;
       case 'FLANK': {
-        this.flank = null;
-        this.flankIndex = 0;
+        let plan: FlankPlan | null | 'pending' = null;
         if (t) {
           const anchor = this.squad?.anchorPos(this) ?? s.pos;
-          this.flank = planFlank(this.deps.nav, this.deps.physics, s.pos, t.pos, anchor, Math.random() < 0.5 ? 1 : -1);
+          // Phones: as heavy as a cover search, so it shares its one-per-frame slot (and needs
+          // a ray left; checked first so the slot isn't spent when the ray budget is gone).
+          const budget = !this.deps.lowSpec || (aiWorld.takeRay() && aiWorld.takeCoverQuery());
+          plan = budget ? planFlank(this.deps.nav, this.deps.physics, s.pos, t.pos, anchor, Math.random() < 0.5 ? 1 : -1, this.deps.lowSpec) : 'pending';
         }
+        if (now - this.flankPendingAt > 3) this.flankPending = 0;
+        if (plan === 'pending') {
+          // Out of AI budget this frame, nothing learned about the map: no squad flank ban.
+          this.stat('flankPending');
+          const replan = prev === 'FLANK' && !!this.flank;
+          // Leaving a flank without a route to keep: free the squad's flanker slot (no squad ban).
+          if (prev === 'FLANK' && !(replan && this.flankPending < 4) && this.squad?.flanker === this) this.squad.flanker = null;
+          if (this.flankPending < 4) {
+            this.flankPending++;
+            this.flankPendingAt = now;
+            this.evalTimer = 0.2; // ask again shortly
+            if (replan) {
+              // Watchdog re-plan of a flank under way: keep walking the current route meanwhile.
+              this.decision = 'FLANK';
+              this.flankRetry = true;
+              return;
+            }
+            this.flank = null;
+            this.decision = 'HOLD_ANGLE';
+            this.commitUntil = now + 0.2;
+            this.action = 'planning flank';
+            return;
+          }
+          // Still no budget after a few tries: this bot gives up for a while; the squad doesn't.
+          this.flankPending = 0;
+          this.flank = null;
+          this.flankBanUntil = now + 10;
+          this.decision = 'HOLD_ANGLE';
+          this.commitUntil = now + 1;
+          this.action = 'no flank route';
+          return;
+        }
+        this.stat('FLANK');
+        this.flankPending = 0;
+        this.flankIndex = 0;
+        this.flank = plan;
         if (!this.flank) {
           this.flankBanUntil = now + 10;
           this.squad?.flankDone(this, false);
@@ -715,6 +759,7 @@ export class Bot implements AIListener {
       exclude: this.memory.covers,
       avoid: (p) => this.memory.dangerAt(p, now) * 1.2 + (this.squad?.lanePenalty(this, p) ?? 0) + (this.navigator.failedNear(p, now) ? 2 : 0),
       debug: AI_TUNING.debug ? this.debug.covers : undefined,
+      lowSpec: this.deps.lowSpec,
     });
     this.stat('coverQuery');
     if (spot) coverRegistry.reserve(this, spot.pos, now, 16);

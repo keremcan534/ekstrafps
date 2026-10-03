@@ -30,9 +30,16 @@ export class StatusHUD {
   private squad: HTMLDivElement;
   private death: HTMLDivElement;
   private downed: HTMLDivElement;
+  private downedSub: HTMLDivElement;
+  private downedBar: HTMLElement;
+  private downedKey = '';
+  private downedBarKey = '';
   private indicators: Indicator[] = [];
   private dmgLevel = 0;
   private suppLevel = 0;
+  /** Last written vignette opacities (quantised), so idle frames write nothing. */
+  private dmgShown = -1;
+  private suppShown = -1;
   private commsTime = 0;
   private lastHp = -1;
   private tmp = new THREE.Vector3();
@@ -50,6 +57,10 @@ export class StatusHUD {
     this.squad = div('squad-line', parent);
     for (let i = 0; i < 6; i++) this.indicators.push({ el: div('hit-ind', parent), from: new THREE.Vector3(), life: 0 });
     this.downed = div('downed', parent);
+    div('downed-title', this.downed).textContent = 'DOWNED';
+    this.downedSub = div('downed-sub', this.downed);
+    this.downedBar = document.createElement('i');
+    div('downed-bar', this.downed).appendChild(this.downedBar);
     this.death = div('death-screen', parent);
     this.death.innerHTML = '<div class="death-title">K.I.A.</div><div class="death-sub">SABLE</div><div class="death-hint">respawning…</div>';
   }
@@ -84,7 +95,27 @@ export class StatusHUD {
       return;
     }
     this.downed.classList.add('show');
-    this.downed.innerHTML = `<div class="downed-title">DOWNED</div><div class="downed-sub">${revive > 0 ? 'Being revived…' : 'Hold on, help is coming'} · ${Math.ceil(seconds)}s</div><div class="downed-bar"><i style="transform:scaleX(${revive.toFixed(3)})"></i></div>`;
+    // Nodes are built once; only the text (per whole second) and the bar change.
+    const sub = `${revive > 0 ? 'Being revived…' : 'Hold on, help is coming'} · ${Math.ceil(seconds)}s`;
+    if (sub !== this.downedKey) {
+      this.downedKey = sub;
+      this.downedSub.textContent = sub;
+    }
+    const bar = revive.toFixed(3);
+    if (bar !== this.downedBarKey) {
+      this.downedBarKey = bar;
+      this.downedBar.style.transform = `scaleX(${bar})`;
+    }
+  }
+
+  /** Vignette opacity in 1/64 steps, written only on change; hidden (display:none) at 0. */
+  private setVignette(el: HTMLDivElement, v: number, shown: number): number {
+    const q = Math.round(Math.min(1, v) * 64) / 64;
+    if (q === shown) return shown;
+    if (q === 0) el.style.display = 'none';
+    else if (shown <= 0) el.style.display = '';
+    el.style.opacity = String(q);
+    return q;
   }
 
   /** Armor plates left, 0..1 (hidden at 0). */
@@ -112,8 +143,8 @@ export class StatusHUD {
     this.suppLevel = Math.max(0, this.suppLevel - dt * 0.45);
     // Persistent red edge while badly hurt.
     const hurt = Math.max(0, 0.4 - health / max) * 1.2;
-    this.dmg.style.opacity = Math.min(1, this.dmgLevel + hurt).toFixed(3);
-    this.supp.style.opacity = this.suppLevel.toFixed(3);
+    this.dmgShown = this.setVignette(this.dmg, this.dmgLevel + hurt, this.dmgShown);
+    this.suppShown = this.setVignette(this.supp, this.suppLevel, this.suppShown);
     this.commsTime -= dt;
     if (this.commsTime <= 0) this.comms.classList.remove('show');
 

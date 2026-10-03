@@ -65,6 +65,8 @@
   transform: perspective(700px) rotateX(var(--rx)) rotateY(var(--ry)) translateY(0);
   transition: transform 160ms cubic-bezier(.2,.8,.2,1), box-shadow 160ms, border-color 160ms, background 160ms;
 }
+/* These sit inside an already-blurred panel: a second blur there is invisible but not free. */
+.gseg-btn, .gtoggle { -webkit-backdrop-filter: none; backdrop-filter: none; }
 .gbtn:hover, .gcard:hover, .gseg-btn:hover, .gtoggle:hover {
   border-color: rgba(255, 255, 255, 0.34);
   transform: perspective(700px) rotateX(var(--rx)) rotateY(var(--ry)) translateY(-2px);
@@ -138,7 +140,7 @@
 .menu-foot { position: absolute; left: 6vw; right: 6vw; bottom: 3.2vh; display: flex; justify-content: space-between; font: 600 11px var(--g-mono); letter-spacing: 0.3em; color: rgba(226, 232, 238, 0.38); }
 @keyframes menuIn { from { opacity: 0; transform: translateY(18px); filter: blur(6px); } }
 
-.menu-panel { align-self: center; max-height: 78vh; overflow: auto; padding: 28px 30px 30px; }
+.menu-panel { align-self: center; max-height: 78vh; max-height: 78dvh; overflow: auto; padding: 28px 30px 30px; }
 .menu-panel.enter { animation: panelIn 420ms cubic-bezier(.2,.8,.2,1) both; }
 @keyframes panelIn { from { opacity: 0; transform: translateX(26px) scale(0.985); } }
 .panel-head { display: flex; align-items: center; gap: 14px; font: 700 26px var(--g-font); letter-spacing: 0.32em; margin-bottom: 18px; }
@@ -198,7 +200,7 @@ kbd, .sv-key {
   .menu-nav { gap: 9px; }
   .menu-nav .gbtn { height: 44px; font-size: 14px; }
   .menu-nav .gbtn:nth-child(1) { height: 52px; font-size: 17px; }
-  .menu-panel { padding: 16px 18px; max-height: 84vh; }
+  .menu-panel { padding: 16px 18px; max-height: 84vh; max-height: 84dvh; }
   .gcard { min-height: 110px; padding: 12px; }
   .gcard b { font-size: 18px; }
   .gcard p { font-size: 12px; }
@@ -396,3 +398,39 @@ kbd, .sv-key {
 .pr-level.up b { color: #ffb05a; }
 .menu-panel:not(.closed) ~ .showcase-cap { display: none; }
 .pr-row.neg b, .pr-row.neg span { color: #ff6a5a; }
+
+/* ==========================================================================
+   NO GLASS (phones, or UI blur off) + PERF-LITE (automatic low-fps fallback)
+   style.css kills every backdrop-filter under these classes; without the blur the
+   panels go near-opaque so text stays readable over the moving 3D view. The 1px
+   rim and the inset highlight stay. Only the image layers are swapped, so an existing
+   base colour (e.g. the phone .menu-panel's .82) still sits underneath.
+   ========================================================================== */
+body:is(.no-glass, .perf-lite) :is(.glass, .ammo, .hp, .toast, .sv-points, .sv-round, .sv-prompt, .sb-chip, .kf-line, .sq-row, .comms, .squad-line, .revive-bar, .map-legend) {
+  background-image:
+    radial-gradient(120% 140% at 0% 0%, rgba(255, 255, 255, 0.12), rgba(255, 255, 255, 0) 55%),
+    linear-gradient(160deg, rgba(34, 38, 46, 0.8), rgba(12, 14, 18, 0.72));
+}
+body:is(.no-glass, .perf-lite) .sb-chip.lead { background: linear-gradient(160deg, rgba(150, 96, 30, 0.82), rgba(40, 30, 10, 0.78)); }
+body:is(.no-glass, .perf-lite) .touch-root .btn:not(.pressed):not(.btn-use),
+body:is(.no-glass, .perf-lite) :is(.weapon-card, .flash-btn, .squad-btn, .build-btn):not(.pressed) { background-color: rgba(14, 16, 20, 0.4); }
+body:is(.no-glass, .perf-lite) .gbtn:not(.primary) { background-color: rgba(14, 16, 20, 0.82); }
+body:is(.no-glass, .perf-lite) .giveup-btn { background-color: rgba(20, 8, 8, 0.8); }
+body:is(.no-glass, .perf-lite) .map-full { background: rgba(6, 8, 11, 0.93); }
+body:is(.no-glass, .perf-lite) :is(.sv-over, .match-end) { background: rgba(6, 8, 11, 0.92) !important; }
+body:is(.no-glass, .perf-lite) .debug-hud { background: rgba(6, 8, 10, 0.82); }
+body:is(.no-glass, .perf-lite) .menu.paused .menu-shade { background: rgba(4, 6, 9, 0.7); }
+
+/* Phones: no big soft outer shadows (each is a blurred raster on top of the 3D view). */
+body:is(.is-touch, .perf-lite) :is(.glass, .ammo, .hp, .toast, .sv-points, .sv-round, .sv-prompt, .sb-chip, .kf-line, .sq-row, .comms, .squad-line, .revive-bar, .map-legend) {
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.32), inset 0 -1px 0 rgba(0, 0, 0, 0.35), inset 0 0 22px rgba(255, 255, 255, 0.04);
+}
+body:is(.is-touch, .perf-lite) .touch-root .btn, body:is(.is-touch, .perf-lite) .weapon-card { box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.55), inset 0 -2px 0 rgba(0, 0, 0, 0.3); }
+body.perf-lite :is(.gbtn, .gcard, .gtoggle, .sv-restart, .giveup-btn):not(.active):not(.primary) { box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.4), inset 0 -2px 0 rgba(0, 0, 0, 0.35); }
+
+/* Phones: menu without the blended grain layer or per-button 3D layers (a flat 2px press
+   keeps the tap feedback); the minimap canvas paints its own 78% disc, so its glass square goes. */
+.is-touch .menu-grain { display: none; }
+.is-touch :is(.gbtn, .gcard, .gseg-btn, .gtoggle, .sv-restart, .giveup-btn) { transform: none; }
+.is-touch :is(.gbtn, .gcard, .gseg-btn, .gtoggle):active { transform: translateY(2px); }
+.is-touch .minimap { background: transparent; box-shadow: none; border-radius: 50%; }

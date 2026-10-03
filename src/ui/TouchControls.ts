@@ -41,6 +41,10 @@ export class TouchControls {
   private joyLock: HTMLDivElement;
   private joyId = -1;
   private joyOrigin = { x: 0, y: 0 };
+  /** --ui-zoom, read once per stick touch (reading it per move forces a style recalc). */
+  private joyZoom = 1;
+  /** Stick visuals from the last move, applied once per rendered frame in sync(). */
+  private joyView = { dx: 0, dy: 0, overLock: false, sprint: false, dirty: false };
   private sprintLocked = false;
   private lookIds = new Map<number, { x: number; y: number; t: number }>();
   private adsBtn!: HTMLDivElement;
@@ -125,6 +129,7 @@ export class TouchControls {
 
   /** Keep ADS / weapon card / slots in sync with gameplay (e.g. ADS dropped on reload). */
   sync(adsActive: boolean, slot: number, owned: number[] | null = null): void {
+    this.flushJoy();
     this.adsBtn.classList.toggle('on', adsActive);
     const key = `${owned ? owned.join(',') : 'all'}|${slot}`;
     if (key !== this.ownedKey) {
@@ -149,6 +154,19 @@ export class TouchControls {
     }
     this.useBtn.style.display = '';
     this.useBtn.innerHTML = `<span>${label}</span><b class="${affordable ? '' : 'no'}">$ ${cost}</b>`;
+  }
+
+  /**
+   * Pointer moves arrive at up to 240 Hz (more than the frame rate): the stick only
+   * writes the DOM here, once per rendered frame, so skipped frames commit nothing.
+   */
+  private flushJoy(): void {
+    const v = this.joyView;
+    if (!v.dirty) return;
+    v.dirty = false;
+    this.joyBase.classList.toggle('lock-hover', v.overLock);
+    this.joyBase.classList.toggle('sprint', v.sprint);
+    this.joyKnob.style.transform = `translate(calc(-50% + ${v.dx}px), calc(-50% + ${v.dy}px))`;
   }
 
   private resetJoy(): void {
@@ -228,9 +246,10 @@ export class TouchControls {
       }
       this.joyOrigin = { x: e.clientX, y: e.clientY };
       this.joyBase.classList.remove('idle');
-      const z = uiZoom();
+      const z = (this.joyZoom = uiZoom());
       this.joyBase.style.transform = `translate(${e.clientX / z}px, ${e.clientY / z}px)`;
       this.joyKnob.style.transform = 'translate(-50%, -50%)';
+      this.joyView.dirty = false;
     } else {
       this.lookIds.set(e.pointerId, { x: e.clientX, y: e.clientY, t: performance.now() });
     }
@@ -239,18 +258,16 @@ export class TouchControls {
   private onZoneMove = (e: PointerEvent): void => {
     if (e.pointerId === this.joyId) {
       // In UI pixels (the HUD is zoomed on phones; the stick's radius is a UI size).
-      const z = uiZoom();
+      const z = this.joyZoom;
       let dx = (e.clientX - this.joyOrigin.x) / z;
       let dy = (e.clientY - this.joyOrigin.y) / z;
       const len = Math.hypot(dx, dy);
       // Dragging well past the ring, upward, onto the lock = sprint lock.
       const overLock = dy < -JOY_RADIUS * 1.45 && Math.abs(dx) < JOY_RADIUS * 0.7;
-      this.joyBase.classList.toggle('lock-hover', overLock);
       if (len > JOY_RADIUS) {
         dx = (dx / len) * JOY_RADIUS;
         dy = (dy / len) * JOY_RADIUS;
       }
-      this.joyKnob.style.transform = `translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px))`;
       let x = dx / JOY_RADIUS;
       let y = -dy / JOY_RADIUS;
       const mag = Math.hypot(x, y);
@@ -264,8 +281,14 @@ export class TouchControls {
       }
       this.input.setTouchMove(x, y, true);
       this.input.touchSprint = overLock || (y > 0.92 && len >= JOY_RADIUS * 0.98);
-      this.joyBase.classList.toggle('sprint', this.input.touchSprint);
       this.sprintLocked = overLock;
+      // Input above is immediate; the knob and its classes wait for the next frame.
+      const v = this.joyView;
+      v.dx = dx;
+      v.dy = dy;
+      v.overLock = overLock;
+      v.sprint = this.input.touchSprint;
+      v.dirty = true;
       return;
     }
     this.look(e);
@@ -274,6 +297,8 @@ export class TouchControls {
   private onZoneUp = (e: PointerEvent): void => {
     if (e.pointerId === this.joyId) {
       this.joyId = -1;
+      // Land the last move first (sprint class), then the release overrides the knob.
+      this.flushJoy();
       if (this.sprintLocked) {
         // Keep running forward until the stick is touched again.
         this.input.setTouchMove(0, 1, true);

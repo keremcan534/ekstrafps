@@ -3,6 +3,8 @@ import { RAPIER, G, groups, type Physics } from '../core/Physics';
 import { OBSTACLES, obstacleAt } from '../game/Obstacles';
 
 const BLOCKED = 255;
+/** Path nodes per frame on desktop (phones set a lower NavGrid.frameBudget). */
+const DESKTOP_FRAME_BUDGET = 9000;
 
 /**
  * Ground-level navigation grid baked from the physics world at startup.
@@ -125,21 +127,25 @@ export class NavGrid {
     return [Math.floor((x - this.minX) / this.cell), Math.floor((z - this.minZ) / this.cell)];
   }
 
+  // Hot (path smoothing, clearLine, cover rings): the cell maths is inlined, no tuple per call.
   walkable(x: number, z: number): boolean {
-    const [c, r] = this.cellOf(x, z);
-    return this.inside(c, r) && this.cost[r * this.cols + c] !== BLOCKED;
+    const c = Math.floor((x - this.minX) / this.cell);
+    const r = Math.floor((z - this.minZ) / this.cell);
+    return c >= 0 && r >= 0 && c < this.cols && r < this.rows && this.cost[r * this.cols + c] !== BLOCKED;
   }
 
   /** Walkable and right next to something solid (wall, crate, barrier): where cover is. */
   nearWall(x: number, z: number): boolean {
-    const [c, r] = this.cellOf(x, z);
-    return this.inside(c, r) && this.cost[r * this.cols + c] === 3;
+    const c = Math.floor((x - this.minX) / this.cell);
+    const r = Math.floor((z - this.minZ) / this.cell);
+    return c >= 0 && r >= 0 && c < this.cols && r < this.rows && this.cost[r * this.cols + c] === 3;
   }
 
   /** Cell index (for reservations), -1 outside. */
   cellIndex(x: number, z: number): number {
-    const [c, r] = this.cellOf(x, z);
-    return this.inside(c, r) ? r * this.cols + c : -1;
+    const c = Math.floor((x - this.minX) / this.cell);
+    const r = Math.floor((z - this.minZ) / this.cell);
+    return c >= 0 && r >= 0 && c < this.cols && r < this.rows ? r * this.cols + c : -1;
   }
 
   /**
@@ -198,21 +204,40 @@ export class NavGrid {
     const steps = Math.ceil(len / (this.cell * 0.4));
     for (let k = 0; k <= steps; k++) {
       const t = steps === 0 ? 0 : k / steps;
-      if (!this.walkable(ax + dx * t, az + dz * t)) return false;
+      if (!this.walkable(ax + dx * t, az + dz * t)) {
+        this.samples += k + 1;
+        return false;
+      }
     }
+    this.samples += steps + 1;
     return true;
   }
+  /** Cell probes made by clearLine / blockedByObstacle (findPath charges its smoothing to the frame budget). */
+  private samples = 0;
 
   /**
    * Smoothed path from a to b (world XZ). Returns waypoints excluding the start,
    * or null when unreachable. maxNodes bounds the search cost.
    */
   /** Nodes all searches may expand per frame; callers retry later when it's spent. */
-  frameBudget = 9000;
+  frameBudget = DESKTOP_FRAME_BUDGET;
+  /**
+   * Phones: the strict budget rules in findPath (cap each search at what is left, refuse
+   * late searches, charge smoothing). Implied when Game lowers frameBudget for phones.
+   */
+  lowSpec = false;
   private frameUsed = 0;
+  /** Searches started this frame after the budget ran out. */
+  private lateSearches = 0;
+  /**
+   * The last findPath() returned null (or stopped short) because of the frame budget,
+   * not because the goal is unreachable: retry next frame, don't count it as a failure.
+   */
+  lastTruncated = false;
 
   beginFrame(): void {
     this.frameUsed = 0;
+    this.lateSearches = 0;
   }
 
   /**
@@ -221,8 +246,22 @@ export class NavGrid {
    */
   findPath(from: THREE.Vector3, to: THREE.Vector3, maxNodes = 6000, avoidTeam?: string): THREE.Vector3[] | null {
     const avoid = avoidTeam !== undefined && OBSTACLES.length > 0;
-    // Budget spent this frame: short searches still go through (nearby moves never starve).
-    if (this.frameUsed > this.frameBudget) maxNodes = Math.min(maxNodes, 700);
+    this.lastTruncated = false;
+    const strict = this.lowSpec || this.frameBudget < DESKTOP_FRAME_BUDGET;
+    const wanted = maxNodes;
+    if (strict) {
+      // Phones: never expand more than what is left of this frame's budget. Once it's spent,
+      // a few short searches still go through (nearby moves never starve); the rest wait a frame.
+      const left = this.frameBudget - this.frameUsed;
+      if (left <= 0 && ++this.lateSearches > 3) {
+        this.lastTruncated = true;
+        return null;
+      }
+      maxNodes = Math.min(maxNodes, Math.max(700, left));
+    } else if (this.frameUsed > this.frameBudget) {
+      // Budget spent this frame: short searches still go through (nearby moves never starve).
+      maxNodes = Math.min(maxNodes, 700);
+    }
     const start = this.nearestWalkable(from.x, from.z, new THREE.Vector3(), 2);
     const goal = this.nearestWalkable(to.x, to.z, new THREE.Vector3(), 4);
     if (!start || !goal) return null;
@@ -252,7 +291,11 @@ export class NavGrid {
         found = true;
         break;
       }
-      if (++expanded > maxNodes) break;
+      if (++expanded > maxNodes) {
+        // Cut short by the frame budget rather than the caller's own limit.
+        if (maxNodes < wanted) this.lastTruncated = true;
+        break;
+      }
       const c = cur % this.cols;
       const r = (cur / this.cols) | 0;
       for (let dr = -1; dr <= 1; dr++) {
@@ -289,6 +332,7 @@ export class NavGrid {
     const out: THREE.Vector3[] = [];
     let anchor = new THREE.Vector3(from.x, 0, from.z);
     let k = 0;
+    this.samples = 0;
     while (k < pts.length - 1) {
       let far = k + 1;
       // Look ahead at most ~20 m: full-length scans are quadratic on long paths.
@@ -302,6 +346,8 @@ export class NavGrid {
       anchor = pts[far];
       k = far;
     }
+    // Phones: smoothing is real work too (long paths probe thousands of cells): ~4 probes per node.
+    if (strict) this.frameUsed += Math.ceil(this.samples / 4);
     if (!out.length) out.push(pts[pts.length - 1]);
     return out;
   }
@@ -311,8 +357,12 @@ export class NavGrid {
     const n = Math.max(1, Math.ceil(len / 0.4));
     for (let k = 0; k <= n; k++) {
       const t = k / n;
-      if (obstacleAt(a.x + (b.x - a.x) * t, a.z + (b.z - a.z) * t, 0.4, team)) return true;
+      if (obstacleAt(a.x + (b.x - a.x) * t, a.z + (b.z - a.z) * t, 0.4, team)) {
+        this.samples += k + 1;
+        return true;
+      }
     }
+    this.samples += n + 1;
     return false;
   }
 

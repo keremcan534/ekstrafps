@@ -27,6 +27,7 @@ export class TuningPanel {
   private weaponFolder: GUI | null = null;
   private currentWeaponId = '';
   private status: { message: string };
+  private shown = true;
 
   constructor(private hooks: TuningHooks) {
     this.gui = new GUI({ title: 'Weapon Lab tuning', width: 330 });
@@ -185,6 +186,9 @@ export class TuningPanel {
 
   setVisible(v: boolean): void {
     this.gui.domElement.style.display = v ? '' : 'none';
+    this.shown = v;
+    // Weapon swaps while hidden only left the folder stale: build it now.
+    if (v) this.syncWeapon();
   }
 
   toggle(): boolean {
@@ -192,8 +196,13 @@ export class TuningPanel {
     return this.visible;
   }
 
-  /** Rebuild the weapon + ammo folders when the equipped weapon changes. */
+  /**
+   * Rebuild the weapon + ammo folders when the equipped weapon changes. Called
+   * every frame; while the panel is hidden it does nothing (setVisible(true)
+   * rebuilds), so weapon swaps don't build ~60 hidden controllers mid-fight.
+   */
   syncWeapon(): void {
+    if (!this.shown) return;
     const w = this.hooks.getWeapon();
     if (w.id === this.currentWeaponId) return;
     this.currentWeaponId = w.id;

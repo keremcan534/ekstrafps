@@ -1,11 +1,41 @@
 import * as THREE from 'three';
 
-/** What the benchmark can switch off for a moment (Game checks these each frame). */
+/**
+ * What the benchmark can switch off for a moment (Game checks these each frame).
+ * The URL bisect flags start with some of them on: ?noai, ?nodraw, ?nophys.
+ */
 export interface BenchFlags {
   /** Skip the world render (the 3D scene; the weapon still draws). */
   noWorld: boolean;
-  /** Skip AI teams, robots, inhabitants and the survival director. */
+  /** Skip AI teams, robots, inhabitants and the survival director (?noai). */
   noSim: boolean;
+  /** Skip every render() call; the canvas is only cleared to a changing colour (?nodraw). */
+  noDraw: boolean;
+  /** Skip the physics world step (?nophys). */
+  noPhys: boolean;
+}
+
+/** Bisect flags from the URL. */
+export function benchFlagsFromUrl(p: URLSearchParams): BenchFlags {
+  return { noWorld: false, noSim: p.has('noai'), noDraw: p.has('nodraw'), noPhys: p.has('nophys') };
+}
+
+let glCache: { gpu: string; webgl2: boolean; aa: boolean } | null = null;
+
+/** The real GPU (unmasked renderer string), WebGL 2 or not, and whether the framebuffer really has MSAA. */
+export function glInfo(renderer: THREE.WebGLRenderer): { gpu: string; webgl2: boolean; aa: boolean } {
+  if (glCache) return glCache;
+  const gl = renderer.getContext();
+  let gpu = '?';
+  try {
+    const dbg = gl.getExtension('WEBGL_debug_renderer_info');
+    gpu = dbg ? String(gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL)) : String(gl.getParameter(gl.RENDERER));
+  } catch {
+    /* blocked by the browser */
+  }
+  const webgl2 = typeof WebGL2RenderingContext !== 'undefined' && gl instanceof WebGL2RenderingContext;
+  glCache = { gpu, webgl2, aa: !!gl.getContextAttributes()?.antialias };
+  return glCache;
 }
 
 /** The parts of the game the benchmark drives. */
@@ -19,6 +49,8 @@ export interface BenchHost {
   audio: AudioContext | null;
   /** Methods to time during the baseline (label → [object, method name]). */
   timed: [string, object, string][];
+  /** Readout lines (mode, resolution, draw calls, body classes), taken at the end of the baseline. */
+  details(): string[];
 }
 
 interface Step {
@@ -34,7 +66,8 @@ const MEASURE = 2.6;
 /**
  * On-device benchmark (Settings → Graphics → RUN BENCHMARK). Measures the frame
  * rate as you play, then switches one thing off at a time (HUD, half resolution,
- * the 3D world, the AI/simulation, transparent effects, characters, audio) and
+ * the 3D world, all drawing, the AI/simulation, physics, transparent effects,
+ * characters, audio) and
  * measures again; the gain is what that thing costs. Also times the main CPU
  * systems during the baseline. Shows a bar chart and a COPY button (plain text
  * to paste into a message).
@@ -50,6 +83,7 @@ export class PerfBench {
   private cpuFrames = 0;
   private restore: (() => void)[] = [];
   private hidden: THREE.Object3D[] = [];
+  private details: string[] = [];
   done = false;
 
   constructor(private host: BenchHost) {
@@ -58,12 +92,28 @@ export class PerfBench {
     host.container.appendChild(this.el);
     const pr = host.pixelRatio;
     const ui = () => host.container.querySelector<HTMLElement>('.ui-layer');
+    // A flag step puts back what it found (a ?noai / ?nodraw / ?nophys bisect stays on).
+    const flag = (name: string, label: string, key: keyof BenchFlags): Step => {
+      let was = false;
+      return {
+        name,
+        label,
+        on: () => {
+          was = host.flags[key];
+          host.flags[key] = true;
+        },
+        off: () => (host.flags[key] = was),
+      };
+    };
     this.steps = [
       { name: 'base', label: 'As you play', on: () => this.timeCpu(), off: () => this.untime() },
       { name: 'ui', label: 'HUD / interface', on: () => ui()?.style.setProperty('visibility', 'hidden'), off: () => ui()?.style.removeProperty('visibility') },
       { name: 'res', label: 'Half resolution', on: () => (host.pixelRatio = pr * 0.5), off: () => (host.pixelRatio = pr) },
-      { name: 'world', label: '3D world render', on: () => (host.flags.noWorld = true), off: () => (host.flags.noWorld = false) },
-      { name: 'sim', label: 'AI + simulation', on: () => (host.flags.noSim = true), off: () => (host.flags.noSim = false) },
+      flag('world', '3D world render', 'noWorld'),
+      // Nothing drawn at all, only a clear: what's left is the page itself (compositor, HUD, canvas copy).
+      flag('draw', 'All 3D drawing', 'noDraw'),
+      flag('sim', 'AI + simulation', 'noSim'),
+      flag('phys', 'Physics step', 'noPhys'),
       { name: 'fx', label: 'Transparent effects', on: () => this.hide((m) => !!(m as THREE.Mesh).material && ((m as THREE.Mesh).material as THREE.Material).transparent), off: () => this.unhide() },
       { name: 'chars', label: 'Characters', on: () => this.hide((m) => (m as THREE.SkinnedMesh).isSkinnedMesh === true), off: () => this.unhide() },
       { name: 'audio', label: 'Audio', on: () => void host.audio?.suspend(), off: () => void host.audio?.resume() },
@@ -124,6 +174,7 @@ export class PerfBench {
       const sorted = [...this.frames].sort((a, b) => a - b);
       const median = sorted[sorted.length >> 1] ?? 0.1;
       this.results.push({ name: step.name, label: step.label, fps: 1 / median, ms: median * 1000 });
+      if (this.i === 0) this.details = this.host.details();
       step.off();
       this.next();
     }
@@ -145,9 +196,7 @@ export class PerfBench {
     const base = this.results[0];
     const rows = this.results.slice(1).map((r) => ({ ...r, gainMs: base.ms - r.ms, gainFps: r.fps - base.fps }));
     const cpu = [...this.cpu.entries()].map(([k, v]) => [k, v / Math.max(1, this.cpuFrames)] as [string, number]).sort((a, b) => b[1] - a[1]);
-    const gl = this.host.renderer.getContext();
-    const dbg = gl.getExtension('WEBGL_debug_renderer_info');
-    const gpu = dbg ? String(gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL)) : String(gl.getParameter(gl.RENDERER));
+    const { gpu } = glInfo(this.host.renderer);
     const canvas = this.host.renderer.domElement;
     const nav = navigator as Navigator & { deviceMemory?: number };
     const device = `${gpu} · ${canvas.width}×${canvas.height} px (dpr ${devicePixelRatio.toFixed(2)}, render ${this.host.pixelRatio.toFixed(2)}) · ${nav.hardwareConcurrency ?? '?'} cores${nav.deviceMemory ? ` · ${nav.deviceMemory} GB` : ''}`;
@@ -156,6 +205,7 @@ export class PerfBench {
     const lines = [
       `SITE-9 benchmark: ${base.fps.toFixed(1)} fps (${base.ms.toFixed(1)} ms/frame)`,
       device,
+      ...this.details,
       navigator.userAgent,
       'What each thing costs (frame time saved when it is off):',
       ...rows.map((r) => `  ${r.label}: ${r.gainMs >= 0 ? '' : '+'}${(-r.gainMs).toFixed(1)} ms (${r.gainFps >= 0 ? '+' : ''}${r.gainFps.toFixed(1)} fps without it)`),
@@ -163,7 +213,7 @@ export class PerfBench {
       ...cpu.map(([k, v]) => `  ${k}: ${v.toFixed(2)} ms`),
     ];
     this.el.classList.add('done');
-    this.el.innerHTML = `<b>BENCHMARK · ${base.fps.toFixed(1)} FPS</b><span>${base.ms.toFixed(1)} ms per frame · ${device}</span>
+    this.el.innerHTML = `<b>BENCHMARK · ${base.fps.toFixed(1)} FPS</b><span>${base.ms.toFixed(1)} ms per frame · ${device}</span>${this.details.map((d) => `<span>${d.replace(/</g, '&lt;')}</span>`).join('')}
       <h4>What each thing costs <em>(frame time saved when it's off)</em></h4>
       ${rows.map((r) => `<div class="bench-row"><span>${r.label}</span>${bar(r.gainMs, r.gainMs > 0 ? 'cost' : 'free')}<b>${r.gainMs > 0 ? '−' : '+'}${Math.abs(r.gainMs).toFixed(1)} ms</b><em>${r.fps.toFixed(0)} fps</em></div>`).join('')}
       <h4>CPU per frame <em>(as you play)</em></h4>

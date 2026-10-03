@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { GROUPS, type BulletHit, type HitReceiver, type HitResult, type Physics, type RayHit, type SurfaceType } from '../core/Physics';
+import { G, GROUPS, RAPIER, groups, type BulletHit, type HitReceiver, type HitResult, type Physics, type RayHit, type SurfaceType } from '../core/Physics';
 import { feel } from '../config/Feel';
 import { dragFactor, type AmmoData } from './AmmoData';
 import type { ParticleSystem, ParticleSpawn } from '../fx/Particles';
@@ -9,7 +9,21 @@ import type { Trails } from '../fx/Trails';
 import { aiWorld } from '../ai/World';
 
 const GRAVITY = 9.81;
-const MAX_STEP = 1 / 240;
+/**
+ * Sub-steps are sized by distance: at least 1/120 s and ~6 m each (each one is a
+ * full raycast, so a longer step never tunnels; it only flattens the arc a hair),
+ * and at most MAX_SUBSTEPS per round per frame, so a slow frame takes longer steps
+ * instead of more rays.
+ */
+const MIN_STEP = 1 / 120;
+const STEP_DIST = 6;
+const MAX_SUBSTEPS = 6;
+/** Bot near-miss reach (AIWorld.bulletSegment's radius). */
+const NEAR_MISS = 2.2;
+/** Near-miss pieces: the old 1/240 s sub-step length (min 0.5 m, at most 64 per leg). */
+const NEAR_MISS_STEP = 1 / 240;
+const NEAR_MISS_PIECE_MIN = 0.5;
+const NEAR_MISS_PIECES_MAX = 64;
 const MAX_LIFE = 4;
 const MIN_SPEED = 40;
 const CAPACITY = 512;
@@ -36,6 +50,9 @@ export interface ProjectileHitReport {
 /** Surfaces a near miss can "catch" (bodies, armor, robots — never walls). */
 const TARGET_SURFACES = new Set(['flesh', 'armor', 'helmet', 'robot', 'robotWeak']);
 const ASSIST_OFFSETS: [number, number][] = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+/** What hit assist can catch (hitboxes; ragdolls/debris): the cheap "any body near?" sweep. */
+const ASSIST_NEAR = groups(G.RAY, G.HITBOX | G.DEBRIS);
+const NO_ROT = { x: 0, y: 0, z: 0, w: 1 };
 
 interface Projectile {
   alive: boolean;
@@ -175,17 +192,23 @@ export class ProjectileSystem {
   }
 
   update(dt: number): void {
+    const listen = aiWorld.listeners.size > 0;
     for (const p of this.pool) {
       if (!p.alive) continue;
       let remaining = dt;
+      let steps = 0;
       const k = dragFactor(p.ammo);
       this.frameStart.copy(p.pos);
       this.trailStart.copy(p.pos);
+      this.legStart.copy(p.pos);
+      this.legSpeed = p.vel.length();
       while (remaining > 1e-6 && p.alive) {
-        const h = Math.min(remaining, MAX_STEP);
-        remaining -= h;
         // Semi-implicit drag + gravity.
         const speed = p.vel.length();
+        // The last allowed sub-step takes whatever is left of the frame.
+        const h = Math.min(remaining, Math.max(MIN_STEP, STEP_DIST / Math.max(1, speed), remaining / (MAX_SUBSTEPS - steps)));
+        steps++;
+        remaining -= h;
         p.vel.multiplyScalar(1 / (1 + k * speed * h));
         p.vel.y -= GRAVITY * h;
         this.seg.copy(p.vel).multiplyScalar(h);
@@ -193,18 +216,21 @@ export class ProjectileSystem {
         if (len < 1e-6) continue;
         this.dir.copy(this.seg).divideScalar(len);
         if (p.hostile && !p.flyby) this.checkFlyby(p, len);
-        if (aiWorld.listeners.size) aiWorld.bulletSegment(p.pos, this.dir, len, p.origin, p.owner, p.team);
         let hit = this.physics.raycast(p.pos, this.dir, len, p.hostile ? GROUPS.enemyBullet : GROUPS.bullet, p.owner);
         if (p.assist > 0 && (!hit || !TARGET_SURFACES.has(hit.receiver?.surface ?? ''))) {
           // The physics ray result is a shared object: keep the centre hit before casting more.
           const saved = hit ? this.copyHit(hit, this.mainOut) : null;
-          hit = this.assistHit(p, len, saved) ?? saved;
+          hit = (this.bodyNear(p, saved ? saved.distance : len) ? this.assistHit(p, len, saved) : null) ?? saved;
         }
         if (hit) {
           this.traceDebug(p, hit.point);
           this.trail(p, hit.point);
           p.travelled += hit.distance;
+          this.legEnd.copy(hit.point);
           this.processHit(p, hit.point, hit.normal, hit.receiver);
+          if (listen) this.bulletLeg(p, this.legEnd);
+          this.legStart.copy(p.pos); // a ricochet flies on from here
+          this.legSpeed = p.vel.length();
         } else {
           p.pos.add(this.seg);
           p.travelled += len;
@@ -213,11 +239,61 @@ export class ProjectileSystem {
       if (p.alive) {
         this.traceDebug(p, p.pos);
         this.trail(p, p.pos);
+        if (listen) this.bulletLeg(p, p.pos);
       }
       p.age += dt;
       if (p.alive && (p.age > MAX_LIFE || p.vel.length() < MIN_SPEED || p.pos.y < -20)) p.alive = false;
       if (p.alive && (p.tracer || feel.bulletTrails)) this.drawTracer(p, dt);
     }
+  }
+
+  private legStart = new THREE.Vector3();
+  private legEnd = new THREE.Vector3();
+  private legDir = new THREE.Vector3();
+  private legPiece = new THREE.Vector3();
+  private legChest = new THREE.Vector3();
+  /** Round speed when the current leg started (sizes the near-miss pieces). */
+  private legSpeed = 0;
+  /**
+   * Near-miss feel for the bots: once per frame over the whole flight (one leg per
+   * ricochet), instead of once per sub-step. Legs no bot is near cost one distance
+   * check per bot; a leg that passes one is fed to the AI in pieces as long as the old
+   * 1/240 s sub-steps, so a pass suppresses as much as before at any frame rate.
+   */
+  private bulletLeg(p: Projectile, end: THREE.Vector3): void {
+    const d = this.legDir.subVectors(end, this.legStart);
+    const len = d.length();
+    if (len < 1e-6) return;
+    d.divideScalar(len);
+    let near = false;
+    for (const l of aiWorld.listeners) {
+      if (!l.alive || l.team === p.team || l.owner === p.owner) continue;
+      const c = l.chest(this.legChest).sub(this.legStart);
+      const t = Math.max(0, Math.min(len, c.dot(d)));
+      if (c.addScaledVector(d, -t).lengthSq() < NEAR_MISS * NEAR_MISS) {
+        near = true;
+        break;
+      }
+    }
+    if (!near) return;
+    const piece = Math.max(NEAR_MISS_PIECE_MIN, this.legSpeed * NEAR_MISS_STEP);
+    const n = Math.min(NEAR_MISS_PIECES_MAX, Math.ceil(len / piece - 1e-6));
+    const step = len / n;
+    for (let i = 0; i < n; i++) {
+      this.legPiece.copy(this.legStart).addScaledVector(d, i * step);
+      aiWorld.bulletSegment(this.legPiece, d, step, p.origin, p.owner, p.team);
+    }
+  }
+
+  private assistBall: RAPIER.Ball | null = null;
+  /**
+   * Could hit assist catch anything on this step? One ball sweep (radius = assist)
+   * against bodies only; it contains the four assist lines, so a miss here means
+   * they would all miss too and the four rays are skipped.
+   */
+  private bodyNear(p: Projectile, maxD: number): boolean {
+    if (!this.assistBall || this.assistBall.radius !== p.assist) this.assistBall = new RAPIER.Ball(p.assist);
+    return !!this.physics.world.castShape(p.pos, NO_ROT, this.dir, this.assistBall, 0, maxD, true, undefined, ASSIST_NEAR);
   }
 
   /**

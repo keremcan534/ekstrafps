@@ -114,6 +114,16 @@ export class TeamMatch {
   private heatTimer = 0;
   private rushTimer = 330 + Math.random() * 60;
   private rushing: { team: AITeam; warned: boolean } | null = null;
+  /**
+   * Squads built ahead of their landing, one soldier per frame and hidden, so no
+   * single frame constructs a whole squad (SABLE during the POWER FAILURE delay,
+   * the first salvage crew just before it turns up). They join in on redeploy().
+   */
+  private building: (() => void)[] = [];
+  private spareRaiders: AITeam[] = [];
+  private spareScavs: AITeam | null = null;
+  private raidersQueued = false;
+  private scavsQueued = false;
 
   constructor(private d: MatchDeps, private worldRef: () => Combatant[]) {
     this.ctx = {
@@ -272,6 +282,14 @@ export class TeamMatch {
     this.d.survival.shortCircuit(26);
     this.d.svHud.showBanner('POWER FAILURE', 'raid');
     this.d.status.radio(`${NAME[team] ?? team} tripped the grid. Lights out.`);
+    // First raid: build both squads during the 4.5 s blackout (one soldier per frame, hidden).
+    if (!this.raiders.length && !this.raidersQueued) {
+      this.raidersQueued = true;
+      for (let i = 0; i < 2; i++) {
+        const def: TeamDef = { id: 'bd', name: 'SABLE', color: COLOR.bd, palette: 'bd', style: 'hunter', start: this.startOf('alpha'), economy: false, boss: i === 0 };
+        this.buildHidden(def, 4, (t) => (this.spareRaiders[i] = t));
+      }
+    }
     setTimeout(() => {
       if (!this.raidActive) return;
       this.d.audio.play('alarm.short');
@@ -284,19 +302,53 @@ export class TeamMatch {
     }, 4500);
   }
 
+  /**
+   * Queue a `size`-soldier team, one soldier per frame (see update). Each one is
+   * stood down (hidden, no colliders) as soon as it's made; `ready` gets the team.
+   * AITeam only builds its members in the constructor, so the rest go through its
+   * (TypeScript-private) addAgent.
+   */
+  private buildHidden(def: TeamDef, size: number, ready: (t: AITeam) => void): void {
+    let team: AITeam | null = null;
+    for (let i = 0; i < size; i++) {
+      this.building.push(() => {
+        if (!team) team = new AITeam(def, this.ctx, 1);
+        else (team as unknown as { addAgent(at: THREE.Vector3): TeamAgent }).addAgent(def.start);
+        const t: AITeam = team;
+        t.agents[t.agents.length - 1].leave();
+        if (t.agents.length >= size) ready(t);
+      });
+    }
+  }
+
+  /** Build whatever is still queued, now. */
+  private flushBuilds(): void {
+    while (this.building.length) this.building.shift()!();
+  }
+
   /** Salvagers: one crew at a time, back a while after it's wiped. */
   private updateScavs(dt: number): void {
     if (this.extracting) return;
     const crew = this.scavs[0];
     if (crew && crew.aliveCount > 0) return;
     this.scavTimer -= dt;
+    // The first crew is built in the last seconds before it turns up (one soldier per frame, hidden).
+    if (!crew && !this.scavsQueued && this.scavTimer < 3) {
+      this.scavsQueued = true;
+      const def: TeamDef = { id: 'salvage', name: 'Salvagers', color: COLOR.salvage, palette: 'salvage', style: 'reckless', start: this.startOf('alpha'), economy: false };
+      this.buildHidden(def, 3, (t) => (this.spareScavs = t));
+    }
     if (this.scavTimer > 0) return;
     this.scavTimer = 200 + Math.random() * 80;
     const at = this.raidPoint(null);
     if (crew) crew.redeploy(at);
     else {
+      this.flushBuilds();
       const def: TeamDef = { id: 'salvage', name: 'Salvagers', color: COLOR.salvage, palette: 'salvage', style: 'reckless', start: at, economy: false };
-      this.scavs.push(new AITeam(def, this.ctx, 3));
+      const team = this.spareScavs ?? new AITeam(def, this.ctx, 3);
+      this.spareScavs = null;
+      this.scavs.push(team);
+      team.redeploy(at);
     }
     // Scavenged guns: cheap and mixed.
     const junk = ['pump_shotgun', 'mosin', 'kar98', 'ppsh', 'glock18', 'mp5', 'saiga12', 'heavy_pistol'];
@@ -314,18 +366,23 @@ export class TeamMatch {
     const targetTeam = leader === 'alpha' ? null : this.teams.find((t) => t.def.id === leader);
     const near = targetTeam?.leader?.soldier.pos ?? this.d.playerPos;
     const points = [this.raidPoint(null), this.raidPoint(near)];
+    // Squads still being built (very slow frames): finish them now.
+    this.flushBuilds();
     points.forEach((at, i) => {
       // They blow their way in: breaching charge where each squad lands.
       const blast = at.clone().setY(1);
       this.d.audio.play('explosion', { position: blast });
       this.d.soldierDeps.impacts.explosion(blast);
       this.d.shake?.(blast);
-      if (this.raiders[i]) this.raiders[i].redeploy(at);
-      else {
+      let team = this.raiders[i];
+      if (!team) {
         const def: TeamDef = { id: 'bd', name: 'SABLE', color: COLOR.bd, palette: 'bd', style: 'hunter', start: at, economy: false, boss: i === 0 };
-        this.raiders.push(new AITeam(def, this.ctx, 4));
+        team = this.spareRaiders[i] ?? new AITeam(def, this.ctx, 4);
+        this.raiders.push(team);
       }
+      team.redeploy(at);
     });
+    this.spareRaiders.length = 0;
     const rooms = points.map((p) => this.d.map.rooms.find((r) => p.x >= r.rect[0] && p.x <= r.rect[2] && p.z >= r.rect[1] && p.z <= r.rect[3])?.name ?? 'unknown');
     return [...new Set(rooms)].join(' and ');
   }
@@ -485,6 +542,7 @@ export class TeamMatch {
     const ed = {
       scene: this.d.scene, map: this.d.map, nav: sd.nav, physics: sd.physics, soldierDeps: sd, audio: this.d.audio, impacts: sd.impacts,
       weaponData: this.d.weaponData, allies: this.d.allies, playerPos: this.d.playerPos, playerWeapon: this.d.playerWeapon,
+      mobile: this.d.mobile, lighting: this.d.lighting,
     };
     this.sites = [new HeliExit(ed), new BunkerExit(ed)];
     this.exits.length = 0;
@@ -597,6 +655,8 @@ export class TeamMatch {
     this.raiderRadio(dt);
     if (this.finished) return;
     this.time += dt;
+    // Pre-built squads: one soldier per frame.
+    this.building.shift()?.();
     const sv0 = this.d.survival;
     // Heat: sharper AI, chads, costlier deaths.
     this.heatTimer -= dt;

@@ -37,6 +37,8 @@ export interface CoverQuery {
   exclude?: readonly { pos: THREE.Vector3 }[];
   /** Debug sink: every candidate that got ray-tested. */
   debug?: { pos: THREE.Vector3; ok: boolean }[];
+  /** Phones: ray-test fewer candidates. */
+  lowSpec?: boolean;
 }
 
 /**
@@ -83,6 +85,9 @@ export const coverRegistry = new CoverRegistry();
 
 const A = new THREE.Vector3();
 const B = new THREE.Vector3();
+/** findCover scratch: ring probes and peek steps (only keepers get cloned). */
+const PROBE = new THREE.Vector3();
+const PEEK = new THREE.Vector3();
 const at = (p: THREE.Vector3, y: number) => B.set(p.x, y, p.z);
 
 /** Line from the threat's eyes to a height at `p` is blocked. */
@@ -129,7 +134,7 @@ export function findCover(q: CoverQuery): CoverSpot | null {
     const off = Math.random() * ((2 * Math.PI) / n);
     for (let k = 0; k < n; k++) {
       const a = off + (k * 2 * Math.PI) / n;
-      const p = nav.nearestWalkable(center.x + Math.sin(a) * r, center.z + Math.cos(a) * r, new THREE.Vector3(), 0.75);
+      const p = nav.nearestWalkable(center.x + Math.sin(a) * r, center.z + Math.cos(a) * r, PROBE, 0.75);
       if (!p || !nav.nearWall(p.x, p.z)) continue;
       const cell = nav.cellIndex(p.x, p.z);
       if (seen.has(cell)) continue;
@@ -146,7 +151,7 @@ export function findCover(q: CoverQuery): CoverSpot | null {
       if (q.mode !== 'retreat' && dT < dFrom - 2) pre += (dFrom - dT) * 0.03;
       pre += q.avoid?.(p) ?? 0;
       pre += Math.random() * 0.12;
-      cands.push({ p, pre });
+      cands.push({ p: p.clone(), pre });
     }
   }
   if (!cands.length) return null;
@@ -154,7 +159,7 @@ export function findCover(q: CoverQuery): CoverSpot | null {
 
   // 2) Ray-test the best few.
   let best: CoverSpot | null = null;
-  const K = Math.min(cands.length, 7);
+  const K = Math.min(cands.length, q.lowSpec ? 4 : 7);
   for (let i = 0; i < K; i++) {
     const { p, pre } = cands[i];
     // Standing head and chest hidden = full cover; a crouched head (~0.95 m) hidden = low cover.
@@ -172,11 +177,11 @@ export function findCover(q: CoverQuery): CoverSpot | null {
       const sides = Math.random() < 0.5 ? [1, -1] : [-1, 1];
       outer: for (const s of sides) {
         for (const o of [0.9, 1.4]) {
-          const pk = new THREE.Vector3(p.x + perp.x * s * o, 0, p.z + perp.z * s * o);
+          const pk = PEEK.set(p.x + perp.x * s * o, 0, p.z + perp.z * s * o);
           if (!nav.walkable(pk.x, pk.z) || !nav.clearLine(p.x, p.z, pk.x, pk.z)) continue;
           A.set(pk.x, 1.5, pk.z);
           if (physics.lineOfSight(A, B.set(q.threat.x, 1.3, q.threat.z), GROUPS.sight)) {
-            peek = pk;
+            peek = pk.clone();
             break outer;
           }
         }

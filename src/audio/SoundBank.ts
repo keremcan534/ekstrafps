@@ -4,6 +4,8 @@
  *
  * To use real audio, add `file: 'audio/ar_shot.ogg'` to a layer (files go in
  * /public/audio). The synth recipe stays as a fallback if the file is missing.
+ * Phones fetch WAVs in audio/guns and audio/voice as their .mp3 twins (compressedUrl):
+ * run `node scripts/encode-audio.mjs` after adding or regenerating one.
  */
 export interface SoundLayer {
   /** Synth recipe name from Synth.ts. */
@@ -54,6 +56,8 @@ export interface SoundEvent {
    * inside maxDist) instead of the steep local curve used for clinks and impacts.
    */
   voice?: boolean;
+  /** Phones: exempt from the far-gunfire cull (explosions: their 'farthest' layer is the point). */
+  noCull?: boolean;
 }
 
 export const SOUND_BANK: Record<string, SoundEvent> = {
@@ -340,7 +344,7 @@ export const SOUND_BANK: Record<string, SoundEvent> = {
   'announce.intruders': { reverb: 0.4, layers: [{ file: 'audio/voice/announce_intruders.wav', gain: 1.05 }], maxVoices: 1, bus: 'ui' },
   'bd.arrival': { layers: [{ file: 'audio/guns/bd_encounter2.wav', gain: 1.0 }], maxVoices: 1, bus: 'ui' },
   // Explosions carry like gunfire: the full blast up close, a dull low rumble far off.
-  'explosion': { reverb: 0.6, layers: [{ file: 'audio/guns/explosion.wav', gain: 1.25, range: 'near' }, { file: 'audio/guns/explosion_far.wav', gain: 1.1, range: 'far' }, { file: 'audio/guns/explosion_far.wav', gain: 0.9, range: 'farthest' }], maxVoices: 3 },
+  'explosion': { reverb: 0.6, layers: [{ file: 'audio/guns/explosion.wav', gain: 1.25, range: 'near' }, { file: 'audio/guns/explosion_far.wav', gain: 1.1, range: 'far' }, { file: 'audio/guns/explosion_far.wav', gain: 0.9, range: 'farthest' }], maxVoices: 3, noCull: true },
   'raid.siren': { reverb: 0.8, layers: [{ synth: 'raid_siren', gain: 0.6 }], maxVoices: 1, bus: 'ui' },
   'director.horde': { reverb: 0.5, layers: [{ file: 'audio/guns/alarm_short.wav', synth: 'horde_alarm', gain: 0.45 }], maxVoices: 1, bus: 'ui' },
   'robot.boot': { layers: [{ synth: 'robot_boot', gain: 0.35 }], pitchVariance: 0.08, maxDist: 18, maxVoices: 3 },
@@ -358,7 +362,24 @@ for (let sp = 0; sp < 6; sp++) {
   }
 }
 
-/** Ambience beds (looped by Ambience.ts; preloaded with the bank). */
+/**
+ * Events the first seconds of a match don't need: voice lines, the cult, civilians,
+ * extraction, the facility PA, building noises. Their files load after init() resolves
+ * (AudioSystem.deferred), so PLAY unlocks as soon as guns, impacts, steps and UI are in.
+ */
+const DEFERRED = /^(?:bd\.(?!fire$)|civ\.|choir\.|heli\.|blastdoor\.|extract\.|announce\.|alarm\.|power\.|director\.|amb\.)/;
+export const isDeferredEvent = (name: string): boolean => DEFERRED.test(name);
+
+/** Folders that ship an .mp3 next to each .wav (scripts/encode-audio.mjs). Loops and music stay WAV. */
+const COMPRESSED = ['audio/guns/', 'audio/voice/'];
+/**
+ * What phones fetch for a bank file (AudioSystem lowSpec): the .mp3 twin in the encoded
+ * folders. Desktop and Electron load the WAVs. Bank keys stay '.wav' (generators keep
+ * writing WAV; the loader falls back to it).
+ */
+export const compressedUrl = (file: string): string => (COMPRESSED.some((d) => file.startsWith(d)) ? file.replace(/\.wav$/, '.mp3') : file);
+
+/** Ambience beds (looped by Ambience.ts; loaded with the deferred set). */
 export const AMBIENCE_LOOPS = ['room', 'hvac', 'servers', 'power', 'wind', 'dark'].map((n) => `audio/amb/${n}.wav`);
 // Distant building noises (positional: they come through walls muffled).
 SOUND_BANK['amb.groan'] = { layers: [{ files: ['audio/amb/groan0.wav', 'audio/amb/groan1.wav', 'audio/amb/groan2.wav'], gain: 0.9 }], pitchVariance: 0.08, maxVoices: 1, reverb: 0.6, maxDist: 70, voice: true };

@@ -1341,6 +1341,57 @@ export function bakeRig(rig: WeaponRig): void {
 }
 
 /**
+ * Baked third-person rigs, built once per `${model}|${low}` and handed out as
+ * clones: every copy is meshes over the same (shared) geometry, so re-arming a
+ * soldier or hanging another wall buy allocates no GPU buffers. Never dispose
+ * the geometry of a rig that came from here.
+ */
+const bakedTemplates = new Map<string, WeaponRig>();
+
+function cloneRig(t: WeaponRig): WeaponRig {
+  const root = t.root.clone(true);
+  // Same hierarchy, same traversal order: pair every template node with its copy.
+  const src: THREE.Object3D[] = [];
+  t.root.traverse((o) => src.push(o));
+  const map = new Map<THREE.Object3D, THREE.Object3D>();
+  let i = 0;
+  root.traverse((o) => map.set(src[i++], o));
+  // A part the bake took out of the tree (a moving part that was a plain mesh): detached copy.
+  const m = <T extends THREE.Object3D | null>(o: T): T => (o ? ((map.get(o) ?? o.clone(false)) as T) : o);
+  return {
+    ...t,
+    root,
+    muzzle: m(t.muzzle),
+    ejectPort: m(t.ejectPort),
+    sight: m(t.sight),
+    mag: m(t.mag),
+    bolt: m(t.bolt),
+    pump: m(t.pump),
+    leftHand: m(t.leftHand),
+    rightHand: m(t.rightHand),
+    heldShell: m(t.heldShell),
+    laser: m(t.laser),
+    leftHandRest: t.leftHandRest.clone(),
+    rightHandRest: t.rightHandRest.clone(),
+    butt: t.butt.clone(),
+  };
+}
+
+/** Third-person weapon (baked, hands hidden) over cached geometry. See bakeRig. */
+export function bakedRig(model: ModelKey, low = false): WeaponRig {
+  const key = `${model}|${low}`;
+  let t = bakedTemplates.get(key);
+  if (!t) {
+    t = buildWeaponModel(model, low);
+    bakeRig(t);
+    t.leftHand.visible = false;
+    t.rightHand.visible = false;
+    bakedTemplates.set(key, t);
+  }
+  return cloneRig(t);
+}
+
+/**
  * Merge a rig's static parts (direct mesh children of the root) per material.
  * Moving parts (mag, bolt, pump, hands) and attachment points are left alone.
  * The detailed models have ~100 parts: on AI soldiers that would be ~100 draw
@@ -1382,22 +1433,27 @@ export const shellMaterials = { brass: mat.brass, red: mat.shellRed };
  * hidden (their positions stay as IK grip points), casting shadows in the world.
  */
 export function buildEnemyRifle(low = false): WeaponRig {
-  LOW = low;
-  let r: WeaponRig;
-  try {
-    r = buildMK47();
-  } finally {
-    LOW = false;
+  const key = `enemy|${low}`;
+  let t = bakedTemplates.get(key);
+  if (!t) {
+    LOW = low;
+    let r: WeaponRig;
+    try {
+      r = buildMK47();
+    } finally {
+      LOW = false;
+    }
+    r.root.traverse((o) => {
+      const m = o as THREE.Mesh;
+      if (m.isMesh && m.material === mat.tan) m.material = mat.black;
+    });
+    bakeRig(r);
+    r.root.traverse((o) => {
+      if ((o as THREE.Mesh).isMesh) (o as THREE.Mesh).castShadow = true;
+    });
+    r.leftHand.visible = false;
+    r.rightHand.visible = false;
+    bakedTemplates.set(key, (t = r));
   }
-  r.root.traverse((o) => {
-    const m = o as THREE.Mesh;
-    if (m.isMesh && m.material === mat.tan) m.material = mat.black;
-  });
-  bakeRig(r);
-  r.root.traverse((o) => {
-    if ((o as THREE.Mesh).isMesh) (o as THREE.Mesh).castShadow = true;
-  });
-  r.leftHand.visible = false;
-  r.rightHand.visible = false;
-  return r;
+  return cloneRig(t);
 }

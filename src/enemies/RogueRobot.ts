@@ -3,6 +3,7 @@ import type { Physics } from '../core/Physics';
 import { clamp } from '../core/math';
 import { Humanoid, defaultPose, type DamageInfo } from '../targets/Humanoid';
 import { robotSkin } from '../targets/RobotTarget';
+import { skinDetail } from './SoldierSkin';
 import type { NavGrid } from '../ai/NavGrid';
 import { OBSTACLES, obstacleAt, type Obstacle } from '../game/Obstacles';
 
@@ -211,7 +212,8 @@ export class RogueRobot {
     if (this.state === 'dead') {
       this.body.update(dt, this.pose);
       this.deadTime += dt;
-      if (this.deadTime > 6) this.recycle();
+      // Phones: corpses clear sooner (fewer ragdolls in the physics step).
+      if (this.deadTime > (skinDetail.low ? 3 : 6)) this.recycle();
       return;
     }
     if (this.stunned > 0) {
@@ -268,9 +270,12 @@ export class RogueRobot {
           }
         }
       }
+      // Phones: a hidden dormant robot standing still skips posing (Humanoid LOD), so no sway either.
+      const still = this.state === 'idle' && shuffle === 0;
+      const sway = still && skinDetail.low && !this.body.root.visible ? 0 : Math.sin(performance.now() * 0.0007 + this.pos.x) * 0.03 * k;
       p.stridePhase = this.stride;
       p.strideAmount = shuffle * k;
-      p.spineX = 0.55 * k + 0.12 * (1 - k) + Math.sin(performance.now() * 0.0007 + this.pos.x) * 0.03 * k;
+      p.spineX = 0.55 * k + 0.12 * (1 - k) + sway;
       p.headX = 0.6 * k;
       p.armL = 0.1 * k - 0.9 * (1 - k);
       p.armR = 0.1 * k - 0.9 * (1 - k);
@@ -278,7 +283,7 @@ export class RogueRobot {
       p.crouch = 0.15 * k;
       this.body.root.position.copy(this.pos);
       this.body.root.rotation.y = this.yaw;
-      this.body.update(dt, p);
+      this.body.update(dt, p, still);
       return;
     }
     if (this.state === 'rising') {

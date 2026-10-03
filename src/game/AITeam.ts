@@ -116,6 +116,10 @@ export class AITeam {
   /** Extraction: where to go and what happens on arrival. */
   private exit: { at: THREE.Vector3; done: () => void } | null = null;
   private exitHold = 0;
+  /** Hires sent off the map by a redeploy, kept to be hired again (no new bodies). */
+  private spare: TeamAgent[] = [];
+  /** Everyone's soldier, refreshed in place every frame. */
+  private mates: TeamAgent['soldier'][] = [];
 
   constructor(readonly def: TeamDef, private ctx: TeamContext, size = SQUAD_SIZE) {
     this.squad = new SquadBrain(def.id, false, ctx.deps.nav);
@@ -123,11 +127,14 @@ export class AITeam {
   }
 
   get leader(): TeamAgent | null {
-    return this.agents.find((a) => a.alive && !a.downed) ?? null;
+    for (const a of this.agents) if (a.alive && !a.downed) return a;
+    return null;
   }
 
   get aliveCount(): number {
-    return this.agents.filter((a) => a.alive).length;
+    let n = 0;
+    for (const a of this.agents) if (a.alive) n++;
+    return n;
   }
 
   private richest(): TeamAgent | null {
@@ -138,6 +145,25 @@ export class AITeam {
 
   private addAgent(at: THREE.Vector3, points = START_POINTS): TeamAgent {
     const loner = this.def.style === 'reckless' ? 0.45 : this.def.style === 'balanced' ? 0.15 : 0.03;
+    // A hire: bring back a spare or a fallen hire before building a new body
+    // (a new soldier costs a skinned mesh, physics bodies and a stall).
+    if (this.agents.length >= SQUAD_SIZE) {
+      let agent = this.spare.pop() ?? null;
+      if (agent) this.agents.push(agent);
+      else agent = this.agents.find((a, i) => i >= SQUAD_SIZE && !a.alive) ?? null;
+      if (agent) {
+        Object.assign(agent.personality, randomPersonality(loner));
+        agent.chad = false;
+        agent.baseSkill = agent.soldier.skill = this.def.style === 'hunter' ? 0.95 : 1.15;
+        agent.points = this.def.economy ? points : 0;
+        agent.order = agent.holdOrder;
+        this.squad.add(agent.bot);
+        const at2 = this.ctx.deps.nav.nearestWalkable(at.x, at.z, new THREE.Vector3(), 4) ?? at;
+        agent.spawn(at2, Math.random() * Math.PI * 2);
+        if (this.def.economy) agent.arm(SIDEARM);
+        return agent;
+      }
+    }
     const isBoss = !!this.def.boss && this.agents.length === 0;
     const personality = randomPersonality(loner);
     if (isBoss) {
@@ -248,13 +274,16 @@ export class AITeam {
   update(dt: number, world: Combatant[]): void {
     if (this.extracted) return;
     this.squad.update(dt);
-    const mates = this.agents.map((a) => a.soldier);
+    const mates = this.mates;
+    mates.length = 0;
+    for (const a of this.agents) mates.push(a.soldier);
     for (const a of this.agents) {
       a.refreshSelf();
       a.update(dt, world, mates);
     }
     // Wipe → respawn somewhere random (raiders don't come back).
-    if (this.aliveCount === 0) {
+    const L = this.leader;
+    if (!L && this.aliveCount === 0) {
       if (this.def.style === 'hunter' || this.noRespawn) return;
       if (this.respawnTimer < 0) this.respawnTimer = 12;
       this.respawnTimer -= dt;
@@ -279,13 +308,20 @@ export class AITeam {
         }
       }
     }
-    this.giveOrders(dt);
+    if (L) this.giveOrders(dt, L);
   }
 
   /** Bring the core members back at `at` (wipe respawn, next raid). They lose their guns, keep their money. */
   redeploy(at: THREE.Vector3): void {
     this.respawnTimer = -1;
     const core = this.agents.slice(0, SQUAD_SIZE);
+    // Hires leave the map (body, colliders and light hidden) and wait to be hired again.
+    for (let i = SQUAD_SIZE; i < this.agents.length; i++) {
+      const a = this.agents[i];
+      a.leave();
+      this.squad.remove(a.bot);
+      this.spare.push(a);
+    }
     this.agents.length = 0;
     core.forEach((a, i) => {
       const p = this.ctx.deps.nav.nearestWalkable(at.x + (i % 2) * 1.5 - 0.75, at.z + ((i / 2) | 0) * 1.3, new THREE.Vector3(), 4) ?? at;
@@ -296,9 +332,7 @@ export class AITeam {
     this.goal = null;
   }
 
-  private giveOrders(dt: number): void {
-    const L = this.leader;
-    if (!L) return;
+  private giveOrders(dt: number, L: TeamAgent): void {
     const g = this.goal;
     if (g) {
       g.time += dt;
@@ -310,11 +344,17 @@ export class AITeam {
       if (g.time > (g.kind === 'rush' ? 70 : g.kind === 'extract' ? 120 : 45)) this.goal = null; // stuck: rethink
     }
     const fast = g && (g.kind === 'hunt' || g.kind === 'retreat' || g.kind === 'rush' || g.kind === 'extract');
-    L.order = g ? { kind: 'goto', at: g.at, speed: fast ? (g.kind === 'rush' ? 4.3 : 3.7) : 2.6 } : { kind: 'hold' };
+    // Persistent order objects, mutated in place (this runs every frame).
+    if (g) {
+      const o = L.gotoOrder;
+      o.at = g.at;
+      o.speed = fast ? (g.kind === 'rush' ? 4.3 : 3.7) : 2.6;
+      L.order = o;
+    } else L.order = L.holdOrder;
     // At the exit: hold it for a few seconds, then everyone still standing is out.
     if (g && g.kind === 'extract' && this.exit) {
       if (L.distTo(g.at) < 3.2) {
-        L.order = { kind: 'hold' };
+        L.order = L.holdOrder;
         this.exitHold += dt;
         if (this.exitHold >= 6) {
           for (const a of this.agents) if (a.alive && !a.downed && a.distTo(g.at) < 25) a.leave();
@@ -327,7 +367,7 @@ export class AITeam {
     } else if (g && g.kind === 'rush' && L.distTo(g.at) < 6) {
       this.goal = null; // on them: the fight takes over
     } else if (g && L.distTo(g.at) < 2.2) {
-      if (g.hold && g.time < g.hold) L.order = { kind: 'hold' };
+      if (g.hold && g.time < g.hold) L.order = L.holdOrder;
       else {
         g.run?.();
         this.goal = null;
@@ -338,7 +378,8 @@ export class AITeam {
       // Lone wolves sometimes wander after their own target.
       if (a.order.kind === 'goto' && a.distTo(a.order.at) > 1.5 && Math.random() > 0.002) continue;
       if (a.plan) continue;
-      a.order = { kind: 'follow', leader: () => (L.alive && !L.downed ? { pos: L.soldier.pos, yaw: L.soldier.yaw, speed: Math.hypot(L.soldier.vel.x, L.soldier.vel.z) } : null) };
+      a.followTarget = L;
+      a.order = a.followOrder;
     }
   }
 

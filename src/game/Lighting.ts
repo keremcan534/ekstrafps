@@ -41,6 +41,8 @@ export class Lighting {
   private reds: { l: THREE.PointLight; spot: THREE.Vector3 | null; f: number; keep: boolean; peak: number }[] = [];
   private pickTimer = 0;
   private wasDarkPick = false;
+  /** A spot that borrows one practical light while you're near it (see park). */
+  private parked: { pos: THREE.Vector3; color: number; peak: number; dist: number } | null = null;
   private static readonly RED_FOG = new THREE.Color(0x120406);
 
   constructor(
@@ -97,6 +99,17 @@ export class Lighting {
   get breakerAction(): string {
     if (this.raid && !this.restored) return 'Restore power';
     return this.cut ? 'Lights back on' : 'Cut the lights';
+  }
+
+  /**
+   * Borrow one practical light for a fixed spot (phones: an extraction site's
+   * floor light) instead of adding a light, which would recompile every shader.
+   * It takes a slot after the nearest lamp while you're within ~26 m and the
+   * spot is drawn; null gives it back.
+   */
+  park(pos: THREE.Vector3 | null, color = 0xff2010, peak = 10, dist = 10): void {
+    this.parked = pos ? { pos: pos.clone(), color, peak, dist } : null;
+    this.pickTimer = 0;
   }
 
   toggleFlashlight(): boolean {
@@ -161,6 +174,12 @@ export class Lighting {
         ? this.map.emergencySpots.filter((p, i) => i % 3 === 0 && near(p)).map((pos) => ({ pos, color: 0xff2a14, peak: 22, dist: 14 }))
         : this.map.lampSpots.filter((s) => near(s.pos)).map((s) => ({ pos: s.pos, color: s.color, peak: 34, dist: 11 }));
       cands.sort((a, b) => a.pos.distanceToSquared(e) - b.pos.distanceToSquared(e));
+      // The parked spot goes in right after the nearest lamp (first if it's nearer):
+      // the lamp over you keeps its light, even with a single practical light (phones).
+      const pk = this.parked;
+      if (pk && Math.abs(pk.pos.x - e.x) < 26 && Math.abs(pk.pos.z - e.z) < 26 && this.map.isVisibleAt(pk.pos.x, pk.pos.z)) {
+        cands.splice(cands.length && cands[0].pos.distanceToSquared(e) < pk.pos.distanceToSquared(e) ? 1 : 0, 0, pk);
+      }
       const want = cands.slice(0, dark ? Math.min(2, this.reds.length) : this.reds.length);
       for (const r of this.reds) r.keep = !!r.spot && want.some((w) => w.pos === r.spot);
       for (const w of want) {

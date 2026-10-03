@@ -120,7 +120,9 @@ export default defineConfig(({ command }) => ({
     },
   },
   build: {
-    target: 'es2022',
+    // es2022 alone keeps three's class static blocks, which iOS Safari 16.0-16.3
+    // cannot parse (blank page); the browser targets make esbuild lower them.
+    target: ['es2022', 'safari16', 'chrome100', 'firefox100'],
     chunkSizeWarningLimit: 4000,
   },
 }));

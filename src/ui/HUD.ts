@@ -4,6 +4,30 @@ import { feel } from '../config/Feel';
 
 export type HitKind = 'hit' | 'crit' | 'kill';
 
+/**
+ * Hit marker keyframes for Element.animate; s = feel.hitmarkerScale. These are the source of truth:
+ * the style.css copies (.hitmarker.hit/.crit/.kill animation, @keyframes hm-hit/hm-crit/hm-kill,
+ * --hm-scale, .kill-ring.show + @keyframes ring, .kills.pop + @keyframes kpop) are no longer used.
+ * The .hitmarker.crit/.kill .hm-line colours in style.css still apply.
+ */
+const HITMARKER: Record<HitKind, (s: number) => Keyframe[]> = {
+  hit: (s) => [
+    { offset: 0, opacity: 1, transform: `scale(${s * 0.8})`, easing: 'ease-out' },
+    { offset: 1, opacity: 0, transform: `scale(${s})` },
+  ],
+  crit: (s) => [
+    { offset: 0, opacity: 1, transform: `scale(${s * 1.35})`, easing: 'ease-out' },
+    { offset: 0.6, opacity: 1, easing: 'ease-out' },
+    { offset: 1, opacity: 0, transform: `scale(${s})` },
+  ],
+  kill: (s) => [
+    { offset: 0, opacity: 1, transform: `scale(${s * 1.6}) rotate(-12deg)`, easing: 'ease-out' },
+    { offset: 0.5, opacity: 1, transform: `scale(${s}) rotate(0deg)`, easing: 'ease-out' },
+    { offset: 1, opacity: 0, transform: `scale(${s * 1.1}) rotate(0deg)` },
+  ],
+};
+const HITMARKER_MS: Record<HitKind, number> = { hit: 220, crit: 320, kill: 450 };
+
 interface DamageNumber {
   el: HTMLDivElement;
   pos: THREE.Vector3;
@@ -39,6 +63,11 @@ export class HUD {
   private lastAmmo = -1;
   private lastMag = -1;
   private lastWeapon = '';
+  private hmAnim: Animation | null = null;
+  private killsAnim: Animation | null = null;
+  private ringAnim: Animation | null = null;
+  private crosshairShown: boolean | null = null;
+  private reloadShown: boolean | null = null;
 
   constructor(parent: HTMLElement) {
     this.root = div('hud', parent);
@@ -47,6 +76,7 @@ export class HUD {
     div('ch-dot', this.crosshair);
     this.hitmarker = div('hitmarker', this.root);
     for (let i = 0; i < 4; i++) div(`hm-line hm-${i}`, this.hitmarker);
+    this.hitmarker.style.animation = 'none'; // script-driven (showHit), not the class keyframes
     this.killRing = div('kill-ring', this.root);
 
     const ammo = div('ammo', this.root);
@@ -85,11 +115,11 @@ export class HUD {
    * The gap shows mechanical dispersion.
    */
   updateCrosshair(spreadDeg: number, fovDeg: number, adsAmount: number, blocked: boolean): void {
-    if (!feel.debugCrosshair) {
-      this.crosshair.style.display = 'none';
-      return;
+    if (this.crosshairShown !== feel.debugCrosshair) {
+      this.crosshairShown = feel.debugCrosshair;
+      this.crosshair.style.display = feel.debugCrosshair ? '' : 'none';
     }
-    this.crosshair.style.display = '';
+    if (!feel.debugCrosshair) return;
     const h = window.innerHeight;
     const px = (Math.tan(spreadDeg * DEG) / Math.tan((fovDeg * DEG) / 2)) * (h / 2);
     const gap = Math.max(4, px);
@@ -100,22 +130,30 @@ export class HUD {
     this.crosshair.style.opacity = String((1 - adsAmount * 1.4) * (blocked ? 0.35 : 1));
   }
 
+  /**
+   * Restarted with Element.animate (same keyframes as style.css): the old
+   * class-swap + offsetWidth restart forced a synchronous layout on every hit.
+   */
   showHit(kind: HitKind): void {
     const el = this.hitmarker;
-    el.className = 'hitmarker';
-    void el.offsetWidth; // restart CSS animation
-    el.className = `hitmarker ${kind}`;
-    el.style.setProperty('--hm-scale', String(feel.hitmarkerScale));
+    const cls = `hitmarker ${kind}`; // colours/sizes of the lines
+    if (el.className !== cls) el.className = cls;
+    const s = feel.hitmarkerScale;
+    this.hmAnim?.cancel();
+    this.hmAnim = el.animate(HITMARKER[kind](s), { duration: HITMARKER_MS[kind], fill: 'forwards' });
     if (kind === 'kill') {
       this.kills++;
       this.killsEl.textContent = `${this.kills}`;
-      this.killsEl.className = 'kills';
-      void this.killsEl.offsetWidth;
-      this.killsEl.className = 'kills pop';
-      const r = this.killRing;
-      r.className = 'kill-ring';
-      void r.offsetWidth;
-      r.className = 'kill-ring show';
+      this.killsAnim?.cancel();
+      this.killsAnim = this.killsEl.animate([{ transform: 'scale(1.5)', easing: 'ease-out' }, { transform: 'scale(1)' }], { duration: 300 });
+      this.ringAnim?.cancel();
+      this.ringAnim = this.killRing.animate(
+        [
+          { opacity: 0.8, transform: 'scale(0.4)', easing: 'ease-out' },
+          { opacity: 0, transform: 'scale(1.5)' },
+        ],
+        { duration: 400, fill: 'forwards' },
+      );
     }
   }
 
@@ -151,12 +189,12 @@ export class HUD {
       this.ammoEl.classList.toggle('low', ammo <= Math.ceil(magSize * 0.25));
       this.lastMag = mag;
     }
-    if (reloadProgress >= 0) {
-      this.reloadBar.style.opacity = '1';
-      this.reloadFill.style.transform = `scaleX(${reloadProgress})`;
-    } else {
-      this.reloadBar.style.opacity = '0';
+    const reloading = reloadProgress >= 0;
+    if (reloading !== this.reloadShown) {
+      this.reloadShown = reloading;
+      this.reloadBar.style.opacity = reloading ? '1' : '0';
     }
+    if (reloading) this.reloadFill.style.transform = `scaleX(${reloadProgress})`;
   }
 
   update(dt: number, camera: THREE.Camera): void {

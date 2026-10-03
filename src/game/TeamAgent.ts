@@ -94,7 +94,25 @@ const WATCH = [-1.15, 1.15, Math.PI, 0.35, -0.35];
 export class TeamAgent {
   readonly soldier: Soldier;
   readonly self: Combatant;
-  order: Order = { kind: 'hold' };
+  /** Persistent orders the team hands out every frame, mutated in place (no per-frame allocation). */
+  readonly holdOrder: Order = { kind: 'hold' };
+  readonly gotoOrder: Extract<Order, { kind: 'goto' }> = { kind: 'goto', at: new THREE.Vector3(), speed: 0 };
+  /** Who followOrder follows. */
+  followTarget: TeamAgent | null = null;
+  private leaderState: Leader = { pos: new THREE.Vector3(), yaw: 0, speed: 0 };
+  readonly followOrder: Order = {
+    kind: 'follow',
+    leader: () => {
+      const L = this.followTarget;
+      if (!L || !L.alive || L.downed) return null;
+      const st = this.leaderState;
+      st.pos = L.soldier.pos;
+      st.yaw = L.soldier.yaw;
+      st.speed = Math.hypot(L.soldier.vel.x, L.soldier.vel.z);
+      return st;
+    },
+  };
+  order: Order = this.holdOrder;
   /** Teammate (or the player) to pick up; set by the brain. */
   reviveTarget: { pos: THREE.Vector3; revive(): void; downed: boolean } | null = null;
   reviveTime = 0;
@@ -202,6 +220,7 @@ export class TeamAgent {
     this.chad = false;
     this.soldier.hopY = 0;
     this.soldier.body.setActive(false);
+    this.soldier.dispose();
   }
 
   get downed(): boolean {
