@@ -13,3 +13,4 @@ release/
 
 # Secrets (ElevenLabs key for scripts/gen-commander-voice.mjs)
 .env
+__pycache__/
