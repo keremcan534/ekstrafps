@@ -32,5 +32,7 @@ export interface GameMap {
   readonly skyColor: number;
   /** Tone-mapping exposure (default 1.05). */
   readonly exposure?: number;
+  /** Image-based fill strength (default 0.35): low for maps that should read dark. */
+  readonly envIntensity?: number;
   update(dt: number, focus?: THREE.Vector3): void;
 }

@@ -5,7 +5,7 @@ import { Spring } from '../core/Spring';
 import { Noise1D } from '../core/Noise';
 import { clamp, DEG } from '../core/math';
 import { feel } from '../config/Feel';
-import { Humanoid, defaultPose, type DamageInfo, strideLength } from '../targets/Humanoid';
+import { Humanoid, defaultPose, type DamageInfo, strideLength, LEAN_ROLL } from '../targets/Humanoid';
 import { bakedRig, buildEnemyRifle, type WeaponRig } from '../weapons/WeaponModels';
 import type { WeaponData } from '../weapons/WeaponData';
 import { getAmmo, type AmmoData } from '../weapons/AmmoData';
@@ -193,6 +193,9 @@ export class Soldier implements LightSource {
   // Stance
   private crouch = 0;
   crouchTarget = 0;
+  /** Lean round a corner, set by the brain each frame: -1 left … 1 right (0 = upright). */
+  leanTarget = 0;
+  private lean = 0;
   /** Low-cover peek cycle phase (seconds). */
   peekPhase = Math.random() * 3;
   seeChest = false;
@@ -247,7 +250,9 @@ export class Soldier implements LightSource {
     // Rifle in the right shoulder pocket; the aim node pitches/yaws it.
     const torso = this.body.part('torso').group;
     this.aimNode.position.set(0.11, 0.41, 0.12);
-    this.aimNode.rotation.order = 'YXZ';
+    // Z first: the node takes back the torso's lean roll (Q / E), so the gun points where
+    // it's aimed whatever the body does (the bore cant is the rifle's own roll).
+    this.aimNode.rotation.order = 'ZYX';
     torso.add(this.aimNode);
     this.body.team = team;
     if (deps.lowSpec) this.body.setCastShadow(false);
@@ -612,6 +617,9 @@ export class Soldier implements LightSource {
     const p = this.pose;
     p.idle = false;
     p.crouch = this.crouch * 0.85;
+    // Leaning: quick in and out, like a player tapping Q / E.
+    this.lean += (this.leanTarget - this.lean) * Math.min(1, dt * 7);
+    p.lean = this.lean;
     p.stridePhase = this.stride;
     p.strideAmount = this.strideAmount;
     p.strideSide = this.strideSide;
@@ -654,7 +662,7 @@ export class Soldier implements LightSource {
       // hips each step, the head nods with the footfalls, a lean into a run, and eyes
       // that check the sides when there's nothing to aim at.
       const sa = Math.min(1.25, this.strideAmount);
-      p.spineY += Math.sin(this.stride) * 0.09 * sa;
+      p.spineY += Math.sin(this.stride) * 0.09 * sa * (aimMode === 'aim' ? 0.25 : 1);
       p.spineX += 0.07 * Math.max(0, sa - 0.75);
       p.headX += Math.sin(this.stride * 2) * 0.035 * sa;
       if (aimMode !== 'aim') {
@@ -828,7 +836,8 @@ export class Soldier implements LightSource {
     const sa = Math.min(1.25, this.strideAmount) * (mode === 'aim' ? 0.3 : 1);
     const bobP = Math.sin(this.stride * 2) * 0.035 * sa;
     const bobY = Math.sin(this.stride) * 0.05 * sa;
-    this.aimNode.rotation.set(-(this.aimPitch + this.recoilPitch.value) - lean + bobP, this.aimYaw + this.recoilYaw.value + bobY, this.roll + bobY * 0.6);
+    this.aimNode.rotation.set(-(this.aimPitch + this.recoilPitch.value) - lean + bobP, this.aimYaw + this.recoilYaw.value + bobY, -this.lean * LEAN_ROLL);
+    if (this.rifleRoot.parent === this.aimNode) this.rifleRoot.rotation.z = this.roll + bobY * 0.6 + this.lean * LEAN_ROLL * 0.6;
     // Where the gun sits in the hands. Handguns: two-handed out in front to aim
     // (centred under the eyes), compressed at the chest at the ready, low while
     // running. Long guns stay shouldered (the holder origin is the shoulder pocket).

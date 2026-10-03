@@ -25,7 +25,11 @@ type V3 = [number, number, number];
 export class Arena implements GameMap {
   readonly name = 'Weapon Lab';
   readonly spawnYaw = 0;
-  readonly skyColor = 0x15171a;
+  // Night: the lab after hours, SABLE's ground. Dark sky (the far end of the range fades
+  // into black through the fog), a cold moon, half the ceiling strips dead.
+  readonly skyColor = 0x040508;
+  readonly exposure = 1.0;
+  readonly envIntensity = 0.1;
   readonly stations: Station[] = STATIONS;
   readonly squads: SquadSpawn[];
   readonly group = new THREE.Group();
@@ -42,6 +46,11 @@ export class Arena implements GameMap {
   readonly sun: THREE.DirectionalLight;
 
   private builder = new MeshBuilder(true);
+  /** Lights that misbehave: a flickering range lamp, a dying sodium lamp, the red alarm beacons. */
+  private flicker: { light: THREE.Light; base: number; mat?: THREE.MeshStandardMaterial; t: number; on: boolean }[] = [];
+  private beacons: THREE.PointLight[] = [];
+  private beaconMat!: THREE.MeshStandardMaterial;
+  private time = 0;
   private mats: Record<string, THREE.MeshStandardMaterial>;
 
   constructor(private physics: Physics, mobile: boolean) {
@@ -53,7 +62,8 @@ export class Arena implements GameMap {
       accent: new THREE.MeshStandardMaterial({ color: 0xd9a21b, roughness: 0.6 }),
       stripe: new THREE.MeshStandardMaterial({ color: 0xe8e8e8, roughness: 0.7 }),
       ceiling: new THREE.MeshStandardMaterial({ color: 0x1c1e22, roughness: 1 }),
-      lamp: new THREE.MeshStandardMaterial({ color: 0x000000, emissive: 0xeaf2ff, emissiveIntensity: 2.5 }),
+      lamp: new THREE.MeshStandardMaterial({ color: 0x000000, emissive: 0xd8e6ff, emissiveIntensity: 1.6 }),
+      lampDead: new THREE.MeshStandardMaterial({ color: 0x0c0d0f, emissive: 0x9fb4d0, emissiveIntensity: 0.04 }),
       asphalt: new THREE.MeshStandardMaterial({ map: gridTexture('#2b2d30', '#232528', '#28292c'), roughness: 0.95 }),
       yardWall: new THREE.MeshStandardMaterial({ map: gridTexture('#3a3c40', '#2e3034', '#36383c'), roughness: 0.95 }),
       contGreen: new THREE.MeshStandardMaterial({ map: corrugatedTexture('#2f3a2d'), roughness: 0.7, metalness: 0.35 }),
@@ -79,9 +89,9 @@ export class Arena implements GameMap {
     this.placeRobots();
     this.squads = [{ route: this.patrolRoute, spawnIndex: this.squadSpawnIndex }];
 
-    // --- Lighting ---
-    this.group.add(new THREE.HemisphereLight(0xc8d6ff, 0x3a3631, 1.0));
-    const sun = new THREE.DirectionalLight(0xfff1dd, 2.4);
+    // --- Lighting: night ---
+    this.group.add(new THREE.HemisphereLight(0x50638f, 0x0b0a09, 0.3));
+    const sun = new THREE.DirectionalLight(0x8ea8ff, 0.5); // moonlight
     // Same light direction as before, re-centred so the shadow map also covers the yard.
     sun.position.set(14, 30, -21);
     sun.target.position.set(0, 0, -55);
@@ -98,6 +108,42 @@ export class Arena implements GameMap {
     sun.shadow.normalBias = 0.04;
     this.group.add(sun, sun.target);
     this.sun = sun;
+    this.buildNightLights(mobile);
+  }
+
+  /**
+   * The lamps that are still on: cold light under the live ceiling strips (one of them
+   * flickering), sodium spots over the yard (one dying), red alarm beacons at the yard
+   * doors. A fixed set (no lights added later: that would recompile every shader);
+   * phones get fewer.
+   */
+  private buildNightLights(mobile: boolean): void {
+    const range: [number, number][] = mobile ? [[-3, -10], [14, -38]] : [[-3, -6], [14, -14], [-3, -27], [14, -36], [-3, -48]];
+    range.forEach(([x, z], i) => {
+      const l = new THREE.PointLight(0xcfe0ff, 75, 28, 2);
+      l.position.set(x, 9.2, z);
+      this.group.add(l);
+      if (i === 2 || (mobile && i === 1)) this.flicker.push({ light: l, base: 75, mat: undefined, t: 0, on: true });
+    });
+    const yard: [number, number][] = [[-21.2, -80], [21.2, -95], [-21.2, -110], [0, -126.2], [21.2, -118]];
+    (mobile ? [yard[0], yard[1], yard[3]] : yard).forEach(([x, z], i) => {
+      const dx = -Math.sign(x || 1) * 0.35;
+      const l = new THREE.SpotLight(0xff9a40, 320, 30, 1.1, 0.7, 2);
+      l.position.set(x + dx, 5.85, z + (x === 0 ? 0.4 : 0));
+      l.target.position.set(x + dx * 8, 0, z + (x === 0 ? 4 : 0));
+      this.group.add(l, l.target);
+      if (i === 1) this.flicker.push({ light: l, base: 320, mat: undefined, t: 0, on: true });
+    });
+    this.beaconMat = new THREE.MeshStandardMaterial({ color: 0x220000, emissive: 0xff2010, emissiveIntensity: 2 });
+    for (const x of mobile ? [-16.5] : [-16.5, 16.5]) {
+      const lamp = new THREE.Mesh(new THREE.CylinderGeometry(0.14, 0.14, 0.22, 10), this.beaconMat);
+      lamp.position.set(x, 3.75, -65.1);
+      this.group.add(lamp);
+      const l = new THREE.PointLight(0xff2a14, 20, 13, 2);
+      l.position.set(x, 3.6, -65.6);
+      this.group.add(l);
+      this.beacons.push(l);
+    }
   }
 
   /** Static solid: visual + collider in one call. */
@@ -145,7 +191,7 @@ export class Arena implements GameMap {
     // Ceiling + light strips (visual only, no shadows from the ceiling)
     const ceiling = new MeshBuilder(false);
     ceiling.box(this.mats.ceiling, [46, 1, 82], [0, 10.5, -24]);
-    for (const x of [-14, -3, 3, 14]) ceiling.box(this.mats.lamp, [0.35, 0.08, 72], [x, 9.98, -24]);
+    for (const x of [-14, -3, 3, 14]) ceiling.box(x === -3 || x === 14 ? this.mats.lamp : this.mats.lampDead, [0.35, 0.08, 72], [x, 9.98, -24]);
     ceiling.build(this.group, { castShadow: false, receiveShadow: false });
     // Wall base trim
     this.detail('accent', [0.05, 0.3, 80], [-21.98, 0.15, -24]);
@@ -377,7 +423,21 @@ export class Arena implements GameMap {
     add(14, 0, -44);
   }
 
-  update(_dt: number): void {
+  update(dt: number): void {
     this.props.update();
+    this.time += dt;
+    // A bad ballast: on, a stutter of blinks, dark for a beat, back on.
+    for (const f of this.flicker) {
+      f.t -= dt;
+      if (f.t <= 0) {
+        f.on = !f.on;
+        f.t = f.on ? (Math.random() < 0.7 ? 0.05 + Math.random() * 0.12 : 1.5 + Math.random() * 5) : 0.04 + Math.random() * (Math.random() < 0.15 ? 1.2 : 0.15);
+      }
+      f.light.intensity = f.on ? f.base * (0.85 + Math.random() * 0.15) : f.base * 0.03;
+    }
+    // Alarm beacons: a slow red pulse.
+    const pulse = Math.pow(0.5 + 0.5 * Math.sin(this.time * 3.4), 3);
+    for (const b of this.beacons) b.intensity = 3 + 26 * pulse;
+    this.beaconMat.emissiveIntensity = 0.4 + 3 * pulse;
   }
 }

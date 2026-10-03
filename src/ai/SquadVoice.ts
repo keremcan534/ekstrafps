@@ -42,7 +42,8 @@ export class SquadVoice {
       const s = b.agent.soldier;
       const prev = this.seen.get(b);
       const alive = s.alive;
-      const vis = !!(b.target && b.target.visible && b.target.target.kind === 'soldier');
+      // Eyes on a person (another squad or the player), not a robot.
+      const vis = !!(b.target && b.target.visible && b.target.target.kind !== 'robot');
       const cur: Seen = { decision: b.decision, alive, hurtAt: b.hurtAt, vis };
       this.seen.set(b, cur);
       if (!prev) continue;

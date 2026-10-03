@@ -109,7 +109,12 @@ export interface HumanoidPose {
   armL: number;
   armR: number;
   elbows: number;
+  /** Leaning out round a corner (Q / E): -1 left … 1 right. The torso rolls by lean × LEAN_ROLL. */
+  lean?: number;
 }
+
+/** Torso roll at full lean (rad). */
+export const LEAN_ROLL = 0.42;
 
 /**
  * Ground covered by one full walk cycle (m) at a stride amount: what the legs' swing
@@ -987,7 +992,7 @@ export class Humanoid {
 
     const torso = this.part('torso').group;
     // Leaning into the run; a slight forward lean over the gun when standing to shoot.
-    torso.rotation.set(spineX + pose.spineX + pose.crouch * 0.18 + stride * 0.1 + stance * 0.05, spineY + pose.spineY - pelvis.rotation.y, spineZ - roll * 0.6);
+    torso.rotation.set(spineX + pose.spineX + pose.crouch * 0.18 + stride * 0.1 + stance * 0.05, spineY + pose.spineY - pelvis.rotation.y, spineZ - roll * 0.6 + (pose.lean ?? 0) * LEAN_ROLL);
     this.part('head').group.rotation.set(headX + pose.headX, headY + pose.headY, headZ);
     // Grip targets are read in torso space: one matrix pass serves both arms.
     if (pose.gripL || pose.gripR) torso.updateMatrixWorld(true);

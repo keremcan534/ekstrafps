@@ -821,6 +821,7 @@ export class Bot implements AIListener {
     if (t?.visible) this.holdFatigue = 0;
     // Standing unless a decision says otherwise (hold / cover / peek / reload crouch on their own).
     s.crouchTarget = 0;
+    s.leanTarget = 0;
     switch (this.decision) {
       case 'ENGAGE':
         this.doEngage(dt, now);
@@ -941,6 +942,7 @@ export class Bot implements AIListener {
     if (this.inCover && this.cover) {
       this.action = this.cover.low ? 'firing over cover' : 'firing from cover';
       if (!this.cover.low && this.atPeek) {
+        s.leanTarget = this.peekSide(this.cover) * 0.9;
         // Shooting from the side of full cover: limited exposure, then back in.
         if (this.peek.until === 0) this.peek.until = now + AI_TUNING.peekExposure * 2 * this.profile.exposure * (1.3 - 0.6 * this.skill01);
         if (now > this.peek.until) {
@@ -1135,6 +1137,8 @@ export class Bot implements AIListener {
     if (this.peek.phase === 'out') {
       this.navigator.go(c.peek, WALK * 1.4, 0.35);
       this.action = 'peeking out';
+      // Round the corner with a lean (Q / E): head and gun out, body behind the edge.
+      s.leanTarget = this.peekSide(c) * 0.9;
       const d = Math.hypot(c.peek.x - s.pos.x, c.peek.z - s.pos.z);
       if (d < 0.5 && this.peek.until === 0) this.peek.until = now + exposure;
       if (this.peek.until > 0 && now > this.peek.until) this.peek.phase = 'back';
@@ -1147,6 +1151,16 @@ export class Bot implements AIListener {
       this.look(t.pos);
       if (Math.hypot(c.pos.x - s.pos.x, c.pos.z - s.pos.z) < 0.7 || this.navigator.status !== 'moving') this.endPeek(now);
     }
+  }
+
+  /** Which way the open side of a full cover is (lean that way): -1 left, 1 right, 0 none. */
+  private peekSide(c: CoverSpot): number {
+    if (!c.peek) return 0;
+    const fx = c.threat.x - c.pos.x;
+    const fz = c.threat.z - c.pos.z;
+    const l = Math.hypot(fx, fz) || 1;
+    // Right of a body facing the threat.
+    return Math.sign((c.peek.x - c.pos.x) * (-fz / l) + (c.peek.z - c.pos.z) * (fx / l));
   }
 
   private endPeek(now: number): void {

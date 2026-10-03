@@ -28,6 +28,7 @@ import { PlayerHealth } from '../player/PlayerHealth';
 import { StatusHUD } from '../ui/StatusHUD';
 import { NavGrid } from '../ai/NavGrid';
 import { BlackDivision } from '../enemies/BlackDivision';
+import { TacticalSable } from '../enemies/TacticalSable';
 import type { PlayerTarget, SoldierDeps } from '../enemies/Soldier';
 import { TeamAgent, agentBySoldier, randomPersonality, type Combatant } from '../game/TeamAgent';
 import { SIDEARM, planErrand } from '../game/Errands';
@@ -137,7 +138,8 @@ export class Game {
   health = new PlayerHealth();
   status!: StatusHUD;
   nav!: NavGrid;
-  squads: BlackDivision[] = [];
+  /** The Weapon Lab's SABLE: the tactical squad (?oldsable: the scripted one). */
+  squads: (BlackDivision | TacticalSable)[] = [];
   survival: Survival | null = null;
   /** Hired contractors (your team). */
   allies: TeamAgent[] = [];
@@ -366,6 +368,7 @@ export class Game {
     this.arena.sun.castShadow = this.quality.shadows;
     this.scene.background = new THREE.Color(this.arena.skyColor);
     this.renderer.toneMappingExposure = this.arena.exposure ?? 1.05;
+    if (this.arena.envIntensity !== undefined) this.scene.environmentIntensity = this.arena.envIntensity;
     // View distance: fewer distant rooms drawn, a closer haze hides where they stop.
     const vd = VIEW_DISTANCE[this.gfx.viewDistance];
     this.scene.fog = new THREE.Fog(this.arena.skyColor, vd.fogNear, vd.fogFar);
@@ -568,13 +571,11 @@ export class Game {
       lowSpec: this.mobile,
       weaponData: (id) => this.weapons.weapons.find((w) => w.data.id === id)?.data,
     };
+    const oldSable = new URLSearchParams(location.search).has('oldsable');
     for (const spawn of this.arena.squads) {
-      const squad = new BlackDivision(
-        this.soldierDeps,
-        spawn.route,
-        spawn.spawnIndex,
-        () => this.camera.eye,
-      );
+      const squad = oldSable
+        ? new BlackDivision(this.soldierDeps, spawn.route, spawn.spawnIndex, () => this.camera.eye)
+        : new TacticalSable(this.soldierDeps, spawn.route, spawn.spawnIndex, () => this.labPlayerC(), () => this.camera.eye);
       squad.onRadio = (text) => this.status.radio(text);
       this.squads.push(squad);
     }
@@ -904,6 +905,14 @@ export class Game {
   }
 
   /** You, as the AI sees you (identity for contacts; positions only through its senses). */
+  /** The player as a combatant for the lab's SABLE (alive / downed kept current). */
+  private labPlayerC(): Combatant {
+    const pc = (this.playerC ??= this.makePlayerC());
+    pc.alive = !this.health.dead;
+    pc.downed = this.health.downed;
+    return pc;
+  }
+
   makePlayerC(): Combatant {
     const pl = this.player;
     return {
@@ -936,6 +945,7 @@ export class Game {
     for (const a of this.allies) yield a.bot;
     if (this.match) for (const a of this.match.agents()) yield a.bot;
     if (this.aiTest) yield* this.aiTest.bots();
+    for (const s of this.squads) if (s instanceof TacticalSable) for (const a of s.agents) yield a.bot;
   }
 
   /** What the AI test harness needs from the game. */

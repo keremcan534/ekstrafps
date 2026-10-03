@@ -293,11 +293,14 @@ export class MainMenu {
     const o = this.opts;
     this.panel.innerHTML = '<div class="panel-head">OPERATIONS<i></i></div><div class="panel-label">AREA</div>';
     const maps = el('div', 'gcards', this.panel);
+    // In an AI watch scenario the map / mode cards lead back to the normal game.
+    const here = new URLSearchParams(location.search);
+    const watching = here.has('aitest') || here.has('watch');
     for (const [id, m] of Object.entries(MAPS)) {
-      const c = el('button', `gcard ${id === o.map ? 'active' : ''}`, maps, `<b>${m.name}</b><em>${m.tag}</em><p>${m.text}</p><span class="gbtn-shine"></span>`);
+      const c = el('button', `gcard ${id === o.map && !watching ? 'active' : ''}`, maps, `<b>${m.name}</b><em>${m.tag}</em><p>${m.text}</p><span class="gbtn-shine"></span>`);
       c.addEventListener('click', (e) => {
         e.stopPropagation();
-        if (id === o.map) return;
+        if (id === o.map && !watching) return;
         store('weaponlab.map', id);
         const p = new URLSearchParams(location.search);
         p.delete('aitest');
@@ -311,7 +314,6 @@ export class MainMenu {
     // Watch the AI: spectator scenarios (WASD fly, Shift fast, Space / C up and down).
     el('div', 'panel-label', this.panel, 'AI WATCH');
     const watch = el('div', 'gcards', this.panel);
-    const here = new URLSearchParams(location.search);
     for (const [id, w] of Object.entries(WATCH)) {
       const on = id === 'match' ? here.has('watch') : here.get('aitest') === id;
       const c = el('button', `gcard small ${on ? 'active' : ''}`, watch, `<b>${w.name}</b><em>${w.tag}</em><p>${w.text}</p><span class="gbtn-shine"></span>`);
@@ -325,10 +327,10 @@ export class MainMenu {
       el('div', 'panel-label', this.panel, 'MODE');
       const modes = el('div', 'gcards', this.panel);
       for (const [id, m] of Object.entries(MODES)) {
-        const c = el('button', `gcard small ${id === o.mode ? 'active' : ''}`, modes, `<b>${m.name}</b><em>${m.tag}</em><p>${m.text}</p><span class="gbtn-shine"></span>`);
+        const c = el('button', `gcard small ${id === o.mode && !watching ? 'active' : ''}`, modes, `<b>${m.name}</b><em>${m.tag}</em><p>${m.text}</p><span class="gbtn-shine"></span>`);
         c.addEventListener('click', (e) => {
           e.stopPropagation();
-          if (id === o.mode) return;
+          if (id === o.mode && !watching) return;
           store('weaponlab.mode', id);
           const p = new URLSearchParams(location.search);
           p.delete('aitest');
