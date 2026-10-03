@@ -112,7 +112,8 @@ const ROOMS: RoomDef[] = [
   { id: 'power', name: 'Power Plant', rect: [-40, -86, 40, -66], h: 12, style: 'factory', zone: 'power' },
 ];
 
-const buy = (a: string, b: string, at: number, cost: number, width = 4): LinkDef => ({ a, b, at, width, kind: 'buy', cost });
+/** Shutter prices: the listed price × 0.7 (750 → 500, 1000 → 700, 1250 → 900, 1500 → 1050). */
+const buy = (a: string, b: string, at: number, cost: number, width = 4): LinkDef => ({ a, b, at, width, kind: 'buy', cost: Math.round((cost * 0.7) / 50) * 50 });
 const open = (a: string, b: string, at: number, width: number, height = 6): LinkDef => ({ a, b, at, width, kind: 'open', height });
 
 const LINKS: LinkDef[] = [

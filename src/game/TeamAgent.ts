@@ -417,7 +417,14 @@ export class TeamAgent {
       else this.moveTo(pl.at, 1.2, pl.kind === 'regroup' || pl.kind === 'hunt' ? RUN : JOG);
     } else if (o.kind === 'follow') {
       const l = o.leader();
-      if (l) {
+      const prey = l ? this.preyNear(world, l.pos, dt) : null;
+      if (prey) {
+        // Not just tailing the leader: an awake robot close to them or to us gets dealt
+        // with (once it's in sight the tactical mind above takes the fight).
+        this.following = false;
+        this.moveTo(prey.pos, 5, JOG);
+        look = prey.aim;
+      } else if (l) {
         // Loose slot behind/beside the leader; spacing grows with caution. Friendly
         // squads get theirs from the squad brain (out of your fire lane, corridor-aware).
         const fslot = this.bot.squad?.friendly ? this.bot.squad.formationSlot(this.bot) : null;
@@ -475,6 +482,27 @@ export class TeamAgent {
     }
     const running = Math.hypot(s.vel.x, s.vel.z) > 3;
     s.update(dt, this.tgt, mates, running ? null : look, running ? this.carry : 'ready', false);
+  }
+
+  private prey: Combatant | null = null;
+  private preyTimer = 0;
+
+  /** The nearest robot within 20 m of us and 26 m of the leader (re-checked twice a second). */
+  private preyNear(world: Combatant[], leader: THREE.Vector3, dt: number): Combatant | null {
+    if ((this.preyTimer -= dt) > 0) return this.prey?.alive && !this.prey.downed ? this.prey : null;
+    this.preyTimer = 0.5;
+    const s = this.soldier;
+    let best: Combatant | null = null;
+    let bestD = Infinity;
+    for (const c of world) {
+      if (c.kind !== 'robot' || !c.alive || c.downed || c.team === s.team) continue;
+      const d = c.pos.distanceTo(s.pos);
+      if (d > 20 || d >= bestD || c.pos.distanceTo(leader) > 26) continue;
+      best = c;
+      bestD = d;
+    }
+    this.prey = best;
+    return best;
   }
 
   /** Path / steer toward a point; stop within `arrive` metres. */

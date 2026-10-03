@@ -68,6 +68,8 @@ export interface Wallet {
 
 /** Share of every teammate's earnings you also get (CoD-style team economy). */
 export const TEAM_SHARE = 0.15;
+/** Your squad's kills pay you half as much again (you lead it): the allies no longer take all the early robots' cash. */
+const LEADER_SHARE = 0.5;
 
 interface Door {
   slot: DoorSlot;
@@ -167,7 +169,8 @@ export class Survival {
       const earner = (owner && this.deps.walletOf?.(owner)) || (team === 'alpha' && !owner ? this.playerWallet : null);
       earner?.add(earner === this.playerWallet && this.perks.has('scavenger') ? Math.round(n * 1.1) : n);
       const share = Math.round(n * TEAM_SHARE);
-      if (share > 0) for (const m of members) if (m !== earner) m.add(share);
+      const lead = Math.round(n * LEADER_SHARE);
+      if (share > 0) for (const m of members) if (m !== earner) m.add(m === this.playerWallet ? lead : share);
     }
     const sc = (this.score.get(team) ?? 0) + n;
     this.score.set(team, sc);
@@ -785,18 +788,25 @@ export class Survival {
   }
 
   private pickMobSpawn(): SpawnPoint | null {
-    // Most mobs come for the player; in team games some go for the AI teams.
+    // Half the mobs come for the player's squad, the rest for the AI teams (an even split
+    // over four teams left you a quarter: too quiet, and your allies took what came).
     const foci = this.deps.focusProvider?.() ?? [];
-    const p = foci.length && Math.random() < foci.length / (foci.length + 1) ? foci[(Math.random() * foci.length) | 0] : this.deps.player.feet;
+    const p = foci.length && Math.random() < 0.5 ? foci[(Math.random() * foci.length) | 0] : this.deps.player.feet;
     const me = this.deps.player.feet;
-    // Lifts are natural entrances (doors open, they step out), so they only need
-    // some distance; bays and hatches must be out of sight.
+    // Only from zones the target can be reached from (a bay behind a shut door sends
+    // robots nowhere). Lifts are natural entrances (doors open, they step out): 5 m
+    // away is enough. Hatches: robots climb out of the floor, so in sight is fine past
+    // 10 m. Bays must be out of sight.
+    const reach = this.reachable(this.deps.map.zoneAt(p.x, p.z));
+    const ok = (kind: SpawnPoint['kind'], d: number, pos: THREE.Vector3) =>
+      kind === 'lift' ? d > 5 : kind === 'hatch' ? d > 10 || (d > 8 && this.hidden(pos)) : d > 8 && this.hidden(pos);
     const cands = this.deps.map.spawnPoints
-      .filter((s) => this.unlocked.has(s.zone) && !(s.openTimer && s.openTimer > 0))
+      .filter((s) => this.unlocked.has(s.zone) && (reach.size === 0 || reach.has(s.zone)) && !(s.openTimer && s.openTimer > 0))
       .map((s) => ({ s, d: s.pos.distanceTo(p) }))
-      .filter((x) => x.d < 60 && x.d > 8 && x.s.pos.distanceTo(me) > 8 && (x.s.kind === 'lift' || this.hidden(x.s.pos)))
+      .filter((x) => x.d < 75 && ok(x.s.kind, Math.min(x.d, x.s.pos.distanceTo(me)), x.s.pos))
       .sort((a, b) => a.d - b.d)
-      .slice(0, 4);
+      // The nearest several, so mobs come from more directions than the same two bays.
+      .slice(0, 7);
     return cands.length ? cands[(Math.random() * cands.length) | 0].s : null;
   }
 
@@ -892,7 +902,7 @@ export class Survival {
     const mega = this.elapsed < this.megaUntil ? 1.7 : 1;
     // Up to +20% as the match heats up.
     const grow = 1 + 0.2 * this.heat;
-    const cap = (teams ? (this.deps.mobile ? 16 : 30) : this.deps.mobile ? 10 : 18) * mega * grow;
+    const cap = (teams ? (this.deps.mobile ? 22 : 36) : this.deps.mobile ? 10 : 18) * mega * grow;
     // Between mobs the pressure never fully stops: lone hunters trickle in.
     if (this.phase === 'relax' || this.phase === 'fade') {
       this.trickleTimer -= dt;
@@ -900,14 +910,14 @@ export class Survival {
         // Team games: a steady stream from the start (the first minutes were too quiet).
         const early = teams && this.elapsed < 150 ? 0.55 : 1;
         this.trickleTimer = Math.max(3, 9 - this.threat * 0.8) * (0.7 + Math.random() * 0.6) * (teams ? 0.5 : 1) * early;
-        if (aggro < (2 + this.threat) * (teams ? 2.5 : 1) * grow) this.queueMobSpawn();
+        if (aggro < (2 + this.threat) * (teams ? 3.5 : 1) * grow) this.queueMobSpawn();
       }
     }
     switch (this.phase) {
       case 'relax':
         if (this.phaseTimer <= 0) {
           this.phase = 'buildup';
-          this.mobLeft = Math.max(4, Math.min(teams ? 80 : 45, Math.round((4 + this.threat * 2.6) * this.skill * (teams ? 1.8 : 1) * grow)));
+          this.mobLeft = Math.max(4, Math.min(teams ? 90 : 45, Math.round((4 + this.threat * 2.6) * this.skill * (teams ? 2.2 : 1) * grow)));
           this.spawnTimer = 0.5;
           this.deps.hud.horde();
           this.deps.audio.play('director.horde');
@@ -930,7 +940,8 @@ export class Survival {
       case 'fade':
         if (aggro <= (teams ? 6 : 1) && this.intensity < 0.35) {
           this.phase = 'relax';
-          this.phaseTimer = Math.max(8, 24 - this.threat * 2.5);
+          // Team games: short lulls (steady pressure; the trickle keeps going meanwhile).
+          this.phaseTimer = Math.max(8, 24 - this.threat * 2.5) * (teams ? 0.6 : 1);
           // Top up the wanderers in opened zones while it is quiet.
           let idle = 0;
           for (const r of this.robots) if (r.dormant) idle++;

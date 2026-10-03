@@ -18,7 +18,7 @@ export const AI_TUNING = {
   // --- Perception ---
   visionRange: 80,
   /** Multiplier on how fast a sighting turns into a confirmed contact. */
-  recognitionSpeed: 1,
+  recognitionSpeed: 1.2,
   /** Recognition at which a bot turns to look at something it half-saw. */
   suspicionLevel: 0.35,
   hearingScale: 1,
@@ -29,7 +29,7 @@ export const AI_TUNING = {
 
   // --- Combat ---
   /** Longest stay in one cover before probing / repositioning (personality scales it). */
-  maxHoldCover: 9,
+  maxHoldCover: 6,
   /** Never pick a new position more often than this. */
   minRepositionInterval: 2.5,
   /** Seconds exposed per peek (skill shortens it). */
@@ -41,15 +41,15 @@ export const AI_TUNING = {
   suppressedLevel: 0.55,
   /** Global multipliers on the tactical choices. */
   flankUtility: 1,
-  pushUtility: 1,
+  pushUtility: 1.35,
   retreatUtility: 1,
-  suppressUtility: 1,
+  suppressUtility: 0.7,
   /** A lost enemy is searched for this long. */
   searchDuration: 32,
   /** No tactical progress for this long with a known threat: the watchdog forces a new plan. */
-  passivityTimeout: 7,
+  passivityTimeout: 4.5,
   /** The squad changes plan when nobody made progress for this long. */
-  squadStallTime: 13,
+  squadStallTime: 9,
   /** Radio delay between a sighting and the squad knowing about it. */
   commDelayMin: 0.2,
   commDelayMax: 0.9,
