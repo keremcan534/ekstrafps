@@ -129,8 +129,28 @@ class Director implements FrameDirector {
     cam.updateMatrixWorld();
   }
 
+  /**
+   * Advance take camera `name`'s operator damping by one simulation frame (also on
+   * frames a partial capture does not render, so its framing matches a full capture).
+   */
+  trackCam(name: string): { pos: THREE.Vector3; target: THREE.Vector3; lens: number; roll?: number } | null {
+    const c = this.shot.cams![name];
+    if (c === 'pov') return null;
+    const want = c(this.ctx);
+    const d = this.damped.get(name);
+    const tau = this.shot.smooth ?? 0.45;
+    if (!d || tau <= 0) this.damped.set(name, { pos: want.pos.clone(), target: want.target.clone(), lens: want.lens });
+    else {
+      const k = 1 - Math.exp(-this.frameDt / tau);
+      d.pos.lerp(want.pos, k);
+      d.target.lerp(want.target, k * 0.8);
+      d.lens += (want.lens - d.lens) * k;
+    }
+    return { ...this.damped.get(name)!, roll: want.roll };
+  }
+
   /** Multi-camera take: render camera `name` for the current simulation frame. */
-  renderCam(name: string): void {
+  renderCam(name: string, track = true): void {
     const { shot, ctx, game } = this;
     const c = shot.cams![name];
     const cam = game.camera.camera;
@@ -142,18 +162,8 @@ class Director implements FrameDirector {
       cam.updateProjectionMatrix();
       cam.updateMatrixWorld();
     } else {
-      const want = c(ctx);
-      const d = this.damped.get(name);
-      const tau = shot.smooth ?? 0.45;
-      if (!d || tau <= 0) this.damped.set(name, { pos: want.pos.clone(), target: want.target.clone(), lens: want.lens });
-      else {
-        const k = 1 - Math.exp(-this.frameDt / tau);
-        d.pos.lerp(want.pos, k);
-        d.target.lerp(want.target, k * 0.8);
-        d.lens += (want.lens - d.lens) * k;
-      }
-      const s2 = this.damped.get(name)!;
-      this.applyCamera({ pos: s2.pos, target: s2.target, lens: s2.lens, roll: want.roll });
+      const s2 = track ? this.trackCam(name)! : { ...this.damped.get(name)!, roll: c(ctx).roll };
+      this.applyCamera({ pos: s2.pos, target: s2.target, lens: s2.lens, roll: s2.roll });
     }
     shot.beforeRender?.(ctx, name);
     ctx.post.set(shot.post?.(ctx, name) ?? {});
@@ -267,11 +277,27 @@ export async function runTrailer(game: Game): Promise<void> {
   const grab = () => new Promise<Blob>((res) => r.domElement.toBlob((b) => res(b!), 'image/jpeg', 0.93));
   const camNames = shot.cams ? Object.keys(shot.cams).filter((c) => !params.get('cams') || params.get('cams')!.split('.').includes(c)) : [];
   if (capture) {
+    // Partial captures (software rendering is slow): every frame is still simulated,
+    // but only frames inside &win=a-b,c-d (take seconds) or on every Nth frame
+    // (&every=N, a sparse overview for contact sheets) are rendered and saved, under
+    // their real frame index. &keep adds to the folder instead of clearing it.
+    const wins = (params.get('win') ?? '').split(',').filter(Boolean).map((w) => w.split(/(?<=\d)-/).map(Number) as [number, number]);
+    const every = Number(params.get('every') ?? 0);
+    const wanted = (i: number) => {
+      if (!wins.length && !every) return true;
+      const t = -handles + i / fps;
+      return (every > 0 && i % every === 0) || wins.some(([a, b]) => t >= a - 1e-6 && t <= b + 1e-6);
+    };
     const outs = shot.cams ? camNames.map((c) => `${id}-${c}`) : [id];
-    for (const o of outs) await fetch(`/__trailer/clear?shot=${o}`, { method: 'POST' });
+    if (!params.has('keep')) for (const o of outs) await fetch(`/__trailer/clear?shot=${o}`, { method: 'POST' });
     const t0 = performance.now();
     for (let i = 0; i < total; i++) {
       step(-handles + i / fps);
+      if (!wanted(i)) {
+        if (shot.cams) for (const c of camNames) director.trackCam(c);
+        if (i % 60 === 0) status.textContent = `${id} simulating ${i + 1}/${total}`;
+        continue;
+      }
       if (shot.cams) {
         for (const c of camNames) {
           director.renderCam(c);
@@ -311,8 +337,12 @@ export async function runTrailer(game: Game): Promise<void> {
   window.addEventListener('keydown', (e) => e.code === 'KeyR' && location.reload());
   (window as unknown as { __trailerSeek: (t: number) => void }).__trailerSeek = (t) => {
     // Jump forward (simulating every frame on the way, so physics stays real).
-    while (i < total && -handles + i / fps < t) step(-handles + i++ / fps);
-    if (shot.cams) director.renderCam(params.get('cam') ?? camNames[0]);
+    const cn = params.get('cam') ?? camNames[0];
+    while (i < total && -handles + i / fps < t) {
+      step(-handles + i++ / fps);
+      if (shot.cams && -handles + i / fps < t) director.trackCam(cn);
+    }
+    if (shot.cams) director.renderCam(cn);
   };
   tick();
 }
