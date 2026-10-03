@@ -1,11 +1,11 @@
 import * as THREE from 'three';
-import { GROUPS } from '../core/Physics';
-import { JOG, RUN, WALK, Soldier, type PlayerTarget, type SoldierDeps } from '../enemies/Soldier';
+import { JOG, RUN, SPRINT, WALK, Soldier, type PlayerTarget, type SoldierDeps } from '../enemies/Soldier';
 import type { SoldierPalette } from '../enemies/SoldierSkin';
 import type { DamageInfo } from '../targets/Humanoid';
 import type { WeaponData } from '../weapons/WeaponData';
 import { SIDEARM, type Errand } from './Errands';
 import type { Plan } from './Plans';
+import { Bot } from '../ai/Bot';
 
 /** Soldier → its operator (whose wallet a bullet's points go to). */
 export const agentBySoldier = new WeakMap<object, TeamAgent>();
@@ -23,6 +23,12 @@ export interface Combatant {
   downed: boolean;
   /** Melee damage (robot swings). */
   hit(damage: number, from: THREE.Vector3): void;
+  /** The object its bullets / noises carry as owner (player controller, soldier, robot). */
+  ref?: object;
+  /** Current velocity (vision notices movement). */
+  vel?: THREE.Vector3;
+  /** 0 standing .. 1 crouched (smaller, harder to notice). */
+  crouch?(): number;
 }
 
 export type Role = 'assault' | 'rifleman' | 'marksman' | 'medic';
@@ -70,27 +76,20 @@ export function randomPersonality(teamLoner = 0.15): Personality {
 }
 
 const pick = <T>(a: readonly T[]) => a[(Math.random() * a.length) | 0];
-const CONTACT_BOT = ['Contact, bot!', 'Robot, on me!', 'Tango moving!', 'Got one here!'];
-const CONTACT_SQUAD = ['Hostile squad!', 'Operators, contact!', 'Enemy team!', 'Shooters!'];
 const RELOAD = ['Reloading!', 'Changing mags!', 'Cover me, reloading!'];
-const HURT = ["I'm hit, falling back!", 'Taking fire, backing off!', 'Need a sec, I\'m hurt!'];
 const CLEAR = ['Clear.', 'Area clear.', 'Got him.', 'Tango down.'];
 
 /** Where each squad slot keeps watch while the squad is standing (radians off the leader's facing). */
 const WATCH = [-1.15, 1.15, Math.PI, 0.35, -0.35];
 
 /**
- * One AI operator on any team. The team brain gives orders (follow the leader,
- * go somewhere, hold); the agent fights on its own like a person would:
- * - picks the nearest hostile it can see; on calm, close targets goes for the
- *   head (headshots pay more);
- * - backs off from robots while shooting (they only hit up close) and falls back
- *   when badly hurt; assaults push in, riflemen strafe between bursts, careful
- *   ones crouch-peek, marksmen settle and stay low;
- * - reloads in quiet moments, not in the middle of a fight;
+ * One AI operator on any team: the body (Soldier), the economy (money, errands,
+ * plans), revives and radio — and a tactical mind (Bot: perception, memory,
+ * utility decisions, cover, squad) that takes over whenever there's something
+ * to deal with. Calm, it follows its team's orders:
+ * - reloads in quiet moments, shops with its own money, works its plan;
  * - when following, doesn't shadow every step: moves only once the gap opens, at
- *   the leader's pace, and keeps watch over its own sector while the squad stands;
- * - revives downed teammates, shops with its own money (errands), talks on the radio.
+ *   the leader's pace, and keeps watch over its own sector while the squad stands.
  */
 export class TeamAgent {
   readonly soldier: Soldier;
@@ -115,34 +114,23 @@ export class TeamAgent {
   retreating = false;
   /** Elite operator: jump-peeks, ADAD strafes, snaps to heads, reacts fast. */
   chad = false;
+  /** Tactical mind (perception, memory, decisions). */
+  readonly bot: Bot;
   /** Aim skill before match heat scales it. */
   baseSkill = 1;
   /** Extracted: off the map (no body, no hits, not counted). */
   gone = false;
   private hopT = -1;
   private hopCd = 1 + Math.random() * 2;
-  private adadT = 0;
-  private adadSide = 1;
   /** Called when this operator first acquires the player as a target. */
   onSpotPlayer: (() => void) | null = null;
-  /** Shared by the squad: the operator everyone shoots first (focus fire). */
-  squad: { focus: Combatant | null; focusTime: number } | null = null;
   /** How this operator carries the gun on the move. */
   readonly carry: 'low' | 'high';
-  /** Shot at from here, recently (turn to it, hold the angle, push or wait). */
-  private alertPos = new THREE.Vector3();
-  private alertTime = 0;
-  /** Seconds since last hurt (nobody kneels to revive under fire). */
-  private hurtAgo = 99;
   private tgt: PlayerTarget = {
     feet: new THREE.Vector3(), head: new THREE.Vector3(), chest: new THREE.Vector3(), velocity: new THREE.Vector3(),
     sprinting: false, crouching: false, alive: false,
   };
-  private scanTimer = Math.random() * 0.25;
   private repath = 0;
-  private strafeTimer = 0;
-  private peekTimer = 0;
-  private kiteTimer = 0;
   private sayTimer = Math.random() * 3;
   private hadTarget = false;
   private following = false;
@@ -151,8 +139,6 @@ export class TeamAgent {
   private watchAngle = 0;
   private watchPt = new THREE.Vector3();
   private slot = new THREE.Vector3();
-  private eye = new THREE.Vector3();
-  private tmp = new THREE.Vector3();
   private aimPt = new THREE.Vector3();
 
   constructor(
@@ -162,11 +148,16 @@ export class TeamAgent {
     readonly personality: Personality,
     palette?: SoldierPalette,
     hooks?: { onKilled?(a: TeamAgent): void; onDowned?(a: TeamAgent): void; onHit?(a: TeamAgent, info: DamageInfo, killed: boolean): void },
+    teamStyle?: string,
   ) {
     this.soldier = new Soldier(deps, 20 + index, {
       onSpotted: () => {},
-      onDamaged: (_s, info) => hooks?.onHit?.(this, info, false),
+      onDamaged: (_s, info) => {
+        this.bot.onDamaged(info);
+        hooks?.onHit?.(this, info, false);
+      },
       onKilled: (_s, info) => {
+        this.bot.onDeath();
         hooks?.onHit?.(this, info, true);
         hooks?.onKilled?.(this);
       },
@@ -194,7 +185,11 @@ export class TeamAgent {
         return soldier.downed;
       },
       hit: (d, from) => soldier.body.meleeHit(d, from),
+      ref: soldier,
+      vel: soldier.vel,
+      crouch: () => soldier.stance,
     };
+    this.bot = new Bot(this, deps, teamStyle);
   }
 
   get alive(): boolean {
@@ -223,13 +218,18 @@ export class TeamAgent {
     return h.health / h.maxHealth;
   }
 
+  /** Sentry heading while holding (scans around it, doesn't drift off). */
+  private holdYaw = 0;
+
   spawn(at: THREE.Vector3, yaw: number): void {
+    this.holdYaw = yaw;
     if (this.gone) {
       this.gone = false;
       this.soldier.body.setActive(true);
     }
     this.soldier.spawn(at, yaw);
     this.soldier.state = 'combat';
+    this.bot.reset();
     this.target = null;
     this.reviveTarget = null;
     this.reviveTime = 0;
@@ -243,16 +243,16 @@ export class TeamAgent {
     this.points += n;
   }
 
-  /** Taking fire from `from` (or a teammate is): turn to it, rescan now. */
-  alert(from: THREE.Vector3, self = false): void {
-    this.alertPos.copy(from);
-    this.alertTime = 7;
-    this.scanTimer = 0;
-    if (self) this.hurtAgo = 0;
+  /** Told over the radio to watch a point (no identity, no exact position). */
+  alert(from: THREE.Vector3): void {
+    this.bot.hearAlert(from);
   }
 
-  get alerted(): boolean {
-    return this.alertTime > 0;
+  /** Elite jump-peek (the bot asks; the hop arc runs here). */
+  tryHop(): void {
+    if (this.hopT >= 0 || this.hopCd > 0) return;
+    this.hopT = 0;
+    this.hopCd = 1.4 + Math.random() * 2.2;
   }
 
   /** Radio line, rate-limited so the squad doesn't talk over itself. */
@@ -287,8 +287,7 @@ export class TeamAgent {
     if (this.gone) return;
     const s = this.soldier;
     this.sayTimer -= dt;
-    this.alertTime -= dt;
-    this.hurtAgo += dt;
+    this.hopCd -= dt;
     // Hop arc (0.5 s, ~0.5 m).
     if (this.hopT >= 0) {
       this.hopT += dt;
@@ -298,68 +297,18 @@ export class TeamAgent {
     }
     if (!s.alive || s.downed) {
       this.retreating = false;
+      this.target = null;
       s.update(dt, this.tgt, mates, null, 'low', false);
       return;
     }
+    const bot = this.bot;
+    bot.sense(dt, world);
 
-    // --- Target: nearest hostile it can see (others' teams, robots), not the downed.
-    this.scanTimer -= dt;
-    if (this.scanTimer <= 0 || (this.target && (!this.target.alive || this.target.downed))) {
-      const lost = this.target && (!this.target.alive || this.target.downed);
-      this.scanTimer = 0.25;
-      this.eye.copy(s.headPos).y += 0.1;
-      let best: Combatant | null = null;
-      const range = this.alertTime > 0 ? Math.max(this.range, 55) : this.range;
-      let bd = Infinity;
-      const focus = this.squad?.focus;
-      for (const c of world) {
-        if (c.team === this.team || !c.alive || c.downed) continue;
-        const d = c.pos.distanceToSquared(s.pos);
-        if (d > range * range) continue;
-        // Weighting: the squad's focus target and whoever is shooting at us come first.
-        let score = d;
-        if (c === focus) score *= 0.45;
-        if (this.alertTime > 0 && c.pos.distanceToSquared(this.alertPos) < 64) score *= 0.35;
-        if (c.kind === 'robot' && this.alertTime > 0) score *= 1.6;
-        if (score >= bd) continue;
-        if (!this.deps.physics.lineOfSight(this.eye, c.aim, GROUPS.sight) && !this.deps.physics.lineOfSight(this.eye, c.head, GROUPS.sight)) continue;
-        bd = score;
-        best = c;
-      }
-      if (best && best.kind !== 'robot' && this.squad) {
-        this.squad.focus = best;
-        this.squad.focusTime = 6;
-      }
-      if (best && best !== this.target) {
-        s.onAcquire();
-        s.visibleTime = 0;
-        if (this.chad) {
-          s.visibleTime = 1.6; // already settled: no warm-up spread
-          (s as unknown as { reactionTimer: number }).reactionTimer = 0.18 + Math.random() * 0.12;
-        }
-        if (best.kind === 'player') this.onSpotPlayer?.();
-        if (!this.hadTarget && Math.random() < 0.7) this.say(pick(best.kind === 'robot' ? CONTACT_BOT : CONTACT_SQUAD));
-      }
-      if (!best && lost && Math.random() < 0.4) this.say(pick(CLEAR));
-      this.target = best;
-      this.hadTarget = !!best;
-    }
-    const t = this.target;
-    this.tgt.alive = !!t;
-    if (t) {
-      this.tgt.feet.copy(t.pos);
-      this.tgt.chest.copy(t.aim);
-      this.tgt.head.copy(t.head);
-      s.visibleTime += dt;
-    }
-
-    // --- Revive a teammate (unless something is right on top of us).
+    // --- Revive a teammate (only when it's safe: no threat in view, no bullets flying).
     const rv = this.reviveTarget;
-    // Nobody kneels next to a body while being shot at or with a hostile in view:
-    // clear the threat first (that's how revives get baited).
-    const safe = !t && this.alertTime <= 0 && this.hurtAgo > 4;
-    if (rv && rv.downed && safe) {
+    if (rv && rv.downed && bot.safeToRevive()) {
       this.retreating = false;
+      this.target = null;
       const d = Math.hypot(rv.pos.x - s.pos.x, rv.pos.z - s.pos.z);
       this.repath -= dt;
       if (d > 1.3) {
@@ -383,115 +332,24 @@ export class TeamAgent {
         this.reviveTarget = null;
         this.reviveTime = 0;
         s.crouchTarget = 0;
+        bot.progress('revived');
       }
       return;
     }
     if (rv && !rv.downed) this.reviveTarget = null;
 
-    // --- Fighting: move like a person.
-    if (t) {
-      const dist = t.pos.distanceTo(s.pos);
-      const p = this.personality;
-      const hp = this.hp;
-      this.strafeTimer -= dt;
-      this.peekTimer -= dt;
-      // Robots only hurt up close: keep the gap while shooting. Badly hurt: fall back.
-      const kiteRange = 4.2 + (1 - p.aggression) * 2.5;
-      const kite = (t.kind === 'robot' && dist < kiteRange) || (hp < 0.35 && dist < 18 && p.aggression < 0.95);
-      if (kite) {
-        if (!this.retreating && hp < 0.35) this.say(pick(HURT), true);
-        this.retreating = true;
-        s.crouchTarget = 0;
-        this.kiteTimer -= dt;
-        if (this.kiteTimer <= 0) {
-          this.kiteTimer = 0.3;
-          const ax = s.pos.x - t.pos.x;
-          const az = s.pos.z - t.pos.z;
-          const al = Math.hypot(ax, az) || 1;
-          // Straight back first, then angled escapes (never into a wall).
-          for (const ang of [0, 0.6, -0.6, 1.2, -1.2, 1.9, -1.9]) {
-            const c = Math.cos(ang);
-            const sn = Math.sin(ang);
-            const dx = (ax / al) * c - (az / al) * sn;
-            const dz = (ax / al) * sn + (az / al) * c;
-            const x = s.pos.x + dx * 3.5;
-            const z = s.pos.z + dz * 3.5;
-            if (this.deps.nav.walkable(x, z) && this.deps.nav.clearLine(s.pos.x, s.pos.z, x, z)) {
-              s.steerTo(this.tmp.set(x, 0, z), hp < 0.35 ? RUN : JOG);
-              break;
-            }
-          }
-        }
-      } else {
-        this.retreating = false;
-        if (p.role === 'marksman') {
-          s.stop();
-          s.crouchTarget = dist > 12 ? 1 : 0;
-        } else if (p.aggression > 0.6 && dist > 11) {
-          // Push in.
-          s.crouchTarget = 0;
-          this.repath -= dt;
-          if (this.repath <= 0) {
-            if (this.deps.nav.clearLine(s.pos.x, s.pos.z, t.pos.x, t.pos.z)) s.steerTo(t.pos, JOG);
-            else s.setPath(t.pos, JOG);
-            this.repath = 0.8 + Math.random() * 0.4;
-          }
-        } else if (this.strafeTimer <= 0) {
-          // Side-step between bursts; careful operators crouch-peek instead.
-          this.strafeTimer = 1.4 + Math.random() * 1.8;
-          if (p.aggression < 0.35 && Math.random() < 0.5) {
-            s.stop();
-            this.peekTimer = 1.0 + Math.random();
-          } else {
-            const dx = t.pos.x - s.pos.x;
-            const dz = t.pos.z - s.pos.z;
-            const l = Math.hypot(dx, dz) || 1;
-            const side = Math.random() < 0.5 ? -1 : 1;
-            const r = 1.8 + Math.random() * 2;
-            this.tmp.set(s.pos.x + (-dz / l) * side * r, 0, s.pos.z + (dx / l) * side * r);
-            if (this.deps.nav.clearLine(s.pos.x, s.pos.z, this.tmp.x, this.tmp.z)) s.steerTo(this.tmp, WALK);
-          }
-        }
-        if (p.role !== 'marksman') s.crouchTarget = this.peekTimer > 0 && this.peekTimer < 0.6 ? 1 : this.peekTimer > 0 ? 0 : s.crouchTarget > 0.5 && dist > 6 ? 1 : 0;
-      }
-      // Elite: jump-peek every few seconds and ADAD strafe between shots.
-      if (this.chad && !kite) {
-        this.hopCd -= dt;
-        if (this.hopCd <= 0 && this.hopT < 0) {
-          this.hopT = 0;
-          this.hopCd = 1.4 + Math.random() * 2.2;
-        }
-        this.adadT -= dt;
-        if (this.adadT <= 0) {
-          this.adadT = 0.22 + Math.random() * 0.25;
-          this.adadSide = -this.adadSide;
-          const dx = t.pos.x - s.pos.x;
-          const dz = t.pos.z - s.pos.z;
-          const l = Math.hypot(dx, dz) || 1;
-          this.tmp.set(s.pos.x + (-dz / l) * this.adadSide * 1.4, 0, s.pos.z + (dx / l) * this.adadSide * 1.4);
-          if (this.deps.nav.clearLine(s.pos.x, s.pos.z, this.tmp.x, this.tmp.z)) s.steerTo(this.tmp, JOG);
-        }
-      }
-      // Settled on a close, calm target: go for the head (pays more, kills faster). Chads always do.
-      const head = this.chad ? dist < 45 : !kite && s.visibleTime > 1.2 && dist < 24 && p.role !== 'assault';
-      s.update(dt, this.tgt, mates, head ? this.tgt.head : this.tgt.chest, 'aim', true);
+    // --- Something to deal with: the tactical mind drives.
+    if (bot.think(dt)) {
+      this.target = bot.engaged ?? (bot.target && bot.target.confidence > 0.3 ? bot.target.target : null);
+      this.retreating = bot.decision === 'RETREAT';
+      this.hadTarget = !!this.target;
+      bot.drive(dt, mates);
       return;
     }
+    if (this.hadTarget && Math.random() < 0.4) this.say(pick(CLEAR));
+    this.hadTarget = false;
+    this.target = null;
     this.retreating = false;
-
-    // --- Shot at from somewhere we can't see: aim that way. Pushers close in, the rest hold the angle.
-    if (this.alertTime > 0) {
-      this.aimPt.copy(this.alertPos).setY(1.3);
-      if (this.personality.aggression > 0.6 && this.distTo(this.alertPos) > 6) {
-        s.crouchTarget = 0;
-        this.moveTo(this.alertPos, 4, JOG);
-      } else {
-        s.stop();
-        s.crouchTarget = this.personality.aggression < 0.4 ? 1 : 0;
-      }
-      s.update(dt, this.tgt, mates, this.aimPt, 'aim', false);
-      return;
-    }
 
     // --- No contact: top up the mag, shopping trip, otherwise follow orders.
     s.crouchTarget = 0;
@@ -541,14 +399,19 @@ export class TeamAgent {
     } else if (o.kind === 'follow') {
       const l = o.leader();
       if (l) {
-        // Loose slot behind/beside the leader; spacing grows with caution.
-        const side = this.index % 2 === 0 ? 1 : -1;
-        const spread = 1.8 + (1 - this.personality.aggression) * 0.8;
-        const back = 2.2 + Math.floor((this.index % 4) / 2) * 1.7;
-        const fx = Math.sin(l.yaw);
-        const fz = Math.cos(l.yaw);
-        this.slot.set(l.pos.x - fx * back + fz * side * spread, 0, l.pos.z - fz * back - fx * side * spread);
-        if (!this.deps.nav.walkable(this.slot.x, this.slot.z)) this.slot.copy(l.pos);
+        // Loose slot behind/beside the leader; spacing grows with caution. Friendly
+        // squads get theirs from the squad brain (out of your fire lane, corridor-aware).
+        const fslot = this.bot.squad?.friendly ? this.bot.squad.formationSlot(this.bot) : null;
+        if (fslot) this.slot.copy(fslot);
+        else {
+          const side = this.index % 2 === 0 ? 1 : -1;
+          const spread = 1.8 + (1 - this.personality.aggression) * 0.8;
+          const back = 2.2 + Math.floor((this.index % 4) / 2) * 1.7;
+          const fx = Math.sin(l.yaw);
+          const fz = Math.cos(l.yaw);
+          this.slot.set(l.pos.x - fx * back + fz * side * spread, 0, l.pos.z - fz * back - fx * side * spread);
+          if (!this.deps.nav.walkable(this.slot.x, this.slot.z)) this.slot.copy(l.pos);
+        }
         const d = this.distTo(this.slot);
         // Don't shadow every step: wait for the gap to open, then go after a beat.
         if (!this.following && d > 3.2) {
@@ -559,7 +422,7 @@ export class TeamAgent {
           this.followDelay -= dt;
           if (this.followDelay <= 0) {
             const ls = l.speed ?? 0;
-            const sp = d > 9 || ls > 3.2 ? RUN : d > 5 || ls > 1.9 ? JOG : WALK;
+            const sp = d > 14 ? SPRINT : d > 9 || ls > 3.2 ? RUN : d > 5 || ls > 1.9 ? JOG : WALK;
             this.moveTo(this.slot, 0.9, sp);
             if (d < 1.1) {
               this.following = false;
@@ -580,7 +443,17 @@ export class TeamAgent {
         }
       }
     } else if (o.kind === 'goto') this.moveTo(o.at, 0.8, o.speed);
-    else s.stop();
+    else {
+      s.stop();
+      // Holding: scan the area like a sentry (new direction every few seconds).
+      this.watchTimer -= dt;
+      if (this.watchTimer <= 0) {
+        this.watchTimer = 2.5 + Math.random() * 3.5;
+        this.watchAngle = this.holdYaw + (Math.random() - 0.5) * 2.6;
+      }
+      this.watchPt.set(s.pos.x + Math.sin(this.watchAngle) * 10, 1.3, s.pos.z + Math.cos(this.watchAngle) * 10);
+      look = this.watchPt;
+    }
     const running = Math.hypot(s.vel.x, s.vel.z) > 3;
     s.update(dt, this.tgt, mates, running ? null : look, running ? this.carry : 'ready', false);
   }

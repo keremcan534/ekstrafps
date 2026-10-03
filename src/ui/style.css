@@ -325,3 +325,20 @@ canvas { display: block; touch-action: none; }
 /* Map polish: readable legend */
 .map-legend { font-size: 13px !important; gap: 14px !important; padding: 8px 14px; background: rgba(8,9,11,0.8); border-radius: 6px; }
 .map-legend b { display: inline-block; width: 16px; text-align: center; font-weight: 900; }
+
+/* --- AI debug view (F4 / ?aidebug) and AI test panel (?aitest) --- */
+.ai-debug { position: absolute; inset: 0; pointer-events: none; z-index: 30; font: 600 10px/1.25 ui-monospace, Consolas, monospace; }
+.ai-debug-panel { position: absolute; left: 50%; top: 6px; transform: translateX(-50%); pointer-events: auto; background: rgba(8,10,14,0.78); color: #cfe6ff; padding: 5px 10px; border: 1px solid rgba(120,170,255,0.35); border-radius: 6px; white-space: nowrap; }
+.ai-debug-panel label { margin-left: 9px; cursor: pointer; }
+.ai-debug-panel input { vertical-align: -2px; margin-right: 3px; }
+.ai-debug-panel span { margin-left: 10px; color: #8fa3b8; }
+.ai-label { position: absolute; left: 0; top: 0; white-space: pre; padding: 3px 6px; background: rgba(6,8,12,0.72); color: #e8eef5; border-left: 3px solid #8fa3b8; border-radius: 3px; will-change: transform; }
+.ai-label[data-team="alpha"] { border-left-color: #4fa8ff; }
+.ai-label[data-team="bravo"] { border-left-color: #ffa040; }
+.ai-label[data-team="charlie"] { border-left-color: #9dff4a; }
+.ai-label[data-team="delta"] { border-left-color: #d06aff; }
+.ai-label[data-team="bd"] { border-left-color: #ff3b2f; }
+.ai-label.watchdog { background: rgba(120,10,10,0.85); color: #fff; }
+.ai-test-panel { position: fixed; left: 10px; bottom: 10px; z-index: 40; max-width: 760px; padding: 8px 12px; background: rgba(8,10,14,0.82); color: #d8e4f0; font: 600 11px/1.45 ui-monospace, Consolas, monospace; border: 1px solid rgba(255,255,255,0.15); border-radius: 6px; pointer-events: none; }
+.ai-test-panel i { color: #9dff4a; font-style: normal; }
+.ai-test-panel small { color: #8fa3b8; }

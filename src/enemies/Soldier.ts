@@ -18,6 +18,7 @@ import type { NavGrid } from '../ai/NavGrid';
 import { soldierMaterials, soldierSkin, type SoldierMaterials, type SoldierPalette } from './SoldierSkin';
 import { OBSTACLES, obstacleAt } from '../game/Obstacles';
 import { lightSources, makeBeam, weaponLight, type LightSource } from '../fx/WeaponLights';
+import { aiWorld } from '../ai/World';
 
 /** What the AI knows about the player, refreshed by the squad every frame. */
 export interface PlayerTarget {
@@ -67,6 +68,8 @@ export interface SoldierHooks {
 export const WALK = 1.45;
 export const JOG = 2.2;
 export const RUN = 3.7;
+/** Catch-up sprint (falling behind the squad / the player). */
+export const SPRINT = 5.2;
 const HEAD_OFFSET = new THREE.Vector3(0, 0.15, 0.04);
 
 const v3 = () => new THREE.Vector3();
@@ -135,6 +138,12 @@ export class Soldier implements LightSource {
   private pelletSpread = 0;
   private fireSound = 'bd.fire';
   weaponId = 'bd_carbine';
+  /** What the AI knows about its gun: pistol / smg / shotgun / rifle / dmr / bolt. */
+  weaponClass = 'rifle';
+  /** Integrally suppressed (heard much closer). */
+  private suppressed = false;
+  /** Burst length multiplier (skilled shooters tap at range). */
+  burstScale = 1;
   ammo = 30;
   reloadTimer = 0;
   /** Spare rounds (Infinity: issued weapon / sidearm). */
@@ -307,6 +316,8 @@ export class Soldier implements LightSource {
     this.mountRig();
     this.weaponId = data.id;
     this.pistol = data.category === 'pistol';
+    this.weaponClass = data.fireModes.includes('bolt') ? 'bolt' : data.category === 'rifle' && !data.fireModes.includes('auto') ? 'dmr' : data.category;
+    this.suppressed = /val/i.test(data.id);
     this.ammoData = getAmmo(data.ammo);
     this.magSize = data.magazineSize;
     const manual = data.fireModes.includes('bolt') || data.fireModes.includes('pump');
@@ -322,6 +333,11 @@ export class Soldier implements LightSource {
 
   get headPos(): THREE.Vector3 {
     return this.body.part('head').worldPos;
+  }
+
+  /** 0 standing .. 1 crouched. */
+  get stance(): number {
+    return this.crouch;
   }
 
   get chestPos(): THREE.Vector3 {
@@ -434,7 +450,9 @@ export class Soldier implements LightSource {
   // ------------------------------------------------------------ movement
 
   setPath(to: THREE.Vector3, speed: number): boolean {
-    const p = this.deps.nav.findPath(this.pos, to);
+    // Around other teams' barricades when there's a way; through them (breaching) when there isn't.
+    let p = this.deps.nav.findPath(this.pos, to, 6000, OBSTACLES.length ? this.team : undefined);
+    if (!p && OBSTACLES.length) p = this.deps.nav.findPath(this.pos, to);
     this.path = p;
     this.pathIndex = 0;
     this.moveSpeed = speed;
@@ -645,7 +663,10 @@ export class Soldier implements LightSource {
     const step = Math.floor(this.stride / Math.PI);
     if (step !== this.lastStep) {
       this.lastStep = step;
-      if (v > 0.8) this.deps.audio.play('foley.step', { position: this.pos, volume: (v > 3 ? 0.6 : v > 1.8 ? 0.35 : 0.2) * (0.8 + Math.random() * 0.4) });
+      if (v > 0.8) {
+        this.deps.audio.play('foley.step', { position: this.pos, volume: (v > 3 ? 0.6 : v > 1.8 ? 0.35 : 0.2) * (0.8 + Math.random() * 0.4) });
+        aiWorld.emit(v > 3 ? 'sprint' : 'step', this.pos, this.team, this, this.crouch > 0.5 ? 0.4 : v > 1.8 ? 1 : 0.7);
+      }
     }
     this.strideAmount += (clamp(v / 1.6, 0, v > 3 ? 1.25 : 1) - this.strideAmount) * Math.min(1, dt * 8);
     const sin = Math.sin(this.yaw);
@@ -717,6 +738,16 @@ export class Soldier implements LightSource {
     this.reactionTimer = 0.55 + Math.random() * 0.45;
   }
 
+  /** The brain sets the reaction delay (expected contacts are fast, surprises slow). */
+  react(seconds: number): void {
+    this.reactionTimer = seconds;
+  }
+
+  /** Aim settle: how long the target counts as already tracked (tighter first shots). */
+  settle(seconds: number): void {
+    this.visibleTime = seconds;
+  }
+
   /** Ammo cache: full spare rounds again. */
   refillReserve(): void {
     this.reserve = this.maxReserve;
@@ -731,6 +762,7 @@ export class Soldier implements LightSource {
     this.reloadTimer = this.reloadTime;
     this.burstLeft = 0;
     this.deps.audio.play('reload.rifle.magout', { position: this.pos, volume: 0.6 });
+    aiWorld.emit('reload', this.pos, this.team, this);
     return true;
   }
 
@@ -760,20 +792,31 @@ export class Soldier implements LightSource {
     if (this.burstLeft <= 0) {
       if (this.time < this.burstPause) return;
       const dist = this.pos.distanceTo(player.feet);
-      this.burstLeft = this.semi ? 1 : dist > 35 ? 1 + ((Math.random() * 2) | 0) : dist > 15 ? 2 + ((Math.random() * 2) | 0) : 3 + ((Math.random() * 3) | 0);
+      const base = this.semi ? 1 : dist > 35 ? 1 + ((Math.random() * 2) | 0) : dist > 15 ? 2 + ((Math.random() * 2) | 0) : 3 + ((Math.random() * 3) | 0);
+      this.burstLeft = Math.max(1, Math.round(base * (dist > 15 ? this.burstScale : 1)));
     }
     // Muzzle and bore.
     this.rig.muzzle.getWorldPosition(this.muzzle);
     this.rifleRoot.getWorldQuaternion(this.q);
     this.dir.set(0, 0, 1).applyQuaternion(this.q);
-    // Don't shoot through a squadmate.
+    // Don't shoot through a squadmate (or the friendly player): a narrow lane check.
+    const range = this.muzzle.distanceTo(player.chest);
     for (const m of mates) {
       if (m === this || !m.alive) continue;
       const to = this.tmp.subVectors(m.chestPos, this.muzzle);
       const along = to.dot(this.dir);
-      if (along > 0 && along < this.muzzle.distanceTo(player.chest) && to.addScaledVector(this.dir, -along).length() < 0.6) {
+      if (along > 0 && along < range && to.addScaledVector(this.dir, -along).length() < 0.6) {
         this.burstLeft = 0;
         this.burstPause = this.time + 0.4;
+        return;
+      }
+    }
+    if (this.avoid) {
+      const to = this.tmp.set(this.avoid.x - this.muzzle.x, this.avoid.y + 1.3 - this.muzzle.y, this.avoid.z - this.muzzle.z);
+      const along = to.dot(this.dir);
+      if (along > 0 && along < range && to.addScaledVector(this.dir, -along).length() < 0.7) {
+        this.burstLeft = 0;
+        this.burstPause = this.time + 0.35;
         return;
       }
     }
@@ -801,6 +844,7 @@ export class Soldier implements LightSource {
     this.deps.impacts.muzzleBlast(this.muzzle, this.dir, 1.1);
     this.deps.impacts.muzzleSmoke(this.muzzle, this.dir, 0.6);
     this.deps.audio.play(this.fireSound, { position: this.muzzle });
+    aiWorld.emit(this.suppressed ? 'gunshot_sup' : 'gunshot', this.muzzle, this.team, this);
     this.recoilPitch.impulse(0.55 + Math.random() * 0.3);
     this.recoilYaw.impulse((Math.random() - 0.5) * 0.5);
     // Brass out to the right.

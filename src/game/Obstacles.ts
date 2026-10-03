@@ -19,6 +19,18 @@ export interface Obstacle {
 
 export const OBSTACLES: Obstacle[] = [];
 
+/** Does the straight walk a → b run into an obstacle (sampled every 0.4 m)? */
+export function segmentBlocked(ax: number, az: number, bx: number, bz: number, pad: number, team?: string): boolean {
+  if (!OBSTACLES.length) return false;
+  const len = Math.hypot(bx - ax, bz - az);
+  const n = Math.max(1, Math.ceil(len / 0.4));
+  for (let k = 0; k <= n; k++) {
+    const t = k / n;
+    if (obstacleAt(ax + (bx - ax) * t, az + (bz - az) * t, pad, team)) return true;
+  }
+  return false;
+}
+
 /** The obstacle covering (x, z), grown by `pad` (the mover's radius). */
 export function obstacleAt(x: number, z: number, pad: number, team?: string): Obstacle | null {
   for (const o of OBSTACLES) {

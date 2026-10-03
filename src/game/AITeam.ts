@@ -9,6 +9,7 @@ import { TeamAgent, randomPersonality, type Combatant } from './TeamAgent';
 import type { DamageInfo } from '../targets/Humanoid';
 import { SIDEARM, planErrand } from './Errands';
 import { payPooled, planFor, type Intel, type PlanContext } from './Plans';
+import { SquadBrain } from '../ai/Squad';
 
 export interface TeamDef {
   id: string;
@@ -101,8 +102,8 @@ let agentIndex = 0;
  */
 export class AITeam {
   readonly agents: TeamAgent[] = [];
-  /** Focus fire: the squad's current priority target. */
-  private shared = { focus: null as Combatant | null, focusTime: 0 };
+  /** Tactical squad brain: shared contacts (radio), roles, plan, progress. */
+  readonly squad: SquadBrain;
   respawnTimer = -1;
   private goal: Goal | null = null;
   private thinkTimer = Math.random();
@@ -117,6 +118,7 @@ export class AITeam {
   private exitHold = 0;
 
   constructor(readonly def: TeamDef, private ctx: TeamContext, size = SQUAD_SIZE) {
+    this.squad = new SquadBrain(def.id, false, ctx.deps.nav);
     for (let i = 0; i < size; i++) this.addAgent(def.start.clone().add(new THREE.Vector3((i % 2) * 1.6 - 0.8, 0, ((i / 2) | 0) * 1.5)));
   }
 
@@ -150,8 +152,8 @@ export class AITeam {
         if (killed && isBoss) this.ctx.onBossDown?.(info);
         this.underFire(a, info);
       },
-    });
-    agent.squad = this.shared;
+    }, this.def.style);
+    this.squad.add(agent.bot);
     if (this.def.style === 'hunter') agent.onSpotPlayer = () => this.ctx.onRaiderSpotsPlayer?.();
     agent.armory = (id) => this.ctx.weaponData(id);
     agent.baseSkill = agent.soldier.skill = this.def.style === 'hunter' ? 0.95 : 1.15;
@@ -176,9 +178,12 @@ export class AITeam {
   private underFire(a: TeamAgent, info: DamageInfo): void {
     const h = info.hit;
     if (h.team === 'robots' || !h.team || h.weaponId === 'melee' || h.weaponId === 'bleed') return;
+    // The hit bot shares what it felt with the squad (radio, delayed) itself; the
+    // team only decides whether this becomes the squad's errand.
     const from = new THREE.Vector3().copy(h.point).addScaledVector(h.direction, -Math.max(2, h.distance));
+    from.x += (Math.random() - 0.5) * (2 + h.distance * 0.1);
+    from.z += (Math.random() - 0.5) * (2 + h.distance * 0.1);
     from.y = 0;
-    for (const m of this.agents) if (m.alive && !m.downed && m.distTo(a.soldier.pos) < 45) m.alert(from, m === a);
     if (this.def.style === 'hunter') return;
     const busy = this.goal && (this.goal.kind === 'retreat' || this.goal.kind === 'hire');
     if (!busy && this.aliveCount >= 2) {
@@ -242,8 +247,7 @@ export class AITeam {
 
   update(dt: number, world: Combatant[]): void {
     if (this.extracted) return;
-    this.shared.focusTime -= dt;
-    if (this.shared.focusTime <= 0 || (this.shared.focus && (!this.shared.focus.alive || this.shared.focus.downed))) this.shared.focus = null;
+    this.squad.update(dt);
     const mates = this.agents.map((a) => a.soldier);
     for (const a of this.agents) {
       a.refreshSelf();
@@ -452,19 +456,25 @@ export class AITeam {
     if (at) this.goal = { kind: 'roam', at, time: 0 };
   }
 
-  /** Raiders: straight for the nearest enemy anywhere. */
+  /**
+   * Raiders hunt by what they know, not by where everyone is: the squad's last
+   * known contact, gunfire they could have heard, otherwise a sweep through
+   * the rooms.
+   */
   private hunt(L: TeamAgent): void {
-    let best: Combatant | null = null;
-    let bd = Infinity;
-    for (const c of this.ctx.world()) {
-      if (c.team === this.def.id || !c.alive || c.kind === 'robot') continue;
-      const d = L.distTo(c.pos);
-      if (d < bd) {
-        bd = d;
-        best = c;
-      }
+    if (this.squad.primary && this.squad.primaryConf > 0.15) {
+      this.goal = { kind: 'hunt', at: this.squad.primaryPos.clone(), time: 0 };
+      return;
     }
-    if (best) this.goal = { kind: 'hunt', at: best.pos.clone(), time: 30 };
+    const heard = (this.ctx.intel?.(this.def.id) ?? [])
+      .filter((i) => L.distTo(i.pos) < 95)
+      .sort((a, b) => L.distTo(a.pos) - L.distTo(b.pos))[0];
+    if (heard) {
+      this.goal = { kind: 'hunt', at: heard.pos.clone(), time: 0 };
+      return;
+    }
+    const at = this.randomUnlockedPoint();
+    if (at) this.goal = { kind: 'roam', at, time: 0 };
   }
 
   private planContext(): PlanContext {

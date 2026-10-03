@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { RAPIER, G, groups, type Physics } from '../core/Physics';
+import { OBSTACLES, obstacleAt } from '../game/Obstacles';
 
 const BLOCKED = 255;
 
@@ -129,6 +130,35 @@ export class NavGrid {
     return this.inside(c, r) && this.cost[r * this.cols + c] !== BLOCKED;
   }
 
+  /** Walkable and right next to something solid (wall, crate, barrier): where cover is. */
+  nearWall(x: number, z: number): boolean {
+    const [c, r] = this.cellOf(x, z);
+    return this.inside(c, r) && this.cost[r * this.cols + c] === 3;
+  }
+
+  /** Cell index (for reservations), -1 outside. */
+  cellIndex(x: number, z: number): number {
+    const [c, r] = this.cellOf(x, z);
+    return this.inside(c, r) ? r * this.cols + c : -1;
+  }
+
+  /**
+   * Free room either side of (x, z) across the direction (dx, dz): roughly the
+   * corridor width there (formation spacing compresses in tight spaces).
+   */
+  clearance(x: number, z: number, dx: number, dz: number, max = 6): number {
+    const l = Math.hypot(dx, dz) || 1;
+    const nx = -dz / l;
+    const nz = dx / l;
+    let w = 0;
+    for (const s of [-1, 1]) {
+      let d = 0;
+      while (d < max && this.walkable(x + nx * s * (d + this.cell), z + nz * s * (d + this.cell))) d += this.cell;
+      w += d;
+    }
+    return w;
+  }
+
   /** Nearest walkable cell centre (spiral search), or null. */
   nearestWalkable(x: number, z: number, out: THREE.Vector3, maxRadius = 6): THREE.Vector3 | null {
     const [c0, r0] = this.cellOf(x, z);
@@ -185,7 +215,12 @@ export class NavGrid {
     this.frameUsed = 0;
   }
 
-  findPath(from: THREE.Vector3, to: THREE.Vector3, maxNodes = 6000): THREE.Vector3[] | null {
+  /**
+   * @param avoidTeam route around other teams' barricades (the grid itself doesn't
+   *                  know them: robots walk into them on purpose and tear them down).
+   */
+  findPath(from: THREE.Vector3, to: THREE.Vector3, maxNodes = 6000, avoidTeam?: string): THREE.Vector3[] | null {
+    const avoid = avoidTeam !== undefined && OBSTACLES.length > 0;
     // Budget spent this frame: short searches still go through (nearby moves never starve).
     if (this.frameUsed > this.frameBudget) maxNodes = Math.min(maxNodes, 700);
     const start = this.nearestWalkable(from.x, from.z, new THREE.Vector3(), 2);
@@ -228,6 +263,7 @@ export class NavGrid {
           if (!this.inside(nc, nr)) continue;
           const ni = nr * this.cols + nc;
           if (this.cost[ni] === BLOCKED || this.closed[ni] === id) continue;
+          if (avoid && obstacleAt(this.minX + (nc + 0.5) * this.cell, this.minZ + (nr + 0.5) * this.cell, 0.4, avoidTeam)) continue;
           // No corner cutting.
           if (dc && dr && (this.cost[r * this.cols + nc] === BLOCKED || this.cost[nr * this.cols + c] === BLOCKED)) continue;
           const step = (dc && dr ? 1.414 : 1) * (1 + this.cost[ni] * 0.6);
@@ -257,7 +293,7 @@ export class NavGrid {
       let far = k + 1;
       // Look ahead at most ~20 m: full-length scans are quadratic on long paths.
       for (let j = Math.min(pts.length - 1, k + 40); j > k + 1; j--) {
-        if (this.clearLine(anchor.x, anchor.z, pts[j].x, pts[j].z)) {
+        if (this.clearLine(anchor.x, anchor.z, pts[j].x, pts[j].z) && !(avoid && this.blockedByObstacle(anchor, pts[j], avoidTeam))) {
           far = j;
           break;
         }
@@ -268,6 +304,16 @@ export class NavGrid {
     }
     if (!out.length) out.push(pts[pts.length - 1]);
     return out;
+  }
+
+  private blockedByObstacle(a: THREE.Vector3, b: THREE.Vector3, team?: string): boolean {
+    const len = Math.hypot(b.x - a.x, b.z - a.z);
+    const n = Math.max(1, Math.ceil(len / 0.4));
+    for (let k = 0; k <= n; k++) {
+      const t = k / n;
+      if (obstacleAt(a.x + (b.x - a.x) * t, a.z + (b.z - a.z) * t, 0.4, team)) return true;
+    }
+    return false;
   }
 
   // Binary min-heap on f.

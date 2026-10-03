@@ -16,6 +16,7 @@ import type { SurvivalHUD } from '../ui/SurvivalHUD';
 import type { DamageInfo } from '../targets/Humanoid';
 import type { Lighting } from './Lighting';
 import type { Combatant } from './TeamAgent';
+import { aiWorld } from '../ai/World';
 import { Builder } from './Builder';
 import { Utilities } from './Utilities';
 import type { WallSpot } from '../world/Site9';
@@ -297,7 +298,10 @@ export class Survival {
             const bonus = r.variant === 'brute' ? 3 : 1;
             this.award(info.hit.team || 'alpha', (info.zone === 'head' ? POINTS.headKill : POINTS.kill) * bonus, info.hit.owner);
           },
-          onAttack: (r) => deps.audio.play('robot.stagger', { position: r.pos, volume: 0.6 }),
+          onAttack: (r) => {
+            deps.audio.play('robot.stagger', { position: r.pos, volume: 0.6 });
+            aiWorld.emit('robot', r.pos, 'robots', r);
+          },
           onThud: (at, s) => deps.audio.play('robot.fall', { position: at, volume: 0.25 + 0.5 * s }),
           onShort: (r, big) => {
             const at = this.tmp2.set(r.pos.x, 1.2 + Math.random() * 0.4, r.pos.z);
@@ -306,6 +310,7 @@ export class Survival {
           },
           onReboot: (r) => deps.audio.play('robot.boot', { position: r.pos }),
           onWake: (r) => {
+            aiWorld.emit('robot', r.pos, 'robots', r, 1.2);
             deps.audio.play('robot.wake', { position: r.pos });
             // Wakes its neighbours a moment later.
             for (const o of this.robots) {
@@ -421,6 +426,7 @@ export class Survival {
 
   openDoor(door: Door, populate = true): void {
     door.open = true;
+    aiWorld.emit('door', door.slot.center, '', null);
     this.reachVersion++;
     this.deps.physics.world.removeCollider(door.collider, true);
     const fresh = door.zones.filter((z) => !this.unlocked.has(z));

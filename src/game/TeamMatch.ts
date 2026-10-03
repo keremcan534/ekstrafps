@@ -155,10 +155,35 @@ export class TeamMatch {
   }
 
   /** Where other teams' operators were heard in the last 20 s. */
+  /**
+   * Gunfire a team could actually have heard: within ~90 m of its people, as a
+   * rough position (the further away, the vaguer). No map-wide awareness.
+   */
   intel(team: string): { team: string; pos: THREE.Vector3 }[] {
     const out: { team: string; pos: THREE.Vector3 }[] = [];
-    for (const [a, t] of this.lastShot) if (this.time - t < 20 && a.alive && a.team !== team && a.team !== 'bd') out.push({ team: a.team, pos: a.soldier.pos.clone() });
-    if (team !== 'alpha' && this.heardPlayer && this.time - this.heardPlayer.t < 20) out.push({ team: 'alpha', pos: this.heardPlayer.pos.clone() });
+    const ears: THREE.Vector3[] = [];
+    if (team === 'alpha') {
+      ears.push(this.d.playerPos);
+      for (const a of this.d.allies()) if (a.alive) ears.push(a.soldier.pos);
+    } else for (const t of [...this.teams, ...this.raiders]) if (t.def.id === team) for (const a of t.agents) if (a.alive) ears.push(a.soldier.pos);
+    const heard = (p: THREE.Vector3) => {
+      let best = Infinity;
+      for (const e of ears) best = Math.min(best, Math.hypot(e.x - p.x, e.z - p.z));
+      return best;
+    };
+    const fuzzy = (p: THREE.Vector3, d: number) => {
+      const err = 2 + d * 0.12;
+      return new THREE.Vector3(p.x + (Math.random() - 0.5) * err, 0, p.z + (Math.random() - 0.5) * err);
+    };
+    for (const [a, t] of this.lastShot) {
+      if (this.time - t > 20 || !a.alive || a.team === team || a.team === 'bd') continue;
+      const d = heard(a.soldier.pos);
+      if (d < 90) out.push({ team: a.team, pos: fuzzy(a.soldier.pos, d) });
+    }
+    if (team !== 'alpha' && this.heardPlayer && this.time - this.heardPlayer.t < 20) {
+      const d = heard(this.heardPlayer.pos);
+      if (d < 90) out.push({ team: 'alpha', pos: fuzzy(this.heardPlayer.pos, d) });
+    }
     return out;
   }
 
@@ -391,7 +416,23 @@ export class TeamMatch {
     // The closest squad that isn't already on top of you.
     cands.sort((a, b) => a.leader!.distTo(p) - b.leader!.distTo(p));
     const team = cands.find((t) => t.leader!.distTo(p) > 25) ?? cands[0];
-    if (team.rush(() => (this.d.playerAlive() ? this.d.playerPos : null))) this.rushing = { team, warned: Math.random() < 0.4 };
+    // They push where they heard you last (your gunfire), not where you are: once
+    // close, their own eyes and ears take over.
+    const heard = this.heardPlayer;
+    if (!heard || this.time - heard.t > 40) return;
+    const guess = new THREE.Vector3(heard.pos.x + (Math.random() - 0.5) * 10, 0, heard.pos.z + (Math.random() - 0.5) * 10);
+    let lastT = heard.t;
+    const track = () => {
+      const h = this.heardPlayer;
+      if (!this.d.playerAlive() || !h) return null;
+      if (h.t !== lastT) {
+        // Heard again: refine the guess.
+        lastT = h.t;
+        guess.set(h.pos.x + (Math.random() - 0.5) * 8, 0, h.pos.z + (Math.random() - 0.5) * 8);
+      }
+      return guess;
+    };
+    if (team.rush(track)) this.rushing = { team, warned: Math.random() < 0.4 };
   }
 
   // ---------------------------------------------------------------- extraction

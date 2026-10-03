@@ -258,6 +258,30 @@ Dead soldiers ragdoll and drop their rifle as a physics object. The squad calls 
 - Voice lines are generated offline with the Piper neural TTS (voice: en_US ryan, high) and processed as a masked operator on a radio in a concrete facility: slightly lower and slower, gas-mask muffle and cavity resonance, radio band and grit, squelch, slapback and hall reverb (`public/audio/voice/`). Drop in real recordings with the same names to replace them.
 - Tuning: *Black Division* folder in the panel. It covers AI on/off, god mode, enemy damage scale, enemy accuracy and regeneration.
 
+## Tactical AI (src/ai/)
+
+Bots behave like imperfect human players in squads: they act on what they saw, heard, felt or were told — never on where an enemy actually is — and keep making decisions instead of waiting for line of sight.
+
+**Why the old AI went passive (audit).** One `if/else` chain per bot: shoot the nearest visible enemy, otherwise follow orders. No memory (an enemy behind a wall stopped existing), no hearing beyond a squad-wide "turn toward the shot", no cover search, no watchdog, and squad "intel" that was either telepathic (live positions) or nothing. Losing sight → nothing to do → standing still.
+
+**Layers (one bot).**
+- `Perception` — vision builds *recognition* over time (distance, field of view, darkness and lights, stance, movement, partial exposure, whether they were expected); hearing turns noises (`NoiseBus`: shots, suppressed shots, footsteps, sprinting, reloads, doors, explosions, robots) into estimated positions whose error grows with distance and walls; near misses and hits add suppression and a rough direction. Staggered ticks, a shared per-frame ray budget.
+- `Memory` — per enemy: last seen / heard position and time, estimated velocity, confidence that fades, uncertainty that grows, who reported it; plus danger zones, friendly deaths, searched spots, used covers, unexplained sounds.
+- `Bot` (decision brain + execution) — utility scores re-evaluated ~5×/s and on events (spotted, lost, hurt, suppressed, arrived, failed): ENGAGE, SEEK_COVER, HOLD_ANGLE, PEEK, SUPPRESS, FLANK (left/right), PUSH, RETREAT, REPOSITION, SEARCH, INVESTIGATE, RELOAD (in cover), REGROUP, ASSIST, or FOLLOW (calm: the team / economy logic drives). Commitment and hysteresis instead of flip-flopping; worse bots weigh options less precisely.
+- `Cover` — dynamic: nav cells touching geometry, ray-tested against the threat (full / low cover, a side peek spot, an exposed approach, a way out). Reserved per bot so nobody shares a spot; never a place to stop playing (max hold, peeks with varied rhythm, relocation after firing from one spot too long).
+- `Navigator` — intent-driven movement with stuck detection: repath → nearby alternative → back away → give up and pick another tactic. Paths go around other teams' barricades and breach them only when there's no other way.
+- Watchdog — a bot with a known threat or task and no tactical progress for ~7 s (personality-scaled) is forced to re-plan, preferring movement (debug: PASSIVE WATCHDOG TRIGGERED).
+- Profiles — cautious / balanced / aggressive / tactical / reckless weight the scores (cover, push, flank, suppression, hold time, exposure, retreat threshold, cooperation, pace, patience). Skill changes reaction, recognition, peek exposure, burst control, lead and decision quality — not health.
+
+**Squad brain (`Squad`).** Members' sightings reach the others over the radio after 0.2–0.9 s as approximate positions (they still need their own eyes to shoot accurately). Roles are dealt and re-dealt as the fight changes — anchor, suppressor, flanker, assault, overwatch, support — and the plan moves contact → flank (a suppressor pins while the flanker goes round, 50–120° off the squad's line, by a route mostly out of the enemy's sight) → push / search (distinct points per member) / regroup / retreat. No progress for ~13 s → the plan changes.
+
+**Your squad.** You lead it: loose formation that compresses in corridors and spreads in the open, never in your fire lane or right behind you; they look where your rounds land, hear you taking fire, cover you when you're pressed, catch up (sprint) when you run off, and don't shoot past you.
+
+**Debug and tests.**
+- `?dev` + **F4** (or `?aidebug`): a label per bot (decision, action, target + confidence, cover, suppression, profile, role, squad plan, time since movement / progress, watchdog) and toggleable overlays: paths, cover candidates / choice / reservations, lines of sight, last known positions with uncertainty rings, investigated sounds, flank routes, search points.
+- Tab (dev) → **Tactical AI**: every rate, threshold, utility weight and personality multiplier, live.
+- `?aitest=A..J` (Weapon Lab; `&aidebug`, `&mortal`): A 1v1 open lane · B 1v1 container yard · C 3 vs you · D you + 2 vs 3 · E 3v3 AI-only spectator (fly with WASD / Shift / Space / C) · F enemy disappears after contact · G gunshots without sight · H blocked path · I you rush ahead · J long even 3v3. The panel shows decision counts, plan changes, watchdog / recovery counts and a behaviour verdict (also on `window.__aitest`).
+
 ## Sound
 
 Gunshots are layered: a recorded close blast (several variations per weapon), synth low-end punch and mechanical action, a room tail that grows with the size of the room you're in, and a distant report that takes over from ~20 m and darkens past ~70 m. The recorded shots were cut from Pixabay sound effects (Pixabay Content License) by freesound_community, pwlpl, haruudu, sovetsky_rastov72 and u_2n07b18i8q (the M4/M16 reload recording by freesound_community drives the magazine and charging-handle sounds; the power-cut slam and the Black Division encounter sting are by universfield, the raid arrival impact by black_kumizhi, the breaching-charge explosion by freesound_community, metal hits by floraphonic, gear rustle footsteps by whitecrowsp); the cuts live in `public/audio/guns`.

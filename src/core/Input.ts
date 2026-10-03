@@ -12,6 +12,8 @@ export class Input {
   adsHeld = false;
   sprintHeld = false;
   crouchHeld = false;
+  /** Space held (spectator flight). */
+  jumpHeld = false;
 
   // Look delta accumulated this frame, already in radians.
   lookYaw = 0;
@@ -148,6 +150,7 @@ export class Input {
     this.moveY = y;
     this.sprintHeld = this.keys.has('ShiftLeft') || this.keys.has('ShiftRight') || this.touchSprint;
     this.crouchHeld = this.keys.has('KeyC') || this.touchCrouch;
+    this.jumpHeld = this.keys.has('Space');
     this.leanAxis = (this.keys.has('KeyE') ? 1 : 0) - (this.keys.has('KeyQ') ? 1 : 0) + this.touchLean;
     this.leanAxis = Math.max(-1, Math.min(1, this.leanAxis));
   }

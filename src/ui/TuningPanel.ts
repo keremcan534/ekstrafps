@@ -1,4 +1,5 @@
 import GUI from 'lil-gui';
+import { AI_TUNING, PROFILES } from '../ai/Tuning';
 import type { WeaponData } from '../weapons/WeaponData';
 import { WEAPON_DEFAULTS, weaponFile } from '../weapons/WeaponData';
 import { AMMO_DEFAULTS, ammoTable } from '../weapons/AmmoData';
@@ -107,6 +108,41 @@ export class TuningPanel {
     bd.add(feel, 'enemyDamageScale', 0, 2, 0.05).name('Enemy damage scale');
     bd.add(feel, 'enemyAccuracy', 0.2, 3, 0.05).name('Enemy accuracy');
     bd.add(feel, 'playerRegen').name('Player health regen');
+
+    // Tactical AI: everything is read live (decisions, cover, squads).
+    const ai = this.gui.addFolder('Tactical AI').close();
+    ai.add(AI_TUNING, 'debug').name('AI debug view (F4)').listen();
+    ai.add(AI_TUNING, 'decisionInterval', 0.05, 1, 0.01).name('Decision interval (s)');
+    ai.add(AI_TUNING, 'squadInterval', 0.1, 2, 0.05).name('Squad brain interval (s)');
+    ai.add(AI_TUNING, 'perceptionInterval', 0.05, 0.5, 0.01).name('Perception tick (s)');
+    ai.add(AI_TUNING, 'rayBudgetPerFrame', 10, 200, 1).name('Ray budget / frame');
+    ai.add(AI_TUNING, 'visionRange', 20, 150, 1).name('Vision range (m)');
+    ai.add(AI_TUNING, 'recognitionSpeed', 0.2, 4, 0.05).name('Recognition speed');
+    ai.add(AI_TUNING, 'hearingScale', 0.2, 3, 0.05).name('Hearing distance ×');
+    ai.add(AI_TUNING, 'contactMemory', 2, 40, 0.5).name('Contact memory (s)');
+    ai.add(AI_TUNING, 'maxHoldCover', 2, 30, 0.5).name('Max hold in cover (s)');
+    ai.add(AI_TUNING, 'minRepositionInterval', 0.5, 10, 0.25).name('Min reposition interval (s)');
+    ai.add(AI_TUNING, 'peekExposure', 0.3, 3, 0.05).name('Peek exposure (s)');
+    ai.add(AI_TUNING, 'suppressionGain', 0, 3, 0.05).name('Suppression gain');
+    ai.add(AI_TUNING, 'suppressionDecay', 0.05, 2, 0.01).name('Suppression decay /s');
+    ai.add(AI_TUNING, 'suppressedLevel', 0.1, 1.5, 0.05).name('Suppressed threshold');
+    ai.add(AI_TUNING, 'flankUtility', 0, 3, 0.05).name('Flank utility ×');
+    ai.add(AI_TUNING, 'pushUtility', 0, 3, 0.05).name('Push utility ×');
+    ai.add(AI_TUNING, 'retreatUtility', 0, 3, 0.05).name('Retreat utility ×');
+    ai.add(AI_TUNING, 'suppressUtility', 0, 3, 0.05).name('Suppress utility ×');
+    ai.add(AI_TUNING, 'searchDuration', 5, 90, 1).name('Search duration (s)');
+    ai.add(AI_TUNING, 'passivityTimeout', 2, 30, 0.5).name('Passivity timeout (s)');
+    ai.add(AI_TUNING, 'squadStallTime', 4, 40, 0.5).name('Squad stall → new plan (s)');
+    ai.add(AI_TUNING, 'commDelayMin', 0, 2, 0.05).name('Radio delay min (s)');
+    ai.add(AI_TUNING, 'commDelayMax', 0, 3, 0.05).name('Radio delay max (s)');
+    ai.add(AI_TUNING, 'formationSpacing', 1, 8, 0.1).name('Formation spacing (m)');
+    ai.add(AI_TUNING, 'friendlyTactical', 8, 40, 1).name('Friendly tactical zone (m)');
+    ai.add(AI_TUNING, 'friendlyTooFar', 15, 80, 1).name('Friendly too far (m)');
+    const prof = ai.addFolder('Personality multipliers').close();
+    for (const p of Object.values(PROFILES)) {
+      const f = prof.addFolder(p.id).close();
+      for (const k of ['cover', 'push', 'flank', 'suppress', 'hold', 'exposure', 'retreatHp', 'cooperation', 'pace', 'patience'] as const) f.add(p, k, 0, 3, 0.05);
+    }
 
     const p = this.gui.addFolder('Player movement').close();
     p.add(playerConfig, 'walkSpeed', 1, 15, 0.1);

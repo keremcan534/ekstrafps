@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { aiWorld } from '../ai/World';
 import { ParticleSystem, spawnParams } from './Particles';
 import { Decals } from './Decals';
 import { feel } from '../config/Feel';
@@ -233,6 +234,7 @@ export class ImpactSystem {
 
   /** Breaching charge / explosion: fireball flash, fragments, a rolling column of smoke. */
   explosion(point: THREE.Vector3): void {
+    aiWorld.emit('explosion', point, '', null);
     this.burstSparks(point, 70, 16, 1.0, 0.6, 0.2, 0.9);
     this.burstSparks(point, 30, 10, 1.0, 0.85, 0.5, 0.6);
     this.flash(point, this.tmp.set(0, 1, 0), 2.6, 1, 0.7, 0.35);

@@ -33,7 +33,13 @@ import { SIDEARM, planErrand } from '../game/Errands';
 import { planFor } from '../game/Plans';
 import { assignRevives } from '../game/AITeam';
 import { TeamMatch } from '../game/TeamMatch';
-import type { RogueRobot } from '../enemies/RogueRobot';
+import { RogueRobot } from '../enemies/RogueRobot';
+import { aiWorld } from '../ai/World';
+import { SquadBrain } from '../ai/Squad';
+import { AIDebug } from '../ai/AIDebug';
+import { coverRegistry } from '../ai/Cover';
+import type { Bot } from '../ai/Bot';
+import { AITest } from '../ai/AITest';
 import { START_POINTS, Survival } from '../game/Survival';
 import { SurvivalHUD } from '../ui/SurvivalHUD';
 import { MapOverlay, type MapState } from '../ui/MapOverlay';
@@ -131,7 +137,16 @@ export class Game {
   private stepDist = 0;
   private squadBtn: HTMLButtonElement | null = null;
   /** Your operators' shared priority target. */
-  private squadFocus = { focus: null as Combatant | null, focusTime: 0 };
+  /** Your squad's tactical brain (you are its leader). */
+  allySquad: SquadBrain | null = null;
+  /** AI debug view (F4 with ?dev, or ?aidebug). */
+  aiDebug!: AIDebug;
+  /** ?aitest=A..J: controlled AI scenarios (Weapon Lab). */
+  aiTest: AITest | null = null;
+  /** Spectating an AI test: free camera, no weapon. */
+  spectator = false;
+  private prevWeaponState = '';
+  private lastImpactShare = 0;
   /** Your squad: name, role, money, weapon. */
   private squadEl: HTMLDivElement | null = null;
   private squadTimer = 0;
@@ -317,6 +332,15 @@ export class Game {
     this.helpEl.classList.toggle('show', dev && (s.help ?? true));
     if (!this.weapons.owned && s.weapon && s.weapon > 0 && s.weapon < this.weapons.weapons.length) this.weapons.requestSwitch(s.weapon);
 
+    // Tactical AI: who owns a bullet, what's lit, and the debug view.
+    aiWorld.resolveOwner = (owner) => this.resolveOwner(owner);
+    aiWorld.isLit = (c) => c === this.playerC && !!this.lighting?.flashlightOn;
+    this.aiDebug = new AIDebug(ui, this.camera.camera, () => this.allBots());
+    if (new URLSearchParams(location.search).has('aidebug')) this.aiDebug.toggle();
+    if (!this.survival && new URLSearchParams(location.search).has('aitest')) {
+      this.aiTest = new AITest(this.aiTestDeps(), new URLSearchParams(location.search).get('aitest') || 'A');
+    }
+
     this.input.onKey = (code) => this.onKey(code);
     this.input.onLockFailed = () =>
       this.hud.toast('Mouse capture unavailable: free-mouse look. Click the game to try again.', 4);
@@ -382,9 +406,18 @@ export class Game {
       this.squads.push(squad);
     }
     this.weapons.onPlayerShot = (pos, suppressed) => {
+      aiWorld.emit(suppressed ? 'gunshot_sup' : 'gunshot', pos, 'alpha', this.player);
       if (feel.enemyAI && !this.health.dead) for (const s of this.squads) s.hearShot(pos, suppressed);
       this.survival?.hearShot(pos, suppressed);
       if (!suppressed) this.match?.playerShot(pos);
+    };
+
+    // Your rounds landing: your squad looks there (rate limited).
+    this.weapons.projectiles.onPlayerImpact = (point, owner) => {
+      if (!this.allySquad || aiWorld.time - this.lastImpactShare < 0.4) return;
+      this.lastImpactShare = aiWorld.time;
+      const who = aiWorld.resolveOwner(owner ?? null);
+      this.allySquad.playerFiresAt(point, who && who.team !== 'alpha' ? who : null);
     };
 
     // The player's capsule takes enemy rounds.
@@ -397,6 +430,8 @@ export class Game {
         from.copy(hit.point).addScaledVector(hit.direction, -Math.max(2, hit.distance));
         const wasUp = !this.health.downed && !this.health.dead;
         out.damage = this.hurtPlayer(hit.damage, from);
+        // Your squad hears you taking fire (and roughly from where).
+        if (out.damage > 0) this.allySquad?.playerHurt(from, aiWorld.resolveOwner(hit.owner ?? null));
         if (this.survival && hit.team && hit.team !== 'alpha' && out.damage > 0) {
           const dropped = wasUp && (this.health.downed || this.health.dead);
           this.survival.award(hit.team, dropped ? 150 : 10);
@@ -463,16 +498,14 @@ export class Game {
   private initSurvival(ui: HTMLElement, map: Site9): void {
     const hud = new SurvivalHUD(ui, this.mobile);
     const teams = new URLSearchParams(location.search).get('mode') !== 'solo';
-    this.playerC = {
-      team: 'alpha',
-      kind: 'player',
+    this.playerC = this.makePlayerC();
+    // Your squad's tactical brain: you lead it (formation around you, out of your fire lane).
+    this.allySquad = new SquadBrain('alpha', true, this.nav, () => ({
       pos: this.player.feet,
-      aim: this.target.chest,
-      head: this.target.head,
-      alive: true,
-      downed: false,
-      hit: (d, from) => this.hurtPlayer(d, from),
-    };
+      yaw: this.player.yaw + Math.PI,
+      speed: this.player.horizontalSpeed,
+      alive: !this.health.dead,
+    }));
     this.lighting = new Lighting(this.scene, map, this.camera.eye, (out) => this.camera.getAimDirection(this.player, out), () => !this.health.dead, this.mobile ? 2 : 4);
     // Desktop: colour grade pass (cold shadows, reds kept, redder and moodier in a blackout).
     if (!this.mobile && !this.trailer) this.grade = new ScreenGrade(this.renderer);
@@ -677,6 +710,64 @@ export class Game {
     return null;
   }
 
+  /** You, as the AI sees you (identity for contacts; positions only through its senses). */
+  makePlayerC(): Combatant {
+    const pl = this.player;
+    return {
+      team: 'alpha',
+      kind: 'player',
+      pos: pl.feet,
+      aim: this.target.chest,
+      head: this.target.head,
+      alive: true,
+      downed: false,
+      hit: (d, from) => this.hurtPlayer(d, from),
+      ref: pl,
+      vel: pl.velocity,
+      crouch: () => (pl.crouching ? 1 : 0),
+    };
+  }
+
+  /** Bullet / noise owner → combatant (player, an operator, a robot). */
+  private resolveOwner(owner: object | null): Combatant | null {
+    if (!owner) return null;
+    if (owner === this.player) return this.playerC ?? null;
+    const a = agentBySoldier.get(owner);
+    if (a) return a.self;
+    if (owner instanceof RogueRobot) return this.robotCombatant(owner);
+    return this.aiTest?.resolveOwner(owner) ?? null;
+  }
+
+  /** Every tactical bot in play (debug view). */
+  private *allBots(): Generator<Bot> {
+    for (const a of this.allies) yield a.bot;
+    if (this.match) for (const a of this.match.agents()) yield a.bot;
+    if (this.aiTest) yield* this.aiTest.bots();
+  }
+
+  /** What the AI test harness needs from the game. */
+  private aiTestDeps(): ConstructorParameters<typeof AITest>[0] {
+    if (!this.playerC) this.playerC = this.makePlayerC();
+    return {
+      soldierDeps: this.soldierDeps,
+      nav: this.nav,
+      physics: this.physics,
+      player: this.player,
+      playerC: this.playerC,
+      health: this.health,
+      weaponData: (id) => this.weapons.weapons.find((w) => w.data.id === id)?.data,
+      status: this.status,
+      hud: this.hud,
+      setSpectator: (on) => (this.spectator = on),
+      clearLab: () => {
+        for (const sq of this.squads) for (const so of sq.soldiers) so.body.setActive(false);
+        this.squads.length = 0;
+        for (const r of this.robots) r.body.setActive(false);
+        this.robots.length = 0;
+      },
+    };
+  }
+
   /** Robots as combatants (cached per pooled robot). */
   private robotCombatant(r: RogueRobot): Combatant {
     let c = this.robotC.get(r);
@@ -716,9 +807,9 @@ export class Game {
     this.match?.pushCombatants(w);
     for (const r of sv.robots) if (r.alive) w.push(this.robotCombatant(r));
 
-    const sf = this.squadFocus;
-    sf.focusTime -= dt;
-    if (sf.focusTime <= 0 || (sf.focus && (!sf.focus.alive || sf.focus.downed))) sf.focus = null;
+    // Your squad's brain; your spot counts as taken (they don't stand on you).
+    this.allySquad?.update(dt);
+    if (!this.health.dead) coverRegistry.reserve(this.player, this.player.feet, aiWorld.time, 0.5);
 
     // Downed: the nearest standing ally comes to pick you up; allies pick each other up too.
     const rv = this.playerRevive;
@@ -844,20 +935,16 @@ export class Game {
   private addAlly(at: THREE.Vector3, hired: boolean): TeamAgent {
     const p = randomPersonality(0);
     const ally = new TeamAgent(this.soldierDeps, 'alpha', 10 + this.allies.length, p, 'vanta', {
-      onHit: (a, info, killed) => {
+      onHit: (_a, info, killed) => {
+        // (The hit operator radios what it felt to the squad itself.)
         this.survival?.onSoldierHit('alpha', info, killed);
-        const h = info.hit;
-        if (h.team && h.team !== 'robots' && h.weaponId !== 'melee' && h.weaponId !== 'bleed') {
-          const from = new THREE.Vector3().copy(h.point).addScaledVector(h.direction, -Math.max(2, h.distance)).setY(0);
-          for (const m of this.allies) if (m.alive && !m.downed && m.distTo(a.soldier.pos) < 45) m.alert(from, m === a);
-        }
       },
       onKilled: () => this.audio.play('bd.man_down', { pitch: 1.12 }),
     });
     ally.soldier.body.friendly = true;
     ally.soldier.body.canGoDown = () => !this.health.dead || this.allies.some((a) => a !== ally && a.alive && !a.downed);
     ally.armory = (id) => this.weapons.weapons.find((w) => w.data.id === id)?.data;
-    ally.squad = this.squadFocus;
+    this.allySquad?.add(ally.bot);
     ally.points = hired ? 0 : START_POINTS;
     ally.spawn(at, this.player.yaw);
     // Contractors arrive armed; the starting squad has pistols like you.
@@ -912,8 +999,9 @@ export class Game {
 
   private onKey(code: string): void {
     const w = this.weapons;
-    const devOnly = ['KeyH', 'Tab', 'KeyP', 'F1', 'Slash', 'KeyG', 'KeyJ', 'KeyO', 'KeyU', 'F2', 'F8'];
-    if (!this.dev && devOnly.includes(code)) return;
+    const devOnly = ['KeyH', 'Tab', 'KeyP', 'F1', 'Slash', 'KeyG', 'KeyJ', 'KeyO', 'KeyU', 'F2', 'F4', 'F8'];
+    // J is build mode on Site-9 (a player key there), the debug crosshair elsewhere.
+    if (!this.dev && devOnly.includes(code) && !(code === 'KeyJ' && this.survival)) return;
     switch (code) {
       case 'KeyH':
         this.debug.toggle();
@@ -926,6 +1014,9 @@ export class Game {
       case 'F1':
       case 'Slash':
         this.helpEl.classList.toggle('show');
+        break;
+      case 'F4':
+        this.hud.toast(`AI debug ${this.aiDebug.toggle() ? 'on' : 'off'}`);
         break;
       case 'KeyN':
         feel.damageNumbers = !feel.damageNumbers;
@@ -1146,6 +1237,8 @@ export class Game {
 
     // --- World ---
     this.nav.beginFrame();
+    aiWorld.beginFrame(dt);
+    aiWorld.darkness = this.lighting ? this.lighting.darkness * 0.7 + 0.3 : this.arena instanceof Site9 ? 0.3 : 0.25;
     this.arena.update(dt, this.player.feet);
     this.lighting?.update(dt);
     // Lights out: muzzle flashes light the room (and give shooters away).
@@ -1175,6 +1268,7 @@ export class Game {
     t.crouching = this.player.crouching;
     t.alive = !this.health.dead;
     for (const s of this.squads) s.update(dt, t, feel.enemyAI);
+    this.aiTest?.update(dt);
     if (this.survival) this.updateTeams(dt);
     this.survival?.update(dt);
     if (this.mapOverlay && this.mapState && this.survival) {
@@ -1213,6 +1307,7 @@ export class Game {
       if (this.stepDist >= stride) {
         this.stepDist = 0;
         this.audio.play('foley.step', { volume: (pl.sprinting ? 0.38 : pl.crouching ? 0.08 : 0.14) * (0.8 + Math.random() * 0.4) });
+        aiWorld.emit(pl.sprinting ? 'sprint' : 'step', pl.feet, 'alpha', pl, pl.crouching ? 0.35 : 1);
       }
     } else this.stepDist = 0.5;
     if (this.arena instanceof Site9) {
@@ -1226,6 +1321,8 @@ export class Game {
     // --- UI ---
     const cw = this.weapons.current;
     const reload = cw.state === 'reloading' ? (cw.data.reload.kind === 'magazine' ? cw.stateProgress : cw.ammo / cw.data.magazineSize) : -1;
+    if (cw.state === 'reloading' && this.prevWeaponState !== 'reloading') aiWorld.emit('reload', this.player.feet, 'alpha', this.player);
+    this.prevWeaponState = cw.state;
     this.hud.updateAmmo(cw.data.name, cw.ammo, cw.chambered && cw.data.closedBolt, cw.reserve === Infinity ? cw.data.magazineSize : cw.reserve, `${cw.fireMode.toUpperCase()} · ${this.weapons.ammo.caliber}`, reload, cw.data.magazineSize);
     this.hud.updateCrosshair(this.weapons.handling.dispersionDeg * 0.5, this.camera.currentFov, this.weapons.adsAmount, cw.state !== 'ready' || this.player.sprinting);
     this.hud.update(realDt, this.camera.camera);
@@ -1249,9 +1346,11 @@ export class Game {
       this.renderer.clear();
       this.renderer.render(this.scene, this.camera.camera);
       this.renderer.clearDepth();
-      if (!this.health.dead && !this.cinematic) this.renderer.render(this.weapons.viewmodel.scene, this.weapons.viewmodel.camera);
+      if (!this.health.dead && !this.cinematic && !this.spectator) this.renderer.render(this.weapons.viewmodel.scene, this.weapons.viewmodel.camera);
       this.debugDraw.flush(realDt);
       if (this.debugDraw.enabled) this.renderer.render(this.debugDraw.scene, this.camera.camera);
+      this.aiDebug.update(realDt);
+      if (this.aiDebug.enabled) this.renderer.render(this.aiDebug.draw.scene, this.camera.camera);
       this.grade?.end();
     }
 

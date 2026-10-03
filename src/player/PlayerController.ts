@@ -96,8 +96,20 @@ export class PlayerController {
     this.pitch = clamp(this.pitch + pitchDelta, -89 * DEG, 89 * DEG);
   }
 
+  /** Last frame's input (spectator flight reads it). */
+  lastInput: Input | null = null;
+
   bufferInput(input: Input): void {
+    this.lastInput = input;
     if (input.jumpPressed) this.jumpBufferTimer = cfg.jumpBuffer;
+  }
+
+  /** Spectator: put the body at `pos` without touching the view (no gravity build-up). */
+  hover(pos: THREE.Vector3): void {
+    this.feet.copy(pos);
+    this.prevFeet.copy(pos);
+    this.velocity.set(0, 0, 0);
+    this.body.setTranslation({ x: pos.x, y: pos.y + this.height / 2, z: pos.z }, true);
   }
 
   fixedUpdate(dt: number, input: Input): void {

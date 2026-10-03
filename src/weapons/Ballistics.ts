@@ -6,6 +6,7 @@ import type { ParticleSystem, ParticleSpawn } from '../fx/Particles';
 import { spawnParams } from '../fx/Particles';
 import type { DebugDraw } from '../fx/DebugDraw';
 import type { Trails } from '../fx/Trails';
+import { aiWorld } from '../ai/World';
 
 const GRAVITY = 9.81;
 const MAX_STEP = 1 / 240;
@@ -41,6 +42,8 @@ interface Projectile {
   /** Hit-assist radius (m): a near miss on a body still counts (bolt actions). */
   assist: number;
   pos: THREE.Vector3;
+  /** Where it was fired from (bots feel roughly where a near miss came from). */
+  origin: THREE.Vector3;
   vel: THREE.Vector3;
   v0: number;
   ammo: AmmoData;
@@ -103,6 +106,8 @@ export class ProjectileSystem {
 
   /** Called whenever a projectile hits anything. */
   onHit: ((r: ProjectileHitReport) => void) | null = null;
+  /** The player's rounds landing (teammates look where you shoot). */
+  onPlayerImpact: ((point: THREE.Vector3, owner: object | undefined) => void) | null = null;
   /** Speed of the most recent projectile impact (debug HUD). */
   lastImpactSpeed = 0;
 
@@ -115,7 +120,7 @@ export class ProjectileSystem {
   ) {
     for (let i = 0; i < CAPACITY; i++) {
       this.pool.push({
-        alive: false, pos: new THREE.Vector3(), vel: new THREE.Vector3(), v0: 0, ammo: null as unknown as AmmoData,
+        alive: false, pos: new THREE.Vector3(), origin: new THREE.Vector3(), vel: new THREE.Vector3(), v0: 0, ammo: null as unknown as AmmoData,
         shotId: 0, pellets: 1, tracer: false, age: 0, travelled: 0, ricochets: 0, soundBudget: true,
         owner: null, hostile: false, ally: false, team: '', flyby: false, assist: 0,
       });
@@ -150,6 +155,7 @@ export class ProjectileSystem {
     this.next = (this.next + 1) % CAPACITY;
     p.alive = true;
     p.pos.copy(origin);
+    p.origin.copy(origin);
     p.vel.copy(dir).multiplyScalar(speed);
     p.v0 = speed;
     p.ammo = ammo;
@@ -187,6 +193,7 @@ export class ProjectileSystem {
         if (len < 1e-6) continue;
         this.dir.copy(this.seg).divideScalar(len);
         if (p.hostile && !p.flyby) this.checkFlyby(p, len);
+        if (aiWorld.listeners.size) aiWorld.bulletSegment(p.pos, this.dir, len, p.origin, p.owner, p.team);
         let hit = this.physics.raycast(p.pos, this.dir, len, p.hostile ? GROUPS.enemyBullet : GROUPS.bullet, p.owner);
         if (p.assist > 0 && (!hit || !TARGET_SURFACES.has(hit.receiver?.surface ?? ''))) {
           // The physics ray result is a shared object: keep the centre hit before casting more.
@@ -297,6 +304,8 @@ export class ProjectileSystem {
 
   private processHit(p: Projectile, point: THREE.Vector3, normal: THREE.Vector3, recv: HitReceiver | undefined): void {
     const surface: SurfaceType = recv?.surface ?? 'concrete';
+    if (aiWorld.listeners.size) aiWorld.bulletImpact(point, p.origin, p.owner, p.team);
+    if (!p.hostile && !p.ally) this.onPlayerImpact?.(point, recv?.owner);
     const speed = p.vel.length();
     const speedRatio = speed / p.v0;
     this.lastImpactSpeed = speed;
