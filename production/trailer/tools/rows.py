@@ -1,8 +1,10 @@
 """Contact rows for picking usable moments: one row per take camera, a thumbnail every
 `step` seconds of take time, each tagged with its time and flagged when it is unusable:
 
-  DARK   mean luma < 14 or under 3% of the frame above luma 40 (nothing reads)
-  BLOWN  over 14% of the frame clipped (> 245): a flashlight in the lens, a flash frame
+  DARK   under 3% of the frame above luma 40 (nothing reads)
+  BLOWN  a bright frame with a big hot area (mean > 55 and over 6% above 200, or over 12%
+         above 235): a flashlight / rifle beam flooding the lens. A single blown sample
+         between clean ones is a muzzle flash, not a flag ("flash").
 
 python tools/rows.py FC-pov SB-warden ... [--step 0.5] [--out name]
   -> build/rows_<name>.jpg  and  build/rows/<take-cam>.json  (per-frame stats, every
@@ -35,9 +37,10 @@ def stats(path):
     g = np.asarray(Image.open(path).convert("L").resize((160, 90)), np.float32)
     mean = float(g.mean())
     lit = float((g > 40).mean())
-    blown = float((g > 245).mean())
-    flag = "DARK" if mean < 14 or lit < 0.03 else "BLOWN" if blown > 0.14 else ""
-    return {"mean": round(mean, 1), "lit": round(lit, 3), "blown": round(blown, 3), "flag": flag}
+    h200 = float((g > 200).mean())
+    h235 = float((g > 235).mean())
+    flag = "DARK" if lit < 0.03 else "BLOWN" if (mean > 55 and h200 > 0.06) or h235 > 0.12 else ""
+    return {"mean": round(mean, 1), "lit": round(lit, 3), "h200": round(h200, 3), "h235": round(h235, 3), "flag": flag}
 
 
 def analyse(src):
@@ -48,6 +51,12 @@ def analyse(src):
     out = {}
     for f in sorted(d.glob("*.jpg")):
         out[int(f.stem)] = {"t": round(int(f.stem) / fps - hd, 3), **stats(f)}
+    ks = sorted(out)
+    for i, k in enumerate(ks):
+        nb = [out[ks[j]]["flag"] for j in (i - 1, i + 1) if 0 <= j < len(ks)]
+        if out[k]["flag"] == "BLOWN" and "BLOWN" not in nb:
+            out[k]["flag"] = ""
+            out[k]["note"] = "flash"
     (ROOT / "build" / "rows").mkdir(parents=True, exist_ok=True)
     (ROOT / "build" / "rows" / f"{src}.json").write_text(json.dumps(out))
     return out, fps, hd

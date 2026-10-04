@@ -150,6 +150,7 @@ def pick(src, dur, after=0.0, lead=0.1, near=None, fire=True, mine=None):
     for a in grid:
         if free(src, a, a + dur) and usable(src, a, a + dur):
             return float(a)
+    print(f"WARNING: no clean window for {src} ({dur:.2f} s after {after}), using a flagged one")
     for a in grid:
         if free(src, a, a + dur):
             return float(a)
