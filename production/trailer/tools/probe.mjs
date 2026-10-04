@@ -23,7 +23,7 @@ const browser = await chromium.launch({
 });
 const page = await browser.newPage({ viewport: { width: 1280, height: 720 } });
 page.on('pageerror', (e) => console.error('[pageerror]', e.message));
-await page.goto(`http://localhost:${process.env.PORT ?? 5180}/?trailer=${id}&res=720&fps=60&cam=${cam}&at=-9&map=site9&mode=solo`);
+await page.goto(`http://localhost:${process.env.PORT ?? 5180}/?trailer=${id}&res=720&fps=60&cam=${cam}&at=-9&map=site9&mode=solo${process.env.EXTRA ?? ''}`);
 await page.waitForFunction(() => typeof (window).__trailerSeek === 'function', null, { timeout: 600000 });
 for (const t of times.split(',').map(Number)) {
   // Seek (renders the frame) and read the canvas in the same task, before the buffer clears.

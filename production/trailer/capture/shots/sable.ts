@@ -48,7 +48,7 @@ function safe(game: Game, subject: THREE.Vector3, desired: THREE.Vector3): THREE
 }
 
 /** Rifle beams: dimmer than in play (in haze, pointed down the lens, they flood the frame); off = hidden. */
-function beam(s: Soldier, k: number): void {
+export function beam(s: Soldier, k: number): void {
   const b = (s as unknown as { beam?: (THREE.Object3D & { setStrength(v: number): void }) | null }).beam;
   if (!b) return;
   if (k <= 0) {

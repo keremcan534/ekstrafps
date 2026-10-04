@@ -1,5 +1,5 @@
 // Headless capture of one take camera through the trailer-capture dev server (port 5180).
-//   node tools/capture.mjs <ID> [cam] [--win=a-b,c-d] [--every=N] [--keep] [--res=720] [--fps=60]
+//   node tools/capture.mjs <ID> [cam] [--win=a-b,c-d] [--every=N] [--keep] [--q=flag+flag] [--res=720] [--fps=60]
 // Done-detection: build/events/<ID>.json becomes newer than a stamp touched before the
 // page opens (the director writes it after the last frame). Frame counts are not used.
 import fs from 'node:fs';
@@ -21,7 +21,7 @@ const opt = Object.fromEntries(process.argv.slice(2).filter((a) => a.startsWith(
 const [id, cam = ''] = pos;
 const res = opt.res ?? '720';
 const fps = opt.fps ?? '60';
-const extra = `${opt.win ? `&win=${opt.win}` : ''}${opt.every ? `&every=${opt.every}` : ''}${'keep' in opt ? '&keep' : ''}`;
+const extra = `${opt.win ? `&win=${opt.win}` : ''}${opt.every ? `&every=${opt.every}` : ''}${'keep' in opt ? '&keep' : ''}${opt.q ? `&${opt.q.split('+').join('&')}` : ''}`;
 if (!id) throw new Error('usage: node tools/capture.mjs <ID> [cam] [res] [fps]');
 const ev = path.join(ROOT, 'build', 'events', `${id}.json`);
 const stamp = path.join(ROOT, 'build', 'events', `.stamp-${id}-${cam || 'main'}`);
