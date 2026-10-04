@@ -605,7 +605,10 @@ def render_audio(path):
     tt = np.arange(int(4.5 * SR)) / SR
     A.place(fin, 0.5 * np.sin(2 * np.pi * (38 + 30 * np.exp(-tt * 6)) * tt) * np.exp(-tt * 1.6), 0.0, -2)   # sub drop
     A.place(fin, 0.05 * np.sin(2 * np.pi * 3900 * tt) * np.exp(-tt * 0.9) * np.clip(tt / 0.3, 0, 1), 0.15, -8)  # the ring
-    fin_gain = 1.0
+    # Saturate the shot (less crest): it stays the loudest moment while the whole mix sits higher.
+    fpk = np.abs(fin).max() + 1e-9
+    fin = np.tanh(fin / fpk * 2.6) / np.tanh(2.6) * fpk
+    fin_gain = 0.45
     # 5) Title.
     A.place(sfx, A.sample("clunk"), TITLE, -9)
     A.place(sfx, A.sample("hum_rise") * 0.5, TITLE + 0.05, -14)
@@ -624,16 +627,17 @@ def render_audio(path):
         j = np.clip(np.arange(len(x)) - win // 2, 0, len(x))
         e = np.sqrt(np.maximum(0, (c[i] - c[j]) / win))
         return m, e
-    for _ in range(12):
+    for _ in range(40):
         out = mix(fin_gain)
         pk, en = levels(out)
         i0 = int((SHOT - 0.02) * SR)
         i1 = int((SHOT + 0.5) * SR)
         rest_pk = max(pk[:i0].max(), pk[i1:].max())
         rest_en = max(en[: int((SHOT - 0.3) * SR)].max(), en[int((SHOT + 1.0) * SR):].max())
-        if pk[i0:i1].max() > rest_pk * 1.12 and en[i0:i1].max() > rest_en * 1.25:
+        # Loudest by a clear margin (peak +3 dB, 400 ms energy +2.3 dB), no louder than that.
+        if pk[i0:i1].max() > rest_pk * 1.41 and en[i0:i1].max() > rest_en * 1.3:
             break
-        fin_gain *= 1.12
+        fin_gain *= 1.06
     scale = 0.97 / max(1e-9, np.abs(out).max())
     out = out * scale
     pk, en = levels(out)
