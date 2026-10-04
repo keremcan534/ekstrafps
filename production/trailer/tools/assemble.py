@@ -37,6 +37,9 @@ class Source:
         self.name = name
         d = ROOT / "frames" / name
         self.files = sorted(d.glob("*.jpg"))
+        # Frames are saved under their real index; a partial capture (&win / &every) leaves gaps.
+        self.index = {int(f.stem): f for f in self.files}
+        self.keys = sorted(self.index)
         take = name.split("-")[0]
         ev = ROOT / "build" / "events" / f"{take}.json"
         self.meta = json.loads(ev.read_text()) if ev.exists() else {"fps": 30, "handles": 0.25, "events": []}
@@ -48,7 +51,12 @@ class Source:
         return cls.cache[name]
 
     def _load(self, k):
-        f = self.files[max(0, min(k, len(self.files) - 1))]
+        f = self.index.get(k)
+        if f is None:  # nearest captured frame (gaps only outside the windows the edit uses)
+            import bisect
+            j = bisect.bisect_left(self.keys, k)
+            near = [self.keys[x] for x in (j - 1, j) if 0 <= x < len(self.keys)]
+            f = self.index[min(near, key=lambda q: abs(q - k))]
         im = Image.open(f).convert("RGB")
         return im if im.size == (W, H) else im.resize((W, H), Image.LANCZOS)
 
@@ -64,8 +72,17 @@ class Source:
         return self._load(int(round((t + self.meta["handles"]) * fps)))
 
 
+FONTS = ["C:/Windows/Fonts/bahnschrift.ttf", str(ROOT / "build" / "fonts" / "Barlow-Medium.ttf"),
+         "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"]
+
+
 def font(size, bold=False):
-    return ImageFont.truetype("C:/Windows/Fonts/bahnschrift.ttf", size)
+    for f in FONTS:
+        try:
+            return ImageFont.truetype(f, size)
+        except OSError:
+            continue
+    return ImageFont.load_default()
 
 
 # ------------------------------------------------------------------ motion graphics

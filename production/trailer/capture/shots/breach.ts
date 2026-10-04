@@ -3,6 +3,7 @@ import type { CameraState, Shot } from '../Director';
 import { Soldier, type PlayerTarget, type SoldierDeps } from '../../../../src/enemies/Soldier';
 import { handheld } from '../stage';
 import { AISLE_Z, NIGHT_POST, aimAt, ally, pulse, stage, trigger, type S9 } from './site9';
+import { beam } from './sable';
 
 /**
  * SABLE breach (real soldier rigs, real weapons and tracers): the alarm
@@ -15,6 +16,12 @@ const v = (x: number, y: number, z: number) => new THREE.Vector3(x, y, z);
 const BREACH = 1.2;
 const ENTER = 1.45;
 const FIRE = 3.2;
+/**
+ * &nobeams (trailer v3): no rifle beams on the breach team. In the haze their beams (and the
+ * pooled lights they carry) flood every camera that looks back down the barrels; without
+ * them the team reads as silhouettes and NVG tubes against the red. Render only.
+ */
+const BEAMS_OFF = new URLSearchParams(location.search).has('nobeams');
 
 interface Br {
   s: S9;
@@ -93,6 +100,7 @@ export const BD: Shot = {
       const aiming = t > FIRE - 0.6;
       const face = aiming ? x.target.chest.clone().add(v(0, 0, (i - 1.5) * 1.2)) : null;
       sol.update(ctx.dt, x.target, x.bd, face, aiming ? 'aim' : 'ready', t > FIRE + i * 0.3);
+      if (BEAMS_OFF) beam(sol, 0);
     });
   },
   input(ctx, input) {
@@ -128,6 +136,12 @@ export const BD: Shot = {
     },
     // Low on the floor ahead of them: boots and silhouettes against the red smoke as they fan out.
     low: (ctx): CameraState => ({ pos: v(-57.5, 0.28, AISLE_Z + 0.7).add(handheld(ctx.t, 0.006, 4)), target: v(-67, 1.3, AISLE_Z), lens: 24 }),
+  },
+  beforeRender(ctx, cam) {
+    // v3: your flashlight at its trailer level in the third-person cameras.
+    if (!BEAMS_OFF || cam === 'pov') return;
+    const fl = (ctx.game.lighting as unknown as { flashlight?: THREE.SpotLight } | null)?.flashlight;
+    if (fl && fl.intensity > 0) fl.intensity = 7;
   },
   post: (_ctx, cam) => ({ ...NIGHT_POST, exposure: cam === 'pov' ? 0.85 : 1.05, ...(cam === 'nvg' ? { dof: { focus: 2.0, aperture: 0.02, maxblur: 0.012 } } : {}) }),
 };
