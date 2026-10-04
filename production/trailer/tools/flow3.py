@@ -182,85 +182,86 @@ def hb(k, j=0):
     return bar(k) + j * BEAT
 
 
+# Source times come from the contact rows of every camera (tools/rows.py): `at` where the
+# moment is fixed, `near` (+ a gunshot when there is one) where the take decides.
 # I. Cold open (track intro, no drums): the rifle in the dark, the Warden on the net.
 shot(0.00, "A02", 0.20, None, "fade")
 shot(hb(-15), "A03", A03_CLICK - BEAT)                      # mag CLICK on the next beat
 shot(hb(-15, 3), "A05", 0.0)                                # red sweep + annotation
 shot(hb(-13), "A04", A04_BACK - BEAT)                       # bolt back on the next beat
 shot(hb(-13, 3), None, None, None, "black")
-# II. Insertion (bar -12, the build, rotor).
-shot(hb(-12), "IN-tilt", 1.0, "SITE-9 / VANTA DYNAMICS RESEARCH CAMPUS", "dissolve")
-shot(hb(-11), "IN-rope", 4.2, None, "dissolve")
-shot(hb(-11, 2), "IN-land", 5.25)
-shot(hb(-10), "IN-crane", 6.3, None, "dissolve")
-shot(hb(-9), "IN-mask", 8.7, None, "dissolve")
-shot(hb(-9, 2), "IN-turn", 9.95)
+# II. Insertion (bar -12, the build, rotor): searchlight, rope, boots, the team, the mask.
+shot(hb(-12), "IN-tilt", 2.4, "SITE-9 / VANTA DYNAMICS RESEARCH CAMPUS", "dissolve")
+shot(hb(-11), "IN-rope", 5.55, None, "dissolve")
+shot(hb(-11, 2), "IN-land", 5.5)
+shot(hb(-10), "IN-team", 5.2, None, "dissolve")
+shot(hb(-9), "IN-mask", 6.0, None, "dissolve")
+shot(hb(-9, 2), "IN-turn", 6.15)
 # Drums in (bar -8): the machines wake; the walk in.
-shot(hb(-8), "RB-visor", 1.25, None, "flash")
-shot(hb(-8, 2), "RB-servo", 2.3)
+shot(hb(-8), "RB-visor", 1.9, None, "flash")
+shot(hb(-8, 2), "RB-servo", 2.0)
 shot(hb(-7), "FC-ots", 0.4, "auto")
-shot(hb(-6), "RB-chest", 2.6)
-shot(hb(-6, 2), "RB-far", 1.6)
-shot(hb(-5), "SV-pov", None, None, "dissolve", fire=False, near=1.0, after=0.3)
-shot(hb(-4), "RB-wide", 3.4, None, "flash")
-shot(hb(-3), "FC-low", 2.2)
+shot(hb(-6), "RB-chest", 2.25)
+shot(hb(-6, 2), "RB-far", 2.75)
+shot(hb(-5), "LB-pov", 4.6, None, "dissolve")
+shot(hb(-4), "RB-wide", 1.0, None, "flash")
+shot(hb(-3), "FC-low", 2.3)
 # The bass drops out (bars -2, -1): hold the aim; two dark beats before the drop.
 shot(hb(-2), "FC-pov", fc0 - 3.65, None, "dissolve")
 shot(hb(-1, 2), None, None, None, "black")
 # III. DROP (bar 0): first shot.
 shot(hb(0), "FC-pov", fc0 - 0.02, None, "flash")
-shot(hb(0, 2), "FC-low", None, None, near=fc0 + 1.2)
+shot(hb(0, 2), "FC-low", None, None, near=fc0 + 0.6)
 shot(hb(1), "SG-pov", (sg[0] - 0.05) if sg else None, None, "flash")
-shot(hb(1, 2), "SG-side", None, None, near=(sg[1] if len(sg) > 1 else 6.0) - 0.3)
-shot(hb(2), "WH-pov", None, "auto", "flash")
-shot(hb(2, 2), "FC-ots", None, None, near=fc0 + 2.5)
+shot(hb(1, 2), "SG-side", None, None, near=(sg[1] if len(sg) > 1 else 6.4) - 0.1)
+shot(hb(2), "WH-pov", None, "auto", "flash", near=2.5)
+shot(hb(2, 2), "FC-ots", None, None, near=fc0 + 2.6)
 # Rooms (bars 3-7, the thinner phrase): a room a bar.
-shot(hb(3), "SV-side", None, "auto", "flash", near=4.0)
-shot(hb(4), "LB-pov", None, "auto")
-shot(hb(4, 2), "LB-mate", None, None)
-shot(hb(5), "PW-front", None, "auto", "flash")
-shot(hb(6), "HG-side", None, "auto")
-shot(hb(6, 2), "HG-front", None, None)
-shot(hb(7), "AT-front", None, "auto", "flash")
-# Bars 8-10 (dense): the squad.
-for i, src in enumerate(["SQ-pov", "SQ-front", "SQ-mate", "AT-pov", "SQ-robo", "HG-pov"]):
-    shot(hb(8, 2 * i), src, None, None, "flash" if i % 2 == 0 else "cut")
+shot(hb(3), "SV-pov", None, "auto", "flash", near=6.3)
+shot(hb(4), "LB-mate", None, "auto", near=0.6)
+shot(hb(4, 2), "LB-pov", None, None, near=3.3)
+shot(hb(5), "PW-pov", None, "auto", "flash", near=4.7)
+shot(hb(6), "HG-side", 0.0, "auto")
+shot(hb(6, 2), "HG-pov", None, None, near=2.4)
+shot(hb(7), "AT-pov", 0.0, "auto", "flash")
+# Bars 8-10 (dense): the squad, two beats a shot, on the gunshots.
+# (SQ-mate: the teammate lit only by his own muzzle flashes, fixed on a burst.)
+for i, (src, nr) in enumerate([("SQ-mate", 5.9), ("WH-mate", 2.5), ("SQ-front", 3.9), ("HG-pov", 4.2), ("SQ-pov", 5.9), ("AT-pov", 2.8)]):
+    shot(hb(8, 2 * i), src, 5.85 if src == "SQ-mate" else None, None, "flash" if i % 2 == 0 else "cut", near=nr)
 # IV. The alarm (bar 11): siren, evacuation PA; the power fails; the breach on bar 14.
-shot(hb(11), "SQ-top", None, None, "flash", fire=False, near=1.0)
-shot(hb(12), "PW-pov", None, None, near=1.5)
-shot(hb(13), "SV-front", None, None, fire=False, near=2.0)
+shot(hb(11), "PW-front", 0.0, None, "flash")
+shot(hb(12), "LB-mate", None, None, near=9.3, fire=False)
+shot(hb(13), "WH-pov", None, None, near=5.0, fire=False)
 shot(hb(13, 2), None, None, None, "black")                  # power out
-shot(hb(13, 3), "BD-breach", BD_BREACH - BEAT, "auto")      # the charge blows on the downbeat
-shot(hb(14, 2), "BD-nvg", 2.4)
-shot(hb(15), "BD-ots", 3.25)
-shot(hb(15, 2), "BD-low", 4.3)
+shot(hb(13, 3), "BD-breach", BD_BREACH - BEAT, None)        # the charge blows on the downbeat
+shot(hb(14, 2), "BD-nvg", 2.4, "auto")
+shot(hb(15), "BD-ots", 3.0)
+shot(hb(15, 2), "BD-breach", 4.4)
 # Bars 16-18: SABLE open fire; the squad answers.
-shot(hb(16), "BD-pov", None, None, "flash", after=4.0)
-shot(hb(16, 2), "BD-low", None, None, after=5.6)
-shot(hb(17), "SQ-front", None, None, "flash", near=12.0)
-shot(hb(17, 2), "BD-breach", None, None, after=4.4)
-shot(hb(18), "SQ-mate", None, None, "flash", near=14.0)
-shot(hb(18, 2), "SQ-pov", None, None, near=15.0)
+shot(hb(16), "BD-pov", None, None, "flash", near=4.1)
+shot(hb(16, 2), "BD-nvg", 3.9)
+shot(hb(17), "SQ-mate", 10.3, None, "flash")
+shot(hb(17, 2), "BD-ots", 5.6)
+shot(hb(18), "SQ-front", None, None, "flash", near=11.4)
+shot(hb(18, 2), "BD-pov", None, None, near=5.6)
 # V. The Warden (bars 19-23, thin phrase): his column comes down the server hall.
-shot(hb(19), "SB-column", 1.2, "auto", "dissolve")
-shot(hb(20), "SB-warden", 2.2)
-shot(hb(21), "SB-side", 3.0, None, "dissolve")
-shot(hb(22), "SB-warden", 4.9)
-shot(hb(22, 2), "SB-pov", None, None, after=5.4, fire=False, near=5.6)
-shot(hb(23), "SB-peek", None, None, "flash", after=6.0, lead=0.12)
-shot(hb(23, 2), "SB-column", None, None, after=6.3)
+shot(hb(19), "SB-column", 2.4, "auto", "dissolve")
+shot(hb(20), "SB-warden", 1.0)
+shot(hb(21), "SB-peek", 6.0, None, "dissolve")
+shot(hb(21, 2), "SB-side", 9.45)
+shot(hb(22), "SB-column", 7.3, None, "flash")
+shot(hb(23), "SB-warden", 5.4)
 # ---- the music edit: bar 63 (build), a cut on every beat
-for i, src in enumerate(["SQ-robo", "HG-pov", "PW-pov", "AT-side"]):
-    shot(hb(63, i), src, None, None, "flash" if i == 0 else "cut")
-# VI. The climax (bars 64-71): two beats a shot, then every beat, a held bar, the four hits.
-for i, src in enumerate(["BD-pov", "WH-mate", "SB-peek", "HG-front", "SV-pov", "LB-pov", "BD-nvg", "AT-front"]):
-    shot(hb(64, 2 * i), src, None, None, "flash" if i % 2 == 0 else "cut")
-for i, src in enumerate(["SG-side", "SB-pov", "AT-side", "PW-front", "WH-pov", "SB-side", "SV-side", "LB-mate"]):
-    shot(hb(68, i), src, None, None, "flash" if i % 4 == 0 else "cut")
-shot(hb(70), "BD-ots", None, None, "flash", after=4.5)      # the thin bar: held, the Warden's side
-shot(hb(71), "SQ-top", None, None, near=12.0)
-for T, src in zip(HITS, ["SG-pov", "HG-side", "AT-pov", "WH-mate"]):
-    shot(T, src, None, None, "flash")
+for i, (src, nr) in enumerate([("HG-side", 8.8), ("PW-pov", 6.4), ("SV-pov", 10.6), ("AT-side", 2.9)]):
+    shot(hb(63, i), src, None, None, "flash" if i == 0 else "cut", near=nr, fire=src != "HG-side")
+# VI. The climax (bars 64-71): two beats a shot, a held bar, two beats, the four hits.
+for i, (src, nr) in enumerate([("SB-peek", 9.3), ("SG-pov", 6.35), ("SQ-robo", 3.0), ("HG-front", 8.6), ("SV-front", 6.4), ("WH-mate", 5.6),
+                               ("SQ-robo", 7.0), ("PW-front", 9.1), ("SG-side", 3.2), ("SQ-pov", 11.9), ("AT-side", 6.7), ("AT-front", 2.0)]):
+    shot(hb(64, 2 * i), src, None, None, "flash" if i % 2 == 0 else "cut", near=nr, fire=src not in ("HG-front", "PW-front"))
+shot(hb(70), "RB-visor", 4.4, None, "flash")                # the thin bar: the machine looks back
+shot(hb(71), "SV-front", None, None, near=11.0)
+for T, (src, nr) in zip(HITS, [("AT-front", 5.5), ("SB-side", 10.8), ("HG-front", 0.5), ("RB-servo", 0.3)]):
+    shot(T, src, None, None, "flash", near=nr)
 # VII. The ending, on the chord: on the floor; he walks up, speaks, draws down, fires.
 shot(CHORD, "WD-floor", wd_shot - (SHOT - CHORD))
 shot(CHORD + 6 * BEAT, "WD-mask", wd_shot - (SHOT - (CHORD + 6 * BEAT)))
@@ -282,7 +283,8 @@ for s in shots:
     if s["src"] and s["src"] != "TITLE" and s["at"] is None:
         o = s["o"]
         dur = s["T1"] - s["T"] + 0.05
-        s["at"] = pick(s["src"], dur, after=o.get("after", 1.0), lead=o.get("lead", 0.08), near=o.get("near"), fire=o.get("fire", True))
+        nr = o.get("near")
+        s["at"] = pick(s["src"], dur, after=o.get("after", 0.0 if nr is not None else 1.0), lead=o.get("lead", 0.08), near=nr, fire=o.get("fire", True))
         claim(s["src"], s["at"], s["at"] + dur)
 last_room = None
 numbered = {}
@@ -578,7 +580,7 @@ def render_audio(path):
             gun_duck(T, 1.6)
     # SABLE net: the lead sees you, spreads them, contact; the Warden's orders over his column.
     calls = [(hb(15) + 0.15, "bd_see_enemy", 1, "radio"), (hb(16) + 0.3, "bd_spread_out", 0, "radio"), (hb(18) + 0.2, "bd_contact", -1, "radio"),
-             (hb(19) + 0.5, "commander_command_14", -1, "radio"), (hb(21) + 0.4, "commander_threat_07", 0, "near"),
+             (hb(19) + 0.5, "commander_command_14", -1, "radio"), (hb(20) + 0.5, "commander_threat_07", 0, "near"),
              (hb(23) + 0.7, "bd_flanking", -3, "radio"), (hb(68) + 0.25, "commander_lowhp_04", -2, "radio")]
     for T, name, g, how in calls:
         A.place(sfx, A.sample("static"), T - 0.12, -13)
