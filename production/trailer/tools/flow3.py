@@ -258,7 +258,7 @@ for i, (src, nr) in enumerate([("HG-side", 8.8), ("PW-pov", 6.4), ("SV-pov", 10.
 for i, (src, nr) in enumerate([("SB-peek", 9.3), ("SG-pov", 6.35), ("SQ-robo", 3.0), ("HG-front", 8.6), ("SV-front", 6.4), ("WH-mate", 5.6),
                                ("SQ-robo", 7.0), ("PW-front", 9.1), ("SG-side", 3.2), ("SQ-pov", 11.9), ("AT-side", 6.7), ("AT-front", 2.0)]):
     shot(hb(64, 2 * i), src, None, None, "flash" if i % 2 == 0 else "cut", near=nr, fire=src not in ("HG-front", "PW-front"))
-shot(hb(70), "RB-visor", 4.4, None, "flash")                # the thin bar: the machine looks back
+shot(hb(70), "WD-mask", 1.4, None, "flash")                 # the thin bar: him, walking out of the dark (the ending, early)
 shot(hb(71), "SV-front", None, None, near=11.0)
 for T, (src, nr) in zip(HITS, [("AT-front", 5.5), ("SB-side", 10.8), ("HG-front", 0.5), ("RB-servo", 0.3)]):
     shot(T, src, None, None, "flash", near=nr)
