@@ -1,0 +1,83 @@
+/* Character dossier: an old war-game mission select. Serif type, a grainy sepia
+   portrait fading into black on the left, the roster over the dark side. */
+.dossier {
+  --dos-ink: #e9e2d2;
+  --dos-dim: #9d968a;
+  --dos-hot: #e8a33a;
+  --dos-line: rgba(233, 226, 210, 0.55);
+  position: absolute; inset: 0; z-index: 30; display: none; background: #050505; color: var(--dos-ink);
+  font-family: Georgia, 'Times New Roman', 'Palatino Linotype', serif; overflow: hidden;
+}
+.dossier.in { display: block; animation: dos-in 0.5s ease-out; }
+@keyframes dos-in { from { opacity: 0; } to { opacity: 1; } }
+
+/* Header: title left, counter right, a thin rule under. */
+.dos-head { position: absolute; left: 6vw; right: 6vw; top: 4.5vh; display: flex; justify-content: space-between; align-items: baseline;
+  padding-bottom: 6px; border-bottom: 1px solid var(--dos-line); z-index: 3; text-shadow: 0 1px 4px #000; }
+.dos-title { font-size: clamp(17px, 1.9vw, 26px); font-weight: 700; }
+.dos-count { font-size: clamp(12px, 1.2vw, 16px); font-weight: 700; color: var(--dos-ink); }
+
+/* Portrait: right side, toned, fading into the dark on the left, slow drift. */
+.dos-shots { position: absolute; top: 0; bottom: 0; right: 0; width: 66%; z-index: 0; }
+.dos-shot { position: absolute; inset: 0; opacity: 0; transition: opacity 0.9s ease;
+  -webkit-mask-image: linear-gradient(90deg, transparent 0%, #000 34%); mask-image: linear-gradient(90deg, transparent 0%, #000 34%); }
+.dos-shot.on { opacity: 1; }
+.dos-img, .dos-timg { position: absolute; inset: 0; overflow: hidden; }
+.dos-img img, .dos-timg img { width: 100%; height: 100%; object-fit: cover; object-position: 50% 25%; display: block;
+  filter: grayscale(0.5) sepia(0.55) contrast(1.18) brightness(0.82); }
+.dos-shot.on .dos-img img { animation: dos-drift 22s ease-in-out infinite alternate, dos-flicker 5.3s steps(1) infinite; }
+@keyframes dos-drift { from { transform: scale(1.04) translate(0, 0); } to { transform: scale(1.12) translate(-1.5%, -1%); } }
+@keyframes dos-flicker { 0%, 100% { opacity: 1; } 41% { opacity: 0.93; } 42% { opacity: 1; } 77% { opacity: 0.96; } 78% { opacity: 1; } }
+/* No photo yet: a dark silhouette under a soft light. */
+.dos-empty { background:
+  radial-gradient(ellipse 22% 18% at 58% 34%, #3a3428 0 60%, transparent 62%),
+  radial-gradient(ellipse 38% 34% at 58% 82%, #2c271e 0 60%, transparent 62%),
+  radial-gradient(ellipse 70% 80% at 60% 40%, #3b352b 0%, #15130f 70%); filter: sepia(0.4); }
+.dos-vignette { position: absolute; inset: 0; pointer-events: none;
+  background: radial-gradient(ellipse 80% 75% at 60% 45%, transparent 45%, rgba(0, 0, 0, 0.75) 100%),
+              linear-gradient(0deg, rgba(0, 0, 0, 0.7), transparent 30%); }
+.dos-grain { position: absolute; inset: -50%; pointer-events: none; opacity: 0.55; mix-blend-mode: overlay; animation: dos-grain 0.8s steps(6) infinite; }
+@keyframes dos-grain { 0% { transform: translate(0, 0); } 20% { transform: translate(-7%, 4%); } 40% { transform: translate(5%, -6%); }
+  60% { transform: translate(-3%, 8%); } 80% { transform: translate(8%, 2%); } 100% { transform: translate(0, 0); } }
+
+/* Roster: flags and names over the dark side; the selected one burns orange. */
+.dos-list { position: absolute; left: 10vw; top: 12vh; bottom: 30vh; width: min(380px, 34vw); overflow-y: auto; z-index: 2; scrollbar-width: none; }
+.dos-list::-webkit-scrollbar { display: none; }
+.dos-row { display: flex; align-items: center; gap: 12px; width: 100%; padding: 3px 0; background: none; border: 0; color: var(--dos-ink);
+  font: inherit; font-size: clamp(13px, 1.25vw, 17px); text-align: left; cursor: pointer; text-shadow: 0 1px 3px #000; }
+.dos-row:hover span { color: #fff; }
+.dos-row.on span { color: var(--dos-hot); }
+.dos-flag { flex: none; width: 26px; height: 16px; background: linear-gradient(180deg, var(--f0) 0 34%, var(--f1) 34% 66%, var(--f0) 66%);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.6); }
+
+/* Caption: lower right, the way a photo is captioned. */
+.dos-cap { position: absolute; right: 6vw; bottom: 30vh; width: min(460px, 42vw); text-align: right; z-index: 2; opacity: 0; text-shadow: 0 1px 4px #000; }
+.dos-cap.in { animation: dos-cap 0.8s 0.25s ease-out forwards; }
+@keyframes dos-cap { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+.dos-cap b { display: block; font-size: clamp(14px, 1.35vw, 19px); font-weight: 400; }
+.dos-cap span { display: block; font-size: clamp(13px, 1.25vw, 17px); }
+.dos-cap em { display: block; margin-top: 8px; font-size: clamp(11px, 1vw, 14px); color: var(--dos-dim); }
+
+/* Bottom: the faction's frames, the timeline rule, the hints. */
+.dos-foot { position: absolute; left: 6vw; right: 6vw; bottom: 3.5vh; z-index: 3; }
+.dos-thumbs { display: flex; gap: 10px; margin-left: 4vw; margin-bottom: 8px; }
+.dos-thumb { position: relative; width: clamp(64px, 7vw, 96px); aspect-ratio: 4 / 3; padding: 0; border: 2px solid #3a3a3a; background: #111; cursor: pointer; }
+.dos-thumb.on { border-color: var(--dos-ink); }
+.dos-ruler { display: flex; border-top: 1px solid var(--dos-line); padding-top: 4px; }
+.dos-tick { flex: 1; position: relative; background: none; border: 0; color: var(--dos-dim); font: inherit; font-size: clamp(10px, 0.95vw, 13px); cursor: pointer; }
+.dos-tick::before { content: ''; position: absolute; left: 0; top: -9px; height: 9px; border-left: 1px solid var(--dos-line); }
+.dos-tick.on { color: var(--dos-ink); }
+.dos-hints { display: flex; justify-content: center; gap: 28px; margin-top: 10px; padding-top: 6px; border-top: 1px solid var(--dos-line); font-size: clamp(12px, 1.1vw, 15px); }
+.dos-hints kbd, .dos-hints button { font: inherit; }
+.dos-hints kbd { display: inline-block; min-width: 20px; padding: 0 5px; margin-right: 4px; border-radius: 10px; background: #2a2a2a; border: 1px solid #555; text-align: center; font-size: 0.85em; }
+.dos-back { background: none; border: 0; color: var(--dos-ink); cursor: pointer; }
+
+.menu.dossier-open .menu-left, .menu.dossier-open .menu-panel, .menu.dossier-open .showcase-cap, .menu.dossier-open .menu-foot { visibility: hidden; }
+
+/* Phones: the portrait fills the screen, the roster on a dark band. */
+@media (max-aspect-ratio: 1/1), (max-width: 700px) {
+  .dos-shots { width: 100%; }
+  .dos-shot { -webkit-mask-image: none; mask-image: none; }
+  .dos-list { left: 4vw; width: 60vw; background: linear-gradient(90deg, rgba(0, 0, 0, 0.75), transparent); }
+  .dos-cap { width: 60vw; }
+}

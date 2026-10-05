@@ -4,6 +4,7 @@ import type { Game } from '../core/Game';
 import { feel } from '../config/Feel';
 import { playerConfig } from '../player/PlayerConfig';
 import { Showcase } from './Showcase';
+import { Dossier } from './Dossier';
 import { PERKS, SIDEARMS, levelOf, loadProfile, perkSlots, saveProfile, type PerkId } from '../game/Progress';
 import { FPS_CAPS, loadGraphics, maxResolution, presetSettings, type GraphicsSettings } from '../config/Graphics';
 import { isTouchDevice } from '../core/math';
@@ -159,6 +160,7 @@ export class MainMenu {
     this.playBtn.disabled = true;
     this.button('OPERATIONS', '', () => this.show('operations'), 'operations');
     this.button('ARMORY', '', () => this.show('armory'), 'armory');
+    this.button('DOSSIER', '', () => this.openDossier(), 'dossier');
     this.button('SETTINGS', '', () => this.show('settings'), 'settings');
     this.button('CONTROLS', '', () => this.show('controls'), 'controls');
     this.button('MAIN MENU', 'tomenu', () => {
@@ -196,6 +198,7 @@ export class MainMenu {
       });
     }
     window.addEventListener('keydown', (e) => {
+      if (this.dossier?.open) return;
       if (this.visible && this.ready && (e.code === 'Enter' || (e.code === 'Space' && this.paused))) this.play();
     });
   }
@@ -259,6 +262,14 @@ export class MainMenu {
   }
 
   private section: string | null = null;
+  private dossier: Dossier | null = null;
+
+  /** The character dossier: full screen over the menu (Esc / Back returns). */
+  private openDossier(): void {
+    this.dossier ??= new Dossier(this.root, () => this.root.classList.remove('dossier-open'));
+    this.root.classList.add('dossier-open');
+    this.dossier.show();
+  }
   private showcase: Showcase | null = null;
   private profileEl: HTMLDivElement;
 
