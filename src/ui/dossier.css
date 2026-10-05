@@ -18,12 +18,12 @@
 .dos-count { font-size: clamp(12px, 1.2vw, 16px); font-weight: 700; color: var(--dos-ink); }
 
 /* Portrait: right side, toned, fading into the dark on the left, slow drift. */
-.dos-shots { position: absolute; top: 0; bottom: 0; right: 0; width: 66%; z-index: 0; }
+.dos-shots { position: absolute; inset: 0; z-index: 0; } /* the photos keep their subject right, the left dark */
 .dos-shot { position: absolute; inset: 0; opacity: 0; transition: opacity 0.9s ease;
-  -webkit-mask-image: linear-gradient(90deg, transparent 0%, #000 34%); mask-image: linear-gradient(90deg, transparent 0%, #000 34%); }
+  -webkit-mask-image: linear-gradient(90deg, rgba(0,0,0,0.35) 0%, #000 45%); mask-image: linear-gradient(90deg, rgba(0,0,0,0.35) 0%, #000 45%); }
 .dos-shot.on { opacity: 1; }
 .dos-img, .dos-timg { position: absolute; inset: 0; overflow: hidden; }
-.dos-img img, .dos-timg img { width: 100%; height: 100%; object-fit: cover; object-position: 50% 25%; display: block;
+.dos-img img, .dos-timg img { width: 100%; height: 100%; object-fit: cover; object-position: 78% 30%; display: block;
   filter: saturate(0.85) contrast(1.05) brightness(0.92); } /* the photos bring their own tone */
 .dos-shot.on .dos-img img { animation: dos-drift 22s ease-in-out infinite alternate, dos-flicker 5.3s steps(1) infinite; }
 @keyframes dos-drift { from { transform: scale(1.04) translate(0, 0); } to { transform: scale(1.12) translate(-1.5%, -1%); } }
@@ -51,7 +51,7 @@
   box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.6); }
 
 /* Caption: lower right, the way a photo is captioned. */
-.dos-cap { position: absolute; right: 6vw; bottom: 30vh; width: min(460px, 42vw); text-align: right; z-index: 2; opacity: 0; text-shadow: 0 1px 4px #000; }
+.dos-cap { position: absolute; right: 6vw; bottom: 25vh; width: min(460px, 42vw); text-align: right; z-index: 2; opacity: 0; text-shadow: 0 1px 4px #000; }
 .dos-cap.in { animation: dos-cap 0.8s 0.25s ease-out forwards; }
 @keyframes dos-cap { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
 .dos-cap b { display: block; font-size: clamp(14px, 1.35vw, 19px); font-weight: 400; }
