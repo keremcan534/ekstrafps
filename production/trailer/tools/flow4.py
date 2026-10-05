@@ -200,7 +200,8 @@ chain(6.94, [(hb(22), "SB-warden", "cut"), (hb(22, 2), "SB-eyes", "glitch", {"fx
 shot(hb(63), "SB-warden", 10.72, None, "cut", speed=0.6)
 # VIII. The last stand: the security camera sees him break cover; they walk you down; the
 #       machines keep coming.
-chain(11.4, [(hb(64), "SB-cctv", "flash", {"fx": ["cctv"], "label": "CAM 07  SERVER HALL B"}), (hb(64, 2), "SB-eyes", "cut", {"fx": ["nvg"]})])
+shot(hb(64), "SB-cctv", 11.4, None, "flash", fxs=["cctv"], label="CAM 07  SERVER HALL B")
+shot(hb(64, 2), "SB-side", 7.6)  # over the desk, firing (by 12.4 the squad has moved on)
 shot(hb(65), "HG-pov", 4.6, None, "whip")
 chain(13.4, [(hb(66), "SB-column", "whip"), (hb(66, 2), "SB-peek", "cut")])
 shot(hb(67), "LB-mate", 8.86, None, "whip")  # the take ends at 11.0

@@ -4,6 +4,7 @@ import type { Game } from '../../../../src/core/Game';
 import type { WeaponData } from '../../../../src/weapons/WeaponData';
 import { Soldier, type PlayerTarget, type SoldierDeps } from '../../../../src/enemies/Soldier';
 import { feel } from '../../../../src/config/Feel';
+import { weaponLight } from '../../../../src/fx/WeaponLights';
 import { handheld } from '../stage';
 import { AISLE_Z, NIGHT_POST, aimAt, pulse, stage, survival, trigger } from './site9';
 import { aisleDead, brass, type Aftermath } from '../blood';
@@ -298,6 +299,12 @@ export const SB: Shot = {
     if (fl) fl.intensity = 0;
     // The hero cameras look back down the barrels: no beam cones in them (render only).
     if (cam === 'orbit' || cam === 'column' || cam === 'cctv') for (const q of B!.squad) beam(q, 0);
+    // From the ceiling the rifle lights' real spot pools blow out the floor (four white discs
+    // in the security feed): a quarter of their strength there (render only).
+    if (cam === 'cctv') {
+      const wl = (ctx.game as unknown as { weaponLights?: { lights: THREE.SpotLight[] } }).weaponLights;
+      for (const l of wl?.lights ?? []) if (l.intensity > 0) l.intensity = 60 * weaponLight.level * 0.25;
+    }
     // Cinematographer's fill over the subject of each camera (none in the gameplay view).
     const sq = B!.squad;
     const w = cam === 'side' ? sq[1].pos.clone().lerp(sq[2].pos, 0.5) : cam === 'peek' ? sq[1].pos : sq[0].pos;
