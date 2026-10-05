@@ -11,7 +11,8 @@
     "lab": "vite --open",
     "desktop": "vite build && electron .",
     "desktop:build": "vite build && electron-builder --win portable",
-    "android:build": "node scripts/build-apk.mjs"
+    "android:build": "node scripts/build-apk.mjs",
+    "trailer:v4": "node production/trailer/tools/v4_local.mjs"
   },
   "dependencies": {
     "@capacitor/core": "^8.5.2",

@@ -27,7 +27,7 @@ export interface SoldierMaterials {
   fur: THREE.MeshStandardMaterial;
   glove: THREE.MeshStandardMaterial;
   pants: THREE.MeshStandardMaterial;
-  /** Gas-mask eye lenses (dark glass with a faint green sheen). */
+  /** Gas-mask eye lenses: dark smoked glass (SABLE's only glow is the NVG). */
   lens: THREE.MeshStandardMaterial;
   rubber: THREE.MeshStandardMaterial;
   /** Lens rims, mask hardware. */
@@ -84,12 +84,18 @@ export function soldierMaterials(palette: SoldierPalette = 'bd'): SoldierMateria
     m.lens.color.setHex(0x0b0d10);
     m.lens.emissive.setHex(0x203040);
     m.lens.emissiveIntensity = 0.15;
+  } else {
+    // SABLE respirator lenses: dark smoked glass that only reflects. The quad NVG above them is
+    // their one glow (glowing lenses under glowing tubes read as two pairs of goggles).
+    m.lens.color.setHex(0x060708);
+    m.lens.emissive.setHex(0x0b1210);
+    m.lens.emissiveIntensity = 0.04;
+    m.lens.metalness = 0.85;
+    m.lens.roughness = 0.06;
   }
   if (palette === 'bdboss') {
     m.hood.color.setHex(0x55595f);
     m.fur.color.setHex(0x6f675d);
-    // The commander's lenses are dark glass, no glow.
-    m.lens.emissiveIntensity = 0.06;
   }
   shared.set(palette, m);
   return m;

@@ -164,6 +164,8 @@ export const A02: Shot = {
 /** A03: magazine rises and seats, CLICK at T 5.750; 85 mm side profile, locked off. */
 export const A03: Shot = {
   map: 'lab',
+  // Longer than its EDL row: the cut holds it a beat past the CLICK.
+  duration: 1.75,
   setup,
   update(ctx) {
     const m = M!;

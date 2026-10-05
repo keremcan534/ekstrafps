@@ -16,6 +16,7 @@ const v = (x: number, y: number, z: number) => new THREE.Vector3(x, y, z);
 
 interface Ins {
   lead: Soldier;
+  landed: boolean;
   ops: Soldier[];
   heli: THREE.Group;
   rotor: THREE.Mesh;
@@ -49,6 +50,17 @@ export function gradientTex(): THREE.Texture {
   g.fillRect(0, 0, 4, 256);
   const t = new THREE.CanvasTexture(c);
   return t;
+}
+
+/** Fast-rope height: hang, let go, accelerate, brake over the last metres, touch down moving. */
+function ropeHeight(t: number): number {
+  if (t <= DESC0) return ROPE_TOP;
+  if (t >= DESC1) return 0;
+  const k = (t - DESC0) / (DESC1 - DESC0);
+  // Half a smoothstep (speeds up mid-rope, brakes at the bottom), half constant speed: he
+  // pushes off the skid and still meets the deck at ~2 m/s instead of settling like a crane load.
+  const fall = 0.5 * smoothstep(k) + 0.5 * k;
+  return ROPE_TOP * (1 - fall);
 }
 
 function heliAt(t: number): THREE.Vector3 {
@@ -202,7 +214,7 @@ export const IN: Shot = {
     op2.spawn(v(1.1, 0, -10.2), Math.PI);
     op1.steerTo(v(-1.9, 0, -23.4), 1.45);
     const player: PlayerTarget = { feet: v(0, -50, 200), head: v(0, -48, 200), chest: v(0, -49, 200), velocity: v(0, 0, 0), sprinting: false, crouching: false, alive: false };
-    I = { lead, ops: [op1, op2], heli, rotor, nav, beam, search, rope, wash, washSeed: seed, motes, player };
+    I = { lead, landed: false, ops: [op1, op2], heli, rotor, nav, beam, search, rope, wash, washSeed: seed, motes, player };
   },
   update(ctx) {
     const s = I!;
@@ -215,7 +227,8 @@ export const IN: Shot = {
     s.rotor.rotation.z += dt * 40;
     s.nav.visible = Math.floor(t * 1.4) % 2 === 0;
     const aim = v(Math.sin(t * 0.55) * 7 - 1, 0, -19 + Math.cos(t * 0.37) * 4);
-    if (t > DESC0 - 1 && t < DESC1 + 1) aim.lerp(LAND, 0.75);
+    // v4: the light stays on the lead until he turns (the aircraft lifting away pulls it long).
+    if (t > DESC0 - 1 && t < DESC1 + 5.5) aim.lerp(LAND, 0.75 * Math.min(1, (t - DESC0 + 1) / 0.6));
     s.search.position.copy(hp).add(v(-1.6, -1.2, 0));
     s.search.target.position.copy(aim);
     s.search.target.updateMatrixWorld();
@@ -253,10 +266,25 @@ export const IN: Shot = {
     op1.update(dt, s.player, mates, face && op1.pathDone ? face : null, 'low', false);
     op2.update(dt, s.player, mates, face && op2.pathDone ? face : null, 'low', false);
     // Lead: on the rope (hopY), lands, waits, hears the beep at 10.2, turns a few degrees, rifle up.
-    const h = t < DESC0 ? ROPE_TOP : t < DESC1 ? ROPE_TOP * (1 - smoothstep((t - DESC0) / (DESC1 - DESC0)) ** 0.8) : 0;
-    (s.lead as unknown as { hopY: number }).hopY = h;
+    // A real fast-rope: he lets go and accelerates, brakes over the last metres but still
+    // arrives at ~2 m/s, knees bent round the rope; the boots hit, the knees fold, he comes up.
+    (s.lead as unknown as { hopY: number }).hopY = ropeHeight(t);
+    const onRope = t < DESC1;
+    const sinceLand = t - DESC1;
+    const landing = sinceLand >= 0 && sinceLand < 1.1 ? Math.exp(-sinceLand * 2.6) * Math.min(1, sinceLand / 0.06) : 0;
+    s.lead.crouchTarget = onRope && t > DESC0 - 0.6 ? 0.42 : 0.95 * landing;
+    if (sinceLand >= 0 && !s.landed) {
+      s.landed = true;
+      s.lead.body.rise.impulse(-1.6); // the body drops into the knees
+    }
     const leadFace = t > 10.2 ? v(LAND.x + 7, 1.5, LAND.z + 9) : v(LAND.x, 1.5, LAND.z + 10);
     s.lead.update(dt, s.player, mates, leadFace, t > 10.6 ? 'ready' : 'low', false);
+    if (onRope && t > DESC0 - 0.6) {
+      // Spin and sway on the rope (render only: the rig turns, the brain's yaw doesn't).
+      const root = s.lead.body.root;
+      root.rotation.y += Math.sin(t * 2.1) * 0.22 + Math.sin(t * 0.9 + 1) * 0.12;
+      root.rotation.z = Math.sin(t * 1.7) * 0.05;
+    } else s.lead.body.root.rotation.z = 0;
   },
   cams: {
     // B01: lens on the deck, operators walk past.
@@ -275,7 +303,8 @@ export const IN: Shot = {
     // B04: 50 mm on gloves and rope as the lead slides down, tilting toward the boots.
     rope: (ctx) => {
       const L = I!.lead;
-      const hy = (L as unknown as { hopY: number }).hopY;
+      // Aim where he will be (the operator damping lags a fast descent by ~0.4 s).
+      const hy = ropeHeight(ctx.t + 0.4);
       const y = Math.max(0.5, hy + 1.6 - ease(ctx.t, [[4.6, 0], [5.8, 1.2]]));
       return { pos: v(L.pos.x + 1.5, y + 0.15, L.pos.z + 1.6).add(handheld(ctx.t, 0.004, 4)), target: v(L.pos.x, y, L.pos.z), lens: 50 };
     },

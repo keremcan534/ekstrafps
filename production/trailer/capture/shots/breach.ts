@@ -3,6 +3,8 @@ import type { CameraState, Shot } from '../Director';
 import { Soldier, type PlayerTarget, type SoldierDeps } from '../../../../src/enemies/Soldier';
 import { handheld } from '../stage';
 import { AISLE_Z, NIGHT_POST, aimAt, ally, pulse, stage, trigger, type S9 } from './site9';
+import { beam } from './sable';
+import { thermalPass } from '../thermal';
 
 /**
  * SABLE breach (real soldier rigs, real weapons and tracers): the alarm
@@ -15,6 +17,12 @@ const v = (x: number, y: number, z: number) => new THREE.Vector3(x, y, z);
 const BREACH = 1.2;
 const ENTER = 1.45;
 const FIRE = 3.2;
+/**
+ * &nobeams (trailer v3): no rifle beams on the breach team. In the haze their beams (and the
+ * pooled lights they carry) flood every camera that looks back down the barrels; without
+ * them the team reads as silhouettes and NVG tubes against the red. Render only.
+ */
+const BEAMS_OFF = new URLSearchParams(location.search).has('nobeams');
 
 interface Br {
   s: S9;
@@ -24,6 +32,7 @@ interface Br {
   flash: THREE.PointLight;
   target: PlayerTarget;
   blown: boolean;
+  kick?: THREE.PointLight;
 }
 let X: Br | null = null;
 
@@ -93,6 +102,7 @@ export const BD: Shot = {
       const aiming = t > FIRE - 0.6;
       const face = aiming ? x.target.chest.clone().add(v(0, 0, (i - 1.5) * 1.2)) : null;
       sol.update(ctx.dt, x.target, x.bd, face, aiming ? 'aim' : 'ready', t > FIRE + i * 0.3);
+      if (BEAMS_OFF) beam(sol, 0);
     });
   },
   input(ctx, input) {
@@ -126,8 +136,40 @@ export const BD: Shot = {
       const s = Math.sin(L.yaw);
       return { pos: v(L.pos.x + 0.5 * c - 1.3 * s, 1.78, L.pos.z - 0.5 * c * 0 - 0.5 * s - 1.3 * c).add(handheld(ctx.t, 0.01, 3)), target: v(-40, 1.3, AISLE_Z), lens: 35 };
     },
+    // v4: hero orbit round the lead as he comes through the smoke (low, 28 mm, slow arc).
+    orbit: (ctx): CameraState => {
+      const L = X!.bd[0];
+      const a = 1.9 + Math.max(0, ctx.t - ENTER) * 0.42;
+      const c = v(L.pos.x, 0, L.pos.z);
+      return { pos: c.clone().add(v(Math.sin(a) * 2.7, 0.75, Math.cos(a) * 2.7)), target: c.add(v(0, 1.45, 0)), lens: 28 };
+    },
+    // v4: the squad's thermal sight down the aisle: white-hot shapes through the smoke.
+    thermal: (ctx): CameraState => ({ pos: v(-38.6, 1.62, AISLE_Z + 0.9).add(handheld(ctx.t, 0.006, 6)), target: v(-68, 1.3, AISLE_Z), lens: 55 }),
+    // v4: through the lead's eyes (graded to night vision in post): out of the smoke, onto the squad.
+    eyes: (ctx): CameraState => {
+      const L = X!.bd[0];
+      const f = v(Math.sin(L.yaw), 0, Math.cos(L.yaw));
+      const head = v(L.pos.x, 1.72, L.pos.z).addScaledVector(f, 0.6);
+      const look = head.clone().addScaledVector(f, 6).setY(1.4).lerp(X!.target.chest, 0.55);
+      return { pos: head.add(handheld(ctx.t, 0.012, 5)), target: look, lens: 30 };
+    },
     // Low on the floor ahead of them: boots and silhouettes against the red smoke as they fan out.
     low: (ctx): CameraState => ({ pos: v(-57.5, 0.28, AISLE_Z + 0.7).add(handheld(ctx.t, 0.006, 4)), target: v(-67, 1.3, AISLE_Z), lens: 24 }),
+  },
+  beforeRender(ctx, cam) {
+    // v4: a cold kicker on the lead for the orbit (in the smoke he is otherwise a black shape).
+    if (!X!.kick) {
+      X!.kick = new THREE.PointLight(0xb8c8e0, 0, 7, 1.4);
+      ctx.game.scene.add(X!.kick);
+    }
+    const L = X!.bd[0];
+    X!.kick.position.set(L.pos.x + 1.2, 2.2, L.pos.z + 1.0);
+    X!.kick.intensity = cam === 'orbit' ? 45 : 0;
+    if (cam === 'thermal') thermalPass(ctx.game.scene, [...X!.bd.map((b) => b.body.root), ...X!.s.allies.map((a) => a.soldier.body.root)]);
+    // v3: your flashlight at its trailer level in the third-person cameras.
+    if (!BEAMS_OFF || cam === 'pov') return;
+    const fl = (ctx.game.lighting as unknown as { flashlight?: THREE.SpotLight } | null)?.flashlight;
+    if (fl && fl.intensity > 0) fl.intensity = 7;
   },
   post: (_ctx, cam) => ({ ...NIGHT_POST, exposure: cam === 'pov' ? 0.85 : 1.05, ...(cam === 'nvg' ? { dof: { focus: 2.0, aperture: 0.02, maxblur: 0.012 } } : {}) }),
 };

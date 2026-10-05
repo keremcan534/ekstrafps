@@ -193,6 +193,11 @@ export class Humanoid {
   private elbow = [new Spring(120, 9), new Spring(120, 9)];
   private knee = [new Spring(90, 10), new Spring(90, 10)];
   readonly rise = new Spring(130, 11);
+  /**
+   * The brain's head / spine pose, eased: callers switch it in steps (aim modes, a weapon
+   * check, glances), and applied raw the head snapped between them in a single frame.
+   */
+  private easedPose = { spineX: 0, spineY: 0, headX: 0, headY: 0, fresh: true };
 
   /** On the player's side: rounds from the player and allies pass harmlessly. */
   friendly = false;
@@ -809,6 +814,7 @@ export class Humanoid {
       s.reset();
     }
     this.step.reset();
+    this.easedPose.fresh = true;
     this.stagger = 0;
     this.kneelTimer[0] = this.kneelTimer[1] = 0;
     this.legWound[0] = this.legWound[1] = 0;
@@ -990,10 +996,26 @@ export class Humanoid {
       if (foot) foot.rotation.set(-(tx + sx) - tiltX - lift * 0.25, 0, -out);
     }
 
+    // Head ~80 ms, spine ~120 ms behind the brain's pose: turns, not jumps.
+    const ep = this.easedPose;
+    if (ep.fresh) {
+      ep.spineX = pose.spineX;
+      ep.spineY = pose.spineY;
+      ep.headX = pose.headX;
+      ep.headY = pose.headY;
+      ep.fresh = false;
+    } else {
+      const kh = 1 - Math.exp(-dt / 0.08);
+      const ks = 1 - Math.exp(-dt / 0.12);
+      ep.spineX += (pose.spineX - ep.spineX) * ks;
+      ep.spineY += (pose.spineY - ep.spineY) * ks;
+      ep.headX += (pose.headX - ep.headX) * kh;
+      ep.headY += (pose.headY - ep.headY) * kh;
+    }
     const torso = this.part('torso').group;
     // Leaning into the run; a slight forward lean over the gun when standing to shoot.
-    torso.rotation.set(spineX + pose.spineX + pose.crouch * 0.18 + stride * 0.1 + stance * 0.05, spineY + pose.spineY - pelvis.rotation.y, spineZ - roll * 0.6 + (pose.lean ?? 0) * LEAN_ROLL);
-    this.part('head').group.rotation.set(headX + pose.headX, headY + pose.headY, headZ);
+    torso.rotation.set(spineX + ep.spineX + pose.crouch * 0.18 + stride * 0.1 + stance * 0.05, spineY + ep.spineY - pelvis.rotation.y, spineZ - roll * 0.6 + (pose.lean ?? 0) * LEAN_ROLL);
+    this.part('head').group.rotation.set(headX + ep.headX, headY + ep.headY, headZ);
     // Grip targets are read in torso space: one matrix pass serves both arms.
     if (pose.gripL || pose.gripR) torso.updateMatrixWorld(true);
 
