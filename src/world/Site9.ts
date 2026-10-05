@@ -1,4 +1,5 @@
 import { applyGrime } from '../fx/WorldGrime';
+import { PropKit, PROPS, type PropId } from './Props';
 import { surface, weathered, type SurfaceId, type SurfaceOptions } from '../fx/Surfaces';
 import * as THREE from 'three';
 import type { HitReceiver, Physics } from '../core/Physics';
@@ -279,6 +280,10 @@ export class Site9 implements GameMap {
   private coreGlow: THREE.MeshStandardMaterial;
   private time = 0;
   private mobile: boolean;
+  /** Real (glTF) props, placed while the rooms are built. */
+  private kit!: PropKit;
+  /** Resolves once the prop models are in (never rejects). */
+  loaded: Promise<void> = Promise.resolve();
 
   constructor(private physics: Physics, mobile: boolean) {
     this.mobile = mobile;
@@ -386,6 +391,7 @@ export class Site9 implements GameMap {
     this.navBounds = [...this.layout.bounds] as [number, number, number, number];
     this.doors = this.layout.doors;
 
+    this.kit = new PropKit(mobile);
     this.buildLobby();
     this.buildCafeteria();
     this.buildSecurity();
@@ -416,6 +422,8 @@ export class Site9 implements GameMap {
     this.props = new PhysicsProps(physics);
     this.group.add(this.props.group);
     this.placeProps();
+    // Model props stream in while the game boots (Game.init waits for them before compiling).
+    this.loaded = this.kit.load();
 
     // --- Lighting: night. Dim cool fill and moonlight through the skylights; the
     // light comes from the lamps (pools on the floor + real lights near you, see Lighting).
@@ -600,9 +608,8 @@ export class Site9 implements GameMap {
           const z = az + uz * s + nz * 0.25;
           if (!clearOf(x, z, 0.2, 0.2, 0)) continue;
           if (rnd() < 0.55) {
-            this.cylW(R, 'extinguisher', 0.085, 0.5, [x, 0.55, z], false, [0, 0, 0], 10);
-            this.cylW(R, 'dark', 0.03, 0.08, [x, 0.84, z], false, [0, 0, 0], 6);
-            this.boxW(R, 'gunmetal', nx ? [0.03, 0.14, 0.22] : [0.22, 0.14, 0.03], [x - nx * 0.08, 0.7, z - nz * 0.08], false);
+            this.prop(R, 'extinguisher', [x - nx * 0.06, 0.3, z - nz * 0.06], Math.atan2(nx, nz), { solid: false });
+            this.boxW(R, 'gunmetal', nx ? [0.03, 0.14, 0.22] : [0.22, 0.14, 0.03], [x - nx * 0.1, 0.7, z - nz * 0.1], false);
           } else {
             const along = nz !== 0;
             this.boxW(R, 'dark', along ? [0.7, 0.32, 0.03] : [0.03, 0.32, 0.7], [x - nx * 0.085, 0.42, z - nz * 0.085], false);
@@ -642,9 +649,13 @@ export class Site9 implements GameMap {
     const rot = (dy = 0): V3 => [0, yaw + dy, 0];
     switch (type) {
       case 'crate': {
-        const k = 0.9 + rnd() * 0.3;
-        this.boxW(R, 'woodDark', [k, k, k], [x, k / 2, z], true, rot((rnd() - 0.5) * 0.3));
-        if (rnd() < 0.45) this.boxW(R, 'woodDark', [0.7, 0.7, 0.7], [x, k + 0.35, z], true, rot(rnd()));
+        // Long transport crates, one or two side by side, sometimes a third across the top.
+        const k = 1 + rnd() * 0.15;
+        const yaw0 = yaw + Math.PI / 2 + (rnd() - 0.5) * 0.2;
+        this.prop(R, 'crate', P(-0.3, 0, 0), yaw0, { scale: k });
+        if (rnd() < 0.6) this.prop(R, 'crate', P(0.3, 0, 0), yaw0 + (rnd() - 0.5) * 0.15, { scale: k });
+        if (rnd() < 0.4) this.prop(R, 'crate', P(0, 0.46 * k, 0), yaw + (rnd() - 0.5) * 0.4, { scale: k });
+        else if (rnd() < 0.5) this.prop(R, 'ammoBox', P((rnd() - 0.5) * 0.4, 0.46 * k, 0), yaw + rnd() * 3, { solid: false });
         break;
       }
       case 'pallet': {
@@ -656,36 +667,43 @@ export class Site9 implements GameMap {
         break;
       }
       case 'drums':
-        for (const r of [-0.34, 0.34]) this.cylW(R, rnd() < 0.5 ? 'vanta' : 'drumBlue', 0.3, 0.9, P(r, 0.45, 0), true, [0, 0, 0], 14);
+        for (const r of [-0.34, 0.34]) {
+          const kind: PropId = rnd() < 0.4 ? 'barrel' : rnd() < 0.6 ? 'barrelRusty' : 'barrelPlastic';
+          this.prop(R, kind, P(r, 0, (rnd() - 0.5) * 0.1), rnd() * 6.28);
+        }
+        if (rnd() < 0.3) this.prop(R, 'jerrycan', P(0, 0, 0.45), yaw + (rnd() - 0.5) * 0.6, { solid: false });
         break;
       case 'cylinders':
         for (const r of [-0.22, 0, 0.22]) this.cylW(R, 'steel', 0.11, 1.4, P(r, 0.7, -0.15), true, [0, 0, (rnd() - 0.5) * 0.08], 10);
         this.boxW(R, 'yellow', [0.75, 0.05, 0.05], P(0, 1.05, 0.0), false, rot());
         break;
       case 'boxes':
+        if (rnd() < 0.5) {
+          // A stack of plastic crates (one knocked off now and then).
+          const n = 2 + Math.floor(rnd() * 4);
+          for (let i = 0; i < n; i++) this.prop(R, 'plasticCrate', P((rnd() - 0.5) * 0.06, i * 0.25, 0), yaw + (rnd() - 0.5) * 0.15, { solid: i === 0, collider: [0.51, 0.25 * n, 0.41] });
+          if (rnd() < 0.5) this.prop(R, 'plasticCrate', P(0.55, 0, 0.1), yaw + rnd() * 3, { solid: false });
+          break;
+        }
         for (let i = 0, n = 1 + Math.floor(rnd() * 3); i < n; i++) {
           const b = 0.42 + rnd() * 0.2;
           this.boxW(R, 'cardboard', [b, b * 0.85, b], P((rnd() - 0.5) * 0.3, b * 0.425 + i * b * 0.8, 0), true, rot((rnd() - 0.5) * 0.6));
         }
         break;
       case 'cabinet':
-        this.boxW(R, 'gunmetal', [0.5, 1.32, 0.6], [x, 0.66, z], true, rot());
-        for (let i = 0; i < 4; i++) this.boxW(R, 'dark', [0.16, 0.025, 0.02], P(0, 0.25 + i * 0.32, 0.31), false, rot());
-        if (rnd() < 0.5) this.boxW(R, 'gunmetal', [0.44, 0.26, 0.5], P(0, 0.9, 0.42), true, rot()); // drawer pulled out
+        this.prop(R, 'utilityBox', P(0, 0, 0.05), yaw);
+        if (rnd() < 0.5) this.prop(R, 'utilityBox', P(0.56, 0, 0.05), yaw + (rnd() - 0.5) * 0.1);
         break;
       case 'bags':
         for (let i = 0, n = 2 + Math.floor(rnd() * 3); i < n; i++) {
-          const r = 0.22 + rnd() * 0.1;
-          this.room(R).b.add(this.mats.trash, new THREE.IcosahedronGeometry(r, 1), P((rnd() - 0.5) * 0.8, r * 0.8, (rnd() - 0.5) * 0.3), [rnd(), rnd() * 3, 0], [1, 0.8, 1]);
+          this.prop(R, 'trashbag', P((rnd() - 0.5) * 0.8, 0, (rnd() - 0.5) * 0.3), rnd() * 6.28, { scale: 0.85 + rnd() * 0.3, solid: false });
         }
         this.physics.addStaticBox(new THREE.Vector3(x, 0.3, z), new THREE.Vector3(0.5, 0.3, 0.35), new THREE.Quaternion().setFromEuler(new THREE.Euler(...rot())));
         this.footprints.push([x - 0.55, z - 0.55, x + 0.55, z + 0.55]);
         break;
       case 'chair': {
-        // Knocked over: seat on its side, legs pointing out.
-        this.boxW(R, 'fabric', [0.5, 0.08, 0.5], P(0, 0.27, 0), true, [Math.PI / 2, yaw, 0]);
-        this.boxW(R, 'fabric', [0.5, 0.5, 0.08], P(0, 0.04, 0.25), false, rot());
-        for (const r of [-0.2, 0.2]) this.boxW(R, 'gunmetal', [0.03, 0.03, 0.42], P(r, 0.12, -0.2), false, rot());
+        // Knocked over onto its back.
+        this.prop(R, 'chair', P(0, 0.34, 0), yaw, { tilt: [-Math.PI / 2, 0, 0], collider: [0.57, 0.68, 1.0] });
         break;
       }
     }
@@ -812,6 +830,26 @@ export class Site9 implements GameMap {
   }
 
   /** Visual box in a room + optional collider (world coordinates). */
+  /**
+   * A model prop (world coordinates, base at pos), with a box collider and nav footprint
+   * from its size unless `solid` is false. `collider` overrides the box (tilted props).
+   */
+  private prop(R: string, id: PropId, pos: V3, yaw = 0, o: { scale?: number; tilt?: V3; solid?: boolean; collider?: V3 } = {}): void {
+    const k = o.scale ?? 1;
+    const rot: V3 = o.tilt ? [o.tilt[0], yaw + o.tilt[1], o.tilt[2]] : [0, yaw, 0];
+    this.kit.place(this.room(R).group, id, pos, rot, k);
+    if (o.solid === false) return;
+    const sz = PROPS[id].size;
+    const [cx, cy, cz] = o.collider ?? [sz[0] * k, sz[1] * k, sz[2] * k];
+    const base = o.tilt ? pos[1] - cy / 2 : pos[1];
+    const q = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, yaw, 0));
+    this.physics.addStaticBox(new THREE.Vector3(pos[0], base + cy / 2, pos[2]), new THREE.Vector3(cx / 2, cy / 2, cz / 2), q);
+    if (base < 1.2 && cy > 0.25) {
+      const h = Math.max(cx, cz) / 2;
+      this.footprints.push([pos[0] - h, pos[2] - h, pos[0] + h, pos[2] + h]);
+    }
+  }
+
   private boxW(room: string, mat: string, size: V3, pos: V3, solid = true, rot?: V3, receiver?: HitReceiver): void {
     this.room(room).b.box(this.mats[mat], size, pos, rot);
     if (pos[1] - size[1] / 2 < 1.2 && size[1] > 0.25) {

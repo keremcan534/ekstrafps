@@ -514,6 +514,12 @@ export class Game {
       });
     });
 
+    // Model props (Site-9) stream in during the boot; they're in the scene before the compile.
+    const props = (this.arena as { loaded?: Promise<void> }).loaded;
+    if (props) {
+      onProgress('Loading props…');
+      await props;
+    }
     // Compile all shaders up front so the first shot never hitches.
     onProgress('Compiling shaders…');
     await paint();
