@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { matchClock } from '../game/TeamMatch';
 import type { Game } from '../core/Game';
 import { feel } from '../config/Feel';
+import { MenuMusic } from '../audio/MenuMusic';
 import { playerConfig } from '../player/PlayerConfig';
 import { Showcase } from './Showcase';
 import { Dossier } from './Dossier';
@@ -36,12 +37,14 @@ interface Prefs {
   aimAssist: number;
   /** Room tone and distant building noises under everything. */
   ambience: boolean;
+  /** Menu soundtrack level (× master). */
+  music: number;
 }
 
 const PREFS_KEY = 'site9.prefs';
 
 export function loadPrefs(mobile: boolean): Prefs {
-  const d: Prefs = { volume: feel.masterVolume, sensitivity: 1, fov: playerConfig.baseFov, gfx: loadGraphics(mobile), matchMinutes: 15, aimAssist: 1, ambience: false };
+  const d: Prefs = { volume: feel.masterVolume, sensitivity: 1, fov: playerConfig.baseFov, gfx: loadGraphics(mobile), matchMinutes: 15, aimAssist: 1, ambience: false, music: 0.6 };
   try {
     const saved = JSON.parse(localStorage.getItem(PREFS_KEY) ?? '{}') as Partial<Prefs>;
     return { ...d, ...saved, gfx: d.gfx };
@@ -139,9 +142,12 @@ export class MainMenu {
   private backdrop: { cam: THREE.PerspectiveCamera; center: THREE.Vector3; radius: number; height: number; t0: number } | null = null;
   private prefs: Prefs;
   private game: Game | null = null;
+  private music = new MenuMusic();
 
   constructor(parent: HTMLElement, private opts: MenuOptions) {
     this.prefs = loadPrefs(opts.mobile);
+    this.music.volume = this.prefs.music;
+    this.music.play();
     this.root = el('div', 'menu', parent);
     document.body.classList.add('in-menu');
     el('div', 'menu-shade', this.root);
@@ -236,6 +242,8 @@ export class MainMenu {
     this.paused = p;
     this.root.classList.toggle('paused', p);
     this.playBtn.querySelector('.gbtn-label')!.textContent = p ? 'RESUME' : 'PLAY';
+    // The soundtrack is for the front door only, not the pause screen mid-raid.
+    if (p) this.music.stop();
     if (p) {
       this.setStatus('Paused · Enter or RESUME');
       if (!was) this.show('settings');
@@ -243,11 +251,13 @@ export class MainMenu {
   }
 
   open(): void {
+    if (!this.paused) this.music.play();
     this.root.classList.remove('hidden');
     document.body.classList.add('in-menu');
   }
 
   close(): void {
+    this.music.stop();
     this.root.classList.add('hidden');
     document.body.classList.remove('in-menu');
   }
@@ -256,6 +266,7 @@ export class MainMenu {
   private play(): void {
     if (!this.ready) return;
     this.setStatus(this.paused ? 'Resuming…' : 'Deploying…');
+    this.music.stop();
     // The stage's bodies leave the physics world now (not on the menu's next frame).
     this.showcase?.dispose();
     this.opts.onPlay();
@@ -394,6 +405,7 @@ export class MainMenu {
       });
     };
     slider('MASTER VOLUME', 0, 1, 0.01, p.volume, (v) => `${Math.round(v * 100)}`, (v) => (p.volume = v));
+    slider('MUSIC VOLUME', 0, 1, 0.01, p.music, (v) => `${Math.round(v * 100)}`, (v) => (p.music = this.music.volume = v));
     slider(this.opts.mobile ? 'LOOK SENSITIVITY' : 'MOUSE SENSITIVITY', 0.3, 2.5, 0.05, p.sensitivity, (v) => v.toFixed(2), (v) => (p.sensitivity = v));
     slider('FIELD OF VIEW', 70, 110, 1, p.fov, (v) => `${v}°`, (v) => (p.fov = v));
     const amb = el('button', `gtoggle ${p.ambience ? 'on' : ''}`, el('div', 'gtoggles', this.panel), '<span>BACKGROUND AMBIENCE</span><i></i>');
