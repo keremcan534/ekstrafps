@@ -71,8 +71,9 @@ export interface MatchDeps {
  * The four-team race on Site-9: you (Vanta) and three AI teams start in
  * opposite corners, earn points on robots and each other, buy weapons, open the
  * facility and hire contractors. When a team crosses a raid threshold the power
- * dies and two SABLE squads storm in, hostile to everyone. First to the
- * win score takes the match.
+ * dies and two SABLE squads storm in, hostile to everyone. No score cap: when
+ * the clock runs out everyone races to extract, and the best score among the
+ * survivors takes the match.
  */
 export class TeamMatch {
   readonly teams: AITeam[] = [];

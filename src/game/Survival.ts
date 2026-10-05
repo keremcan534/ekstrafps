@@ -49,7 +49,6 @@ export interface SurvivalDeps {
   focusProvider?: () => THREE.Vector3[];
   /** A team's score crossed a raid threshold → blackout + SABLE raid. */
   onRaid?: (team: string) => void;
-  onWin?: (team: string) => void;
   /** Everyone with a wallet on a team (the player's included) — for the team share. */
   members?: (team: string) => Wallet[];
   /** Whose wallet a shooter is (player controller / soldier). */
@@ -142,8 +141,6 @@ export class Survival {
   /** Total earned per team (the race). */
   readonly score = new Map<string, number>([['alpha', 0]]);
   private raidAt = [6000, 14000, 22000];
-  static readonly WIN_SCORE = 20000;
-  winner: string | null = null;
 
   get points(): number {
     return this.teamPoints.get('alpha') ?? 0;
@@ -177,13 +174,10 @@ export class Survival {
     const sc = (this.score.get(team) ?? 0) + n;
     this.score.set(team, sc);
     if (this.deps.mode !== 'teams') return;
+    // No score cap: the race runs until the clock calls extraction.
     if (sc >= this.raidAt[0]) {
       this.raidAt.shift();
       this.deps.onRaid?.(team);
-    }
-    if (!this.winner && sc >= Survival.WIN_SCORE) {
-      this.winner = team;
-      this.deps.onWin?.(team);
     }
   }
 

@@ -704,7 +704,6 @@ export class Game {
       startZones: teams ? ['hangar', 'barracks', 'power'] : [],
       focusProvider: teams ? () => this.match?.foci() ?? [] : undefined,
       onRaid: (team) => this.match?.startRaid(team),
-      onWin: (team) => this.match?.win(team),
       members: (team) => {
         if (team === 'alpha') return [this.survival!.playerWallet, ...this.allies.filter((a) => a.alive)];
         const t = this.match?.teams.find((x) => x.def.id === team);

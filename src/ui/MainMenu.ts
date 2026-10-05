@@ -96,7 +96,7 @@ const MAPS = {
   site9: { name: 'SITE-9', tag: 'VANTA DYNAMICS CAMPUS', text: 'Sixteen rooms of a robotics facility gone dark. Four squads, rogue machines, raids.' },
 };
 const MODES = {
-  teams: { name: '4 TEAMS', tag: 'PvPvE', text: 'Your squad of four against three AI squads and the robots. First to 20 000, or extract when the clock runs out.' },
+  teams: { name: '4 TEAMS', tag: 'PvPvE', text: 'Your squad of four against three AI squads and the robots. No score cap: build your lead, then extract when the clock runs out.' },
   solo: { name: 'SURVIVAL', tag: 'SOLO', text: 'Classic survival. Open the facility zone by zone; death ends the run.' },
 };
 
