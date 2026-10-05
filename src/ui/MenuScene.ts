@@ -2,7 +2,7 @@
  * The main menu's stage: a photograph instead of a live 3D render (the GPU idles in the
  * menu). A night steppe, a SABLE operator graded into it, and what keeps it alive for
  * almost nothing: snow in two depths (one behind him, one in front) on 2D canvases,
- * ground mist drifting, and a security-camera face match on him.
+ * and ground mist drifting.
  */
 
 interface Flake {
@@ -108,7 +108,6 @@ export class MenuScene {
       <canvas class="ms-snow back"></canvas>
       <div class="ms-op">
         <img src="menu/operator.webp" alt="" draggable="false" />
-        <div class="ms-track"><i></i><i></i><i></i><i></i><span>SUBJ 01 · SABLE · MATCH 87%</span></div>
       </div>
       <div class="ms-mist near"></div>
       <canvas class="ms-snow front"></canvas>`;

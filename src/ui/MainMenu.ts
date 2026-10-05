@@ -6,7 +6,6 @@ import { playerConfig } from '../player/PlayerConfig';
 import { MenuScene } from './MenuScene';
 import { Dossier } from './Dossier';
 import { makeGrime, wearMask } from './DossierGrime';
-import { CORP_LOGO } from './DossierEmblems';
 import { PERKS, SIDEARMS, levelOf, loadProfile, perkSlots, saveProfile, type PerkId } from '../game/Progress';
 import { FPS_CAPS, loadGraphics, maxResolution, presetSettings, type GraphicsSettings } from '../config/Graphics';
 import { isTouchDevice } from '../core/math';
@@ -154,41 +153,21 @@ export class MainMenu {
     new MenuScene(this.root, opts.mobile, () => this.visible && !this.paused);
     el('div', 'menu-shade', this.root);
     el('div', 'menu-grain', this.root);
-    // The stage reads as a security feed: corner marks, camera id, REC, a clock.
-    const cam = el(
-      'div',
-      'menu-cam',
-      this.root,
-      `<i class="tl"></i><i class="tr"></i><i class="bl"></i><i class="br"></i>
-       <span class="cam-id">CAM 07 // NORTH PERIMETER</span><span class="cam-rec"><b></b>REC</span><span class="cam-time"></span>`,
-    );
-    const clock = cam.querySelector<HTMLElement>('.cam-time')!;
-    const tickClock = () => {
-      if (!this.visible) return;
-      const d = new Date();
-      const p2 = (n: number) => String(n).padStart(2, '0');
-      clock.textContent = `14 MAR 2041  ${p2(d.getHours())}:${p2(d.getMinutes())}:${p2(d.getSeconds())}`;
-    };
-    tickClock();
-    window.setInterval(tickClock, 1000);
     const left = el('div', 'menu-left', this.root);
     el(
       'div',
       'menu-brand',
       left,
-      `<div class="menu-kicker"><span class="mk-logo">${CORP_LOGO}</span>VANTA DYNAMICS <em>//</em> INTERNAL SECURITY DIVISION</div>
-       <h1 class="menu-title">SITE<span>-</span>9</h1>
-       <div class="menu-stamp">RESTRICTED</div>
-       <div class="menu-sub">SECTOR ZERO · CONTAINMENT FAILED</div>`,
+      `<h1 class="menu-title">SITE<span>-</span>9</h1>`,
     );
     this.nav = el('div', 'menu-nav', left);
-    this.playBtn = this.button('PLAY', 'primary', () => this.play(), undefined, 'DEPLOY');
+    this.playBtn = this.button('PLAY', 'primary', () => this.play());
     this.playBtn.disabled = true;
-    this.button('OPERATIONS', '', () => this.show('operations'), 'operations', 'MAP / MODE');
-    this.button('ARMORY', '', () => this.show('armory'), 'armory', 'LOADOUT');
-    this.button('DOSSIER', '', () => this.openDossier(), 'dossier', 'THREAT FILES');
-    this.button('SETTINGS', '', () => this.show('settings'), 'settings', 'SYSTEM');
-    this.button('CONTROLS', '', () => this.show('controls'), 'controls', 'INPUT');
+    this.button('OPERATIONS', '', () => this.show('operations'), 'operations');
+    this.button('ARMORY', '', () => this.show('armory'), 'armory');
+    this.button('DOSSIER', '', () => this.openDossier(), 'dossier');
+    this.button('SETTINGS', '', () => this.show('settings'), 'settings');
+    this.button('CONTROLS', '', () => this.show('controls'), 'controls');
     this.button('MAIN MENU', 'tomenu', () => {
       const q = new URLSearchParams(location.search);
       q.set('menu', '1');
@@ -200,7 +179,7 @@ export class MainMenu {
     this.profileEl = el('div', 'menu-profile', left);
     this.paintProfile();
     this.panel = el('div', 'menu-panel glass', this.root);
-    el('div', 'menu-foot', this.root, '<span>DOC. VD-ISD/S9-0309 · EYES ONLY</span><span>BUILD 0.3 · IN DEVELOPMENT</span>');
+    el('div', 'menu-foot', this.root, '<span></span><span>BUILD 0.3</span>');
     // Dust, scratches and a vignette over everything, as on the dossier's desk.
     const grime = makeGrime();
     this.root.style.setProperty('--grime-screen', `url(${grime.screen})`);
@@ -238,8 +217,8 @@ export class MainMenu {
     return !this.root.classList.contains('hidden');
   }
 
-  private button(label: string, cls: string, onClick: () => void, key?: string, note = ''): HTMLButtonElement {
-    const b = el('button', `gbtn ${cls}`, this.nav, `<span class="gbtn-no"></span><span class="gbtn-label">${label}</span><span class="gbtn-note">${note}</span><span class="gbtn-shine"></span>`);
+  private button(label: string, cls: string, onClick: () => void, key?: string): HTMLButtonElement {
+    const b = el('button', `gbtn ${cls}`, this.nav, `<span class="gbtn-label">${label}</span><span class="gbtn-shine"></span>`);
     if (key) b.dataset.key = key;
     b.addEventListener('click', (e) => {
       e.stopPropagation();
