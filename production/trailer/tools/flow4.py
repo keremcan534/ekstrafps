@@ -177,7 +177,9 @@ shot(hb(5), "HG-side", 0.0, "auto")
 shot(hb(6), "AT-pov", 0.0, "auto")
 chain(2.4, [(hb(7), "WH-pov", "cut", {"tag": "auto"}), (hb(7, 2), "WH-mate", "cut")])
 # V. The line holds: the second blast at half speed, the squad side by side.
-chain(sg[1] - 0.12, [(hb(8), "SG-pov", "flash"), (hb(8, 2), "SG-side", "cut")], speed=0.5)
+# The blast lands on the cut to the side (the pov runs two beats at half speed = one beat of
+# the take): its flash lights the machine as it is hit.
+chain(sg[1] - BEAT, [(hb(8), "SG-pov", "flash"), (hb(8, 2), "SG-side", "cut")], speed=0.5)
 shot(hb(9), "HG-pov", 2.4)
 shot(hb(10), "AT-pov", 2.7)
 # The alarm: a security camera in the server hall: SABLE walking in. The squad hears it. Power out.
