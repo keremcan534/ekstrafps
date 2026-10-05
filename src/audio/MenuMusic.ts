@@ -1,7 +1,7 @@
 import { feel } from '../config/Feel';
 
 /**
- * The main menu's soundtrack: The Frozen Steppe first, then the rest shuffled, each one
+ * The main menu's soundtrack: Static Horizon first, then the rest shuffled, each one
  * crossfading into the next before its faded tail. Streamed from <audio> elements (no
  * decode of 2-minute tracks up front), so it stays out of the game's mix and compressor.
  * Plays only while the menu is up before a match; pausing mid-raid stays quiet.
@@ -13,10 +13,10 @@ interface Track {
   gain: number;
 }
 
-const OPENER: Track = { file: 'audio/music/frozen_steppe.mp3', gain: 0.82 };
+const OPENER: Track = { file: 'audio/music/static_horizon.mp3', gain: 0.61 };
 const REST: Track[] = [
   { file: 'audio/music/quieter_valley.mp3', gain: 0.94 },
-  { file: 'audio/music/static_horizon.mp3', gain: 0.61 },
+  { file: 'audio/music/frozen_steppe.mp3', gain: 0.82 },
   { file: 'audio/music/courtyard.mp3', gain: 0.77 },
   { file: 'audio/music/golden_escape.mp3', gain: 1 },
   { file: 'audio/music/golden_vault.mp3', gain: 0.69 },

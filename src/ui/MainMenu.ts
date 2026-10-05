@@ -1,10 +1,9 @@
-import * as THREE from 'three';
 import { matchClock } from '../game/TeamMatch';
 import type { Game } from '../core/Game';
 import { feel } from '../config/Feel';
 import { MenuMusic } from '../audio/MenuMusic';
 import { playerConfig } from '../player/PlayerConfig';
-import { Showcase } from './Showcase';
+import { MenuScene } from './MenuScene';
 import { Dossier } from './Dossier';
 import { makeGrime, wearMask } from './DossierGrime';
 import { CORP_LOGO } from './DossierEmblems';
@@ -141,7 +140,6 @@ export class MainMenu {
   private playBtn: HTMLButtonElement;
   private paused = false;
   private ready = false;
-  private backdrop: { cam: THREE.PerspectiveCamera; center: THREE.Vector3; radius: number; height: number; t0: number } | null = null;
   private prefs: Prefs;
   private game: Game | null = null;
   private music = new MenuMusic();
@@ -152,6 +150,8 @@ export class MainMenu {
     this.music.play();
     this.root = el('div', 'menu', parent);
     document.body.classList.add('in-menu');
+    // The stage: a photograph with snow and mist (no 3D render in the menu).
+    new MenuScene(this.root, opts.mobile, () => this.visible && !this.paused);
     el('div', 'menu-shade', this.root);
     el('div', 'menu-grain', this.root);
     // The stage reads as a security feed: corner marks, camera id, REC, a clock.
@@ -160,7 +160,7 @@ export class MainMenu {
       'menu-cam',
       this.root,
       `<i class="tl"></i><i class="tr"></i><i class="bl"></i><i class="br"></i>
-       <span class="cam-id">CAM 07 // SUBLEVEL B-2</span><span class="cam-rec"><b></b>REC</span><span class="cam-time"></span>`,
+       <span class="cam-id">CAM 07 // NORTH PERIMETER</span><span class="cam-rec"><b></b>REC</span><span class="cam-time"></span>`,
     );
     const clock = cam.querySelector<HTMLElement>('.cam-time')!;
     const tickClock = () => {
@@ -252,14 +252,13 @@ export class MainMenu {
     this.status.textContent = text;
   }
 
-  /** Game finished loading: enable PLAY, start the live backdrop. */
+  /** Game finished loading: enable PLAY. */
   setReady(game: Game): void {
     this.game = game;
     this.ready = true;
     this.playBtn.disabled = false;
     this.setStatus(this.opts.mobile ? 'Tap PLAY' : 'Press PLAY or Enter');
     applyPrefs(game, this.prefs);
-    this.startBackdrop();
   }
 
   setPaused(p: boolean): void {
@@ -292,8 +291,6 @@ export class MainMenu {
     if (!this.ready) return;
     this.setStatus(this.paused ? 'Resuming…' : 'Deploying…');
     this.music.stop();
-    // The stage's bodies leave the physics world now (not on the menu's next frame).
-    this.showcase?.dispose();
     this.opts.onPlay();
   }
 
@@ -306,7 +303,6 @@ export class MainMenu {
     this.root.classList.add('dossier-open');
     this.dossier.show();
   }
-  private showcase: Showcase | null = null;
   private profileEl: HTMLDivElement;
 
   /** Level / XP / credits chip under the nav. */
@@ -712,77 +708,4 @@ export class MainMenu {
     for (const [k, what] of TOUCH_HELP) el('div', 'key-row', grid, `<span class="caps"><kbd>${k}</kbd></span><span>${what}</span>`);
   }
 
-  // ---------------------------------------------------------------- live backdrop
-
-  private startBackdrop(): void {
-    const g = this.game!;
-    const arena = g.arena as unknown as { rooms?: { id: string; rect: number[] }[]; spawn: THREE.Vector3 };
-    const atrium = arena.rooms?.find((r) => r.id === 'atrium');
-    const center = atrium ? new THREE.Vector3((atrium.rect[0] + atrium.rect[2]) / 2, 5, (atrium.rect[1] + atrium.rect[3]) / 2) : arena.spawn.clone().add(new THREE.Vector3(0, 1.6, -18));
-    const cam = new THREE.PerspectiveCamera(42, innerWidth / innerHeight, 0.1, 400);
-    this.backdrop = { cam, center, radius: atrium ? 24 : 15, height: atrium ? 8 : 3.2, t0: performance.now() };
-    // Unit showcase on a dark stage (falls back to the map flyover if it can't build).
-    let show: Showcase | null = null;
-    const cap = el('div', 'showcase-cap', this.root);
-    try {
-      show = this.showcase = new Showcase(g.showcaseDeps(), (l) => {
-        cap.classList.remove('in');
-        void cap.offsetWidth;
-        cap.innerHTML = `<b>${l.name}</b><i>${l.tag}</i><span>${l.text}</span>`;
-        cap.classList.add('in');
-      });
-    } catch (e) {
-      console.warn('showcase unavailable', e);
-      cap.remove();
-    }
-    let last = performance.now();
-    let nextAt = 0;
-    // Phones: the canvas size of the last frame drawn under a covering panel ('' = not frozen).
-    let frozen = '';
-    const tick = () => {
-      const b = this.backdrop;
-      if (!b || g.running) {
-        this.backdrop = null;
-        cap.remove();
-        show?.dispose();
-        return;
-      }
-      requestAnimationFrame(tick);
-      const now = performance.now();
-      // Frame cap: 30 on phones (a 120 Hz menu heats the SoC before the match), else the FPS limit (MAX = every rAF).
-      const fpsCap = this.prefs.gfx.fpsCap;
-      const step = this.opts.mobile ? 1000 / 30 : fpsCap ? 1000 / fpsCap : 0;
-      if (now < nextAt - Math.min(4, step * 0.25)) return;
-      nextAt = Math.max(nextAt + step, now);
-      const r = g.renderer;
-      // Only on a real resize: setting the canvas size reallocates the framebuffer.
-      if (r.domElement.clientWidth !== innerWidth || r.domElement.clientHeight !== innerHeight) r.setSize(innerWidth, innerHeight);
-      // Phones: settings / armory cover the stage; draw it once, then let the canvas hold that frame.
-      if (this.opts.mobile && (this.section === 'settings' || this.section === 'armory') && !this.panel.classList.contains('closed')) {
-        const size = `${r.domElement.width}x${r.domElement.height}`;
-        if (frozen === size) {
-          last = now;
-          return;
-        }
-        frozen = size;
-      } else frozen = '';
-      const dt = Math.min(0.05, (now - last) / 1000);
-      last = now;
-      if (show) {
-        show.update(dt, innerWidth / innerHeight);
-        r.clear();
-        r.render(show.scene, show.camera);
-        return;
-      }
-      const t = (now - b.t0) / 1000;
-      const a = 0.55 + t * 0.028;
-      b.cam.aspect = innerWidth / innerHeight;
-      b.cam.position.set(b.center.x + Math.sin(a) * b.radius, b.center.y + b.height + Math.sin(t * 0.21) * 0.6, b.center.z + Math.cos(a) * b.radius);
-      b.cam.lookAt(b.center.x, b.center.y + Math.sin(t * 0.17) * 0.4, b.center.z);
-      b.cam.updateProjectionMatrix();
-      r.clear();
-      r.render(g.scene, b.cam);
-    };
-    requestAnimationFrame(tick);
-  }
 }
