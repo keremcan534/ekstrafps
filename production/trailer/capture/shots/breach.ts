@@ -134,6 +134,14 @@ export const BD: Shot = {
       const s = Math.sin(L.yaw);
       return { pos: v(L.pos.x + 0.5 * c - 1.3 * s, 1.78, L.pos.z - 0.5 * c * 0 - 0.5 * s - 1.3 * c).add(handheld(ctx.t, 0.01, 3)), target: v(-40, 1.3, AISLE_Z), lens: 35 };
     },
+    // v4: through the lead's eyes (graded to night vision in post): out of the smoke, onto the squad.
+    eyes: (ctx): CameraState => {
+      const L = X!.bd[0];
+      const f = v(Math.sin(L.yaw), 0, Math.cos(L.yaw));
+      const head = v(L.pos.x, 1.66, L.pos.z).addScaledVector(f, 0.28);
+      const look = head.clone().addScaledVector(f, 6).setY(1.4).lerp(X!.target.chest, 0.55);
+      return { pos: head.add(handheld(ctx.t, 0.012, 5)), target: look, lens: 30 };
+    },
     // Low on the floor ahead of them: boots and silhouettes against the red smoke as they fan out.
     low: (ctx): CameraState => ({ pos: v(-57.5, 0.28, AISLE_Z + 0.7).add(handheld(ctx.t, 0.006, 4)), target: v(-67, 1.3, AISLE_Z), lens: 24 }),
   },

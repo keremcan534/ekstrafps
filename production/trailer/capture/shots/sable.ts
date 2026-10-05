@@ -6,6 +6,7 @@ import { Soldier, type PlayerTarget, type SoldierDeps } from '../../../../src/en
 import { feel } from '../../../../src/config/Feel';
 import { handheld } from '../stage';
 import { AISLE_Z, NIGHT_POST, aimAt, pulse, stage, survival, trigger } from './site9';
+import { aisleDead, brass, type Aftermath } from '../blood';
 
 /**
  * SABLE (Black Division) takes on real soldier rigs:
@@ -251,6 +252,14 @@ export const SB: Shot = {
       c.pos = safe(ctx.game, mid.clone().setY(1.3), c.pos);
       return c;
     },
+    // v4: the Warden's eyes (night vision in post): down the rack aisle, hunting.
+    eyes: (ctx): CameraState => {
+      const w = B!.squad[0];
+      const f = v(Math.sin(w.yaw), 0, Math.cos(w.yaw));
+      const head = v(w.pos.x, 1.66, w.pos.z).addScaledVector(f, 0.3);
+      const look = head.clone().addScaledVector(f, 8).setY(1.35).lerp(B!.target.chest, ctx.t > CONTACT ? 0.7 : 0.25);
+      return { pos: head.add(handheld(ctx.t, 0.01, 6)), target: look, lens: 30 };
+    },
     // Over the shoulder of the operator who leans out to fire.
     peek: (ctx): CameraState => {
       const s = B!.squad[1];
@@ -282,6 +291,8 @@ const HEAD = v(-48.6, 0.2, AISLE_Z + 0.25);
 
 interface Wd {
   warden: Soldier;
+  /** Your squad, dead round you in their blood (the same bodies as CR). */
+  dead: Aftermath;
   target: PlayerTarget;
   fired: boolean;
   key: THREE.PointLight;
@@ -309,12 +320,15 @@ export const WD: Shot = {
     // A low warm kicker on his mask from the work light's bounce.
     const key = new THREE.PointLight(0xffc49a, 0, 6, 1.6);
     game.scene.add(key);
-    D = { warden, target, fired: false, key };
+    const dead = aisleDead(game, AISLE_Z);
+    for (const [x, dz, n] of [[-50.4, -0.6, 26], [-53.2, 0.9, 18], [-56.8, -0.2, 14]] as const) brass(game.scene, v(x, 0, AISLE_Z + dz), n, 1.1, x * 7);
+    D = { warden, dead, target, fired: false, key };
   },
   update(ctx) {
     const d = D!;
     const t = ctx.t;
     pulse(t);
+    d.dead.update(ctx.dt, t);
     const w = d.warden;
     // Walk up (talking), stop over you, look down, draw down, one shot.
     const stand = v(-49.55, 0, AISLE_Z - 0.05);

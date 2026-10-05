@@ -34,5 +34,7 @@ for (const t of times.split(',').map(Number)) {
   const f = path.join(out, `${id}-${cam}-${t.toFixed(2)}.jpg`);
   fs.writeFileSync(f, Buffer.from(b64, 'base64'));
   console.log(f);
+  const info = await page.evaluate(() => JSON.stringify((window).__probeInfo ?? null));
+  if (info !== 'null') console.log('info', t, info);
 }
 await browser.close();
