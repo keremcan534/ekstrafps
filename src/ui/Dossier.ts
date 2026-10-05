@@ -1,16 +1,19 @@
 import './dossier.css';
 import { DOSSIER_ENTRIES, type DossierEntry } from './DossierData';
 import { DossierSfx } from './DossierSfx';
-import { emblem } from './DossierEmblems';
+import { CORP_LOGO, PAPERCLIP, emblem } from './DossierEmblems';
 
 /**
- * The personnel & threat archive (main menu → DOSSIER): one file per force on Site-9.
+ * The threat archive (main menu → DOSSIER): one file per force on Site-9, laid out
+ * like a case on a desk in the dark.
  *
- * A projector-lit photo archive: the forces down the left, the open file over the dark
- * half of the photograph (status, threat, profile, known personnel, the write-up, a
- * radio intercept), the photo on the right. Each file's photos take turns, every cut a
- * signal glitch — slices torn sideways, the colour channels split, static — never a
- * bright flash. Photos: public/dossier/<id>.jpg (a silhouette until one exists).
+ *   left    the file index (insignia, name, status)
+ *   centre  the typed intelligence summary on paper, an evidence photo clipped to it
+ *   right   the photograph itself, clipped and taped, a note pencilled on it
+ *   bottom  every file as a contact print; select / back, file n / 7
+ *
+ * Only the photo moves: a slow drift, and a signal-glitch cut between a file's photos.
+ * Photos: public/dossier/<id>.jpg (a silhouette until one exists).
  */
 
 type Sound = (name: string, volume?: number) => void;
@@ -18,12 +21,12 @@ type Sound = (name: string, volume?: number) => void;
 const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
 /** Seconds each photo holds before the next cuts in. */
 const PHOTO_HOLD = 6.5;
+const THREAT = ['', 'MINIMAL', 'LOW', 'MODERATE', 'HIGH', 'EXTREME'];
 
 /** [[!text]]: blacked out for good. [[text]]: an analyst's red-pencil underline. */
 const redact = (s: string) =>
   esc(s).replace(/\[\[(.+?)\]\]/g, (_m, t: string) =>
     t.startsWith('!') ? `<span class="dos-redact">${'█'.repeat(t.length - 1)}</span>` : `<span class="dos-pencil">${t}</span>`);
-const THREAT = ['', 'MINIMAL', 'LOW', 'MODERATE', 'HIGH', 'EXTREME'];
 
 /** Which photos exist (checked once each). */
 const photoOk = new Map<string, Promise<boolean>>();
@@ -40,6 +43,10 @@ function hasPhoto(id: string): Promise<boolean> {
   }
   return p;
 }
+const firstPhoto = async (en: DossierEntry) => {
+  for (const id of en.photos) if (await hasPhoto(id)) return id;
+  return null;
+};
 
 export class Dossier {
   readonly root: HTMLDivElement;
@@ -48,47 +55,51 @@ export class Dossier {
   private q = <T extends Element = HTMLElement>(sel: string) => this.root.querySelector(sel) as T;
   private shots: HTMLDivElement[] = [];
   private front = 0;
-  private timers: number[] = [];
   private photoTimer = 0;
   /** The current file's photos that exist, and which one is up. */
   private photos: string[] = [];
   private photo = 0;
   private onKey = (e: KeyboardEvent) => this.key(e);
-  private onMove = (e: PointerEvent) => this.parallax(e);
   private sfx = new DossierSfx();
 
   constructor(parent: HTMLElement, private onClose: () => void, private sound: Sound = () => {}) {
     this.root = document.createElement('div');
     this.root.className = 'dossier';
     this.root.innerHTML = `
-      <div class="dos-stage">
-        <div class="dos-shot"></div><div class="dos-shot"></div>
-        <div class="dos-leak"></div><div class="dos-scratch"></div><div class="dos-vignette"></div>
-        <div class="dos-grain"></div><div class="dos-scan"></div><div class="dos-tear"></div>
-      </div>
+      <div class="dos-desk"></div>
       <header class="dos-head">
-        <div class="dos-brand"><i class="dos-rec"></i>VANTA DYNAMICS <b>·</b> THREAT ARCHIVE</div>
+        <div class="dos-brand">VANTA DYNAMICS // THREAT ARCHIVE</div>
         <div class="dos-title">Select File</div>
-        <div class="dos-meta"><span class="dos-clock">--:--:--</span><span>SITE-9 · CLEARANCE IV</span><span class="dos-count"></span></div>
-        <button class="dos-x" aria-label="Back">✕</button>
       </header>
+      <div class="dos-meta"><b>SITE-9</b><span>THREAT ARCHIVE</span><span class="dos-count"></span></div>
+      <button class="dos-x" aria-label="Back">✕</button>
       <nav class="dos-list"></nav>
       <article class="dos-file">
         <div class="dos-paper">
+          <div class="dos-letterhead"><b>VANTA DYNAMICS</b><span>INTERNAL SECURITY DIVISION</span><span>INTELLIGENCE SUMMARY</span></div>
+          <i class="dos-logo">${CORP_LOGO}</i>
           <div class="dos-stamp"><span></span></div>
-          <div class="dos-letterhead">VANTA DYNAMICS — INTERNAL SECURITY DIVISION<br>INTELLIGENCE SUMMARY</div>
-          <div class="dos-fileline"><span class="dos-fileno"></span><span class="dos-date"></span></div>
+          <div class="dos-evidence"><i class="dos-clip">${PAPERCLIP}</i><div class="dos-evimg"></div></div>
           <table class="dos-fields"></table>
           <div class="dos-body"></div>
-          <div class="dos-dist">DISTRIBUTION: CLEARANCE IV ONLY — DO NOT COPY — PAGE 1 OF 1</div>
+          <div class="dos-dist">DISTRIBUTION: CLEARANCE IV ONLY — DO NOT COPY</div>
         </div>
       </article>
-      <div class="dos-cap"></div>
+      <figure class="dos-print">
+        <div class="dos-photo">
+          <div class="dos-shot"></div><div class="dos-shot"></div>
+          <div class="dos-tear"></div><div class="dos-grain"></div>
+          <div class="dos-note"></div>
+          <div class="dos-conf">CONFIDENTIAL</div>
+        </div>
+        <i class="dos-clip dos-clip-print">${PAPERCLIP}</i>
+        <i class="dos-tape"></i>
+      </figure>
+      <div class="dos-strip"></div>
       <footer class="dos-foot">
-        <div class="dos-strip"></div>
-        <div class="dos-hints"><span><kbd>↑</kbd><kbd>↓</kbd> File</span><span><kbd>←</kbd><kbd>→</kbd> Photo</span><button class="dos-back"><kbd>Esc</kbd> Back</button></div>
-      </footer>
-`;
+        <div class="dos-keys"><span><kbd>⏎</kbd> SELECT</span><button class="dos-back"><kbd>Esc</kbd> BACK</button></div>
+        <div class="dos-pager"><span class="dos-count"></span><button class="dos-prev" aria-label="Previous file">‹</button><button class="dos-next" aria-label="Next file">›</button></div>
+      </footer>`;
     parent.appendChild(this.root);
     this.shots = [...this.root.querySelectorAll<HTMLDivElement>('.dos-shot')];
     for (const b of [this.q('.dos-back'), this.q('.dos-x')]) {
@@ -97,19 +108,29 @@ export class Dossier {
         this.close();
       });
     }
-    this.buildList();
-    const noise = `url(${noiseTile()})`;
-    this.q<HTMLDivElement>('.dos-grain').style.backgroundImage = noise;
-    this.root.style.setProperty('--noise', noise); // paper fibres
-    // Swipe on the photo: next / previous photo (phones).
-    let sx = 0;
-    const stage = this.q('.dos-stage');
-    this.root.addEventListener('touchstart', (e) => (sx = e.touches[0].clientX), { passive: true });
-    this.root.addEventListener('touchend', (e) => {
-      const dx = e.changedTouches[0].clientX - sx;
-      if (Math.abs(dx) > 60 && !(e.target as HTMLElement).closest('.dos-list, .dos-file')) this.step(dx < 0 ? 1 : -1);
+    this.q('.dos-prev').addEventListener('click', (e) => {
+      e.stopPropagation();
+      this.select((this.index - 1 + DOSSIER_ENTRIES.length) % DOSSIER_ENTRIES.length);
     });
-    void stage;
+    this.q('.dos-next').addEventListener('click', (e) => {
+      e.stopPropagation();
+      this.select((this.index + 1) % DOSSIER_ENTRIES.length);
+    });
+    // The photo: tap / click for the next one; swipe on phones.
+    const photo = this.q('.dos-photo');
+    photo.addEventListener('click', (e) => {
+      e.stopPropagation();
+      this.step(1);
+    });
+    let sx = 0;
+    photo.addEventListener('touchstart', (e) => (sx = e.touches[0].clientX), { passive: true });
+    photo.addEventListener('touchend', (e) => {
+      const dx = e.changedTouches[0].clientX - sx;
+      if (Math.abs(dx) > 50) this.step(dx < 0 ? 1 : -1);
+    });
+    this.root.style.setProperty('--noise', `url(${noiseTile()})`);
+    this.buildList();
+    this.buildStrip();
   }
 
   get open(): boolean {
@@ -119,59 +140,57 @@ export class Dossier {
   show(): void {
     this.open_ = true;
     this.root.classList.add('in');
-    this.root.classList.remove('ready');
     window.addEventListener('keydown', this.onKey, true);
-    window.addEventListener('pointermove', this.onMove);
     this.sound('bd.encounter', 0.3);
-    const d = new Date();
-    const p2 = (n: number) => String(n).padStart(2, '0');
-    this.q('.dos-clock').textContent = `${p2(d.getHours())}:${p2(d.getMinutes())} LOCAL`;
-    this.ready();
+    this.select(this.index, true);
   }
 
   close(): void {
     if (!this.open_) return;
     this.open_ = false;
-    this.root.classList.remove('in', 'ready');
+    this.root.classList.remove('in');
     window.removeEventListener('keydown', this.onKey, true);
-    window.removeEventListener('pointermove', this.onMove);
-    this.clearTimers();
-    this.sound('ui.firemode', 0.5);
-    this.onClose();
-  }
-
-  private clearTimers(): void {
-    for (const t of this.timers) clearTimeout(t);
-    this.timers = [];
     clearTimeout(this.photoTimer);
+    this.onClose();
   }
 
   // ---------------------------------------------------------------- building
 
   private buildList(): void {
     const list = this.q('.dos-list');
-    list.insertAdjacentHTML('beforeend', `<div class="dos-index">FILE INDEX <span>${DOSSIER_ENTRIES.length} FILES</span></div>`);
     DOSSIER_ENTRIES.forEach((en, i) => {
       const row = document.createElement('button');
       row.className = 'dos-row';
       row.dataset.i = String(i);
-      row.style.setProperty('--row-accent', en.accent);
-      row.innerHTML = `<i class="dos-emblem">${emblem(en.id)}</i><span>${esc(en.name)}</span><em class="st-${en.stance}">${esc(en.status)}</em><small>${esc(en.role)}</small>`;
+      row.innerHTML = `<i class="dos-emblem">${emblem(en.id)}</i><span>${esc(en.name)}</span><em class="st-${en.stance}">${esc(en.status)}</em>`;
       row.addEventListener('click', (e) => {
         e.stopPropagation();
         this.select(i);
-      });
-      row.addEventListener('pointerenter', (e) => {
-        if (e.pointerType === 'mouse') this.select(i);
       });
       list.appendChild(row);
     });
   }
 
-  private ready(): void {
-    if (!this.open_ || this.root.classList.contains('ready')) return;
-    this.root.classList.add('ready');
-    this.select(this.index, true);
+  /** Every file as a contact print along the bottom. */
+  private buildStrip(): void {
+    const strip = this.q('.dos-strip');
+    DOSSIER_ENTRIES.forEach((en, i) => {
+      const card = document.createElement('button');
+      card.className = 'dos-card';
+      card.dataset.i = String(i);
+      card.innerHTML = `<div class="dos-cimg dos-empty"></div><span>${esc(en.name)}</span>`;
+      card.addEventListener('click', (e) => {
+        e.stopPropagation();
+        this.select(i);
+      });
+      strip.appendChild(card);
+      void firstPhoto(en).then((id) => {
+        if (!id) return;
+        const box = card.querySelector('.dos-cimg')!;
+        box.classList.remove('dos-empty');
+        box.innerHTML = `<img alt="" src="dossier/${id}.jpg" decoding="async">`;
+      });
+    });
   }
 
   // ---------------------------------------------------------------- input
@@ -179,21 +198,13 @@ export class Dossier {
   private key(e: KeyboardEvent): void {
     const k = e.code;
     const n = DOSSIER_ENTRIES.length;
-    if (k === 'ArrowDown' || k === 'KeyS') this.select((this.index + 1) % n);
-    else if (k === 'ArrowUp' || k === 'KeyW') this.select((this.index - 1 + n) % n);
-    else if (k === 'ArrowRight' || k === 'KeyD') this.step(1);
-    else if (k === 'ArrowLeft' || k === 'KeyA') this.step(-1);
+    if (k === 'ArrowDown' || k === 'KeyS' || k === 'ArrowRight' || k === 'KeyD') this.select((this.index + 1) % n);
+    else if (k === 'ArrowUp' || k === 'KeyW' || k === 'ArrowLeft' || k === 'KeyA') this.select((this.index - 1 + n) % n);
+    else if (k === 'Enter' || k === 'Space') this.step(1);
     else if (k === 'Escape' || k === 'Backspace') this.close();
     else return;
     e.preventDefault();
     e.stopPropagation();
-  }
-
-  /** The photo and the file drift against each other with the mouse. */
-  private parallax(e: PointerEvent): void {
-    if (e.pointerType !== 'mouse') return;
-    this.root.style.setProperty('--px', (e.clientX / innerWidth - 0.5).toFixed(3));
-    this.root.style.setProperty('--py', (e.clientY / innerHeight - 0.5).toFixed(3));
   }
 
   // ---------------------------------------------------------------- a file
@@ -201,43 +212,43 @@ export class Dossier {
   private select(i: number, force = false): void {
     if (i < 0 || (i === this.index && !force)) return;
     this.index = i;
-    this.clearTimers();
+    clearTimeout(this.photoTimer);
     const en = DOSSIER_ENTRIES[i];
     this.root.style.setProperty('--accent', en.accent);
-    this.sfx.select();
-
-    // List, counter.
+    if (!force) this.sfx.select();
     this.root.querySelectorAll<HTMLElement>('.dos-row').forEach((r) => r.classList.toggle('on', Number(r.dataset.i) === i));
+    this.root.querySelectorAll<HTMLElement>('.dos-card').forEach((c) => c.classList.toggle('on', Number(c.dataset.i) === i));
+    this.root.querySelector<HTMLElement>(`.dos-card[data-i="${i}"]`)?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
     this.root.querySelector<HTMLElement>(`.dos-row[data-i="${i}"]`)?.scrollIntoView({ block: 'nearest', inline: 'center' });
-    this.q('.dos-count').textContent = `FILE ${String(i + 1).padStart(2, '0')} / ${DOSSIER_ENTRIES.length}`;
-
+    const count = `FILE ${String(i + 1).padStart(2, '0')} / ${String(DOSSIER_ENTRIES.length).padStart(2, '0')}`;
+    this.root.querySelectorAll('.dos-count').forEach((c) => (c.textContent = count));
     this.fill(en);
 
-    // Photos: the ones that exist, in order; the first cuts in now.
+    // Photos: the ones that exist; the first cuts in now, the rest take turns.
     this.photos = [];
     this.photo = 0;
-    this.strip(en);
     this.cut(null);
+    this.evidence(null);
     const want = i;
     void Promise.all(en.photos.map(hasPhoto)).then((ok) => {
       if (this.index !== want || !this.open_) return;
       this.photos = en.photos.filter((_, k) => ok[k]);
-      this.strip(en);
       this.cut(this.photos[0] ?? null);
+      this.evidence(this.photos[1] ?? this.photos[0] ?? null);
     });
   }
 
   /** The file, typed up as an intelligence summary. */
   private fill(en: DossierEntry): void {
-    this.q('.dos-fileno').textContent = `FILE No. ${en.file}`;
-    this.q('.dos-date').textContent = en.date;
     const rows: [string, string][] = [
+      ['FILE NO.', en.file],
+      ['DATE', en.date],
       ['SUBJECT', en.name.toUpperCase()],
       ['DESIGNATION', en.role],
       ['LOCATION', en.place],
       ['STATUS', en.status],
-      ['ASSESSED THREAT', `${THREAT[en.threat]} (${en.threat}/5)`],
-      ['SOURCE / CREDIBILITY', en.source],
+      ['THREAT', `${THREAT[en.threat]} (${en.threat}/5)`],
+      ['SOURCE', en.source],
       ...en.facts.map(([k, v]) => [k.toUpperCase(), v] as [string, string]),
     ];
     this.q('.dos-fields').innerHTML = rows.map(([k, v]) => `<tr><th>${esc(k)}:</th><td>${redact(v)}</td></tr>`).join('');
@@ -248,33 +259,20 @@ export class Dossier {
       `<h4>3. ASSESSMENT</h4><p>${redact(en.notes)}</p>` +
       `<h4>4. EQUIPMENT</h4><p>${en.kit.map(esc).join('; ')}.</p>` +
       `<h4>5. INTERCEPT</h4><p class="dos-intercept">“${esc(en.quote)}”<br><small>— radio intercept, Site-9 band, ${esc(en.date)}</small></p>`;
-    this.q<HTMLElement>('.dos-file').scrollTop = 0;
-
+    this.q<HTMLElement>('.dos-paper').scrollTop = 0;
     const stamp = this.q('.dos-stamp');
     stamp.querySelector('span')!.textContent = en.stamp;
     stamp.className = `dos-stamp s-${en.stance}`;
-
-
-    this.q('.dos-cap').innerHTML = `<b>${esc(en.name)}</b><span>${esc(en.place)} — ${esc(en.year)}</span>`;
+    // The pencilled note on the photo: where, and when.
+    const [place, sub] = en.place.split(/,\s*/);
+    this.q('.dos-note').innerHTML = [place, sub, en.year].filter(Boolean).map(esc).join('<br>');
   }
 
-  /** The film strip: this file's photos (tap one to cut to it). */
-  private strip(en: DossierEntry): void {
-    const strip = this.q('.dos-strip');
-    strip.innerHTML = '';
-    const list = this.photos.length ? this.photos : en.photos.slice(0, 1);
-    list.forEach((id, k) => {
-      const fr = document.createElement('button');
-      fr.className = `dos-frame${k === this.photo ? ' on' : ''}`;
-      fr.appendChild(portrait(id, 'dos-timg'));
-      fr.addEventListener('click', (e) => {
-        e.stopPropagation();
-        if (!this.photos.length) return;
-        this.photo = k;
-        this.cut(this.photos[k]);
-      });
-      strip.appendChild(fr);
-    });
+  /** The small evidence photo clipped to the paper. */
+  private evidence(id: string | null): void {
+    const box = this.q('.dos-evimg');
+    box.innerHTML = id ? `<img alt="" src="dossier/${id}.jpg" decoding="async">` : '';
+    box.classList.toggle('dos-empty', !id);
   }
 
   /** Next / previous photo of this file. */
@@ -291,44 +289,36 @@ export class Dossier {
     const next = this.shots[this.front];
     const prev = this.shots[1 - this.front];
     next.innerHTML = '';
-    next.appendChild(id ? portrait(id, 'dos-img', true) : silhouette());
+    next.appendChild(id ? portrait(id) : silhouette());
     prev.classList.remove('on');
     next.classList.remove('on');
     void next.offsetWidth;
     next.classList.add('on');
-    this.retrigger('.dos-stage', 'glitch');
-    this.sfx.cut();
-    this.root.querySelectorAll<HTMLElement>('.dos-frame').forEach((fr, k) => fr.classList.toggle('on', k === this.photo));
-    if (this.photos.length > 1) {
-      this.photoTimer = window.setTimeout(() => this.step(1), PHOTO_HOLD * 1000);
+    if (id) {
+      const ph = this.q('.dos-photo');
+      ph.classList.remove('glitch');
+      void ph.offsetWidth;
+      ph.classList.add('glitch');
+      if (this.photos.length > 1) this.sfx.cut();
     }
+    if (this.photos.length > 1) this.photoTimer = window.setTimeout(() => this.step(1), PHOTO_HOLD * 1000);
   }
-
-  private retrigger(sel: string, cls: string): void {
-    const el = this.q(sel);
-    el.classList.remove(cls);
-    void (el as HTMLElement).offsetWidth;
-    el.classList.add(cls);
-  }
-
 }
 
 /** A photo (with two ghost copies for the glitch's colour split). */
-function portrait(id: string, cls: string, ghosts = false): HTMLElement {
+function portrait(id: string): HTMLElement {
   const box = document.createElement('div');
-  box.className = `${cls} dos-empty`;
+  box.className = 'dos-img dos-empty';
   const img = new Image();
   img.alt = '';
   img.decoding = 'async';
   img.onload = () => {
     box.classList.remove('dos-empty');
     box.appendChild(img);
-    if (ghosts) {
-      for (const g of ['dos-ghost-r', 'dos-ghost-c']) {
-        const c = img.cloneNode() as HTMLImageElement;
-        c.className = g;
-        box.appendChild(c);
-      }
+    for (const g of ['dos-ghost-r', 'dos-ghost-c']) {
+      const c = img.cloneNode() as HTMLImageElement;
+      c.className = g;
+      box.appendChild(c);
     }
   };
   img.src = `dossier/${id}.jpg`;
@@ -341,7 +331,7 @@ function silhouette(): HTMLElement {
   return box;
 }
 
-/** 160 px of monochrome noise as a data URL (the grain layer). */
+/** 160 px of monochrome noise as a data URL (grain, paper fibres). */
 function noiseTile(): string {
   const c = document.createElement('canvas');
   c.width = c.height = 160;

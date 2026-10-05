@@ -68,6 +68,15 @@ const EMBLEMS: Record<string, string> = {
     <path d="M23.7 40 H40.3 L43.4 46 Q44 47.3 42.6 47.3 H21.4 Q20 47.3 20.6 46 Z" fill="#a8c8ec"/>`),
 };
 
+/** Vanta Dynamics' own mark (the archive's letterhead): a faceted triangle. */
+export const CORP_LOGO = SVG(`
+  <path d="M32 6 L58 54 H6 Z" fill="none" stroke="currentColor" stroke-width="3" stroke-linejoin="round"/>
+  <path d="M32 6 L32 54 M32 30 L6 54 M32 30 L58 54" stroke="currentColor" stroke-width="2" stroke-opacity=".7"/>
+  <path d="M32 30 L22 40 H42 Z" fill="currentColor"/>`);
+
+/** A paperclip, for photos clipped to the file. */
+export const PAPERCLIP = `<svg viewBox="0 0 24 64" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M8 20 V48 a5 5 0 0 0 10 0 V12 a8 8 0 0 0 -16 0 V50 a10 10 0 0 0 20 0 V22" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg>`;
+
 export function emblem(id: string): string {
   return EMBLEMS[id] ?? '';
 }
