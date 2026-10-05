@@ -160,3 +160,18 @@ export function raggedEdge(n = 22, depth = 3): string {
   for (let i = n; i >= 0; i--) pts.push(`${j()}px ${((i / n) * 100).toFixed(2)}%`);
   return `polygon(${pts.join(',')})`;
 }
+
+/**
+ * Wear for printed and stamped type (a mask: opaque ink with specks, scuffs and a few
+ * scratches eaten out of it), so big letters read as inked onto something old.
+ */
+export function wearMask(w = 512, h = 256): string {
+  const [c, g] = canvas(w, h);
+  g.fillStyle = '#000';
+  g.fillRect(0, 0, w, h);
+  g.globalCompositeOperation = 'destination-out';
+  blotches(g, w, h, Math.round((w * h) / 9000), '0,0,0', [0.25, 0.6], [4, 22]);
+  dust(g, w, h, Math.round((w * h) / 120), '0,0,0', [0.5, 1]);
+  scratches(g, w, h, Math.round((w * h) / 9000), '0,0,0', [0.5, 0.9]);
+  return c.toDataURL();
+}

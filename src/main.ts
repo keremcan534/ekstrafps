@@ -5,6 +5,7 @@ import { MainMenu } from './ui/MainMenu';
 import { applyHudLayout, loadHudLayout } from './ui/HudLayout';
 import './ui/glass.css';
 import './ui/touch-hud.css';
+import './ui/menu-file.css';
 
 const app = document.getElementById('app')!;
 const params = new URLSearchParams(location.search);
