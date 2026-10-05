@@ -119,6 +119,7 @@ export class MenuScene {
   private pose = 0;
   /** Seconds of menu time on the current pose (only counts while the menu is up). */
   private held = 0;
+  private staged = false;
 
   constructor(parent: HTMLElement, mobile: boolean, private active: () => boolean) {
     this.root = document.createElement('div');
@@ -152,8 +153,14 @@ export class MenuScene {
 
   private tick = (now: number): void => {
     this.raf = requestAnimationFrame(this.tick);
+    // While the stage is up the 3D canvas under it is covered: stop compositing it.
+    const on = this.active();
+    if (on !== this.staged) {
+      this.staged = on;
+      document.body.classList.toggle('menu-stage', on);
+    }
     // Nothing to draw while a match runs or the pause screen is up.
-    if (!this.active() || document.visibilityState === 'hidden') {
+    if (!on || document.visibilityState === 'hidden') {
       this.last = now;
       return;
     }

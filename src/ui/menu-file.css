@@ -228,3 +228,27 @@ body.perf-lite .ms-bg, body.perf-lite .ms-op, body.perf-lite .ms-mist { animatio
 .is-touch .menu .gcard.arm b { font-size: 22px; }
 .is-touch .menu .gcard.arm p { font-size: 17px; }
 .is-touch .menu .arm-tag { font-size: 13px; }
+
+/* The stage covers the 3D canvas before a match: don't composite it underneath. */
+body.menu-stage #app > canvas { visibility: hidden; }
+
+/* Phones: fewer full-screen layers and no layer animations on the stage (the snow and
+   the pose cuts carry the motion); the dust overlay goes. */
+.is-touch .menu-dirt { display: none; }
+.is-touch :is(.ms-bg, .ms-op, .ms-mist) { animation: none; }
+.is-touch .ms-mist.far { display: none; }
+
+/* ---------- loading screen ---------- */
+.load-screen { position: fixed; inset: 0; z-index: 80; background: #07090d; color: #e4e0d4; transition: opacity 0.4s; font-family: var(--g-font); }
+.load-screen.out { opacity: 0; pointer-events: none; }
+.load-screen.gone { display: none; }
+.ld-bg { position: absolute; inset: 0; background: center 72% / cover no-repeat; opacity: 0.55; }
+.ld-bg::after { content: ''; position: absolute; inset: 0;
+  background: linear-gradient(90deg, rgba(5, 6, 8, 0.9), rgba(5, 6, 8, 0.35) 60%, rgba(5, 6, 8, 0.6)), linear-gradient(0deg, rgba(5, 6, 8, 0.85), transparent 45%); }
+.ld-box { position: absolute; left: max(6vw, env(safe-area-inset-left)); bottom: 9vh; width: min(420px, 60vw); }
+.ld-title { margin: 0 0 3vh; font: 700 clamp(44px, 9vh, 110px)/0.84 var(--g-font); letter-spacing: 0.04em; color: #dcd7c9; }
+.ld-title span { color: #c8321f; }
+.ld-bar { position: relative; height: 3px; overflow: hidden; background: rgba(222, 216, 202, 0.14); }
+.ld-bar i { position: absolute; top: 0; bottom: 0; left: 0; width: 34%; background: #c8321f; will-change: transform; animation: ld-run 1.15s cubic-bezier(.5, 0, .5, 1) infinite; }
+@keyframes ld-run { from { transform: translateX(-100%); } to { transform: translateX(300%); } }
+.ld-msg { margin-top: 12px; font: 600 clamp(10px, 1.9vh, 13px) var(--g-mono); letter-spacing: 0.24em; text-transform: uppercase; color: rgba(222, 216, 202, 0.6); }

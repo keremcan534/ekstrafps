@@ -21,6 +21,10 @@ import { OBSTACLES, obstacleAt } from '../game/Obstacles';
 import { lightSources, makeBeam, weaponLight, type LightSource } from '../fx/WeaponLights';
 import { aiWorld } from '../ai/World';
 
+
+/** Phones (touch controls): reaction × this (+0.12 s) and aim error × PHONE_AIM. */
+const PHONE_REACTION = 1.45;
+const PHONE_AIM = 1.2;
 /** Node budget for a soldier's path search (across the facility: ~85 m with detours). */
 const LONG_SEARCH = 40000;
 
@@ -820,7 +824,7 @@ export class Soldier implements LightSource {
         const moving = Math.hypot(this.vel.x, this.vel.z) > 0.6;
         // Error shrinks as the aim stays on the target (first rounds wide, then they walk in).
         const settle = 1 + 2.4 * Math.exp(-this.visibleTime / 1.3);
-        const sigma = ((0.65 + 0.026 * dist) * settle * (moving ? 1.6 : 1) * (1 + this.flinch * 2) * DEG) / Math.max(0.2, feel.enemyAccuracy * this.skill);
+        const sigma = ((0.65 + 0.026 * dist) * settle * (moving ? 1.6 : 1) * (1 + this.flinch * 2) * (this.deps.lowSpec ? PHONE_AIM : 1) * DEG) / Math.max(0.2, feel.enemyAccuracy * this.skill);
         yaw += this.errNoise.sample(this.time * 0.9) * sigma * 1.9;
         pitch += this.errNoise2.sample(this.time * 0.9) * sigma * 1.1;
       }
@@ -857,17 +861,21 @@ export class Soldier implements LightSource {
 
   /** Reaction delay before the first shot after acquiring the target. */
   onAcquire(): void {
-    this.reactionTimer = 0.55 + Math.random() * 0.45;
+    this.react(0.55 + Math.random() * 0.45);
   }
 
-  /** The brain sets the reaction delay (expected contacts are fast, surprises slow). */
+  /**
+   * The brain sets the reaction delay (expected contacts are fast, surprises slow).
+   * Phones: slower — thumbs on glass turn and aim slower than a mouse, so the same
+   * reflexes that are fair on PC felt instant there.
+   */
   react(seconds: number): void {
-    this.reactionTimer = seconds;
+    this.reactionTimer = this.deps.lowSpec ? seconds * PHONE_REACTION + 0.12 : seconds;
   }
 
   /** Aim settle: how long the target counts as already tracked (tighter first shots). */
   settle(seconds: number): void {
-    this.visibleTime = seconds;
+    this.visibleTime = this.deps.lowSpec ? seconds * 0.5 : seconds;
   }
 
   /** Ammo cache: full spare rounds again. */

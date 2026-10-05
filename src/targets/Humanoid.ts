@@ -1081,8 +1081,10 @@ export class Humanoid {
     for (const part of this.parts) for (const c of part.group.children) if (!(c as THREE.Bone).isBone) c.updateMatrixWorld(true);
     for (const f of this.feet) f.updateMatrixWorld(true);
     // Joint jitter keeps a corpse awake long after it has come to rest (a dozen bodies
-    // in the solver each): once it's barely moving, put it to sleep (sooner on phones).
-    if (this.ragdollTime > (lowSpec() ? 3.5 : 6) && this.parts.every((p) => p.body.isSleeping() || speedSq(p.body.linvel(this.linvel)) < 0.25)) {
+    // in the solver each): once it's barely moving, put it to sleep (sooner on phones, and
+    // sooner still for a corpse nobody can see or that lies 30 m+ away).
+    const unseen = lowSpec() && (!this.root.visible || this.part('torso').worldPos.distanceToSquared(humanoidView) > FAR_SQ);
+    if (this.ragdollTime > (lowSpec() ? (unseen ? 1.2 : 3.5) : 6) && this.parts.every((p) => p.body.isSleeping() || speedSq(p.body.linvel(this.linvel)) < 0.25)) {
       for (const part of this.parts) part.body.sleep();
     }
     // Knees only buckle at the moment of death; afterwards the body is fully limp.

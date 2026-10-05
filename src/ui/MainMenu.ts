@@ -150,7 +150,7 @@ export class MainMenu {
     this.root = el('div', 'menu', parent);
     document.body.classList.add('in-menu');
     // The stage: a photograph with snow and mist (no 3D render in the menu).
-    new MenuScene(this.root, opts.mobile, () => this.visible && !this.paused);
+    new MenuScene(this.root, opts.mobile, () => this.ready && this.visible && !this.paused);
     el('div', 'menu-shade', this.root);
     el('div', 'menu-grain', this.root);
     const left = el('div', 'menu-left', this.root);
@@ -244,6 +244,7 @@ export class MainMenu {
     const was = this.paused;
     this.paused = p;
     this.root.classList.toggle('paused', p);
+    if (p) document.body.classList.remove('menu-stage');
     this.playBtn.querySelector('.gbtn-label')!.textContent = p ? 'RESUME' : 'PLAY';
     // The soundtrack is for the front door only, not the pause screen mid-raid.
     if (p) this.music.stop();
@@ -261,6 +262,7 @@ export class MainMenu {
 
   close(): void {
     this.music.stop();
+    document.body.classList.remove('menu-stage');
     this.root.classList.add('hidden');
     document.body.classList.remove('in-menu');
   }

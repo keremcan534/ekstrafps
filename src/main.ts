@@ -3,6 +3,7 @@ import { Game } from './core/Game';
 import { loadGraphics, noGlass } from './config/Graphics';
 import { MainMenu } from './ui/MainMenu';
 import { applyHudLayout, loadHudLayout } from './ui/HudLayout';
+import { LoadScreen, afterFrames } from './ui/LoadScreen';
 import './ui/glass.css';
 import './ui/touch-hud.css';
 import './ui/menu-file.css';
@@ -58,13 +59,24 @@ document.body.classList.toggle('no-glass', noGlass(game.mobile, loadGraphics(gam
 // Phones: the UI is laid out for ~640 px of height; scale it to the real screen (a phone in landscape is ~400).
 const uiScale = () => document.documentElement.style.setProperty('--ui-zoom', String(Math.max(0.58, Math.min(1, window.innerHeight / 640))));
 uiScale();
-window.addEventListener('resize', () => {
+const relayout = () => {
   uiScale();
   if (game.mobile) applyHudLayout(loadHudLayout());
-});
+};
+window.addEventListener('resize', relayout);
+// Android WebViews can report the old size on the resize itself (rotation, going
+// fullscreen and the system bars leaving, often mid-load when the page is busy): check
+// again once things have settled, so the UI never stays scaled for the wrong screen.
+const relayoutLater = () => {
+  relayout();
+  for (const ms of [120, 400, 1000]) window.setTimeout(relayout, ms);
+};
+window.visualViewport?.addEventListener('resize', relayout);
+window.addEventListener('orientationchange', relayoutLater);
+document.addEventListener('fullscreenchange', relayoutLater);
 
 // PLAY / RESUME. Desktop: the menu closes when the mouse is actually locked (pointerlockchange).
-const begin = () => {
+const go = () => {
   game.start();
   if (game.mobile) {
     game.setFrozen(false);
@@ -73,8 +85,27 @@ const begin = () => {
     if (!(history.state as { site9?: boolean } | null)?.site9) history.pushState({ site9: true }, '');
   }
 };
+// Phones: the first PLAY shows the loading screen while the match spins up (the first
+// frames are the heavy ones), instead of a frozen menu. Painted first, then the start (still
+// inside the tap's activation window, which fullscreen and audio need). Resume is instant.
+let deployed = false;
+const begin = () => {
+  if (!game.mobile || deployed) return go();
+  deployed = true;
+  loader.show('Deploying…');
+  void afterFrames(2)
+    .then(() => {
+      go();
+      return afterFrames(4);
+    })
+    .then(() => loader.hide());
+};
 const menu = new MainMenu(app, { map, mode, controls, mobile: game.mobile, onPlay: begin });
-if (trailerMode) menu.close();
+const loader = new LoadScreen(document.body);
+if (trailerMode) {
+  menu.close();
+  loader.hide();
+}
 
 window.addEventListener('popstate', () => {
   if (!game.mobile || !game.running || (history.state as { site9?: boolean } | null)?.site9) return;
@@ -98,10 +129,14 @@ game.onPauseRequest = () => {
 };
 
 game
-  .init((msg) => menu.setStatus(msg))
+  .init((msg) => {
+    menu.setStatus(msg);
+    loader.status(msg);
+  })
   .then(() => {
     if (trailerMode) return import('../production/trailer/capture/Director').then((m) => m.runTrailer(game));
     menu.setReady(game);
+    loader.hide();
     // Phones: the control layout (preset + Settings → Controls → CUSTOMIZE HUD); the controls exist from init().
     if (game.mobile) applyHudLayout(loadHudLayout());
     // Lock refused (Chromium blocks a re-lock right after Esc): stay paused, the next click retries.
@@ -121,6 +156,7 @@ game
   .catch((err) => {
     console.error(err);
     menu.setStatus(`Failed to start: ${err}`);
+    loader.status(`Failed to start: ${err}`);
   });
 
 // Desktop: the pause menu comes back when the mouse is released (Esc), unless tuning.
