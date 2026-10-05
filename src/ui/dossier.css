@@ -26,7 +26,11 @@
     radial-gradient(ellipse 70% 65% at 55% 42%, rgba(70, 72, 76, 0.32), transparent 70%),
     radial-gradient(ellipse 120% 100% at 50% 50%, transparent 55%, rgba(0, 0, 0, 0.75)),
     #101012; }
+.dos-desk::before { content: ''; position: absolute; inset: 0; background: var(--grime-desk) 0 0 / 1024px 1024px repeat; opacity: 0.95; }
 .dos-desk::after { content: ''; position: absolute; inset: 0; background: var(--noise); opacity: 0.5; mix-blend-mode: overlay; }
+/* Over everything: a whisper of dust and a few long scratches (still). */
+.dos-dirt { position: absolute; inset: 0; z-index: 10; pointer-events: none; background: var(--grime-screen) center / cover no-repeat; opacity: 0.9;
+  box-shadow: inset 0 0 160px rgba(0, 0, 0, 0.55); }
 
 /* ---------------------------------------------------------------- header */
 .dos-head { position: absolute; left: 4vw; top: 4.4vh; z-index: 3; }
@@ -59,12 +63,16 @@
   filter: drop-shadow(0 22px 26px rgba(0, 0, 0, 0.8)); }
 .dos-paper { position: relative; height: 100%; overflow-y: auto; scrollbar-width: none; padding: 26px 30px 22px; transform: rotate(-0.6deg);
   color: #24211c; font: clamp(11px, 0.86vw, 14px)/1.55 var(--type); text-shadow: 0 0 0.6px rgba(36, 33, 28, 0.7);
+  /* Age (stains, a coffee ring, creases, burnt edges) scrolls with the page. */
   background:
+    var(--grime-paper) 0 0 / 100% auto repeat-y local,
     radial-gradient(ellipse 120% 80% at 20% 0%, rgba(255, 250, 236, 0.16), transparent 60%),
     linear-gradient(180deg, transparent 55%, rgba(0, 0, 0, 0.14)),
-    #a8a69d; }
+    #a8a69d;
+  background-blend-mode: multiply, normal, normal; }
 .dos-paper::-webkit-scrollbar { display: none; }
 .dos-paper::before { content: ''; position: absolute; inset: 0; pointer-events: none; background: var(--noise); opacity: 0.5; mix-blend-mode: multiply; }
+
 .dos-letterhead { display: flex; flex-direction: column; padding: 0 70px 10px 0; border-bottom: 2px solid rgba(36, 33, 28, 0.55); letter-spacing: 0.06em; }
 .dos-letterhead b { font-size: 1.12em; letter-spacing: 0.08em; }
 .dos-logo { position: absolute; right: 30px; top: 22px; width: 46px; height: 46px; color: #2c2924; opacity: 0.85; }
@@ -91,7 +99,8 @@
 /* The evidence photo clipped to the paper. */
 .dos-evidence { position: absolute; right: 22px; top: 134px; width: 33%; aspect-ratio: 16 / 10; transform: rotate(1.4deg); z-index: 1;
   padding: 5px; background: #d4d2ca; box-shadow: 0 6px 12px rgba(0, 0, 0, 0.45); }
-.dos-evimg { width: 100%; height: 100%; overflow: hidden; background: #2a2a2c; }
+.dos-evimg { position: relative; width: 100%; height: 100%; overflow: hidden; background: #2a2a2c; }
+.dos-evimg::after { content: ''; position: absolute; inset: 0; pointer-events: none; background: var(--grime-photo) 30% 40% / 260% auto; mix-blend-mode: screen; opacity: 0.8; }
 .dos-evimg img { width: 100%; height: 100%; object-fit: cover; object-position: 70% 30%; filter: grayscale(1) contrast(1.15) brightness(0.85); }
 .dos-clip { position: absolute; display: block; width: 16px; height: 44px; color: #8c8f93; filter: drop-shadow(0 2px 2px rgba(0, 0, 0, 0.6)); }
 .dos-clip svg { width: 100%; height: 100%; }
@@ -102,7 +111,10 @@
    pencil, a red CONFIDENTIAL stamp. The picture drifts; the cut between photos glitches. */
 .dos-print { position: absolute; margin: 0; right: 4vw; top: 14vh; width: min(37vw, 660px); height: 59vh; z-index: 1;
   padding: 12px 12px 34px; background: #c9c8c2; transform: rotate(0.8deg); box-shadow: 0 26px 40px rgba(0, 0, 0, 0.75); }
-.dos-print::after { content: ''; position: absolute; inset: 0; background: var(--noise); opacity: 0.35; mix-blend-mode: multiply; pointer-events: none; }
+.dos-print::before { content: ''; position: absolute; inset: 0; pointer-events: none; z-index: 2; background: var(--grime-paper) center / cover; mix-blend-mode: multiply; opacity: 0.8;
+}
+.dos-print::after { content: ''; position: absolute; inset: 0; background: var(--noise); opacity: 0.35; mix-blend-mode: multiply; pointer-events: none;
+  box-shadow: inset 0 0 18px rgba(60, 50, 36, 0.45); }
 .dos-photo { position: relative; width: 100%; height: 100%; overflow: hidden; background: #0d0d0f; cursor: pointer; }
 .dos-shot { position: absolute; inset: 0; opacity: 0; transition: opacity 0.18s linear; }
 .dos-shot.on { opacity: 1; }
@@ -115,6 +127,8 @@
   radial-gradient(ellipse 26% 34% at 62% 88%, #232428 0 60%, transparent 63%),
   radial-gradient(ellipse 70% 80% at 60% 40%, #222327 0%, #0b0b0d 70%); }
 .dos-grain { position: absolute; inset: 0; pointer-events: none; background: var(--noise); opacity: 0.4; mix-blend-mode: overlay; }
+/* Scratches and dust on the emulsion. */
+.dos-photo::after { content: ''; position: absolute; inset: 0; z-index: 1; pointer-events: none; background: var(--grime-photo) center / cover; mix-blend-mode: screen; opacity: 0.85; }
 .dos-note { position: absolute; right: 5%; top: 9%; z-index: 2; font: clamp(16px, 1.55vw, 26px)/1.35 var(--hand); color: rgba(235, 232, 225, 0.82);
   text-align: left; transform: rotate(-4deg); text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6); pointer-events: none; }
 .dos-conf { position: absolute; right: 4%; bottom: 5%; z-index: 2; padding: 3px 10px; border: 2px solid rgba(210, 50, 40, 0.85); color: rgba(220, 60, 48, 0.88);
@@ -150,7 +164,8 @@
 .dos-strip { position: absolute; left: 4vw; right: 4vw; bottom: 9vh; z-index: 3; display: flex; gap: 1.2vw; overflow-x: auto; scrollbar-width: none; padding: 4px 2px; }
 .dos-strip::-webkit-scrollbar { display: none; }
 .dos-card { flex: 1 1 0; min-width: 120px; display: flex; flex-direction: column; gap: 8px; text-align: left; }
-.dos-cimg { width: 100%; aspect-ratio: 16 / 8.5; overflow: hidden; background: #18181a; border: 2px solid transparent; box-shadow: 0 6px 14px rgba(0, 0, 0, 0.6); }
+.dos-cimg { position: relative; width: 100%; aspect-ratio: 16 / 8.5; overflow: hidden; background: #18181a; border: 2px solid transparent; box-shadow: 0 6px 14px rgba(0, 0, 0, 0.6); }
+.dos-cimg::after { content: ''; position: absolute; inset: 0; pointer-events: none; background: var(--grime-photo) center / 300% auto; mix-blend-mode: screen; opacity: 0.7; }
 .dos-cimg img { width: 100%; height: 100%; object-fit: cover; object-position: 75% 28%; filter: saturate(0.6) brightness(0.72); }
 .dos-card span { font: clamp(10px, 0.82vw, 13px) var(--mono); letter-spacing: 0.12em; color: #8f8c86; text-transform: uppercase; padding-bottom: 6px; border-bottom: 2px solid transparent; }
 .dos-card:hover .dos-cimg img { filter: saturate(0.75) brightness(0.88); }

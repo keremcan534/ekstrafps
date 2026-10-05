@@ -2,6 +2,7 @@ import './dossier.css';
 import { DOSSIER_ENTRIES, type DossierEntry } from './DossierData';
 import { DossierSfx } from './DossierSfx';
 import { CORP_LOGO, PAPERCLIP, emblem } from './DossierEmblems';
+import { makeGrime, raggedEdge } from './DossierGrime';
 
 /**
  * The threat archive (main menu → DOSSIER): one file per force on Site-9, laid out
@@ -99,7 +100,8 @@ export class Dossier {
       <footer class="dos-foot">
         <div class="dos-keys"><span><kbd>⏎</kbd> SELECT</span><button class="dos-back"><kbd>Esc</kbd> BACK</button></div>
         <div class="dos-pager"><span class="dos-count"></span><button class="dos-prev" aria-label="Previous file">‹</button><button class="dos-next" aria-label="Next file">›</button></div>
-      </footer>`;
+      </footer>
+      <div class="dos-dirt"></div>`;
     parent.appendChild(this.root);
     this.shots = [...this.root.querySelectorAll<HTMLDivElement>('.dos-shot')];
     for (const b of [this.q('.dos-back'), this.q('.dos-x')]) {
@@ -129,6 +131,13 @@ export class Dossier {
       if (Math.abs(dx) > 50) this.step(dx < 0 ? 1 : -1);
     });
     this.root.style.setProperty('--noise', `url(${noiseTile()})`);
+    // Grime: stains, scratches and dust painted once; a ragged edge on the paper.
+    const grime = makeGrime();
+    this.root.style.setProperty('--grime-desk', `url(${grime.desk})`);
+    this.root.style.setProperty('--grime-paper', `url(${grime.paper})`);
+    this.root.style.setProperty('--grime-photo', `url(${grime.photo})`);
+    this.root.style.setProperty('--grime-screen', `url(${grime.screen})`);
+    this.q<HTMLElement>('.dos-paper').style.clipPath = raggedEdge(26, 3.5);
     this.buildList();
     this.buildStrip();
   }
