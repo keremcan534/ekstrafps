@@ -1,3 +1,4 @@
+import { applyGrime } from '../fx/WorldGrime';
 import * as THREE from 'three';
 import type { HitReceiver, Physics } from '../core/Physics';
 import { PhysicsProps } from './PhysicsProps';
@@ -283,10 +284,13 @@ export class Site9 implements GameMap {
     // (line / accent colours follow the base), no roughness map.
     const rough = mobile ? null : grimeRoughness();
     const gridTex = mobile ? neutralGridTexture(256) : null;
-    const grid = (a: string, b: string, c: string, r = 0.8, metal = 0.05) =>
-      gridTex
+    const grid = (a: string, b: string, c: string, r = 0.8, metal = 0.05) => {
+      const g = gridTex
         ? std({ map: gridTex, color: gridTint(a), roughness: Math.min(1, r + 0.12), metalness: metal })
         : std({ map: gridTexture(a, b, c), roughnessMap: rough, roughness: Math.min(1, r + 0.12), metalness: metal });
+      applyGrime(g, mobile);
+      return g;
+    };
     this.serverLeds = std({ color: 0x000000, emissive: 0x38ff8a, emissiveIntensity: 2 });
     this.coreGlow = std({ color: 0x000000, emissive: 0x4fd2ff, emissiveIntensity: 3 });
     const wood = woodTexture();
@@ -332,6 +336,9 @@ export class Site9 implements GameMap {
       drumBlue: std({ color: 0x2f5f9e, metalness: 0.55, roughness: 0.45 }),
     };
     const m = this.mats;
+    // Worn surfaces (fx/WorldGrime): structure, props and containers; not glass, water,
+    // plants, screens or lamps.
+    for (const k of ['white', 'offwhite', 'grey', 'dark', 'steel', 'gunmetal', 'wood', 'woodDark', 'contGreen', 'contBlue', 'contRust', 'cardboard', 'rubble', 'sand', 'drumBlue', 'yellow', 'vanta', 'mint'] as const) applyGrime(m[k], mobile);
     const styles: Record<string, RoomStyle> = {
       lobby: { floor: grid('#c9c2b6', '#ada597', '#bdb6aa', 0.35, 0.05), wall: grid('#d9dbdc', '#bfc3c6', '#cfd2d4', 0.7), ceiling: m.white, lamp: m.lampWarm, lampSpacing: 6, glow: 0xffe8c8 },
       cafe: { floor: std({ color: 0xa87a4f, map: wood, roughness: 0.55 }), wall: grid('#efe7da', '#ddd3c4', '#e7dece', 0.8), ceiling: m.offwhite, lamp: m.lampWarm, lampSpacing: 6, glow: 0xffd9a8 },
@@ -352,7 +359,11 @@ export class Site9 implements GameMap {
       skyFrame: m.steel,
       skyGlass: std({ color: 0xdff0ff, transparent: true, opacity: 0.12, roughness: 0.05, depthWrite: false }),
       trim: m.gunmetal,
-      merge: std({ vertexColors: true, roughness: 0.62, metalness: 0.25 }),
+      merge: (() => {
+        const mm = std({ vertexColors: true, roughness: 0.62, metalness: 0.25 });
+        applyGrime(mm, mobile);
+        return mm;
+      })(),
     }, METAL);
     this.navBounds = [...this.layout.bounds] as [number, number, number, number];
     this.doors = this.layout.doors;

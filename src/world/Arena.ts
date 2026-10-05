@@ -1,3 +1,4 @@
+import { applyGrime } from '../fx/WorldGrime';
 import * as THREE from 'three';
 import type { HitReceiver, Physics } from '../core/Physics';
 import { MeshBuilder } from './MeshBuilder';
@@ -74,6 +75,8 @@ export class Arena implements GameMap {
       sodium: new THREE.MeshStandardMaterial({ color: 0x000000, emissive: 0xffa24a, emissiveIntensity: 3 }),
     };
 
+    // Worn surfaces (fx/WorldGrime); lamps and emissives stay clean.
+    for (const k of ['floor', 'wall', 'concrete', 'metal', 'accent', 'stripe', 'ceiling', 'asphalt', 'yardWall', 'contGreen', 'contRust', 'contBlue', 'contFrame', 'sandbag']) applyGrime(this.mats[k], mobile);
     this.buildShell();
     this.buildRange();
     this.buildLeftZone();

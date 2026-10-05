@@ -1559,13 +1559,15 @@ export class Game {
     this.camera.camera.far = vd.fogFar + 30;
     this.camera.camera.updateProjectionMatrix();
     if (this.arena instanceof Site9) this.arena.setViewDepth(vd.rooms, vd.roomFar);
-    // Post effects: colour grade pass (Site-9) + grain / vignette overlay.
-    if (s.postFx && !this.grade && !this.trailer && this.arena instanceof Site9) this.grade = new ScreenGrade(this.renderer, this.mobile ? 0 : 4);
+    // Post effects: colour grade pass (sharpen, grade, grain) + the CSS vignette (its CSS
+    // grain steps aside while the pass draws its own: see .grade-on).
+    if (s.postFx && !this.grade && !this.trailer) this.grade = new ScreenGrade(this.renderer, this.mobile ? 0 : 4);
     else if (!s.postFx && this.grade) {
       this.grade.target.dispose();
       this.grade = null;
     }
     document.body.classList.toggle('no-postfx', !s.postFx);
+    document.body.classList.toggle('grade-on', !!this.grade);
     // Fps readout.
     if (s.showFps && !this.fpsEl) {
       this.fpsEl = document.createElement('div');
