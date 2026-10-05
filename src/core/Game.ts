@@ -371,7 +371,7 @@ export class Game {
     if (this.arena.envIntensity !== undefined) this.scene.environmentIntensity = this.arena.envIntensity;
     // View distance: fewer distant rooms drawn, a closer haze hides where they stop.
     const vd = VIEW_DISTANCE[this.gfx.viewDistance];
-    this.scene.fog = new THREE.Fog(this.arena.skyColor, vd.fogNear, vd.fogFar);
+    this.scene.fog = new THREE.Fog(this.arena.skyColor, this.hazeNear(vd.fogNear), vd.fogFar);
     this.dust = new DustMotes(this.mobile ? 220 : 600);
     this.scene.add(this.dust.points);
 
@@ -1273,6 +1273,11 @@ export class Game {
     }
   }
 
+  /** Where the fog starts: the view distance's, or closer where the map wants haze. */
+  private hazeNear(near: number): number {
+    return Math.min(near, (this.arena as { hazeNear?: number }).hazeNear ?? Infinity);
+  }
+
   /** Frame cap in use (?cap overrides the setting). */
   private get fpsCap(): number {
     return this.capOverride ?? this.gfx.fpsCap;
@@ -1553,7 +1558,7 @@ export class Game {
     const vd = VIEW_DISTANCE[s.viewDistance];
     const fog = this.scene.fog as THREE.Fog | null;
     if (fog) {
-      fog.near = vd.fogNear;
+      fog.near = this.hazeNear(vd.fogNear);
       fog.far = vd.fogFar;
     }
     this.camera.camera.far = vd.fogFar + 30;

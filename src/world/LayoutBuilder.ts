@@ -100,7 +100,7 @@ export class LayoutBuilder {
     defs: RoomDef[],
     private links: LinkDef[],
     private styles: Record<string, RoomStyle>,
-    private shared: { ao: THREE.Material; pool: (color: number) => THREE.Material; skyFrame: THREE.Material; skyGlass: THREE.Material; trim: THREE.Material; merge?: THREE.MeshStandardMaterial },
+    private shared: { ao: THREE.Material; pool: (color: number) => THREE.Material; skyFrame: THREE.Material; skyGlass: THREE.Material; trim: THREE.Material; merge?: THREE.MeshStandardMaterial; lampDead?: THREE.Material },
     private wallReceiver?: HitReceiver,
   ) {
     this.defs = defs;
@@ -301,6 +301,13 @@ export class LayoutBuilder {
       for (let j = 0; j < nz; j++) {
         const x = x0 + ((i + 0.5) * w) / nx;
         const z = z0 + ((j + 0.5) * dz) / nz;
+        // A neglected building: about one panel in five is dead (the same ones every
+        // time). No glow, no pool under it, and the practical lights skip it.
+        const hash = Math.abs(Math.sin(x * 12.9898 + z * 78.233) * 43758.5453) % 1;
+        if (this.shared.lampDead && hash < 0.22) {
+          room.ceil.box(this.shared.lampDead, [1.6, 0.06, 0.55], [x, d.h - 0.03, z]);
+          continue;
+        }
         room.ceil.box(s.lamp, [1.6, 0.06, 0.55], [x, d.h - 0.03, z]);
         room.lamps.push(new THREE.Vector3(x, d.h, z));
         if (s.glow) {

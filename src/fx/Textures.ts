@@ -462,3 +462,46 @@ export const corrugatedTexture = (base: string): THREE.Texture =>
     t.wrapS = t.wrapT = THREE.RepeatWrapping;
     return t;
   });
+
+/**
+ * A monitor's picture (emissive map): a dark desktop with a title bar, text lines, a small
+ * graph and scanlines, tinted by the material's emissive colour. `warm` = amber terminal.
+ */
+export function screenTexture(warm = false): THREE.Texture {
+  return cached(`screen:${warm}`, () =>
+    canvasTexture(256, (ctx, s) => {
+      let seed = warm ? 7 : 3;
+      const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+      ctx.fillStyle = '#0d0f12';
+      ctx.fillRect(0, 0, s, s);
+      // Soft glow in the middle of the glass.
+      const g = ctx.createRadialGradient(s / 2, s / 2, s * 0.1, s / 2, s / 2, s * 0.75);
+      g.addColorStop(0, 'rgba(255,255,255,0.16)');
+      g.addColorStop(1, 'rgba(255,255,255,0.02)');
+      ctx.fillStyle = g;
+      ctx.fillRect(0, 0, s, s);
+      // Title bar and a side panel.
+      ctx.fillStyle = 'rgba(255,255,255,0.55)';
+      ctx.fillRect(s * 0.06, s * 0.07, s * 0.88, s * 0.06);
+      ctx.fillStyle = 'rgba(255,255,255,0.18)';
+      ctx.fillRect(s * 0.06, s * 0.17, s * 0.26, s * 0.74);
+      // Lines of text.
+      ctx.fillStyle = 'rgba(255,255,255,0.7)';
+      for (let y = s * 0.2; y < s * 0.62; y += s * 0.045) ctx.fillRect(s * 0.37, y, s * (0.15 + rnd() * 0.42), s * 0.018);
+      // A small graph.
+      ctx.strokeStyle = 'rgba(255,255,255,0.85)';
+      ctx.lineWidth = s * 0.012;
+      ctx.beginPath();
+      for (let i = 0; i <= 12; i++) {
+        const x = s * (0.37 + i * 0.047);
+        const y = s * (0.86 - rnd() * 0.16);
+        if (i) ctx.lineTo(x, y);
+        else ctx.moveTo(x, y);
+      }
+      ctx.stroke();
+      // Scanlines.
+      ctx.fillStyle = 'rgba(0,0,0,0.35)';
+      for (let y = 0; y < s; y += 3) ctx.fillRect(0, y, s, 1);
+    }),
+  );
+}

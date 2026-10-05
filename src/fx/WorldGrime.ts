@@ -147,13 +147,13 @@ export function applyGrime(mat: THREE.Material, lite = false): void {
         dirt = clamp(dirt * grimeAmount, 0.0, 1.0);
         diffuseColor.rgb *= mix(vec3(1.0), mix(vec3(0.6, 0.57, 0.52), vec3(0.55, 0.47, 0.36), gCeil), dirt);
         // Wet patches on floors: darker, and glossy below.
-        float gWetK = grimeWet * smoothstep(0.6, 0.9, gN.y) * smoothstep(0.74, 0.86, gBig.g);
-        diffuseColor.rgb *= 1.0 - 0.28 * gWetK;`,
+        float gWetK = grimeWet * smoothstep(0.6, 0.9, gN.y) * smoothstep(0.84, 0.95, gBig.g) * 0.7;
+        diffuseColor.rgb *= 1.0 - 0.3 * gWetK;`,
       )
       .replace(
         '#include <roughnessmap_fragment>',
         `#include <roughnessmap_fragment>
-        roughnessFactor = mix(clamp(roughnessFactor + dirt * 0.22, 0.0, 1.0), 0.14, gWetK);`,
+        roughnessFactor = mix(clamp(roughnessFactor + dirt * 0.22, 0.0, 1.0), 0.32, gWetK);`,
       );
     if (lite) shader.fragmentShader = '#define GRIME_LITE\n' + shader.fragmentShader;
   };

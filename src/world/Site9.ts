@@ -3,7 +3,7 @@ import * as THREE from 'three';
 import type { HitReceiver, Physics } from '../core/Physics';
 import { PhysicsProps } from './PhysicsProps';
 import { MOBILE_ANISOTROPY } from '../config/Graphics';
-import { corrugatedTexture, glowTexture, grimeRoughness, gridTexture, gridTint, neutralGridTexture, woodTexture } from '../fx/Textures';
+import { corrugatedTexture, glowTexture, grimeRoughness, gridTexture, gridTint, neutralGridTexture, screenTexture, woodTexture } from '../fx/Textures';
 import type { RobotOptions } from '../targets/RobotTarget';
 import type { GameMap, SquadSpawn, Station } from './GameMap';
 import { LayoutBuilder, type BuiltRoom, type DoorSlot, type LinkDef, type RoomDef, type RoomStyle, type Rect } from './LayoutBuilder';
@@ -226,6 +226,8 @@ export class Site9 implements GameMap {
   /** Night over Site-9: the skylights and the yard read dark. */
   readonly skyColor = 0x1b2330;
   readonly exposure = 0.88;
+  /** Indoor haze: fog starts this close (the far end still comes from view distance). */
+  readonly hazeNear = 9;
   readonly stations: Station[] = [
     { name: 'Arrival Lobby (start)', pos: ((p) => [p[0], 0, p[1]])(Wp(0, 78)) as V3, yaw: 0 },
     { name: 'Atrium', pos: ((p) => [p[0], 0, p[1]])(Wp(0, 40)) as V3, yaw: 0 },
@@ -284,7 +286,16 @@ export class Site9 implements GameMap {
     // (line / accent colours follow the base), no roughness map.
     const rough = mobile ? null : grimeRoughness();
     const gridTex = mobile ? neutralGridTexture(256) : null;
+    // Weathered palette: every surface colour a bit greyer, darker and browner than the
+    // spec sheet (fresh paint and clean tile read as a graybox).
+    const weather = (hex: string): string => {
+      const c = new THREE.Color(hex);
+      const l = c.r * 0.2126 + c.g * 0.7152 + c.b * 0.0722;
+      c.lerp(new THREE.Color(l, l, l), 0.35).multiplyScalar(0.52).lerp(new THREE.Color(0.11, 0.095, 0.075), 0.12);
+      return `#${c.getHexString()}`;
+    };
     const grid = (a: string, b: string, c: string, r = 0.8, metal = 0.05) => {
+      [a, b, c] = [weather(a), weather(b), weather(c)];
       const g = gridTex
         ? std({ map: gridTex, color: gridTint(a), roughness: Math.min(1, r + 0.12), metalness: metal })
         : std({ map: gridTexture(a, b, c), roughnessMap: rough, roughness: Math.min(1, r + 0.12), metalness: metal });
@@ -295,8 +306,8 @@ export class Site9 implements GameMap {
     this.coreGlow = std({ color: 0x000000, emissive: 0x4fd2ff, emissiveIntensity: 3 });
     const wood = woodTexture();
     this.mats = {
-      white: std({ color: 0xe9ecef, roughness: 0.6 }),
-      offwhite: std({ color: 0xd5d9dd, roughness: 0.7 }),
+      white: std({ color: 0x9a9891, roughness: 0.6 }),
+      offwhite: std({ color: 0x8b8982, roughness: 0.7 }),
       grey: std({ color: 0x8d9298, roughness: 0.7 }),
       dark: std({ color: 0x2a2d31, roughness: 0.6, metalness: 0.3 }),
       steel: std({ color: 0x9aa1a9, metalness: 0.85, roughness: 0.35 }),
@@ -314,8 +325,10 @@ export class Site9 implements GameMap {
       water: std({ color: 0x3a7fa0, roughness: 0.08, metalness: 0.3 }),
       mint: std({ color: 0x8fd1c0, roughness: 0.6 }),
       glass: std({ color: 0xbfe0ef, transparent: true, opacity: 0.18, roughness: 0.05, metalness: 0.2, depthWrite: false }),
-      screen: std({ color: 0x000000, emissive: 0x3aa0ff, emissiveIntensity: 1.5 }),
-      screenWarm: std({ color: 0x000000, emissive: 0xffb45a, emissiveIntensity: 1.4 }),
+      // Monitors show a picture (emissive map), dimmer than a lamp: they were flat glowing slabs.
+      screen: std({ color: 0x000000, emissive: 0x7cc0ff, emissiveMap: screenTexture(), emissiveIntensity: 0.95, roughness: 0.25 }),
+      screenWarm: std({ color: 0x000000, emissive: 0xffb45a, emissiveMap: screenTexture(true), emissiveIntensity: 0.95, roughness: 0.25 }),
+      reactor: std({ color: 0x000000, emissive: 0xffb45a, emissiveIntensity: 1.4 }),
       lampCool: std({ color: 0x000000, emissive: 0xf2f6ff, emissiveIntensity: 2.6 }),
       lampWarm: std({ color: 0x000000, emissive: 0xffe1b5, emissiveIntensity: 2.4 }),
       lampRed: std({ color: 0x000000, emissive: 0xff2a1a, emissiveIntensity: 2.2 }),
@@ -359,6 +372,7 @@ export class Site9 implements GameMap {
       skyFrame: m.steel,
       skyGlass: std({ color: 0xdff0ff, transparent: true, opacity: 0.12, roughness: 0.05, depthWrite: false }),
       trim: m.gunmetal,
+      lampDead: std({ color: 0x1b1c1e, emissive: 0x9fb4d0, emissiveIntensity: 0.03, roughness: 0.5 }),
       merge: (() => {
         const mm = std({ vertexColors: true, roughness: 0.62, metalness: 0.25 });
         applyGrime(mm, mobile);
@@ -407,7 +421,7 @@ export class Site9 implements GameMap {
     this.ambient = mobile ? MOBILE_FILL_NO_SUN : 0.24;
     this.hemi = new THREE.HemisphereLight(0xc4d0e0, 0x3a3631, this.ambient);
     this.group.add(this.hemi);
-    for (const k of ['lampCool', 'lampWarm', 'lampBlue', 'screen', 'screenWarm']) {
+    for (const k of ['lampCool', 'lampWarm', 'lampBlue', 'screen', 'screenWarm', 'reactor']) {
       const m = this.mats[k] as THREE.MeshStandardMaterial;
       this.lampBase.set(m, m.emissiveIntensity);
     }
@@ -1404,7 +1418,7 @@ export class Site9 implements GameMap {
       this.cyl(R, 'yellow', 4.05, 0.4, [x, 7, -76], false, [0, 0, 0], 28);
     }
     this.cyl(R, 'gunmetal', 5, 1, [0, 0.5, -76], true, [0, 0, 0], 28);
-    this.cyl(R, 'screenWarm', 2.4, 7, [0, 4.5, -76], true, [0, 0, 0], 24);
+    this.cyl(R, 'reactor', 2.4, 7, [0, 4.5, -76], true, [0, 0, 0], 24);
     for (const x of [-12, 12]) this.box(R, 'gunmetal', [0.6, 0.6, 18], [x, 9.5, -76], false);
     this.serviceLift(R, -10, -85.85, 0);
     this.serviceLift(R, 10, -85.85, 0);
