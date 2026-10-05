@@ -297,7 +297,7 @@ export const SB: Shot = {
     const fl = (ctx.game.lighting as unknown as { flashlight?: THREE.SpotLight } | null)?.flashlight;
     if (fl) fl.intensity = 0;
     // The hero cameras look back down the barrels: no beam cones in them (render only).
-    if (cam === 'orbit' || cam === 'column') for (const q of B!.squad) beam(q, 0);
+    if (cam === 'orbit' || cam === 'column' || cam === 'cctv') for (const q of B!.squad) beam(q, 0);
     // Cinematographer's fill over the subject of each camera (none in the gameplay view).
     const sq = B!.squad;
     const w = cam === 'side' ? sq[1].pos.clone().lerp(sq[2].pos, 0.5) : cam === 'peek' ? sq[1].pos : sq[0].pos;
