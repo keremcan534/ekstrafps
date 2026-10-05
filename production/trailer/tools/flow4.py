@@ -115,9 +115,11 @@ SABLE_TAGS = {"BD": "SABLE / BLACK DIVISION", "SB": "SABLE / THE WARDEN"}
 LOOK = {"A0": "steel", "IN": "steel", "BD": "sable", "SB": "sable", "CR": "sable", "WD": "end"}
 
 A03_CLICK, A04_BACK, BD_BREACH = 0.55, 0.70, 1.2
-fc0 = first_fire("FC", 3.0, 4.6)
-sg = fires("SG") or [3.28, 6.43]
-wd_shot = next((e["t"] for e in meta("WD")["events"] if e["name"].endswith(".fire") and e["t"] > 6.0), 7.22)
+# Cues from the takes' event logs; the defaults are the logged values (the simulation is
+# deterministic), so a fresh machine computes the same capture windows before it has any log.
+fc0 = first_fire("FC", 3.0, 4.6167)
+sg = fires("SG") or [3.2833, 6.4333]
+wd_shot = next((e["t"] for e in meta("WD")["events"] if e["name"].endswith(".fire") and e["t"] > 6.0), 7.2333)
 
 S = []
 
