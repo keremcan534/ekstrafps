@@ -227,7 +227,8 @@ export const IN: Shot = {
     s.rotor.rotation.z += dt * 40;
     s.nav.visible = Math.floor(t * 1.4) % 2 === 0;
     const aim = v(Math.sin(t * 0.55) * 7 - 1, 0, -19 + Math.cos(t * 0.37) * 4);
-    if (t > DESC0 - 1 && t < DESC1 + 1) aim.lerp(LAND, 0.75);
+    // v4: the light stays on the lead until he turns (the aircraft lifting away pulls it long).
+    if (t > DESC0 - 1 && t < DESC1 + 5.5) aim.lerp(LAND, 0.75 * Math.min(1, (t - DESC0 + 1) / 0.6));
     s.search.position.copy(hp).add(v(-1.6, -1.2, 0));
     s.search.target.position.copy(aim);
     s.search.target.updateMatrixWorld();

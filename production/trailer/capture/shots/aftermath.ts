@@ -77,10 +77,15 @@ export const CR: Shot = {
     // (24 mm, 45 cm up, tilted down onto the floor just ahead).
     dolly: (ctx): CameraState => {
       const t = Math.max(0, ctx.t);
-      // Brushes past the first body, through the second's blood, on toward the third.
+      // Past the first body, swinging to the second by the conveyor, back across to the third.
       const x = -47.0 - t * 1.05;
-      const z = Z - 1.35 + Math.min(1, t / 9) * 0.9 + Math.sin(t * 0.7) * 0.25;
-      return { pos: v(x, 0.5, z).add(handheld(t, 0.003, 21)), target: v(x - 3, 0.05, z + 0.15), lens: 24 };
+      const xs = [-47, -50.2, -54.2, -57.1, -60];
+      const zs = [-13.6, -14.0, -11.7, -12.3, -12.6];
+      let i = 0;
+      while (i < xs.length - 2 && x < xs[i + 1]) i++;
+      const k = Math.min(1, Math.max(0, (x - xs[i]) / (xs[i + 1] - xs[i])));
+      const z = zs[i] + (zs[i + 1] - zs[i]) * (k * k * (3 - 2 * k));
+      return { pos: v(x, 0.5, z).add(handheld(t, 0.003, 21)), target: v(x - 3, 0.05, z + 0.1), lens: 24 };
     },
     // 50 mm on the first body's hand and rifle in the blood, slow push.
     hand: (ctx): CameraState => {
@@ -93,8 +98,8 @@ export const CR: Shot = {
     // From below: the NVG tubes and the dark respirator as he looks down.
     face: (ctx): CameraState => {
       const w = C!.walker;
-      const head = v(w.pos.x, 1.62, w.pos.z);
-      return { pos: v(w.pos.x + 1.1, 0.55, w.pos.z - 1.0).add(handheld(ctx.t, 0.003, 24)), target: head, lens: 85 };
+      const head = v(w.pos.x, 1.6, w.pos.z);
+      return { pos: v(w.pos.x + 1.6, 0.6, w.pos.z - 1.4).add(handheld(ctx.t, 0.003, 24)), target: head, lens: 50 };
     },
   },
   beforeRender(_ctx, cam) {
@@ -106,6 +111,6 @@ export const CR: Shot = {
   post: (_ctx, cam) => ({
     ...NIGHT_POST,
     exposure: 0.95,
-    ...(cam === 'hand' ? { dof: { focus: 1.05, aperture: 0.03, maxblur: 0.014 } } : cam === 'face' ? { dof: { focus: 1.6, aperture: 0.02, maxblur: 0.012 } } : {}),
+    ...(cam === 'hand' ? { dof: { focus: 1.05, aperture: 0.03, maxblur: 0.014 } } : cam === 'face' ? { dof: { focus: 2.3, aperture: 0.015, maxblur: 0.01 } } : {}),
   }),
 };

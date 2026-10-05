@@ -34,9 +34,9 @@ function splatTexture(kind: Kind, seed: number): THREE.CanvasTexture {
   const r = rng(seed);
   const blob = (x: number, y: number, rad: number, a: number) => {
     const gr = g.createRadialGradient(x, y, 0, x, y, rad);
-    gr.addColorStop(0, `rgba(96,6,9,${a})`);
-    gr.addColorStop(0.72, `rgba(78,4,7,${a})`);
-    gr.addColorStop(1, 'rgba(50,2,4,0)');
+    gr.addColorStop(0, `rgba(112,7,10,${a})`);
+    gr.addColorStop(0.72, `rgba(92,5,8,${a})`);
+    gr.addColorStop(1, 'rgba(60,2,4,0)');
     g.fillStyle = gr;
     g.beginPath();
     g.arc(x, y, rad, 0, Math.PI * 2);
