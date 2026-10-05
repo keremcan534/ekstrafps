@@ -13,6 +13,10 @@ export interface DossierEntry {
   place: string;
   /** The caption's date line. */
   year: string;
+  /** Report date (as typed on the file). */
+  date: string;
+  /** Source reliability / information credibility (A-1 … F-6, the intelligence grading). */
+  source: string;
   /** Flag: field colour, band colour; UI accent. */
   flag: [string, string];
   accent: string;
@@ -38,7 +42,7 @@ export interface DossierEntry {
 
 export const DOSSIER_ENTRIES: DossierEntry[] = [
   {
-    id: 'sable', file: 'SB-000', name: 'SABLE', role: 'Vanta Dynamics black-ops cleanup unit', place: 'Site-9, Sector Zero', year: '2041',
+    id: 'sable', file: 'SB-000', name: 'SABLE', role: 'Vanta Dynamics black-ops cleanup unit', place: 'Site-9, Sector Zero', year: '2041', date: '14 MAR 2041', source: 'C-3',
     flag: ['#121212', '#d4231b'], accent: '#e2372b',
     status: 'HOSTILE', stance: 'hostile', stamp: 'KILL ON SIGHT', threat: 5,
     tags: ['Black ops', 'Night raids', 'No witnesses'],
@@ -59,7 +63,7 @@ export const DOSSIER_ENTRIES: DossierEntry[] = [
     photos: ['warden', 'gravel', 'hush'],
   },
   {
-    id: 'vanta', file: 'VS-100', name: 'Vanta Security', role: 'Contract recovery team — your squad', place: 'Site-9, Arrival Lobby', year: '2041',
+    id: 'vanta', file: 'VS-100', name: 'Vanta Security', role: 'Contract recovery team — your squad', place: 'Site-9, Arrival Lobby', year: '2041', date: '02 MAR 2041', source: 'A-1',
     flag: ['#1d4f9c', '#e6f0ff'], accent: '#5fb0ff',
     status: 'ACTIVE', stance: 'friendly', stamp: 'FRIENDLY', threat: 3,
     tags: ['Your squad', 'Contractors', 'Shared wallet'],
@@ -80,7 +84,7 @@ export const DOSSIER_ENTRIES: DossierEntry[] = [
     photos: ['pike', 'anvil', 'glass'],
   },
   {
-    id: 'rivals', file: 'RS-200', name: 'Rival Squads', role: 'Bravo · Charlie · Delta — the other contractor', place: 'Site-9, Hangar & Power Plant', year: '2041',
+    id: 'rivals', file: 'RS-200', name: 'Rival Squads', role: 'Bravo · Charlie · Delta — the other contractor', place: 'Site-9, Hangar & Power Plant', year: '2041', date: '09 MAR 2041', source: 'B-2',
     flag: ['#3a3c40', '#ff9a2a'], accent: '#ff9a2a',
     status: 'HOSTILE', stance: 'rival', stamp: 'RIVAL PMC', threat: 4,
     tags: ['Rival', 'Three squads', 'Same contract'],
@@ -101,7 +105,7 @@ export const DOSSIER_ENTRIES: DossierEntry[] = [
     photos: ['rossi', 'quinn', 'varga'],
   },
   {
-    id: 'machines', file: 'RM-001', name: 'Rogue Machines', role: 'The facility’s own workforce', place: 'Site-9 Assembly Line', year: '2041',
+    id: 'machines', file: 'RM-001', name: 'Rogue Machines', role: 'The facility’s own workforce', place: 'Site-9 Assembly Line', year: '2041', date: '11 MAR 2041', source: 'A-2',
     flag: ['#2a2a2e', '#ff0a2a'], accent: '#ff2a3a',
     status: 'ROGUE', stance: 'rogue', stamp: 'ROGUE MACHINE', threat: 4,
     tags: ['Machines', 'Waves', 'Still being built'],
@@ -121,7 +125,7 @@ export const DOSSIER_ENTRIES: DossierEntry[] = [
     photos: ['walker', 'brute'],
   },
   {
-    id: 'salvage', file: 'SV-030', name: 'Salvagers', role: 'Scavenger crews', place: 'Site-9, Garden Court', year: '2041',
+    id: 'salvage', file: 'SV-030', name: 'Salvagers', role: 'Scavenger crews', place: 'Site-9, Garden Court', year: '2041', date: '06 MAR 2041', source: 'C-2',
     flag: ['#c8a070', '#3a2a14'], accent: '#d8a868',
     status: 'HOSTILE', stance: 'hostile', stamp: 'HOSTILE', threat: 3,
     tags: ['Scavengers', 'Loot', 'Whatever guns they found'],
@@ -141,7 +145,7 @@ export const DOSSIER_ENTRIES: DossierEntry[] = [
     photos: ['rook', 'fedor'],
   },
   {
-    id: 'choir', file: 'CR-000', name: 'The Choir', role: 'Machine cult', place: 'Site-9, the dark', year: '2041',
+    id: 'choir', file: 'CR-000', name: 'The Choir', role: 'Machine cult', place: 'Site-9, the dark', year: '2041', date: '13 MAR 2041', source: 'D-3',
     flag: ['#0a0506', '#a01020'], accent: '#c0182c',
     status: 'HOSTILE', stance: 'hostile', stamp: 'CULT', threat: 4,
     tags: ['Cult', 'Blades', 'Blackouts only'],
@@ -161,7 +165,7 @@ export const DOSSIER_ENTRIES: DossierEntry[] = [
     photos: ['cantor', 'wren'],
   },
   {
-    id: 'staff', file: 'LS-000', name: 'Lab Staff', role: 'Survivors still hiding in the labs', place: 'Site-9 Laboratories', year: '2041',
+    id: 'staff', file: 'LS-000', name: 'Lab Staff', role: 'Survivors still hiding in the labs', place: 'Site-9 Laboratories', year: '2041', date: '12 MAR 2041', source: 'B-1',
     flag: ['#e8f0f8', '#5f86b8'], accent: '#a8c8ec',
     status: 'CIVILIAN', stance: 'civilian', stamp: 'CIVILIAN', threat: 1,
     tags: ['Civilians', 'Witnesses', 'Do not shoot'],

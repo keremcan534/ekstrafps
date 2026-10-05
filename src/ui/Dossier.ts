@@ -1,5 +1,7 @@
 import './dossier.css';
 import { DOSSIER_ENTRIES, type DossierEntry } from './DossierData';
+import { DossierSfx } from './DossierSfx';
+import { emblem } from './DossierEmblems';
 
 /**
  * The personnel & threat archive (main menu → DOSSIER): one file per force on Site-9.
@@ -14,12 +16,14 @@ import { DOSSIER_ENTRIES, type DossierEntry } from './DossierData';
 type Sound = (name: string, volume?: number) => void;
 
 const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
-const GLYPHS = '█▓▒░#%&@$*+=?/\\<>[]{}ABCDEFGHJKLMNPQRSTUVWXYZ0123456789';
 /** Seconds each photo holds before the next cuts in. */
 const PHOTO_HOLD = 6.5;
 
-/** Text with [[redacted]] spans: blacked out, decrypted a beat after the file opens. */
-const redact = (s: string) => esc(s).replace(/\[\[(.+?)\]\]/g, (_m, t: string) => `<span class="dos-redact" data-t="${t}">${'█'.repeat(t.replace(/^!/, '').length)}</span>`);
+/** [[!text]]: blacked out for good. [[text]]: an analyst's red-pencil underline. */
+const redact = (s: string) =>
+  esc(s).replace(/\[\[(.+?)\]\]/g, (_m, t: string) =>
+    t.startsWith('!') ? `<span class="dos-redact">${'█'.repeat(t.length - 1)}</span>` : `<span class="dos-pencil">${t}</span>`);
+const THREAT = ['', 'MINIMAL', 'LOW', 'MODERATE', 'HIGH', 'EXTREME'];
 
 /** Which photos exist (checked once each). */
 const photoOk = new Map<string, Promise<boolean>>();
@@ -51,7 +55,7 @@ export class Dossier {
   private photo = 0;
   private onKey = (e: KeyboardEvent) => this.key(e);
   private onMove = (e: PointerEvent) => this.parallax(e);
-  private clock = 0;
+  private sfx = new DossierSfx();
 
   constructor(parent: HTMLElement, private onClose: () => void, private sound: Sound = () => {}) {
     this.root = document.createElement('div');
@@ -62,7 +66,6 @@ export class Dossier {
         <div class="dos-leak"></div><div class="dos-scratch"></div><div class="dos-vignette"></div>
         <div class="dos-grain"></div><div class="dos-scan"></div><div class="dos-tear"></div>
       </div>
-      <div class="dos-stamp"><span></span></div>
       <header class="dos-head">
         <div class="dos-brand"><i class="dos-rec"></i>VANTA DYNAMICS <b>·</b> THREAT ARCHIVE</div>
         <div class="dos-title">Select File</div>
@@ -71,30 +74,21 @@ export class Dossier {
       </header>
       <nav class="dos-list"></nav>
       <article class="dos-file">
-        <div class="dos-fileno"></div>
-        <h2 class="dos-name"></h2>
-        <div class="dos-call"></div>
-        <div class="dos-tags"></div>
-        <div class="dos-grid">
-          <div class="dos-threat"><label>Threat</label><div class="dos-pips"></div></div>
-          <div class="dos-facts"></div>
+        <div class="dos-paper">
+          <div class="dos-stamp"><span></span></div>
+          <div class="dos-letterhead">VANTA DYNAMICS — INTERNAL SECURITY DIVISION<br>INTELLIGENCE SUMMARY</div>
+          <div class="dos-fileline"><span class="dos-fileno"></span><span class="dos-date"></span></div>
+          <table class="dos-fields"></table>
+          <div class="dos-body"></div>
+          <div class="dos-dist">DISTRIBUTION: CLEARANCE IV ONLY — DO NOT COPY — PAGE 1 OF 1</div>
         </div>
-        <div class="dos-stats"></div>
-        <div class="dos-scroll">
-          <section class="dos-bio"></section>
-          <section class="dos-people"><label>Known personnel</label><ul></ul></section>
-          <section class="dos-notes"><label>Field notes</label><p></p></section>
-          <section class="dos-kit"><label>Known equipment</label><div></div></section>
-        </div>
-        <blockquote class="dos-quote"><i class="dos-wave"><b></b><b></b><b></b><b></b><b></b><b></b><b></b></i><span></span></blockquote>
       </article>
       <div class="dos-cap"></div>
       <footer class="dos-foot">
         <div class="dos-strip"></div>
-        <div class="dos-ruler"><div class="dos-marker"></div></div>
         <div class="dos-hints"><span><kbd>↑</kbd><kbd>↓</kbd> File</span><span><kbd>←</kbd><kbd>→</kbd> Photo</span><button class="dos-back"><kbd>Esc</kbd> Back</button></div>
       </footer>
-      <div class="dos-boot"><pre></pre></div>`;
+`;
     parent.appendChild(this.root);
     this.shots = [...this.root.querySelectorAll<HTMLDivElement>('.dos-shot')];
     for (const b of [this.q('.dos-back'), this.q('.dos-x')]) {
@@ -104,8 +98,9 @@ export class Dossier {
       });
     }
     this.buildList();
-    this.buildRuler();
-    this.q<HTMLDivElement>('.dos-grain').style.backgroundImage = `url(${noiseTile()})`;
+    const noise = `url(${noiseTile()})`;
+    this.q<HTMLDivElement>('.dos-grain').style.backgroundImage = noise;
+    this.root.style.setProperty('--noise', noise); // paper fibres
     // Swipe on the photo: next / previous photo (phones).
     let sx = 0;
     const stage = this.q('.dos-stage');
@@ -127,9 +122,11 @@ export class Dossier {
     this.root.classList.remove('ready');
     window.addEventListener('keydown', this.onKey, true);
     window.addEventListener('pointermove', this.onMove);
-    this.sound('bd.encounter', 0.4);
-    this.boot();
-    this.tickClock();
+    this.sound('bd.encounter', 0.3);
+    const d = new Date();
+    const p2 = (n: number) => String(n).padStart(2, '0');
+    this.q('.dos-clock').textContent = `${p2(d.getHours())}:${p2(d.getMinutes())} LOCAL`;
+    this.ready();
   }
 
   close(): void {
@@ -139,7 +136,6 @@ export class Dossier {
     window.removeEventListener('keydown', this.onKey, true);
     window.removeEventListener('pointermove', this.onMove);
     this.clearTimers();
-    cancelAnimationFrame(this.clock);
     this.sound('ui.firemode', 0.5);
     this.onClose();
   }
@@ -154,11 +150,13 @@ export class Dossier {
 
   private buildList(): void {
     const list = this.q('.dos-list');
+    list.insertAdjacentHTML('beforeend', `<div class="dos-index">FILE INDEX <span>${DOSSIER_ENTRIES.length} FILES</span></div>`);
     DOSSIER_ENTRIES.forEach((en, i) => {
       const row = document.createElement('button');
       row.className = 'dos-row';
       row.dataset.i = String(i);
-      row.innerHTML = `<i class="dos-flag" style="--f0:${en.flag[0]};--f1:${en.flag[1]}"></i><span>${esc(en.name)}</span><em>${esc(en.status)}</em>`;
+      row.style.setProperty('--row-accent', en.accent);
+      row.innerHTML = `<i class="dos-emblem">${emblem(en.id)}</i><span>${esc(en.name)}</span><em class="st-${en.stance}">${esc(en.status)}</em><small>${esc(en.role)}</small>`;
       row.addEventListener('click', (e) => {
         e.stopPropagation();
         this.select(i);
@@ -170,76 +168,16 @@ export class Dossier {
     });
   }
 
-  private buildRuler(): void {
-    const ruler = this.q('.dos-ruler');
-    DOSSIER_ENTRIES.forEach((en, i) => {
-      const t = document.createElement('button');
-      t.className = 'dos-tick';
-      t.dataset.i = String(i);
-      t.textContent = en.name;
-      t.addEventListener('click', (e) => {
-        e.stopPropagation();
-        this.select(i);
-      });
-      ruler.appendChild(t);
-    });
-  }
-
-  /** "Access granted" teletype, then the archive flickers up. Any key / tap skips it. */
-  private boot(): void {
-    const pre = this.q('.dos-boot pre');
-    const lines = [
-      'VANTA DYNAMICS // SECURE ARCHIVE NODE 7',
-      'LINK ............................ ESTABLISHED',
-      'CLEARANCE ....................... LEVEL IV',
-      `INDEXING ${DOSSIER_ENTRIES.length} FILES ....................... OK`,
-      'WARNING: CONTENTS CLASSIFIED. UNAUTHORISED ACCESS IS A TERMINATION OFFENCE.',
-      '',
-      'ACCESS GRANTED_',
-    ];
-    pre.textContent = '';
-    let k = 0;
-    const step = () => {
-      if (!this.open_) return;
-      if (k < lines.length) {
-        pre.textContent += lines[k++] + '\n';
-        this.sound('ui.firemode', 0.15);
-        this.timers.push(window.setTimeout(step, 80));
-      } else this.timers.push(window.setTimeout(() => this.ready(), 240));
-    };
-    step();
-    this.q('.dos-boot').addEventListener('pointerdown', () => this.ready(), { once: true });
-  }
-
   private ready(): void {
     if (!this.open_ || this.root.classList.contains('ready')) return;
     this.root.classList.add('ready');
     this.select(this.index, true);
   }
 
-  private tickClock(): void {
-    const el = this.q('.dos-clock');
-    const run = () => {
-      if (!this.open_) return;
-      const d = new Date();
-      const p = (n: number) => String(n).padStart(2, '0');
-      el.textContent = `${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}:${p(Math.floor(d.getMilliseconds() / 40))}`;
-      this.clock = requestAnimationFrame(run);
-    };
-    run();
-  }
-
   // ---------------------------------------------------------------- input
 
   private key(e: KeyboardEvent): void {
     const k = e.code;
-    if (!this.root.classList.contains('ready')) {
-      if (k === 'Escape') this.close();
-      else this.ready();
-      e.preventDefault();
-      e.stopPropagation();
-      return;
-    }
     const n = DOSSIER_ENTRIES.length;
     if (k === 'ArrowDown' || k === 'KeyS') this.select((this.index + 1) % n);
     else if (k === 'ArrowUp' || k === 'KeyW') this.select((this.index - 1 + n) % n);
@@ -266,20 +204,12 @@ export class Dossier {
     this.clearTimers();
     const en = DOSSIER_ENTRIES[i];
     this.root.style.setProperty('--accent', en.accent);
-    this.sound('ui.firemode', 0.4);
+    this.sfx.select();
 
-    // List, counter, ruler.
+    // List, counter.
     this.root.querySelectorAll<HTMLElement>('.dos-row').forEach((r) => r.classList.toggle('on', Number(r.dataset.i) === i));
     this.root.querySelector<HTMLElement>(`.dos-row[data-i="${i}"]`)?.scrollIntoView({ block: 'nearest', inline: 'center' });
     this.q('.dos-count').textContent = `FILE ${String(i + 1).padStart(2, '0')} / ${DOSSIER_ENTRIES.length}`;
-    const ticks = [...this.root.querySelectorAll<HTMLElement>('.dos-tick')];
-    ticks.forEach((t) => t.classList.toggle('on', Number(t.dataset.i) === i));
-    const tick = ticks[i];
-    if (tick) {
-      const marker = this.q<HTMLElement>('.dos-marker');
-      marker.style.left = `${tick.offsetLeft}px`;
-      marker.style.width = `${tick.offsetWidth}px`;
-    }
 
     this.fill(en);
 
@@ -297,39 +227,35 @@ export class Dossier {
     });
   }
 
-  /** The file's text. */
+  /** The file, typed up as an intelligence summary. */
   private fill(en: DossierEntry): void {
-    this.q('.dos-fileno').innerHTML = `<span>FILE № ${esc(en.file)}</span><span>${esc(en.year)}</span>`;
-    this.typewrite(this.q('.dos-name'), en.name, 34);
-    this.q('.dos-call').innerHTML = `${esc(en.role)} <b>·</b> ${esc(en.place)}`;
-    this.q('.dos-tags').innerHTML = [`<span class="st st-${en.status.toLowerCase()}">${esc(en.status)}</span>`, ...en.tags.map((t) => `<span>${esc(t)}</span>`)].join('');
-    this.q('.dos-pips').innerHTML = Array.from({ length: 5 }, (_, k) => `<i class="${k < en.threat ? 'on' : ''}" style="--d:${k * 70}ms"></i>`).join('');
-    this.q('.dos-facts').innerHTML = en.facts.map(([k, v]) => `<div><label>${esc(k)}</label><span>${redact(v)}</span></div>`).join('');
-    this.q('.dos-stats').innerHTML = en.stats
-      .map(([k, v], n) => `<div class="dos-stat"><label>${esc(k)}</label><i><b style="--v:${v}%;--d:${120 + n * 90}ms"></b></i><span>${v}</span></div>`)
-      .join('');
-    this.q('.dos-bio').innerHTML = en.bio.map((p) => `<p>${redact(p)}</p>`).join('');
-    this.q('.dos-people ul').innerHTML = en.people.map(([n, d]) => `<li><b>${esc(n)}</b> — ${esc(d)}</li>`).join('');
-    this.q('.dos-notes p').innerHTML = redact(en.notes);
-    this.q('.dos-kit div').innerHTML = en.kit.map((k) => `<span>${esc(k)}</span>`).join('');
-    this.q('.dos-quote span').innerHTML = `“${esc(en.quote)}”`;
-    this.q<HTMLElement>('.dos-scroll').scrollTop = 0;
-    this.retrigger('.dos-file', 'enter');
-    this.timers.push(window.setTimeout(() => this.decrypt(), 900));
+    this.q('.dos-fileno').textContent = `FILE No. ${en.file}`;
+    this.q('.dos-date').textContent = en.date;
+    const rows: [string, string][] = [
+      ['SUBJECT', en.name.toUpperCase()],
+      ['DESIGNATION', en.role],
+      ['LOCATION', en.place],
+      ['STATUS', en.status],
+      ['ASSESSED THREAT', `${THREAT[en.threat]} (${en.threat}/5)`],
+      ['SOURCE / CREDIBILITY', en.source],
+      ...en.facts.map(([k, v]) => [k.toUpperCase(), v] as [string, string]),
+    ];
+    this.q('.dos-fields').innerHTML = rows.map(([k, v]) => `<tr><th>${esc(k)}:</th><td>${redact(v)}</td></tr>`).join('');
+    const people = en.people.map(([n, d], k) => `<p class="dos-item">${'abcdefgh'[k]}. <b>${esc(n)}</b> — ${esc(d)}</p>`).join('');
+    this.q('.dos-body').innerHTML =
+      `<h4>1. SUMMARY</h4>${en.bio.map((p) => `<p>${redact(p)}</p>`).join('')}` +
+      `<h4>2. KNOWN PERSONNEL</h4>${people}` +
+      `<h4>3. ASSESSMENT</h4><p>${redact(en.notes)}</p>` +
+      `<h4>4. EQUIPMENT</h4><p>${en.kit.map(esc).join('; ')}.</p>` +
+      `<h4>5. INTERCEPT</h4><p class="dos-intercept">“${esc(en.quote)}”<br><small>— radio intercept, Site-9 band, ${esc(en.date)}</small></p>`;
+    this.q<HTMLElement>('.dos-file').scrollTop = 0;
 
     const stamp = this.q('.dos-stamp');
     stamp.querySelector('span')!.textContent = en.stamp;
     stamp.className = `dos-stamp s-${en.stance}`;
-    this.timers.push(window.setTimeout(() => {
-      stamp.classList.add('slam');
-      this.sound('reload.rifle.boltforward', 0.5);
-    }, 420));
 
-    const cap = this.q('.dos-cap');
-    cap.classList.remove('in');
-    void cap.offsetWidth;
-    cap.innerHTML = `<b>${esc(en.name)}</b><span>${esc(en.place)} — ${esc(en.year)}</span>`;
-    cap.classList.add('in');
+
+    this.q('.dos-cap').innerHTML = `<b>${esc(en.name)}</b><span>${esc(en.place)} — ${esc(en.year)}</span>`;
   }
 
   /** The film strip: this file's photos (tap one to cut to it). */
@@ -371,7 +297,7 @@ export class Dossier {
     void next.offsetWidth;
     next.classList.add('on');
     this.retrigger('.dos-stage', 'glitch');
-    this.sound('ui.hit', 0.25);
+    this.sfx.cut();
     this.root.querySelectorAll<HTMLElement>('.dos-frame').forEach((fr, k) => fr.classList.toggle('on', k === this.photo));
     if (this.photos.length > 1) {
       this.photoTimer = window.setTimeout(() => this.step(1), PHOTO_HOLD * 1000);
@@ -385,38 +311,6 @@ export class Dossier {
     el.classList.add(cls);
   }
 
-  /** Letters land one by one, the next few scrambling ahead of them. */
-  private typewrite(el: HTMLElement, text: string, ms: number): void {
-    let k = 0;
-    const run = () => {
-      if (!this.open_) return;
-      const ahead = Array.from({ length: Math.min(3, text.length - k) }, () => GLYPHS[(Math.random() * GLYPHS.length) | 0]).join('');
-      el.textContent = text.slice(0, k) + ahead;
-      if (k++ < text.length) this.timers.push(window.setTimeout(run, ms));
-      else el.textContent = text;
-    };
-    run();
-  }
-
-  /** Redacted spans: noise, then the real words ([[!...]] stays blacked out). */
-  private decrypt(): void {
-    const spans = [...this.root.querySelectorAll<HTMLElement>('.dos-redact')];
-    spans.forEach((sp, n) => {
-      const t = sp.dataset.t ?? '';
-      if (t.startsWith('!')) return;
-      let k = 0;
-      const run = () => {
-        if (!this.open_) return;
-        sp.textContent = t.slice(0, k) + Array.from({ length: t.length - k }, () => GLYPHS[(Math.random() * GLYPHS.length) | 0]).join('');
-        if (k++ < t.length) this.timers.push(window.setTimeout(run, 22));
-        else {
-          sp.textContent = t;
-          sp.classList.add('open');
-        }
-      };
-      this.timers.push(window.setTimeout(run, n * 240));
-    });
-  }
 }
 
 /** A photo (with two ghost copies for the glitch's colour split). */
