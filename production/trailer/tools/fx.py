@@ -170,3 +170,33 @@ def whip(a, b, k, axis=1):
     i0 = np.clip(np.arange(n) - blur // 2, 0, n)
     sm = (np.take(c, i1, axis=axis) - np.take(c, i0, axis=axis)) / np.maximum(1, (i1 - i0)).reshape((1, -1, 1) if axis == 1 else (-1, 1, 1))
     return sm
+
+
+def thermal(a, f):
+    """White-hot thermal sight: luminance (the capture pass made bodies hot), a soft blur,
+    sensor noise and banding, a faint cool tint in the shadows."""
+    lum = a.mean(-1) / 255.0
+    im = Image.fromarray(np.clip(lum * 255, 0, 255).astype(np.uint8)).filter(ImageFilter.GaussianBlur(1.6))
+    lum = np.asarray(im, np.float32) / 255.0
+    lum = np.clip((lum - 0.08) * 1.35, 0, 1) ** 0.85
+    r = np.random.default_rng(5000 + f)
+    h, w = lum.shape
+    lum = lum + r.standard_normal((h // 2, w // 2)).repeat(2, 0).repeat(2, 1)[:h, :w] * 0.035
+    lum = lum + (np.sin(np.arange(h) * 0.9 + f * 0.7)[:, None] * 0.012)
+    lum = np.clip(lum, 0, 1)
+    return np.stack([lum * 235 + 6, lum * 238 + 8, lum * 230 + 14], -1)
+
+
+def cctv(a, f):
+    """Security camera: grey, contrasty, low-res, barrel vignette, rolling scan line."""
+    h, w = a.shape[:2]
+    lum = a.mean(-1)
+    im = Image.fromarray(np.clip(lum, 0, 255).astype(np.uint8)).resize((w // 2, h // 2), Image.BILINEAR).resize((w, h), Image.NEAREST)
+    lum = np.asarray(im, np.float32)
+    lum = np.clip((lum - 8) * 1.45, 0, 255)
+    lum[::2, :] *= 0.9
+    y = (f * 6) % h
+    lum[max(0, y - 6):y + 6, :] *= 1.18
+    r = np.random.default_rng(7000 + f)
+    lum = lum + r.standard_normal((h, w)) * 5
+    return np.stack([lum * 0.96, lum, lum * 0.98], -1)

@@ -4,6 +4,7 @@ import { Soldier, type PlayerTarget, type SoldierDeps } from '../../../../src/en
 import { handheld } from '../stage';
 import { AISLE_Z, NIGHT_POST, aimAt, ally, pulse, stage, trigger, type S9 } from './site9';
 import { beam } from './sable';
+import { thermalPass } from '../thermal';
 
 /**
  * SABLE breach (real soldier rigs, real weapons and tracers): the alarm
@@ -134,6 +135,15 @@ export const BD: Shot = {
       const s = Math.sin(L.yaw);
       return { pos: v(L.pos.x + 0.5 * c - 1.3 * s, 1.78, L.pos.z - 0.5 * c * 0 - 0.5 * s - 1.3 * c).add(handheld(ctx.t, 0.01, 3)), target: v(-40, 1.3, AISLE_Z), lens: 35 };
     },
+    // v4: hero orbit round the lead as he comes through the smoke (low, 28 mm, slow arc).
+    orbit: (ctx): CameraState => {
+      const L = X!.bd[0];
+      const a = 1.9 + Math.max(0, ctx.t - ENTER) * 0.42;
+      const c = v(L.pos.x, 0, L.pos.z);
+      return { pos: c.clone().add(v(Math.sin(a) * 2.7, 0.75, Math.cos(a) * 2.7)), target: c.add(v(0, 1.45, 0)), lens: 28 };
+    },
+    // v4: the squad's thermal sight down the aisle: white-hot shapes through the smoke.
+    thermal: (ctx): CameraState => ({ pos: v(-38.6, 1.62, AISLE_Z + 0.9).add(handheld(ctx.t, 0.006, 6)), target: v(-68, 1.3, AISLE_Z), lens: 55 }),
     // v4: through the lead's eyes (graded to night vision in post): out of the smoke, onto the squad.
     eyes: (ctx): CameraState => {
       const L = X!.bd[0];
@@ -146,6 +156,7 @@ export const BD: Shot = {
     low: (ctx): CameraState => ({ pos: v(-57.5, 0.28, AISLE_Z + 0.7).add(handheld(ctx.t, 0.006, 4)), target: v(-67, 1.3, AISLE_Z), lens: 24 }),
   },
   beforeRender(ctx, cam) {
+    if (cam === 'thermal') thermalPass(ctx.game.scene, [...X!.bd.map((b) => b.body.root), ...X!.s.allies.map((a) => a.soldier.body.root)]);
     // v3: your flashlight at its trailer level in the third-person cameras.
     if (!BEAMS_OFF || cam === 'pov') return;
     const fl = (ctx.game.lighting as unknown as { flashlight?: THREE.SpotLight } | null)?.flashlight;

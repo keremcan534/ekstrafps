@@ -70,6 +70,8 @@ function framed(pos: THREE.Vector3, yaw: number, local: THREE.Vector3, aimLocal:
 
 const CONTACT = 5.2;
 const OPEN_FIRE = 6.0;
+/** v4: the push (Warden + one operator advance on the squad). */
+const PUSH = 11.2;
 
 interface Sb {
   game: Game;
@@ -109,7 +111,7 @@ function heading(b: Sb, d: number): number {
 
 export const SB: Shot = {
   map: 'site9',
-  duration: 12,
+  duration: 16,
   preroll: 3.5,
   handles: 0,
   smooth: 0.4,
@@ -204,9 +206,13 @@ export const SB: Shot = {
         return;
       }
       const [d, lat, crouch, lean] = b.spots[i];
-      s.steerTo(along(b, d, lat), 2.6);
-      s.crouchTarget = crouch;
-      s.leanTarget = t > OPEN_FIRE - 0.3 ? lean : 0;
+      // v4, after PUSH: the Warden and the leaning operator break cover and walk you down,
+      // firing as they come; the other two hold and cover them.
+      const pushing = t > PUSH && i < 2;
+      const dd = pushing ? d + Math.min(7, (t - PUSH) * 1.3) : d;
+      s.steerTo(along(b, dd, pushing ? lat * 0.4 : lat), pushing ? 1.3 : 2.6);
+      s.crouchTarget = pushing ? 0 : crouch;
+      s.leanTarget = t > OPEN_FIRE - 0.3 && !pushing ? lean : 0;
       const face = b.target.chest.clone().add(v(0, 0, (i - 1.5) * 0.6));
       const firing = t > OPEN_FIRE + i * 0.35 && (t + i * 0.3) % 1.3 < 0.85;
       s.update(ctx.dt, b.target, b.squad, face, t > CONTACT + 0.4 ? 'aim' : 'ready', firing);
@@ -251,6 +257,21 @@ export const SB: Shot = {
       const c = framed(mid, hd, v(2.6, 1.3, 1.4), v(0, 1.25, 0.6), 35, ctx.t, 0.01, 3);
       c.pos = safe(ctx.game, mid.clone().setY(1.3), c.pos);
       return c;
+    },
+    // v4: hero orbit round the Warden, low (24 mm): he walks, stops, raises the rifle.
+    orbit: (ctx): CameraState => {
+      const w = B!.squad[0];
+      const a = w.yaw + 2.3 - Math.max(0, ctx.t) * 0.36;
+      const c = v(w.pos.x, 0, w.pos.z);
+      const want = c.clone().add(v(Math.sin(a) * 2.9, 0.55, Math.cos(a) * 2.9));
+      return { pos: safe(ctx.game, c.clone().setY(1.2), want), target: c.add(v(0, 1.35, 0)), lens: 24 };
+    },
+    // v4: a security camera high in a corner of the hall: the column coming in (CCTV grade in post).
+    cctv: (ctx): CameraState => {
+      const b = B!;
+      const p = along(b, b.start + 13, 3.4).setY(5.6);
+      const mid = b.squad[1].pos.clone().lerp(b.squad[2].pos, 0.5).setY(1.0);
+      return { pos: safe(ctx.game, mid, p), target: mid, lens: 22 };
     },
     // v4: the Warden's eyes (night vision in post): down the rack aisle, hunting.
     eyes: (ctx): CameraState => {

@@ -13,8 +13,10 @@ over and over, gunfire repeated for no reason):
     climax -> the ending among your dead.
   - Effects on the game image (tools/fx.py): a grade per act, film grain, gunshot kick and
     chromatic pulse driven by the logged fire events, slow motion on hero hits (60 fps
-    source), SABLE night-vision POV, radio/NVG glitches, whip pans, a heartbeat vignette
-    in the ending.
+    source), SABLE night-vision POV, a thermal sight through the breach smoke, a security
+    camera that sees them come in, radio/NVG glitches, whip pans, a heartbeat vignette.
+  - SABLE hero shots: orbits round the breach lead and the Warden; the Warden's push in
+    the climax (SB extended to 16 s).
   - Transitions by purpose: cut (default), flash (drops and impacts only), whip (climax),
     glitch (SABLE), dip (to black), dissolve (the insertion).
 
@@ -133,69 +135,78 @@ def chain(at0, steps, speed=1.0):
         shot(T, src, at0 + (T - T0) * kw.get("speed", speed), kw.pop("tag", None), tr, kw.pop("speed", speed), kw.pop("fx", ()), **kw)
 
 
-# I. Cold open: the rifle in the dark, the Warden on the net.
+# The story, act by act (each line one beat of the music):
+#  I    a rifle loaded in the dark; the Warden on the net: "No one's coming for you."
+#  II   the squad arrives by night: searchlight, rope, boots on the deck, masks, a beep.
+#  III  inside: the machines wake; the squad walks in.
+#  IV   contact: the first shot on the drop; the squad fights through the facility.
+#  V    the line holds; then the alarm: a security camera sees SABLE inside.
+#  VI   the breach: through the smoke on thermal, through their eyes, our answer.
+#  VII  the squad is dead ("Target down."); the Warden: "Just you and me now."
+#  VIII the last stand: they close in.  IX  among your dead, he finishes it.
+# I.
 shot(0.00, "A02", 0.20, None, "fade")
 shot(hb(-15), "A03", A03_CLICK - BEAT)
 shot(hb(-15, 3), "A05", 0.0)
 shot(hb(-13), "A04", A04_BACK - BEAT)
 shot(hb(-13, 3), None, tr="black")
-# II. Insertion, one descent: searchlight, rope, boots hit, the team, the mask, the turn.
+# II. One descent, six angles on its clock.
 chain(2.5, [(hb(-12), "IN-tilt", "dissolve", {"tag": "SITE-9 / VANTA DYNAMICS RESEARCH CAMPUS"}),
             (hb(-11), "IN-rope", "cut"), (hb(-11, 2), "IN-land", "cut"), (hb(-10), "IN-team", "cut"),
             (hb(-9), "IN-mask", "dissolve"), (hb(-9, 2), "IN-turn", "cut")])
-# III. Drums: the machines wake; the walk in (no gunfire before the drop).
+# III. No gunfire before the drop.
 chain(1.45, [(hb(-8), "RB-visor", "flash"), (hb(-8, 2), "RB-servo", "cut")])
 shot(hb(-7), "FC-ots", 0.4, "auto")
 shot(hb(-6), "RB-chest", 2.45)
-shot(hb(-5), "SV-front", 0.0, "auto", "dip")
+shot(hb(-5), "SV-front", 0.0, None, "dip")
 shot(hb(-4), "RB-wide", 3.0)
 shot(hb(-3), "RB-far", 3.0)
-# The bass drops out: hold the aim down the aisle; two dark beats; the drop is the first shot.
+# The bass drops out: the aim settles down the aisle; two dark beats; the drop is the first shot.
 shot(hb(-2), "FC-pov", fc0 - 0.02 - (hb(0) - hb(-2)), None, "dip")
 shot(hb(-1, 2), None, tr="black")
-# IV. Contact. Each beat one action, two angles, picked up on the take's clock.
-chain(fc0 - 0.02, [(hb(0), "FC-pov", "flash"), (hb(0, 2), "FC-low", "cut")])
-chain(sg[0] - 0.15, [(hb(1), "SG-pov", "cut"), (hb(1, 1), "SG-side", "cut")])
-chain(2.4, [(hb(2), "WH-pov", "cut", {"tag": "auto"}), (hb(2, 2), "WH-mate", "cut")])
+# IV. First contact: the shot, the hit from the robot's side, the hall waking.
+chain(fc0 - 0.02, [(hb(0), "FC-pov", "flash"), (hb(0, 2), "FC-low", "cut"), (hb(1), "FC-ots", "cut")])
+chain(sg[0] - 0.15, [(hb(2), "SG-pov", "cut"), (hb(2, 1), "SG-side", "cut")])
+# Through the facility: a room a bar, tagged, no camera twice on a moment.
 shot(hb(3), "SV-pov", 6.2, "auto")
-chain(0.45, [(hb(4), "LB-mate", "cut", {"tag": "auto"}), (hb(4, 2), "LB-pov", "cut")])
-shot(hb(5), "PW-pov", 3.3, "auto")
-chain(0.0, [(hb(6), "HG-side", "cut", {"tag": "auto"}), (hb(6, 2), "HG-pov", "cut")])
-shot(hb(7), "AT-pov", 0.0, "auto")
-# Bars 8-10: the second blast in slow motion, then the squad holding the line.
+shot(hb(4), "PW-pov", 3.3, "auto")
+chain(0.0, [(hb(5), "HG-side", "cut", {"tag": "auto"}), (hb(5, 2), "HG-pov", "cut")])
+shot(hb(6), "AT-pov", 0.0, "auto")
+chain(2.4, [(hb(7), "WH-pov", "cut", {"tag": "auto"}), (hb(7, 2), "WH-mate", "cut")])
+# V. The line holds: the second blast at half speed, the squad side by side.
 chain(sg[1] - 0.12, [(hb(8), "SG-pov", "flash"), (hb(8, 2), "SG-side", "cut")], speed=0.5)
 chain(3.85, [(hb(9), "SQ-mate", "cut"), (hb(9, 2), "SQ-robo", "cut"), (hb(10), "SQ-pov", "cut")])
 shot(hb(10, 2), "AT-pov", 2.7)
-# V. The alarm (bar 11): siren, the evacuation PA; the power fails.
-shot(hb(11), "AT-side", 0.0, None, "dip")
-shot(hb(12), "LB-mate", 3.6)
-shot(hb(13), "FC-ots", 7.2)
+# The alarm: a security camera in the server hall: SABLE walking in. The squad hears it. Power out.
+shot(hb(11), "SB-cctv", 0.0, None, "glitch", fxs=["cctv"], label="CAM 07  SERVER HALL B")
+shot(hb(13), "SQ-mate", 8.3, None, "dip")
 shot(hb(13, 2), None, tr="black")
-# VI. SABLE (bars 14-18), one continuous breach through their eyes and ours.
-chain(BD_BREACH - BEAT, [(hb(13, 3), "BD-breach", "cut", {"tag": "auto"}), (hb(14, 2), "BD-eyes", "glitch", {"fx": ["nvg"]}),
-                         (hb(15), "BD-nvg", "cut"), (hb(15, 2), "BD-ots", "cut"), (hb(16), "BD-pov", "flash"),
-                         (hb(16, 2), "BD-breach", "cut"), (hb(17), "BD-eyes", "glitch", {"fx": ["nvg"]}), (hb(17, 2), "BD-low", "cut")])
-chain(10.3, [(hb(18), "SQ-mate", "cut"), (hb(18, 2), "SQ-front", "cut")])
-# VII. The dead, and the Warden (bars 19-23).
+# VI. The breach, one clock: the charge, thermal through the smoke, their eyes, his face, the
+#     orbit as he comes through, our answer, the firefight, their eyes again.
+chain(BD_BREACH - BEAT, [(hb(13, 3), "BD-breach", "cut", {"tag": "auto"}), (hb(14, 2), "BD-thermal", "glitch", {"fx": ["thermal"]}),
+                         (hb(15), "BD-eyes", "glitch", {"fx": ["nvg"]}), (hb(15, 2), "BD-nvg", "cut"), (hb(16), "BD-orbit", "cut"),
+                         (hb(16, 2), "BD-pov", "flash"), (hb(17), "BD-breach", "cut"), (hb(17, 2), "BD-eyes", "glitch", {"fx": ["nvg"]})])
+chain(10.3, [(hb(18), "SQ-front", "cut"), (hb(18, 2), "SQ-pov", "cut")])
+# VII. The dead. Then the Warden, alone, hunting the last of you.
 shot(hb(19), "CR-dolly", 0.4, None, "whip")
 chain(3.6, [(hb(20), "CR-boots", "cut"), (hb(20, 2), "CR-face", "cut")])
-shot(hb(21), "SB-eyes", 1.5, "auto", "glitch", fxs=["nvg"])
-chain(3.64, [(hb(22), "SB-warden", "cut"), (hb(23), "SB-column", "cut"), (hb(23, 2), "SB-peek", "cut")])
-# ---- music edit, bar 63 (build): the Warden draws down in slow motion; fires on the downbeat.
-shot(hb(63), "SB-warden", 7.95, None, "cut", speed=0.6)
-# VIII. The climax (bars 64-71): one action a bar, two angles, whip pans between bars.
-chain(9.2, [(hb(64), "SB-column", "flash"), (hb(64, 2), "SB-side", "cut")])
+shot(hb(21), "SB-orbit", 4.3, "auto", "glitch")
+chain(6.44, [(hb(22), "SB-warden", "cut"), (hb(22, 2), "SB-eyes", "glitch", {"fx": ["nvg"]}), (hb(23), "SB-column", "cut"), (hb(23, 2), "SB-peek", "cut")])
+# ---- music edit, bar 63: he stands up out of cover in slow motion; the push starts.
+shot(hb(63), "SB-warden", 10.72, None, "cut", speed=0.6)
+# VIII. The last stand: they walk you down; the machines keep coming.
+chain(12.0, [(hb(64), "SB-column", "flash"), (hb(64, 2), "SB-side", "cut")])
 shot(hb(65), "HG-pov", 4.1, None, "whip")
-chain(6.3, [(hb(66), "PW-pov", "whip"), (hb(66, 2), "PW-front", "cut")])
+shot(hb(66), "SB-orbit", 13.8, None, "whip")
 shot(hb(67), "RB-wide", 5.15, None, "whip")
-chain(5.0, [(hb(68), "WH-pov", "whip"), (hb(68, 2), "WH-mate", "cut")])
+chain(6.3, [(hb(68), "PW-pov", "whip"), (hb(68, 2), "PW-front", "cut")])
 shot(hb(69), "CR-hand", 2.0, None, "dip")
-shot(hb(69, 2), "LB-pov", 9.2)
+shot(hb(69, 2), "WH-mate", 6.0)
 shot(hb(70), "WD-mask", 1.4, None, "dip")
-shot(hb(71), "SV-pov", 10.6)
-for T, src, at in zip(HITS, ["BD-ots", "SQ-front", "BD-pov", "SQ-pov"], [7.0, 12.0, 8.0, 12.2]):
-    shot(T, src, at, None, "flash")
-# IX. The ending, on the chord: on the floor among your dead; he walks up, speaks, fires.
+shot(hb(71), "SB-peek", 14.4)
+for T, src, at, fxs in zip(HITS, ["SB-eyes", "BD-thermal", "BD-orbit", "SQ-robo"], [15.5, 8.6, 7.4, 7.0], [["nvg"], ["thermal"], [], []]):
+    shot(T, src, at, None, "flash", fxs=fxs)
+# IX. On the chord: on the floor among your dead; he walks up, speaks, fires.
 shot(CHORD, "WD-floor", wd_shot - (SHOT - CHORD), None, "dip")
 shot(CHORD + 6 * BEAT, "WD-mask", wd_shot - (SHOT - (CHORD + 6 * BEAT)))
 shot(CHORD + 8 * BEAT, "WD-floor", wd_shot - (SHOT - (CHORD + 8 * BEAT)))
@@ -366,8 +377,13 @@ def raw(s, T):
     a = np.asarray(img, np.float32)
     dx, dy, rot, ab, ex = kick_at(s, T)
     a = fx.shake(a, dx, dy, rot)
+    f = int(round(T * FPS))
     if "nvg" in s["fx"]:
-        a = fx.nvg(a, int(T * FPS))
+        a = fx.nvg(a, f)
+    elif "thermal" in s["fx"]:
+        a = fx.thermal(a, f)
+    elif "cctv" in s["fx"]:
+        a = fx.cctv(a, f)
     else:
         a = fx.grade(a, look_of(s))
     a = fx.aberrate(a * (1 + ex), ab)
@@ -380,6 +396,40 @@ def heartbeat(T):
         return 0.0
     p = ((T - CHORD) * 66 / 60) % 1
     return np.exp(-p * 14) + 0.6 * np.exp(-max(0, p - 0.18) * 16) * (p > 0.18)
+
+
+BOX_TOP = int((H - W / 2.2) / 2)
+
+
+def cctv_hud(img, T, label):
+    """Security-camera burn-in inside the 2.2:1 frame: camera, place, a running clock, REC."""
+    d = ImageDraw.Draw(img, "RGBA")
+    f = A.font(int(H * 0.026))
+    y0, y1 = BOX_TOP + 14, H - BOX_TOP - 14 - int(H * 0.03)
+    d.text((int(W * 0.05), y0), label, font=f, fill=(225, 228, 225, 230))
+    if int(T * 2) % 2 == 0:
+        d.ellipse([W - int(W * 0.105), y0 + 5, W - int(W * 0.105) + 12, y0 + 17], fill=(230, 40, 30, 240))
+    d.text((W - int(W * 0.088), y0), "REC", font=f, fill=(225, 228, 225, 230))
+    sec = 13 + (T - bar(11))
+    d.text((int(W * 0.05), y1), f"02:47:{int(sec):02d}.{int((sec % 1) * 100):02d}", font=f, fill=(225, 228, 225, 220))
+
+
+def thermal_hud(img, T):
+    """Thermal sight overlay: open reticle, corner brackets, mode and zoom."""
+    d = ImageDraw.Draw(img, "RGBA")
+    cx, cy = W // 2, H // 2
+    c = (235, 235, 235, 210)
+    for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+        d.line([(cx + dx * 14, cy + dy * 14), (cx + dx * 60, cy + dy * 60)], fill=c, width=2)
+    bw, bh = int(W * 0.30), int(H * 0.22)
+    for sx in (-1, 1):
+        for sy in (-1, 1):
+            x0, y0 = cx + sx * bw, cy + sy * bh
+            d.line([(x0, y0), (x0 - sx * 26, y0)], fill=c, width=2)
+            d.line([(x0, y0), (x0, y0 - sy * 26)], fill=c, width=2)
+    f = A.font(int(H * 0.026))
+    d.text((int(W * 0.06), BOX_TOP + 14), "WHT", font=f, fill=c)
+    d.text((W - int(W * 0.1), BOX_TOP + 14), "x4.0", font=f, fill=c)
 
 
 def short_title(t):
@@ -423,8 +473,12 @@ def frame_at(T, si):
         a = fx.glitch(a, f, 0.35)
     hb_ = heartbeat(T)
     a = fx.vignette(a, 0.32 + 0.45 * hb_)
-    a = fx.grain(a, f, 4.5 if "nvg" not in s["fx"] else 2.0)
+    a = fx.grain(a, f, 2.0 if set(s["fx"]) & {"nvg", "thermal", "cctv"} else 4.5)
     img = Image.fromarray(np.clip(a, 0, 255).astype(np.uint8))
+    if "cctv" in s["fx"]:
+        cctv_hud(img, T, s.get("label", "CAM 07"))
+    if "thermal" in s["fx"]:
+        thermal_hud(img, T)
     if s["tag"]:
         tag_overlay(img, lt, s["tag"])
     k = min(1, max(0, (T - (bar(-12) - 0.3)) / 0.6))
