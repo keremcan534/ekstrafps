@@ -166,3 +166,50 @@ body .menu .menu-nav .gbtn:not(.primary) { background-color: transparent; }
 .ms-mist.near { height: 30%; opacity: 0.9; animation-duration: 46s; animation-direction: alternate-reverse; }
 @keyframes ms-drift { from { transform: translateX(-7%); } to { transform: translateX(7%); } }
 body.perf-lite .ms-bg, body.perf-lite .ms-op, body.perf-lite .ms-mist { animation: none; }
+
+/* ==========================================================================
+   PHONES (.is-touch). style.css zooms the whole menu so it lays out ~640 px tall
+   (--ui-zoom ≈ 0.55–0.65 in landscape), and the small-screen rules above still fire
+   on a phone's short viewport; stacked, everything shrank twice. These sizes are for
+   the zoomed canvas: ×0.6 on glass, rows land near 40 px and body text near 11–12 px.
+   ========================================================================== */
+.is-touch .menu {
+  grid-template-columns: 470px 1fr; gap: 36px;
+  padding: 26px max(36px, env(safe-area-inset-right)) 40px max(36px, env(safe-area-inset-left));
+}
+.is-touch .menu .menu-left { gap: 20px; }
+.is-touch .menu .menu-title { font-size: 76px; -webkit-mask-size: 340px auto; mask-size: 340px auto; margin-top: 0; }
+.is-touch .menu .menu-nav { width: 100%; }
+.is-touch .menu .menu-nav .gbtn { height: 62px; padding: 0 22px; font-size: 25px; }
+.is-touch .menu .menu-nav .gbtn.primary { height: 78px; font-size: 36px; }
+.is-touch .menu .menu-status { display: none; }
+.is-touch .menu .menu-profile { max-width: 470px; margin-top: 0; font-size: 16px; }
+.is-touch .menu .menu-profile i { height: 4px; }
+.is-touch .menu.paused .menu-profile { display: none; }
+.is-touch .menu .menu-foot { bottom: 14px; font-size: 13px; }
+
+/* Panels: the whole right side, full height, readable. */
+.is-touch .menu .menu-panel { align-self: stretch; max-height: none; padding: 24px 28px 28px; -webkit-overflow-scrolling: touch; overscroll-behavior: contain; }
+.is-touch .menu .panel-head { font-size: 32px; margin-bottom: 20px; }
+.is-touch .menu .panel-label { font-size: 15px; margin: 22px 0 12px; }
+.is-touch .menu .panel-note { font-size: 19px; }
+.is-touch .menu .gcards { gap: 16px; }
+.is-touch .menu .gcard { min-height: 150px; padding: 18px 20px; }
+.is-touch .menu .gcard b { font-size: 28px; }
+.is-touch .menu .gcard em { font-size: 14px; }
+.is-touch .menu .gcard p { font-size: 19px; }
+.is-touch .menu .gcard.active::after { font-size: 13px; padding: 5px 10px; }
+.is-touch .menu .gslider { font-size: 20px; margin: 16px 0 26px; }
+.is-touch .menu .gslider output { font-size: 21px; }
+.is-touch .menu .gslider input { height: 8px; }
+.is-touch .menu .gslider input::-webkit-slider-thumb { width: 22px; height: 44px; }
+.is-touch .menu .gtoggle { padding: 16px 20px; font-size: 18px; }
+.is-touch .menu .gtoggle i { width: 60px; height: 32px; }
+.is-touch .menu .gtoggle i::after { width: 26px; height: 26px; }
+.is-touch .menu .gtoggle.on i::after { transform: translateX(28px); }
+.is-touch .menu .gseg-btn { padding: 18px 8px; font-size: 17px; }
+.is-touch .menu .key-row { font-size: 19px; }
+.is-touch .menu :is(.arm-top, .menu-profile) { font-size: 16px; }
+.is-touch .menu .gcard.arm b { font-size: 22px; }
+.is-touch .menu .gcard.arm p { font-size: 17px; }
+.is-touch .menu .arm-tag { font-size: 13px; }

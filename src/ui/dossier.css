@@ -213,3 +213,19 @@
   .dos-stamp { top: 70px; right: 12px; }
   .dos-strip, .dos-foot { display: none; }
 }
+
+/* Phones zoom the whole menu to a ~640 px tall canvas (style.css); the dossier sits in
+   it but lays itself out in real pixels, so its phone rules mean what they say. */
+.is-touch .dossier { zoom: calc(1 / var(--ui-zoom, 1)); }
+/* Phones in landscape: the photo on the left, the file beside it (scrolls). */
+@media (orientation: landscape) and (max-height: 520px) {
+  .dossier.in { display: grid; grid-template-columns: minmax(0, 46%) minmax(0, 1fr); grid-template-rows: auto auto minmax(0, 1fr); overflow: hidden; }
+  .dos-head, .dos-list { grid-column: 1 / -1; }
+  .dos-head { padding: max(8px, env(safe-area-inset-top)) max(14px, env(safe-area-inset-left)) 0; }
+  .dos-title { font-size: 20px; }
+  .dos-x { top: 8px; right: max(12px, env(safe-area-inset-right)); }
+  .dos-list { padding: 8px max(14px, env(safe-area-inset-left)) 4px; }
+  .dos-row { height: 34px; }
+  .dos-print { grid-column: 1; grid-row: 3; height: auto; max-height: none; align-self: stretch; margin: 18px 8px 14px max(16px, env(safe-area-inset-left)); }
+  .dos-file { grid-column: 2; grid-row: 3; min-height: 0; overflow-y: auto; overscroll-behavior: contain; margin: 10px max(12px, env(safe-area-inset-right)) 0 10px; }
+}

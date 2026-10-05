@@ -59,8 +59,9 @@ class Snow {
   }
 
   resize(): void {
-    const w = Math.round(this.canvas.clientWidth * this.dpr);
-    const h = Math.round(this.canvas.clientHeight * this.dpr);
+    // Screen pixels, not CSS: phones zoom the menu, so clientWidth would overshoot the screen.
+    const w = Math.round(window.innerWidth * this.dpr);
+    const h = Math.round(window.innerHeight * this.dpr);
     if (w === this.w && h === this.h) return;
     for (const f of this.flakes) {
       f.x *= w / (this.w || w);
