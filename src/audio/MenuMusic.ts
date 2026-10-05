@@ -1,8 +1,8 @@
 import { feel } from '../config/Feel';
 
 /**
- * The main menu's soundtrack: Static Horizon first, then the rest shuffled, each one
- * crossfading into the next before its faded tail. Streamed from <audio> elements (no
+ * The main menu's soundtrack: Static Horizon on a loop, each pass crossfading into the
+ * next before its faded tail (REST takes more tracks, shuffled after it). Streamed from <audio> elements (no
  * decode of 2-minute tracks up front), so it stays out of the game's mix and compressor.
  * Plays only while the menu is up before a match; pausing mid-raid stays quiet.
  */
@@ -14,13 +14,7 @@ interface Track {
 }
 
 const OPENER: Track = { file: 'audio/music/static_horizon.mp3', gain: 0.61 };
-const REST: Track[] = [
-  { file: 'audio/music/quieter_valley.mp3', gain: 0.94 },
-  { file: 'audio/music/frozen_steppe.mp3', gain: 0.82 },
-  { file: 'audio/music/courtyard.mp3', gain: 0.77 },
-  { file: 'audio/music/golden_escape.mp3', gain: 1 },
-  { file: 'audio/music/golden_vault.mp3', gain: 0.69 },
-];
+const REST: Track[] = [];
 
 /** Seconds of overlap at each change (the masters fade out over their last ~5 s). */
 const CROSSFADE = 5;
@@ -76,7 +70,7 @@ export class MenuMusic {
   }
 
   private next(fadeIn: number): void {
-    if (!this.queue.length) this.queue = this.voices.length ? shuffle(REST) : [OPENER, ...shuffle(REST)];
+    if (!this.queue.length) this.queue = [OPENER, ...shuffle(REST)];
     const track = this.queue.shift()!;
     const el = new Audio(track.file);
     el.preload = 'auto';
