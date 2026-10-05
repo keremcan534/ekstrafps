@@ -102,7 +102,7 @@ export const DOSSIER_ENTRIES: DossierEntry[] = [
     notes: 'Bravo pins you and sends a flanker; listen for the man who goes quiet. Charlie comes straight at you: hold a tight angle. Delta is dangerous in the dark and ordinary in the open. Varga’s night vision is SABLE issue; nobody has asked where he got it.',
     kit: ['AK-47 / MP5 / Saiga-12', 'Coloured squad armbands', 'Field radios', 'Breaching kit'],
     quote: 'Two left, one right. On my mark.',
-    photos: ['rossi', 'quinn', 'varga'],
+    photos: ['rossi', 'quinn', 'varga', 'varga2'],
   },
   {
     id: 'machines', file: 'RM-001', name: 'Rogue Machines', role: 'The facility’s own workforce', place: 'Site-9 Assembly Line', year: '2041', date: '11 MAR 2041', source: 'A-2',
