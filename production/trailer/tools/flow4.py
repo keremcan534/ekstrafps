@@ -184,10 +184,10 @@ shot(hb(10), "AT-pov", 2.7)
 shot(hb(11), "SB-cctv", 0.0, None, "glitch", fxs=["cctv"], label="CAM 07  SERVER HALL B")
 shot(hb(13), "LB-mate", 3.6, None, "dip")
 shot(hb(13, 2), None, tr="black")
-# VI. The breach, one clock: the charge, thermal through the smoke, their eyes, his face, the
-#     orbit as he comes through, our answer, the firefight, their eyes again.
+# VI. The breach, one clock: the charge, the orbit as he comes through, thermal through the
+#     smoke (they advance, firing), their eyes, our answer, the firefight.
 chain(BD_BREACH - BEAT, [(hb(13, 3), "BD-breach", "cut", {"tag": "auto"}), (hb(14, 2), "BD-orbit", "cut"),
-                         (hb(15), "BD-thermal", "glitch", {"fx": ["thermal"]}), (hb(15, 2), "BD-nvg", "cut"),
+                         (hb(15), "BD-thermal", "glitch", {"fx": ["thermal"]}),
                          (hb(16), "BD-eyes", "glitch", {"fx": ["nvg"]}), (hb(16, 2), "BD-pov", "flash"),
                          (hb(17), "BD-breach", "cut"), (hb(17, 2), "BD-ots", "cut")])
 shot(hb(18), "SQ-pov", 10.3)
@@ -200,10 +200,10 @@ chain(6.94, [(hb(22), "SB-warden", "cut"), (hb(22, 2), "SB-eyes", "glitch", {"fx
 shot(hb(63), "SB-warden", 10.72, None, "cut", speed=0.6)
 # VIII. The last stand: the security camera sees him break cover; they walk you down; the
 #       machines keep coming.
-chain(11.4, [(hb(64), "SB-cctv", "flash", {"fx": ["cctv"], "label": "CAM 07  SERVER HALL B"}), (hb(64, 2), "SB-side", "cut")])
+chain(11.4, [(hb(64), "SB-cctv", "flash", {"fx": ["cctv"], "label": "CAM 07  SERVER HALL B"}), (hb(64, 2), "SB-eyes", "cut", {"fx": ["nvg"]})])
 shot(hb(65), "HG-pov", 4.6, None, "whip")
 chain(13.4, [(hb(66), "SB-column", "whip"), (hb(66, 2), "SB-peek", "cut")])
-shot(hb(67), "LB-mate", 9.5, None, "whip")
+shot(hb(67), "LB-mate", 8.86, None, "whip")  # the take ends at 11.0
 shot(hb(68), "SV-pov", 10.6, None, "whip")
 shot(hb(69), "CR-hand", 2.0, None, "dip")
 shot(hb(69, 2), "WH-pov", 5.0)
