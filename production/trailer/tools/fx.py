@@ -178,7 +178,8 @@ def thermal(a, f):
     lum = a.mean(-1) / 255.0
     im = Image.fromarray(np.clip(lum * 255, 0, 255).astype(np.uint8)).filter(ImageFilter.GaussianBlur(1.6))
     lum = np.asarray(im, np.float32) / 255.0
-    lum = np.clip((lum - 0.08) * 1.35, 0, 1) ** 0.85
+    # Lift the cold world into faint grey structure; bodies stay white-hot.
+    lum = 0.07 + 0.93 * np.clip(lum * 1.7, 0, 1) ** 0.62
     r = np.random.default_rng(5000 + f)
     h, w = lum.shape
     lum = lum + r.standard_normal((h // 2, w // 2)).repeat(2, 0).repeat(2, 1)[:h, :w] * 0.035

@@ -34,8 +34,8 @@ function splatTexture(kind: Kind, seed: number): THREE.CanvasTexture {
   const r = rng(seed);
   const blob = (x: number, y: number, rad: number, a: number) => {
     const gr = g.createRadialGradient(x, y, 0, x, y, rad);
-    gr.addColorStop(0, `rgba(112,7,10,${a})`);
-    gr.addColorStop(0.72, `rgba(92,5,8,${a})`);
+    gr.addColorStop(0, `rgba(140,10,13,${a})`);
+    gr.addColorStop(0.72, `rgba(116,7,10,${a})`);
     gr.addColorStop(1, 'rgba(60,2,4,0)');
     g.fillStyle = gr;
     g.beginPath();
@@ -189,7 +189,7 @@ export class Aftermath {
       const head = p.clone();
       ((window as unknown as { __probeInfo?: Record<string, unknown> }).__probeInfo ??= {})[`body${i}`] = [+torso.x.toFixed(2), +torso.y.toFixed(2), +torso.z.toFixed(2)];
       // The main pool under the chest, a second where the head lies.
-      b.splats.push(splat(scene, 'pool', torso.clone().lerp(head, 0.3), 1.6 + r() * 0.4, r() * 6.28, this.seed + i * 7, t, this.spread));
+      b.splats.push(splat(scene, 'pool', torso.clone().lerp(head, 0.3), 1.9 + r() * 0.4, r() * 6.28, this.seed + i * 7, t, this.spread));
       b.splats.push(splat(scene, 'pool', head, 0.75 + r() * 0.25, r() * 6.28, this.seed + i * 7 + 1, t, this.spread * 0.8));
       if (sp.trail) {
         const mid = torso.clone().lerp(sp.trail, 0.5);

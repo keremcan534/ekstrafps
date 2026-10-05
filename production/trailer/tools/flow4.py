@@ -157,16 +157,17 @@ chain(2.5, [(hb(-12), "IN-tilt", "dissolve", {"tag": "SITE-9 / VANTA DYNAMICS RE
 # III. No gunfire before the drop.
 chain(1.45, [(hb(-8), "RB-visor", "flash"), (hb(-8, 2), "RB-servo", "cut")])
 shot(hb(-7), "FC-ots", 0.4, "auto")
-shot(hb(-6), "RB-chest", 2.45)
+chain(2.3, [(hb(-6), "RB-chest", "cut"), (hb(-6, 2), "RB-wide", "cut")])
 shot(hb(-5), "SV-front", 0.0, None, "dip")
-shot(hb(-4), "RB-wide", 3.0)
-shot(hb(-3), "RB-far", 3.0)
+shot(hb(-5, 3), None, tr="black")
+shot(hb(-4), "FC-low", 1.0)
+shot(hb(-3), "PW-front", 0.0, None, "dip")
 # The bass drops out: the aim settles down the aisle; two dark beats; the drop is the first shot.
 shot(hb(-2), "FC-pov", fc0 - 0.02 - (hb(0) - hb(-2)), None, "dip")
 shot(hb(-1, 2), None, tr="black")
 # IV. First contact: the shot, the hit from the robot's side, the hall waking.
-chain(fc0 - 0.02, [(hb(0), "FC-pov", "flash"), (hb(0, 2), "FC-low", "cut"), (hb(1), "FC-ots", "cut")])
-chain(sg[0] - 0.15, [(hb(2), "SG-pov", "cut"), (hb(2, 1), "SG-side", "cut")])
+chain(fc0 - 0.02, [(hb(0), "FC-pov", "flash"), (hb(0, 2), "FC-ots", "cut")])
+shot(hb(2), "SG-pov", sg[0] - 0.15)
 # Through the facility: a room a bar, tagged, no camera twice on a moment.
 shot(hb(3), "SV-pov", 6.2, "auto")
 shot(hb(4), "PW-pov", 3.3, "auto")
@@ -175,11 +176,11 @@ shot(hb(6), "AT-pov", 0.0, "auto")
 chain(2.4, [(hb(7), "WH-pov", "cut", {"tag": "auto"}), (hb(7, 2), "WH-mate", "cut")])
 # V. The line holds: the second blast at half speed, the squad side by side.
 chain(sg[1] - 0.12, [(hb(8), "SG-pov", "flash"), (hb(8, 2), "SG-side", "cut")], speed=0.5)
-chain(3.85, [(hb(9), "SQ-mate", "cut"), (hb(9, 2), "SQ-robo", "cut"), (hb(10), "SQ-pov", "cut")])
+chain(3.85, [(hb(9), "SQ-front", "cut"), (hb(9, 2), "SQ-robo", "cut"), (hb(10), "SQ-pov", "cut")])
 shot(hb(10, 2), "AT-pov", 2.7)
 # The alarm: a security camera in the server hall: SABLE walking in. The squad hears it. Power out.
 shot(hb(11), "SB-cctv", 0.0, None, "glitch", fxs=["cctv"], label="CAM 07  SERVER HALL B")
-shot(hb(13), "SQ-mate", 8.3, None, "dip")
+shot(hb(13), "LB-mate", 3.6, None, "dip")
 shot(hb(13, 2), None, tr="black")
 # VI. The breach, one clock: the charge, thermal through the smoke, their eyes, his face, the
 #     orbit as he comes through, our answer, the firefight, their eyes again.
@@ -190,21 +191,21 @@ chain(10.3, [(hb(18), "SQ-front", "cut"), (hb(18, 2), "SQ-pov", "cut")])
 # VII. The dead. Then the Warden, alone, hunting the last of you.
 shot(hb(19), "CR-dolly", 0.4, None, "whip")
 chain(3.6, [(hb(20), "CR-boots", "cut"), (hb(20, 2), "CR-face", "cut")])
-shot(hb(21), "SB-orbit", 4.3, "auto", "glitch")
-chain(6.44, [(hb(22), "SB-warden", "cut"), (hb(22, 2), "SB-eyes", "glitch", {"fx": ["nvg"]}), (hb(23), "SB-column", "cut"), (hb(23, 2), "SB-peek", "cut")])
+shot(hb(21), "SB-orbit", 4.8, "auto", "glitch")
+chain(6.94, [(hb(22), "SB-warden", "cut"), (hb(22, 2), "SB-eyes", "glitch", {"fx": ["nvg"]}), (hb(23), "SB-column", "cut"), (hb(23, 2), "SB-peek", "cut")])
 # ---- music edit, bar 63: he stands up out of cover in slow motion; the push starts.
 shot(hb(63), "SB-warden", 10.72, None, "cut", speed=0.6)
 # VIII. The last stand: they walk you down; the machines keep coming.
 chain(12.0, [(hb(64), "SB-column", "flash"), (hb(64, 2), "SB-side", "cut")])
 shot(hb(65), "HG-pov", 4.1, None, "whip")
 shot(hb(66), "SB-orbit", 13.8, None, "whip")
-shot(hb(67), "RB-wide", 5.15, None, "whip")
+shot(hb(67), "RB-wide", 5.8, None, "whip")
 chain(6.3, [(hb(68), "PW-pov", "whip"), (hb(68, 2), "PW-front", "cut")])
 shot(hb(69), "CR-hand", 2.0, None, "dip")
-shot(hb(69, 2), "WH-mate", 6.0)
+shot(hb(69, 2), "WH-pov", 5.0)
 shot(hb(70), "WD-mask", 1.4, None, "dip")
 shot(hb(71), "SB-peek", 14.4)
-for T, src, at, fxs in zip(HITS, ["SB-eyes", "BD-thermal", "BD-orbit", "SQ-robo"], [15.5, 8.6, 7.4, 7.0], [["nvg"], ["thermal"], [], []]):
+for T, src, at, fxs in zip(HITS, ["SB-eyes", "BD-thermal", "BD-orbit", "SQ-robo"], [14.0, 8.6, 7.4, 7.0], [["nvg"], ["thermal"], [], []]):
     shot(T, src, at, None, "flash", fxs=fxs)
 # IX. On the chord: on the floor among your dead; he walks up, speaks, fires.
 shot(CHORD, "WD-floor", wd_shot - (SHOT - CHORD), None, "dip")
@@ -253,8 +254,9 @@ def check():
             if b0 < a1 - 0.05 and not src.startswith("WD"):
                 warn.append(f"{src} overlaps itself {a0:.2f}-{a1:.2f} / {b0:.2f}-{b1:.2f}")
         r = rows(src)
+        lifted = any(s["src"] == src and s["fx"] for s in shots)  # night vision / thermal / CCTV: post brightens
         for a, b in sp:
-            bad = [v["t"] for v in r.values() if a - 0.02 <= v["t"] <= b + 0.02 and v["flag"]]
+            bad = [v["t"] for v in r.values() if a - 0.02 <= v["t"] <= b + 0.02 and v["flag"] and not (lifted and v["flag"] == "DARK")]
             if bad:
                 warn.append(f"{src} {a:.2f}-{b:.2f} flagged at {bad[:4]}")
     return warn

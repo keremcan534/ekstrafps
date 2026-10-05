@@ -32,6 +32,7 @@ interface Br {
   flash: THREE.PointLight;
   target: PlayerTarget;
   blown: boolean;
+  kick?: THREE.PointLight;
 }
 let X: Br | null = null;
 
@@ -148,7 +149,7 @@ export const BD: Shot = {
     eyes: (ctx): CameraState => {
       const L = X!.bd[0];
       const f = v(Math.sin(L.yaw), 0, Math.cos(L.yaw));
-      const head = v(L.pos.x, 1.66, L.pos.z).addScaledVector(f, 0.28);
+      const head = v(L.pos.x, 1.72, L.pos.z).addScaledVector(f, 0.6);
       const look = head.clone().addScaledVector(f, 6).setY(1.4).lerp(X!.target.chest, 0.55);
       return { pos: head.add(handheld(ctx.t, 0.012, 5)), target: look, lens: 30 };
     },
@@ -156,6 +157,14 @@ export const BD: Shot = {
     low: (ctx): CameraState => ({ pos: v(-57.5, 0.28, AISLE_Z + 0.7).add(handheld(ctx.t, 0.006, 4)), target: v(-67, 1.3, AISLE_Z), lens: 24 }),
   },
   beforeRender(ctx, cam) {
+    // v4: a cold kicker on the lead for the orbit (in the smoke he is otherwise a black shape).
+    if (!X!.kick) {
+      X!.kick = new THREE.PointLight(0xb8c8e0, 0, 7, 1.4);
+      ctx.game.scene.add(X!.kick);
+    }
+    const L = X!.bd[0];
+    X!.kick.position.set(L.pos.x + 1.2, 2.2, L.pos.z + 1.0);
+    X!.kick.intensity = cam === 'orbit' ? 45 : 0;
     if (cam === 'thermal') thermalPass(ctx.game.scene, [...X!.bd.map((b) => b.body.root), ...X!.s.allies.map((a) => a.soldier.body.root)]);
     // v3: your flashlight at its trailer level in the third-person cameras.
     if (!BEAMS_OFF || cam === 'pov') return;

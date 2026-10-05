@@ -85,7 +85,7 @@ export const CR: Shot = {
       while (i < xs.length - 2 && x < xs[i + 1]) i++;
       const k = Math.min(1, Math.max(0, (x - xs[i]) / (xs[i + 1] - xs[i])));
       const z = zs[i] + (zs[i + 1] - zs[i]) * (k * k * (3 - 2 * k));
-      return { pos: v(x, 0.5, z).add(handheld(t, 0.003, 21)), target: v(x - 3, 0.05, z + 0.1), lens: 24 };
+      return { pos: v(x, 0.68, z).add(handheld(t, 0.003, 21)), target: v(x - 3.6, 0.0, z + 0.1), lens: 24 };
     },
     // 50 mm on the first body's hand and rifle in the blood, slow push.
     hand: (ctx): CameraState => {

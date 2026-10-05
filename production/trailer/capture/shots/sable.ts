@@ -277,7 +277,8 @@ export const SB: Shot = {
     eyes: (ctx): CameraState => {
       const w = B!.squad[0];
       const f = v(Math.sin(w.yaw), 0, Math.cos(w.yaw));
-      const head = v(w.pos.x, 1.66, w.pos.z).addScaledVector(f, 0.3);
+      // In front of his face (further back the lens sits inside his own helmet and NVG).
+      const head = v(w.pos.x, 1.72, w.pos.z).addScaledVector(f, 0.6);
       const look = head.clone().addScaledVector(f, 8).setY(1.35).lerp(B!.target.chest, ctx.t > CONTACT ? 0.7 : 0.25);
       return { pos: head.add(handheld(ctx.t, 0.01, 6)), target: look, lens: 30 };
     },
@@ -295,6 +296,8 @@ export const SB: Shot = {
     // Your own flashlight off: in the haze it floods the view; the dark is theirs (NVG tubes, rifle beams).
     const fl = (ctx.game.lighting as unknown as { flashlight?: THREE.SpotLight } | null)?.flashlight;
     if (fl) fl.intensity = 0;
+    // The hero cameras look back down the barrels: no beam cones in them (render only).
+    if (cam === 'orbit' || cam === 'column') for (const q of B!.squad) beam(q, 0);
     // Cinematographer's fill over the subject of each camera (none in the gameplay view).
     const sq = B!.squad;
     const w = cam === 'side' ? sq[1].pos.clone().lerp(sq[2].pos, 0.5) : cam === 'peek' ? sq[1].pos : sq[0].pos;
