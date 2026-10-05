@@ -1,9 +1,10 @@
 import { applyGrime } from '../fx/WorldGrime';
+import { surface } from '../fx/Surfaces';
 import * as THREE from 'three';
 import type { HitReceiver, Physics } from '../core/Physics';
 import { MeshBuilder } from './MeshBuilder';
 import { PhysicsProps } from './PhysicsProps';
-import { corrugatedTexture, gridTexture } from '../fx/Textures';
+import { gridTexture } from '../fx/Textures';
 import type { RobotOptions } from '../targets/RobotTarget';
 import type { GameMap, SquadSpawn, Station } from './GameMap';
 import { STATIONS } from '../core/LabTools';
@@ -56,20 +57,21 @@ export class Arena implements GameMap {
 
   constructor(private physics: Physics, mobile: boolean) {
     this.mats = {
-      floor: new THREE.MeshStandardMaterial({ map: gridTexture('#3b3e43', '#2a2c30', '#34373b'), roughness: 0.9, metalness: 0.05 }),
-      wall: new THREE.MeshStandardMaterial({ map: gridTexture('#4b4f56', '#3a3d43', '#45484e'), roughness: 0.92 }),
-      concrete: new THREE.MeshStandardMaterial({ map: gridTexture('#62666d', '#4e5157', '#5a5e64'), roughness: 0.88 }),
+      // Real surfaces (fx/Surfaces, CC0 PBR) in the lab's own dark colours.
+      floor: surface('garage_floor', mobile, { albedo: new THREE.Color('#3b3e43') }),
+      wall: surface('concrete_wall_004', mobile, { albedo: new THREE.Color('#4b4f56') }),
+      concrete: surface('concrete_wall_004', mobile, { albedo: new THREE.Color('#62666d') }),
       metal: new THREE.MeshStandardMaterial({ color: 0x3a3f46, metalness: 0.85, roughness: 0.38 }),
       accent: new THREE.MeshStandardMaterial({ color: 0xd9a21b, roughness: 0.6 }),
       stripe: new THREE.MeshStandardMaterial({ color: 0xe8e8e8, roughness: 0.7 }),
       ceiling: new THREE.MeshStandardMaterial({ color: 0x1c1e22, roughness: 1 }),
       lamp: new THREE.MeshStandardMaterial({ color: 0x000000, emissive: 0xd8e6ff, emissiveIntensity: 1.6 }),
       lampDead: new THREE.MeshStandardMaterial({ color: 0x0c0d0f, emissive: 0x9fb4d0, emissiveIntensity: 0.04 }),
-      asphalt: new THREE.MeshStandardMaterial({ map: gridTexture('#2b2d30', '#232528', '#28292c'), roughness: 0.95 }),
-      yardWall: new THREE.MeshStandardMaterial({ map: gridTexture('#3a3c40', '#2e3034', '#36383c'), roughness: 0.95 }),
-      contGreen: new THREE.MeshStandardMaterial({ map: corrugatedTexture('#2f3a2d'), roughness: 0.7, metalness: 0.35 }),
-      contRust: new THREE.MeshStandardMaterial({ map: corrugatedTexture('#5b2d1d'), roughness: 0.75, metalness: 0.3 }),
-      contBlue: new THREE.MeshStandardMaterial({ map: corrugatedTexture('#1f2b3a'), roughness: 0.7, metalness: 0.35 }),
+      asphalt: surface('asphalt_02', mobile, { albedo: new THREE.Color('#2b2d30') }),
+      yardWall: surface('concrete_wall_004', mobile, { albedo: new THREE.Color('#3a3c40') }),
+      contGreen: surface('rusty_corrugated_iron', mobile, { albedo: new THREE.Color('#2f3a2d') }),
+      contRust: surface('rusty_corrugated_iron', mobile, { albedo: new THREE.Color('#5b2d1d'), mode: 'photo' }),
+      contBlue: surface('rusty_corrugated_iron', mobile, { albedo: new THREE.Color('#1f2b3a') }),
       contFrame: new THREE.MeshStandardMaterial({ color: 0x1b1c1e, roughness: 0.6, metalness: 0.5 }),
       sandbag: new THREE.MeshStandardMaterial({ map: gridTexture('#4a4536', '#3c382c', '#443f32'), roughness: 1 }),
       sodium: new THREE.MeshStandardMaterial({ color: 0x000000, emissive: 0xffa24a, emissiveIntensity: 3 }),

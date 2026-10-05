@@ -1,9 +1,10 @@
 import { applyGrime } from '../fx/WorldGrime';
+import { surface, weathered, type SurfaceId, type SurfaceOptions } from '../fx/Surfaces';
 import * as THREE from 'three';
 import type { HitReceiver, Physics } from '../core/Physics';
 import { PhysicsProps } from './PhysicsProps';
 import { MOBILE_ANISOTROPY } from '../config/Graphics';
-import { corrugatedTexture, glowTexture, grimeRoughness, gridTexture, gridTint, neutralGridTexture, screenTexture, woodTexture } from '../fx/Textures';
+import { glowTexture, grimeRoughness, gridTexture, gridTint, neutralGridTexture, screenTexture, woodTexture } from '../fx/Textures';
 import type { RobotOptions } from '../targets/RobotTarget';
 import type { GameMap, SquadSpawn, Station } from './GameMap';
 import { LayoutBuilder, type BuiltRoom, type DoorSlot, type LinkDef, type RoomDef, type RoomStyle, type Rect } from './LayoutBuilder';
@@ -288,12 +289,7 @@ export class Site9 implements GameMap {
     const gridTex = mobile ? neutralGridTexture(256) : null;
     // Weathered palette: every surface colour a bit greyer, darker and browner than the
     // spec sheet (fresh paint and clean tile read as a graybox).
-    const weather = (hex: string): string => {
-      const c = new THREE.Color(hex);
-      const l = c.r * 0.2126 + c.g * 0.7152 + c.b * 0.0722;
-      c.lerp(new THREE.Color(l, l, l), 0.35).multiplyScalar(0.52).lerp(new THREE.Color(0.11, 0.095, 0.075), 0.12);
-      return `#${c.getHexString()}`;
-    };
+    const weather = (hex: string): string => `#${weathered(hex).getHexString()}`;
     const grid = (a: string, b: string, c: string, r = 0.8, metal = 0.05) => {
       [a, b, c] = [weather(a), weather(b), weather(c)];
       const g = gridTex
@@ -335,9 +331,9 @@ export class Site9 implements GameMap {
       lampBlue: std({ color: 0x000000, emissive: 0x7fc2ff, emissiveIntensity: 2.2 }),
       leds: this.serverLeds,
       core: this.coreGlow,
-      contGreen: std({ map: corrugatedTexture('#3d5a3a'), roughness: 0.7, metalness: 0.35 }),
-      contBlue: std({ map: corrugatedTexture('#2b4766'), roughness: 0.7, metalness: 0.35 }),
-      contRust: std({ map: corrugatedTexture('#7a3b22'), roughness: 0.75, metalness: 0.3 }),
+      contGreen: surface('rusty_corrugated_iron', mobile, { albedo: weathered('#3d5a3a') }),
+      contBlue: surface('rusty_corrugated_iron', mobile, { albedo: weathered('#2b4766') }),
+      contRust: surface('rusty_corrugated_iron', mobile, { albedo: weathered('#7a3b22'), mode: 'photo' }),
       tire: std({ color: 0x141414, roughness: 0.9 }),
       paper: std({ color: 0xe6e1d6, roughness: 0.9 }),
       cardboard: std({ color: 0x9a774e, roughness: 0.9 }),
@@ -352,18 +348,26 @@ export class Site9 implements GameMap {
     // Worn surfaces (fx/WorldGrime): structure, props and containers; not glass, water,
     // plants, screens or lamps.
     for (const k of ['white', 'offwhite', 'grey', 'dark', 'steel', 'gunmetal', 'wood', 'woodDark', 'contGreen', 'contBlue', 'contRust', 'cardboard', 'rubble', 'sand', 'drumBlue', 'yellow', 'vanta', 'mint'] as const) applyGrime(m[k], mobile);
+    // Real surfaces (fx/Surfaces: CC0 PBR sets), each tinted towards its room's colour.
+    const S = (id: SurfaceId, hex: string, o: SurfaceOptions = {}) => surface(id, mobile, { albedo: weathered(hex), ...o });
+    const ceil = {
+      white: S('ceiling_interior', '#e9ecef', { metalness: 0 }),
+      offwhite: S('ceiling_interior', '#d5d9dd', { metalness: 0 }),
+      grey: S('ceiling_interior', '#8d9298', { metalness: 0 }),
+      dark: S('ceiling_interior', '#2a2d31', { metalness: 0 }),
+    };
     const styles: Record<string, RoomStyle> = {
-      lobby: { floor: grid('#c9c2b6', '#ada597', '#bdb6aa', 0.35, 0.05), wall: grid('#d9dbdc', '#bfc3c6', '#cfd2d4', 0.7), ceiling: m.white, lamp: m.lampWarm, lampSpacing: 6, glow: 0xffe8c8 },
-      cafe: { floor: std({ color: 0xa87a4f, map: wood, roughness: 0.55 }), wall: grid('#efe7da', '#ddd3c4', '#e7dece', 0.8), ceiling: m.offwhite, lamp: m.lampWarm, lampSpacing: 6, glow: 0xffd9a8 },
-      security: { floor: grid('#9aa0a7', '#868c93', '#939920', 0.6), wall: grid('#d2d7dc', '#bcc2c8', '#c8cdd3', 0.75), ceiling: m.offwhite, lamp: m.lampCool, lampSpacing: 5, glow: 0xeef4ff },
-      garden: { floor: grid('#5c8a45', '#557f40', '#598643', 1), wall: grid('#8a877f', '#77746d', '#83807a', 0.95), ceiling: m.offwhite, lamp: null, lampSpacing: 0, glow: 0 },
-      medical: { floor: grid('#d3dcdb', '#b7c4c2', '#c9d3d1', 0.4), wall: grid('#e2e9e8', '#c7d3d1', '#d9e1e0', 0.7), ceiling: m.white, lamp: m.lampCool, lampSpacing: 5, glow: 0xeafff8 },
-      atrium: { floor: grid('#bdb7ad', '#a39c91', '#b2aca2', 0.3, 0.05), wall: grid('#d2d4d6', '#b8bbbe', '#c8cacc', 0.7), ceiling: m.white, lamp: null, lampSpacing: 0, glow: 0 },
-      factory: { floor: grid('#7c8086', '#6b6f75', '#767a80', 0.75, 0.1), wall: grid('#a2a6ac', '#8d9197', '#9a9ea4', 0.85), ceiling: m.grey, lamp: m.lampWarm, lampSpacing: 10, glow: 0xffe2b8 },
-      hangar: { floor: grid('#8a8d90', '#787b7e', '#838689', 0.75, 0.1), wall: grid('#b5b9bd', '#a0a4a8', '#acb0b4', 0.85), ceiling: m.grey, lamp: m.lampCool, lampSpacing: 11, glow: 0xeef4ff },
-      labs: { floor: grid('#dfe3e6', '#c4cace', '#d5d9dc', 0.35), wall: grid('#e6e9eb', '#cdd2d6', '#dde0e3', 0.7), ceiling: m.white, lamp: m.lampCool, lampSpacing: 5, glow: 0xf0f6ff },
-      servers: { floor: grid('#3a3f46', '#30353b', '#363b41', 0.5, 0.2), wall: grid('#4a5059', '#3e434b', '#464c54', 0.7), ceiling: m.dark, lamp: m.lampBlue, lampSpacing: 7, glow: 0x9fd0ff },
-      barracks: { floor: grid('#5d625c', '#50554f', '#585d57', 0.7), wall: grid('#7a7f78', '#6a6f68', '#747972', 0.8), ceiling: m.grey, lamp: m.lampWarm, lampSpacing: 6, glow: 0xffd8a8 },
+      lobby: { floor: S('dirty_tiles', '#c9c2b6', { roughness: 0.8 }), wall: S('concrete_wall_004', '#d9dbdc'), ceiling: ceil.white, lamp: m.lampWarm, lampSpacing: 6, glow: 0xffe8c8 },
+      cafe: { floor: std({ color: 0xa87a4f, map: wood, roughness: 0.55 }), wall: S('plastered_wall_04', '#efe7da'), ceiling: ceil.offwhite, lamp: m.lampWarm, lampSpacing: 6, glow: 0xffd9a8 },
+      security: { floor: S('garage_floor', '#9aa0a7'), wall: S('plastered_wall_04', '#d2d7dc'), ceiling: ceil.offwhite, lamp: m.lampCool, lampSpacing: 5, glow: 0xeef4ff },
+      garden: { floor: grid('#5c8a45', '#557f40', '#598643', 1), wall: S('concrete_wall_004', '#8a877f'), ceiling: ceil.offwhite, lamp: null, lampSpacing: 0, glow: 0 },
+      medical: { floor: S('dirty_tiles', '#d3dcdb', { roughness: 0.75 }), wall: S('peeling_painted_wall', '#e2e9e8', { metalness: 0 }), ceiling: ceil.white, lamp: m.lampCool, lampSpacing: 5, glow: 0xeafff8 },
+      atrium: { floor: S('dirty_tiles', '#bdb7ad', { roughness: 0.8 }), wall: S('concrete_wall_004', '#d2d4d6'), ceiling: ceil.white, lamp: null, lampSpacing: 0, glow: 0 },
+      factory: { floor: S('garage_floor', '#7c8086'), wall: S('concrete_wall_004', '#a2a6ac'), ceiling: ceil.grey, lamp: m.lampWarm, lampSpacing: 10, glow: 0xffe2b8 },
+      hangar: { floor: S('hangar_concrete_floor', '#8a8d90'), wall: S('rusty_corrugated_iron', '#b5b9bd', { mode: 'photo' }), ceiling: ceil.grey, lamp: m.lampCool, lampSpacing: 11, glow: 0xeef4ff },
+      labs: { floor: S('dirty_tiles', '#dfe3e6', { roughness: 0.75 }), wall: S('peeling_painted_wall', '#e6e9eb', { metalness: 0 }), ceiling: ceil.white, lamp: m.lampCool, lampSpacing: 5, glow: 0xf0f6ff },
+      servers: { floor: S('metal_plate', '#3a3f46', { mode: 'photo' }), wall: S('rusty_painted_metal', '#4a5059'), ceiling: ceil.dark, lamp: m.lampBlue, lampSpacing: 7, glow: 0x9fd0ff },
+      barracks: { floor: S('garage_floor', '#5d625c'), wall: S('peeling_painted_wall', '#7a7f78', { metalness: 0 }), ceiling: ceil.grey, lamp: m.lampWarm, lampSpacing: 6, glow: 0xffd8a8 },
     };
 
     this.layout = new LayoutBuilder(physics, ROOMS, LINKS, styles, {

@@ -13,3 +13,6 @@ release/
 
 # Secrets (ElevenLabs key for scripts/gen-commander-voice.mjs)
 .env
+
+# Downloaded source art (CC0, converted copies ship under public/tex)
+production/assets/src/
