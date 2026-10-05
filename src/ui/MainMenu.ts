@@ -266,7 +266,7 @@ export class MainMenu {
 
   /** The character dossier: full screen over the menu (Esc / Back returns). */
   private openDossier(): void {
-    this.dossier ??= new Dossier(this.root, () => this.root.classList.remove('dossier-open'));
+    this.dossier ??= new Dossier(this.root, () => this.root.classList.remove('dossier-open'), (name, volume) => this.game?.audio.play(name, { volume }));
     this.root.classList.add('dossier-open');
     this.dossier.show();
   }

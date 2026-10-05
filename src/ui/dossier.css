@@ -1,83 +1,263 @@
-/* Character dossier: an old war-game mission select. Serif type, a grainy sepia
-   portrait fading into black on the left, the roster over the dark side. */
+/* ============================================================================
+   PERSONNEL & THREAT ARCHIVE — a projector-lit photo archive.
+   Serif for the human parts, typewriter mono for the machine parts, the faction's
+   accent burning through. Layers, back to front: photo · light leak · scratches ·
+   vignette · grain · scanlines · flash  |  roster · file · stamp · caption · strip.
+   ========================================================================== */
 .dossier {
-  --dos-ink: #e9e2d2;
-  --dos-dim: #9d968a;
-  --dos-hot: #e8a33a;
-  --dos-line: rgba(233, 226, 210, 0.55);
-  position: absolute; inset: 0; z-index: 30; display: none; background: #050505; color: var(--dos-ink);
-  font-family: Georgia, 'Times New Roman', 'Palatino Linotype', serif; overflow: hidden;
+  --ink: #ece6d8;
+  --dim: #8f8a80;
+  --faint: rgba(236, 230, 216, 0.16);
+  --hot: #f0a63c;
+  --accent: #e2372b;
+  --px: 0;
+  --py: 0;
+  --serif: Georgia, 'Times New Roman', 'Palatino Linotype', serif;
+  --mono: 'Courier New', 'Lucida Console', ui-monospace, monospace;
+  position: absolute; inset: 0; z-index: 30; display: none; overflow: hidden;
+  background: #030304; color: var(--ink); font-family: var(--serif);
+  user-select: none;
 }
-.dossier.in { display: block; animation: dos-in 0.5s ease-out; }
-@keyframes dos-in { from { opacity: 0; } to { opacity: 1; } }
+.dossier.in { display: block; }
+.dossier button { font: inherit; color: inherit; }
 
-/* Header: title left, counter right, a thin rule under. */
-.dos-head { position: absolute; left: 6vw; right: 6vw; top: 4.5vh; display: flex; justify-content: space-between; align-items: baseline;
-  padding-bottom: 6px; border-bottom: 1px solid var(--dos-line); z-index: 3; text-shadow: 0 1px 4px #000; }
-.dos-title { font-size: clamp(17px, 1.9vw, 26px); font-weight: 700; }
-.dos-count { font-size: clamp(12px, 1.2vw, 16px); font-weight: 700; color: var(--dos-ink); }
-
-/* Portrait: right side, toned, fading into the dark on the left, slow drift. */
-.dos-shots { position: absolute; inset: 0; z-index: 0; } /* the photos keep their subject right, the left dark */
-.dos-shot { position: absolute; inset: 0; opacity: 0; transition: opacity 0.9s ease;
-  -webkit-mask-image: linear-gradient(90deg, rgba(0,0,0,0.35) 0%, #000 45%); mask-image: linear-gradient(90deg, rgba(0,0,0,0.35) 0%, #000 45%); }
+/* ---------------------------------------------------------------- the photo */
+.dos-stage { position: absolute; inset: -2%; z-index: 0;
+  transform: translate(calc(var(--px) * -18px), calc(var(--py) * -12px)); transition: transform 0.6s cubic-bezier(.2, .7, .2, 1); }
+.dos-shot { position: absolute; inset: 0; opacity: 0; transition: opacity 0.18s linear;
+  -webkit-mask-image: linear-gradient(90deg, rgba(0,0,0,0.3) 0%, #000 50%); mask-image: linear-gradient(90deg, rgba(0,0,0,0.3) 0%, #000 50%); }
 .dos-shot.on { opacity: 1; }
 .dos-img, .dos-timg { position: absolute; inset: 0; overflow: hidden; }
 .dos-img img, .dos-timg img { width: 100%; height: 100%; object-fit: cover; object-position: 78% 30%; display: block;
-  filter: saturate(0.85) contrast(1.05) brightness(0.92); } /* the photos bring their own tone */
-.dos-shot.on .dos-img img { animation: dos-drift 22s ease-in-out infinite alternate, dos-flicker 5.3s steps(1) infinite; }
-@keyframes dos-drift { from { transform: scale(1.04) translate(0, 0); } to { transform: scale(1.12) translate(-1.5%, -1%); } }
-@keyframes dos-flicker { 0%, 100% { opacity: 1; } 41% { opacity: 0.93; } 42% { opacity: 1; } 77% { opacity: 0.96; } 78% { opacity: 1; } }
-/* No photo yet: a dark silhouette under a soft light. */
+  filter: saturate(0.82) contrast(1.06) brightness(0.9); }
+.dos-shot.on .dos-img img { animation: dos-drift 26s ease-in-out infinite alternate, dos-flicker 4.7s steps(1) infinite; }
+@keyframes dos-drift { from { transform: scale(1.03); } to { transform: scale(1.11) translate(-1.2%, -0.8%); } }
+@keyframes dos-flicker { 0%, 100% { filter: saturate(0.82) contrast(1.06) brightness(0.9); } 37% { filter: saturate(0.82) contrast(1.1) brightness(0.8); }
+  38% { filter: saturate(0.82) contrast(1.06) brightness(0.9); } 71% { filter: saturate(0.82) contrast(1.08) brightness(0.84); } 72% { filter: saturate(0.82) contrast(1.06) brightness(0.92); } }
 .dos-empty { background:
-  radial-gradient(ellipse 22% 18% at 58% 34%, #3a3428 0 60%, transparent 62%),
-  radial-gradient(ellipse 38% 34% at 58% 82%, #2c271e 0 60%, transparent 62%),
-  radial-gradient(ellipse 70% 80% at 60% 40%, #3b352b 0%, #15130f 70%); filter: sepia(0.4); }
+  radial-gradient(ellipse 9% 15% at 74% 34%, #2c2d31 0 60%, transparent 63%),
+  radial-gradient(ellipse 20% 34% at 74% 86%, #232428 0 60%, transparent 63%),
+  radial-gradient(ellipse 60% 80% at 72% 40%, #24252a 0%, #0b0b0d 70%); }
+.dos-timg.dos-empty { background: radial-gradient(ellipse 22% 30% at 55% 40%, #2c2d31 0 60%, transparent 63%), #121214; }
+
+/* Light leak: a warm burn creeping in from the right edge. */
+.dos-leak { position: absolute; inset: 0; pointer-events: none; mix-blend-mode: screen;
+  background: radial-gradient(ellipse 30% 60% at 104% 30%, rgba(255, 110, 40, 0.22), transparent 70%),
+              radial-gradient(ellipse 20% 40% at 100% 85%, color-mix(in srgb, var(--accent) 22%, transparent), transparent 70%);
+  animation: dos-leak 7s ease-in-out infinite alternate; }
+@keyframes dos-leak { from { opacity: 0.5; } to { opacity: 1; } }
+/* Scratches: a few hairlines that jump frame to frame. */
+.dos-scratch { position: absolute; inset: 0; pointer-events: none; opacity: 0.35; mix-blend-mode: screen;
+  background: linear-gradient(90deg, transparent 0 18%, rgba(255,255,255,0.35) 18.05%, transparent 18.15%, transparent 63%, rgba(255,255,255,0.25) 63.04%, transparent 63.1%, transparent 88%, rgba(255,255,255,0.3) 88.03%, transparent 88.08%);
+  animation: dos-scratch 0.9s steps(1) infinite; }
+@keyframes dos-scratch { 0% { transform: translateX(0); opacity: 0.35; } 25% { transform: translateX(-7%); opacity: 0.1; } 50% { transform: translateX(4%); opacity: 0.4; } 75% { transform: translateX(-2%); opacity: 0; } }
 .dos-vignette { position: absolute; inset: 0; pointer-events: none;
-  background: radial-gradient(ellipse 80% 75% at 60% 45%, transparent 45%, rgba(0, 0, 0, 0.75) 100%),
-              linear-gradient(0deg, rgba(0, 0, 0, 0.7), transparent 30%); }
-.dos-grain { position: absolute; inset: -50%; pointer-events: none; opacity: 0.35; mix-blend-mode: overlay; animation: dos-grain 0.8s steps(6) infinite; }
-@keyframes dos-grain { 0% { transform: translate(0, 0); } 20% { transform: translate(-7%, 4%); } 40% { transform: translate(5%, -6%); }
-  60% { transform: translate(-3%, 8%); } 80% { transform: translate(8%, 2%); } 100% { transform: translate(0, 0); } }
+  background: radial-gradient(ellipse 85% 80% at 62% 42%, transparent 40%, rgba(0, 0, 0, 0.82) 100%),
+              linear-gradient(0deg, rgba(0, 0, 0, 0.85), transparent 34%),
+              linear-gradient(180deg, rgba(0, 0, 0, 0.7), transparent 18%); }
+.dos-grain { position: absolute; inset: -50%; pointer-events: none; opacity: 0.38; mix-blend-mode: overlay; animation: dos-grain 0.7s steps(7) infinite; }
+@keyframes dos-grain { 0% { transform: translate(0, 0); } 15% { transform: translate(-7%, 4%); } 30% { transform: translate(5%, -6%); } 45% { transform: translate(-3%, 8%); }
+  60% { transform: translate(8%, 2%); } 75% { transform: translate(-6%, -3%); } 100% { transform: translate(0, 0); } }
+.dos-scan { position: absolute; inset: 0; pointer-events: none; opacity: 0.5;
+  background: repeating-linear-gradient(0deg, rgba(0, 0, 0, 0.22) 0 1px, transparent 1px 3px); }
+.dos-scan::after { content: ''; position: absolute; left: 0; right: 0; height: 18vh; top: -20vh;
+  background: linear-gradient(180deg, transparent, rgba(255, 255, 255, 0.035), transparent); animation: dos-sweep 6s linear infinite; }
+@keyframes dos-sweep { to { top: 110vh; } }
+/* The cut between photos: a signal glitch (dark — no flash). Slices of the new photo torn
+   sideways, red / cyan ghosts split off it, faint static bands rolling through. */
+.dos-ghost-r, .dos-ghost-c { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; object-position: 78% 30%; opacity: 0; mix-blend-mode: screen; pointer-events: none; }
+.dos-ghost-r { filter: sepia(1) saturate(7) hue-rotate(-50deg) brightness(0.55); }
+.dos-ghost-c { filter: sepia(1) saturate(7) hue-rotate(150deg) brightness(0.55); }
+.dos-stage.glitch .dos-shot.on .dos-ghost-r { animation: dos-ghost-r 0.6s steps(1); }
+.dos-stage.glitch .dos-shot.on .dos-ghost-c { animation: dos-ghost-c 0.6s steps(1); }
+@keyframes dos-ghost-r { 0% { opacity: 0.75; transform: translateX(-16px); } 20% { transform: translateX(10px); } 40% { opacity: 0.5; transform: translateX(-6px); } 65% { opacity: 0.25; transform: translateX(3px); } 100% { opacity: 0; transform: none; } }
+@keyframes dos-ghost-c { 0% { opacity: 0.75; transform: translateX(16px); } 20% { transform: translateX(-10px); } 40% { opacity: 0.5; transform: translateX(6px); } 65% { opacity: 0.25; transform: translateX(-3px); } 100% { opacity: 0; transform: none; } }
+.dos-stage.glitch .dos-shot.on .dos-img > img:first-child { animation: dos-slice 0.6s steps(1); }
+@keyframes dos-slice {
+  0% { clip-path: inset(8% 0 62% 0); transform: translateX(-34px); filter: brightness(0.7) contrast(1.4); }
+  10% { clip-path: inset(52% 0 22% 0); transform: translateX(26px); }
+  20% { clip-path: inset(28% 0 44% 0); transform: translateX(-12px); }
+  32% { clip-path: inset(0 0 0 0); transform: translateX(8px) skewX(-2deg); }
+  48% { transform: translateX(-3px); }
+  62%, 100% { clip-path: inset(0); transform: none; filter: saturate(0.82) contrast(1.06) brightness(0.9); } }
+.dos-tear { position: absolute; inset: 0; pointer-events: none; opacity: 0;
+  background: repeating-linear-gradient(0deg, rgba(200, 220, 255, 0.06) 0 2px, transparent 2px 7px),
+              linear-gradient(180deg, transparent 30%, rgba(160, 190, 255, 0.07) 31% 36%, transparent 37% 70%, rgba(255, 80, 80, 0.06) 71% 74%, transparent 75%); }
+.dos-stage.glitch .dos-tear { animation: dos-tear 0.55s steps(1); }
+@keyframes dos-tear { 0% { opacity: 1; transform: translateY(-8%); } 25% { opacity: 0.6; transform: translateY(14%); } 50% { opacity: 0.8; transform: translateY(-4%); } 75% { opacity: 0.3; transform: translateY(6%); } 100% { opacity: 0; } }
 
-/* Roster: flags and names over the dark side; the selected one burns orange. */
-.dos-list { position: absolute; left: 10vw; top: 12vh; bottom: 30vh; width: min(380px, 34vw); overflow-y: auto; z-index: 2; scrollbar-width: none; }
+/* ---------------------------------------------------------------- header */
+.dos-head { position: absolute; left: 3.2vw; right: 3.2vw; top: 3.4vh; z-index: 4; display: grid; grid-template-columns: 1fr auto; grid-template-rows: auto auto;
+  column-gap: 2vw; padding-bottom: 8px; border-bottom: 1px solid var(--faint); text-shadow: 0 1px 6px #000; }
+.dos-brand { grid-column: 1; font: 700 clamp(9px, 0.78vw, 12px) var(--mono); letter-spacing: 0.22em; color: var(--accent); display: flex; align-items: center; gap: 10px; }
+.dos-brand b { color: var(--dim); }
+.dos-rec { width: 8px; height: 8px; border-radius: 50%; background: #ff2a1a; box-shadow: 0 0 10px #ff2a1a; animation: dos-rec 1.2s steps(1) infinite; }
+@keyframes dos-rec { 50% { opacity: 0.15; } }
+.dos-title { grid-column: 1; font-size: clamp(22px, 2.6vw, 40px); font-weight: 700; letter-spacing: 0.02em; margin-top: 2px; }
+.dos-meta { grid-column: 2; grid-row: 1 / span 2; align-self: end; display: flex; flex-direction: column; align-items: flex-end; gap: 3px;
+  font: clamp(9px, 0.82vw, 12px) var(--mono); letter-spacing: 0.14em; color: var(--dim); }
+.dos-clock { color: var(--ink); font-size: 1.25em; letter-spacing: 0.08em; }
+.dos-count { color: var(--ink); font-weight: 700; }
+
+/* ---------------------------------------------------------------- roster */
+.dos-list { position: absolute; left: 3.2vw; top: 15.5vh; bottom: 24vh; width: clamp(200px, 17vw, 270px); z-index: 4; overflow-y: auto; scrollbar-width: none;
+  -webkit-mask-image: linear-gradient(180deg, transparent, #000 3%, #000 94%, transparent); mask-image: linear-gradient(180deg, transparent, #000 3%, #000 94%, transparent); }
 .dos-list::-webkit-scrollbar { display: none; }
-.dos-row { display: flex; align-items: center; gap: 12px; width: 100%; padding: 3px 0; background: none; border: 0; color: var(--dos-ink);
-  font: inherit; font-size: clamp(13px, 1.25vw, 17px); text-align: left; cursor: pointer; text-shadow: 0 1px 3px #000; }
+.dos-flag { flex: none; width: 22px; height: 13px; background: linear-gradient(180deg, var(--f0) 0 34%, var(--f1) 34% 66%, var(--f0) 66%); box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.7); }
+.dos-row { position: relative; display: grid; grid-template-columns: 22px 1fr auto; align-items: center; gap: 10px; width: 100%; padding: 7px 0 7px 8px; border-bottom: 1px solid rgba(236, 230, 216, 0.06);
+  background: none; border: 0; text-align: left; cursor: pointer; text-shadow: 0 1px 4px #000; transition: padding 0.18s, color 0.18s; }
+.dos-row span { font-size: clamp(14px, 1.2vw, 19px); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dos-row em { font: clamp(8px, 0.62vw, 10px) var(--mono); font-style: normal; letter-spacing: 0.12em; color: var(--dim); opacity: 0.6; transition: opacity 0.2s; }
+.dos-row::before { content: ''; position: absolute; left: 0; top: 18%; bottom: 18%; width: 2px; background: var(--hot); transform: scaleY(0); transition: transform 0.2s; }
 .dos-row:hover span { color: #fff; }
-.dos-row.on span { color: var(--dos-hot); }
-.dos-flag { flex: none; width: 26px; height: 16px; background: linear-gradient(180deg, var(--f0) 0 34%, var(--f1) 34% 66%, var(--f0) 66%);
-  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.6); }
+.dos-row.on { padding-left: 14px; }
+.dos-row.on span { color: var(--hot); text-shadow: 0 0 14px rgba(240, 166, 60, 0.45), 0 1px 4px #000; }
+.dos-row.on em { opacity: 1; color: var(--hot); }
+.dos-row.on::before { transform: scaleY(1); }
 
-/* Caption: lower right, the way a photo is captioned. */
-.dos-cap { position: absolute; right: 6vw; bottom: 25vh; width: min(460px, 42vw); text-align: right; z-index: 2; opacity: 0; text-shadow: 0 1px 4px #000; }
-.dos-cap.in { animation: dos-cap 0.8s 0.25s ease-out forwards; }
+/* ---------------------------------------------------------------- the file */
+.dos-file { position: absolute; left: calc(3.2vw + clamp(200px, 17vw, 270px) + 2.4vw); top: 15.5vh; bottom: 24vh; width: min(470px, 32vw); z-index: 4;
+  display: flex; flex-direction: column; padding: 16px 20px 14px; border-left: 2px solid var(--accent);
+  background: linear-gradient(90deg, rgba(6, 6, 8, 0.88), rgba(6, 6, 8, 0.62) 80%, rgba(6, 6, 8, 0.2));
+  box-shadow: -18px 0 40px -20px color-mix(in srgb, var(--accent) 60%, transparent); }
+.dos-file::before, .dos-file::after { content: ''; position: absolute; width: 14px; height: 14px; border: 1px solid var(--ink); opacity: 0.5; }
+.dos-file::before { top: -1px; right: -1px; border-left: 0; border-bottom: 0; }
+.dos-file::after { bottom: -1px; right: -1px; border-left: 0; border-top: 0; }
+.dos-file.enter { animation: dos-file 0.55s cubic-bezier(.2, .8, .2, 1); }
+@keyframes dos-file { from { clip-path: inset(0 100% 0 0); opacity: 0.4; } to { clip-path: inset(0 0 0 0); opacity: 1; } }
+.dos-fileno { display: flex; justify-content: space-between; font: 700 clamp(9px, 0.75vw, 11px) var(--mono); letter-spacing: 0.2em; color: var(--accent); }
+.dos-name { margin: 6px 0 2px; font-size: clamp(24px, 2.5vw, 40px); font-weight: 700; line-height: 1.05; letter-spacing: 0.01em; min-height: 1.05em; text-shadow: 0 2px 18px #000; }
+.dos-call { font-size: clamp(12px, 0.98vw, 15px); color: var(--dim); font-style: italic; }
+.dos-call b { color: var(--accent); font-style: normal; }
+.dos-tags { display: flex; flex-wrap: wrap; gap: 5px; margin: 10px 0 12px; }
+.dos-tags span { font: 700 clamp(8px, 0.66vw, 10px) var(--mono); letter-spacing: 0.16em; text-transform: uppercase; padding: 3px 7px; border: 1px solid var(--faint); color: var(--ink); }
+.dos-tags .st { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 22%, transparent); }
+.dos-tags .st-active, .dos-tags .st-civilian { border-color: #6fb3ff; background: rgba(80, 150, 255, 0.16); }
+.dos-tags .st-missing, .dos-tags .st-unknown { border-color: #c9b26a; background: rgba(200, 175, 90, 0.14); }
+.dos-grid { display: grid; grid-template-columns: auto 1fr; gap: 6px 18px; padding: 10px 0; border-top: 1px solid var(--faint); border-bottom: 1px solid var(--faint); }
+.dos-file label { display: block; font: 700 clamp(8px, 0.62vw, 10px) var(--mono); letter-spacing: 0.22em; text-transform: uppercase; color: var(--dim); margin-bottom: 4px; }
+.dos-pips { display: flex; gap: 4px; }
+.dos-pips i { width: 12px; height: 22px; border: 1px solid var(--faint); transform: skewX(-12deg); }
+.dos-pips i.on { background: var(--accent); border-color: var(--accent); box-shadow: 0 0 10px color-mix(in srgb, var(--accent) 70%, transparent);
+  animation: dos-pip 0.4s var(--d) both; }
+@keyframes dos-pip { from { opacity: 0; transform: skewX(-12deg) scaleY(0.2); } to { opacity: 1; transform: skewX(-12deg); } }
+.dos-facts { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 14px; }
+.dos-facts label { margin-bottom: 1px; }
+.dos-facts span { font-size: clamp(11px, 0.88vw, 14px); }
+.dos-stats { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 18px; padding: 10px 0; }
+.dos-stat { display: grid; grid-template-columns: 1fr auto; grid-template-rows: auto auto; column-gap: 8px; }
+.dos-stat label { margin: 0; }
+.dos-stat span { grid-row: 1; grid-column: 2; font: 700 clamp(9px, 0.72vw, 11px) var(--mono); color: var(--ink); }
+.dos-stat i { grid-column: 1 / span 2; height: 4px; background: var(--faint); margin-top: 3px; overflow: hidden; }
+.dos-stat b { display: block; height: 100%; width: var(--v); background: linear-gradient(90deg, color-mix(in srgb, var(--accent) 55%, #fff), var(--accent));
+  animation: dos-bar 0.9s var(--d) cubic-bezier(.2, .8, .2, 1) both; }
+@keyframes dos-bar { from { width: 0; } }
+.dos-scroll { flex: 1; min-height: 0; overflow-y: auto; padding-right: 8px; scrollbar-width: thin; scrollbar-color: var(--accent) transparent;
+  -webkit-mask-image: linear-gradient(180deg, #000 88%, transparent); mask-image: linear-gradient(180deg, #000 88%, transparent); }
+.dos-bio p { margin: 0 0 10px; font-size: clamp(12px, 0.95vw, 15px); line-height: 1.55; color: #d9d3c6; }
+.dos-bio p:first-child::first-letter { float: left; font-size: 2.9em; line-height: 0.9; padding: 4px 6px 0 0; color: var(--accent); }
+.dos-people ul { list-style: none; margin: 0 0 10px; padding: 0; }
+.dos-people li { padding: 4px 0 4px 10px; border-left: 2px solid var(--faint); margin-bottom: 4px; font-size: clamp(12px, 0.92vw, 14px); color: #cfc8b8; }
+.dos-people li b { color: var(--ink); font-weight: 700; }
+.dos-x { display: none; }
+.dos-notes { margin: 6px 0 10px; padding: 9px 11px; border: 1px dashed var(--faint); background: rgba(255, 255, 255, 0.025); }
+.dos-notes p { margin: 0; font: clamp(11px, 0.85vw, 13px)/1.5 var(--mono); color: #cfc8b8; }
+.dos-kit div { display: flex; flex-wrap: wrap; gap: 5px; padding-bottom: 6px; }
+.dos-kit span { font-size: clamp(11px, 0.85vw, 13px); padding: 2px 8px; border-left: 2px solid var(--accent); background: rgba(255, 255, 255, 0.04); }
+.dos-redact { background: #000; color: transparent; box-shadow: 0 0 0 1px #000; padding: 0 2px; font-family: var(--mono); }
+.dos-redact.open { background: none; color: var(--hot); box-shadow: none; font-family: inherit; }
+.dos-quote { margin: 10px 0 0; padding: 10px 0 0; border-top: 1px solid var(--faint); display: flex; align-items: center; gap: 12px;
+  font-size: clamp(12px, 1vw, 16px); font-style: italic; color: var(--ink); }
+.dos-wave { flex: none; display: flex; align-items: center; gap: 2px; height: 22px; }
+.dos-wave b { width: 3px; height: 30%; background: var(--accent); animation: dos-wave 0.9s ease-in-out infinite; }
+.dos-wave b:nth-child(2) { animation-delay: -0.2s; } .dos-wave b:nth-child(3) { animation-delay: -0.5s; } .dos-wave b:nth-child(4) { animation-delay: -0.1s; }
+.dos-wave b:nth-child(5) { animation-delay: -0.7s; } .dos-wave b:nth-child(6) { animation-delay: -0.35s; } .dos-wave b:nth-child(7) { animation-delay: -0.6s; }
+@keyframes dos-wave { 50% { height: 100%; } }
+
+/* ---------------------------------------------------------------- stamp */
+.dos-stamp { position: absolute; right: 4vw; bottom: 34vh; z-index: 5; pointer-events: none; opacity: 0; transform: rotate(-11deg) scale(2.6); }
+.dos-stamp span { display: block; padding: 8px 16px; border: 4px double currentColor; font: 900 clamp(18px, 2.3vw, 38px) var(--mono); letter-spacing: 0.16em;
+  mix-blend-mode: screen; text-shadow: 0 0 1px currentColor;
+  -webkit-mask-image: repeating-linear-gradient(115deg, #000 0 6px, rgba(0,0,0,0.55) 6px 7px, #000 7px 13px); mask-image: repeating-linear-gradient(115deg, #000 0 6px, rgba(0,0,0,0.55) 6px 7px, #000 7px 13px); }
+.dos-stamp.s-hostile, .dos-stamp.s-rogue { color: #ff3324; }
+.dos-stamp.s-rival { color: #ffae3a; }
+.dos-stamp.s-friendly { color: #59b4ff; }
+.dos-stamp.s-civilian { color: #e8e2d0; }
+.dos-stamp.slam { animation: dos-stamp 0.42s cubic-bezier(.3, 1.6, .5, 1) forwards; }
+@keyframes dos-stamp { 0% { opacity: 0; transform: rotate(-4deg) scale(2.6); } 55% { opacity: 0.95; transform: rotate(-11deg) scale(0.94); }
+  70% { transform: rotate(-11deg) scale(1.04) translate(2px, -1px); } 100% { opacity: 0.88; transform: rotate(-11deg) scale(1); } }
+
+/* ---------------------------------------------------------------- caption */
+.dos-cap { position: absolute; right: 3.2vw; bottom: 25vh; z-index: 4; text-align: right; opacity: 0; text-shadow: 0 1px 6px #000; }
+.dos-cap.in { animation: dos-cap 0.9s 0.3s ease-out forwards; }
 @keyframes dos-cap { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
-.dos-cap b { display: block; font-size: clamp(14px, 1.35vw, 19px); font-weight: 400; }
-.dos-cap span { display: block; font-size: clamp(13px, 1.25vw, 17px); }
-.dos-cap em { display: block; margin-top: 8px; font-size: clamp(11px, 1vw, 14px); color: var(--dos-dim); }
+.dos-cap b { display: block; font-size: clamp(14px, 1.3vw, 20px); font-weight: 400; }
+.dos-cap span { display: block; font-size: clamp(12px, 1.05vw, 16px); color: #cfc8b8; }
 
-/* Bottom: the faction's frames, the timeline rule, the hints. */
-.dos-foot { position: absolute; left: 6vw; right: 6vw; bottom: 3.5vh; z-index: 3; }
-.dos-thumbs { display: flex; gap: 10px; margin-left: 4vw; margin-bottom: 8px; }
-.dos-thumb { position: relative; width: clamp(64px, 7vw, 96px); aspect-ratio: 4 / 3; padding: 0; border: 2px solid #3a3a3a; background: #111; cursor: pointer; }
-.dos-thumb.on { border-color: var(--dos-ink); }
-.dos-ruler { display: flex; border-top: 1px solid var(--dos-line); padding-top: 4px; }
-.dos-tick { flex: 1; position: relative; background: none; border: 0; color: var(--dos-dim); font: inherit; font-size: clamp(10px, 0.95vw, 13px); cursor: pointer; }
-.dos-tick::before { content: ''; position: absolute; left: 0; top: -9px; height: 9px; border-left: 1px solid var(--dos-line); }
-.dos-tick.on { color: var(--dos-ink); }
-.dos-hints { display: flex; justify-content: center; gap: 28px; margin-top: 10px; padding-top: 6px; border-top: 1px solid var(--dos-line); font-size: clamp(12px, 1.1vw, 15px); }
-.dos-hints kbd, .dos-hints button { font: inherit; }
-.dos-hints kbd { display: inline-block; min-width: 20px; padding: 0 5px; margin-right: 4px; border-radius: 10px; background: #2a2a2a; border: 1px solid #555; text-align: center; font-size: 0.85em; }
-.dos-back { background: none; border: 0; color: var(--dos-ink); cursor: pointer; }
+/* ---------------------------------------------------------------- footer */
+.dos-foot { position: absolute; left: 3.2vw; right: 3.2vw; bottom: 2.6vh; z-index: 4; }
+.dos-strip { display: flex; gap: 10px; margin-bottom: 10px; padding: 6px 10px; width: max-content; max-width: 100%;
+  background:
+    radial-gradient(circle at 50% 50%, #000 0 2px, transparent 2.5px) 0 0 / 12px 6px repeat-x,
+    radial-gradient(circle at 50% 50%, #000 0 2px, transparent 2.5px) 0 100% / 12px 6px repeat-x,
+    #1a1a1c; }
+.dos-frame { position: relative; width: clamp(70px, 7.2vw, 110px); aspect-ratio: 16 / 9; padding: 0; border: 1px solid #000; background: #0d0d0e; cursor: pointer; overflow: hidden; }
+.dos-frame em { position: absolute; left: 0; right: 0; bottom: 0; padding: 1px 4px; font: clamp(7px, 0.55vw, 9px) var(--mono); font-style: normal; letter-spacing: 0.08em;
+  background: rgba(0, 0, 0, 0.7); color: var(--dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dos-frame .dos-timg img { filter: saturate(0.6) brightness(0.75); }
+.dos-frame.on { outline: 2px solid var(--hot); outline-offset: 1px; }
+.dos-frame.on em { color: var(--hot); }
+.dos-frame.on .dos-timg img { filter: saturate(0.85) brightness(1); }
+.dos-ruler { position: relative; display: flex; border-top: 1px solid var(--faint); padding-top: 5px; }
+.dos-marker { position: absolute; top: -2px; height: 3px; background: var(--hot); box-shadow: 0 0 12px var(--hot); transition: left 0.45s cubic-bezier(.2, .8, .2, 1), width 0.45s; }
+.dos-tick { flex: 1; position: relative; background: none; border: 0; padding: 0; font: clamp(9px, 0.8vw, 12px) var(--serif); color: var(--dim); cursor: pointer; }
+.dos-tick::before { content: ''; position: absolute; left: 50%; top: -10px; height: 8px; border-left: 1px solid var(--faint); }
+.dos-tick:hover { color: var(--ink); }
+.dos-tick.on { color: var(--ink); }
+.dos-hints { display: flex; justify-content: center; gap: 30px; margin-top: 9px; padding-top: 7px; border-top: 1px solid var(--faint); font-size: clamp(11px, 0.95vw, 14px); }
+.dos-hints kbd { display: inline-block; min-width: 20px; padding: 0 5px; margin-right: 4px; border-radius: 10px; background: #252527; border: 1px solid #555; text-align: center; font: 0.85em var(--mono); }
+.dos-back { background: none; border: 0; cursor: pointer; }
+.dos-back:hover { color: var(--hot); }
+
+/* ---------------------------------------------------------------- boot */
+.dos-boot { position: absolute; inset: 0; z-index: 10; background: #020203; display: flex; align-items: center; justify-content: center; transition: opacity 0.35s, visibility 0.35s; }
+.dos-boot pre { margin: 0; width: min(760px, 86vw); font: clamp(11px, 1vw, 15px)/1.7 var(--mono); color: #d8b26a; text-shadow: 0 0 8px rgba(216, 178, 106, 0.5); white-space: pre-wrap; }
+.dossier.ready .dos-boot { opacity: 0; visibility: hidden; }
+.dossier.ready .dos-stage { animation: dos-on 0.7s steps(5) 1; }
+@keyframes dos-on { 0% { opacity: 0; } 30% { opacity: 0.8; } 45% { opacity: 0.2; } 70% { opacity: 1; } 85% { opacity: 0.6; } 100% { opacity: 1; } }
 
 .menu.dossier-open .menu-left, .menu.dossier-open .menu-panel, .menu.dossier-open .showcase-cap, .menu.dossier-open .menu-foot { visibility: hidden; }
 
-/* Phones: the portrait fills the screen, the roster on a dark band. */
-@media (max-aspect-ratio: 1/1), (max-width: 700px) {
-  .dos-shots { width: 100%; }
+/* ---------------------------------------------------------------- phones / narrow
+   The photo fills the screen, the forces become chips under the header, the file is a
+   scrolling sheet over the bottom half; swipe the photo to change it, ✕ to leave. */
+@media (max-width: 900px), (max-aspect-ratio: 1/1) {
+  .dos-head { top: max(10px, env(safe-area-inset-top)); left: 12px; right: 12px; padding-bottom: 6px; }
+  .dos-title { font-size: 19px; }
+  .dos-brand { font-size: 8px; letter-spacing: 0.16em; }
+  .dos-meta { display: none; }
+  .dos-x { display: block; position: absolute; right: 0; top: 2px; width: 38px; height: 38px; border: 1px solid var(--faint); background: rgba(0, 0, 0, 0.55); font-size: 16px; cursor: pointer; }
+  .dos-list { left: 0; right: 0; width: auto; top: calc(max(10px, env(safe-area-inset-top)) + 58px); bottom: auto; height: 36px; display: flex; gap: 6px; overflow-x: auto; overflow-y: hidden;
+    padding: 0 12px; -webkit-mask-image: none; mask-image: none; }
+  .dos-row { flex: none; width: auto; display: flex; gap: 7px; padding: 0 12px; height: 34px; border: 1px solid var(--faint); background: rgba(0, 0, 0, 0.6); }
+  .dos-row span { font-size: 13px; }
+  .dos-row em, .dos-row::before { display: none; }
+  .dos-row.on { padding-left: 12px; border-color: var(--hot); background: rgba(0, 0, 0, 0.85); }
+  .dos-flag { width: 16px; height: 10px; }
+  .dos-stage { inset: 0; transform: none; }
   .dos-shot { -webkit-mask-image: none; mask-image: none; }
-  .dos-list { left: 4vw; width: 60vw; background: linear-gradient(90deg, rgba(0, 0, 0, 0.75), transparent); }
-  .dos-cap { width: 60vw; }
+  .dos-img img, .dos-ghost-r, .dos-ghost-c { object-position: 72% 20%; }
+  .dos-file { left: 0; right: 0; width: auto; top: auto; bottom: 0; height: 54vh; padding: 14px 14px max(12px, env(safe-area-inset-bottom));
+    border-left: 0; border-top: 2px solid var(--accent); background: linear-gradient(0deg, rgba(6, 6, 8, 0.96) 75%, rgba(6, 6, 8, 0.75)); box-shadow: none; }
+  .dos-file::before, .dos-file::after { display: none; }
+  .dos-name { font-size: 26px; }
+  .dos-grid { grid-template-columns: 1fr; }
+  .dos-stats { gap: 6px 12px; }
+  /* The whole sheet scrolls (not a sliver of it). */
+  .dos-file { overflow-y: auto; -webkit-overflow-scrolling: touch; }
+  .dos-scroll { flex: none; overflow: visible; -webkit-mask-image: none; mask-image: none; }
+  .dos-stamp { right: 14px; bottom: calc(54vh + 14px); }
+  .dos-stamp span { font-size: 16px; padding: 5px 10px; border-width: 3px; }
+  .dos-cap, .dos-foot { display: none; }
+  .dos-boot pre { font-size: 10px; }
 }
