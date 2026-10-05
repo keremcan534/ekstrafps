@@ -91,6 +91,21 @@ class Snow {
   }
 }
 
+/** The Warden's poses (public/menu), each with its height on the stage (close-ups smaller). */
+const POSES: [string, number][] = [
+  ['operator', 1],
+  ['warden2', 0.93],
+  ['warden4', 0.95],
+  ['warden6', 0.93],
+  ['warden7', 0.8],
+  ['warden1', 0.93],
+  ['warden5', 0.9],
+  ['warden8', 0.93],
+  ['warden3', 0.93],
+];
+/** Seconds each pose holds before the next cuts in. */
+const POSE_HOLD = 8;
+
 export class MenuScene {
   readonly root: HTMLDivElement;
   private back: Snow;
@@ -99,6 +114,11 @@ export class MenuScene {
   private last = 0;
   private next = 0;
   private t0 = performance.now();
+  private op: HTMLDivElement;
+  private img: HTMLImageElement;
+  private pose = 0;
+  /** Seconds of menu time on the current pose (only counts while the menu is up). */
+  private held = 0;
 
   constructor(parent: HTMLElement, mobile: boolean, private active: () => boolean) {
     this.root = document.createElement('div');
@@ -108,13 +128,17 @@ export class MenuScene {
       <div class="ms-mist far"></div>
       <canvas class="ms-snow back"></canvas>
       <div class="ms-op">
-        <img src="menu/operator.webp" alt="" draggable="false" />
+        <img src="menu/operator.webp" alt="" draggable="false" /><div class="ms-tear"></div>
       </div>
       <div class="ms-mist near"></div>
       <canvas class="ms-snow front"></canvas>`;
     parent.prepend(this.root);
     // Relative to the page (the desktop and Android builds load from a file / app origin).
     this.root.querySelector<HTMLElement>('.ms-bg')!.style.backgroundImage = 'url(menu/steppe.webp)';
+    this.op = this.root.querySelector<HTMLDivElement>('.ms-op')!;
+    this.img = this.op.querySelector('img')!;
+    // Warm the cache so each cut swaps instantly (~30 KB each).
+    for (const [id] of POSES.slice(1)) new Image().src = `menu/${id}.webp`;
     const dpr = Math.min(mobile ? 1 : 1.5, window.devicePixelRatio || 1);
     const [b, f] = [...this.root.querySelectorAll<HTMLCanvasElement>('.ms-snow')];
     this.back = new Snow(b, mobile ? 90 : 220, [1, 2.6], [14, 46], [0.35, 0.85], dpr);
@@ -143,7 +167,26 @@ export class MenuScene {
     const wind = -0.35 - 0.25 * Math.sin(t * 0.13) - 0.12 * Math.sin(t * 0.37);
     this.back.step(dt, t, wind);
     this.front.step(dt, t, wind * 1.3);
+    this.held += dt;
+    if (this.held > POSE_HOLD) {
+      this.held = 0;
+      this.cut();
+    }
   };
+
+  /** Next pose, through a short dark signal glitch (no flash). */
+  private cut(): void {
+    this.pose = (this.pose + 1) % POSES.length;
+    const [id, h] = POSES[this.pose];
+    this.op.classList.remove('cut');
+    void this.op.offsetWidth;
+    this.op.classList.add('cut');
+    window.setTimeout(() => {
+      this.img.src = `menu/${id}.webp`;
+      this.op.style.height = `${95 * h}%`;
+    }, 180);
+    window.setTimeout(() => this.op.classList.remove('cut'), 600);
+  }
 
   dispose(): void {
     cancelAnimationFrame(this.raf);
