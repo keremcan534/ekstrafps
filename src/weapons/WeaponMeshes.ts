@@ -501,13 +501,13 @@ function keepAttached(geo: THREE.BufferGeometry): THREE.BufferGeometry | null {
 }
 
 /** Highest point of the model on the bore's centre plane between depths z0..z1 (root space), under `below`. */
-function topNear(geo: THREE.BufferGeometry, z0: number, z1: number, below: number): number | null {
+function topNear(geo: THREE.BufferGeometry, z0: number, z1: number, below: number, half = 0.02): number | null {
   const pos = geo.getAttribute('position');
   let top = -Infinity;
   for (let i = 0; i < pos.count; i++) {
     const y = pos.getY(i);
     const z = pos.getZ(i);
-    if (Math.abs(pos.getX(i)) < 0.02 && z >= z0 && z <= z1 && y < below && y > top) top = y;
+    if (Math.abs(pos.getX(i)) < half && z >= z0 && z <= z1 && y < below && y > top) top = y;
   }
   return top > -Infinity ? top : null;
 }
@@ -616,12 +616,29 @@ export function dressRig(rig: WeaponRig, key: ModelKey, world: boolean): boolean
     if (Math.abs(pos.getX(i)) < 0.03 && Math.abs(pos.getY(i) - mz.y) < 0.05) front = Math.min(front, pos.getZ(i));
   }
   if (rig.muzzle.parent === root && Math.abs(front - mz.z) < 0.15) mz.z = front;
-  // Aimed: the eye just over the highest point of the gun from the rear sight to the
-  // muzzle (on the centre line; side levers and handles don't count), level with the
-  // bore. Nothing of the model rises into the view, the shot still lands at the centre.
+  // Aimed: the classic sight picture, the front post's tip level with the top of the rear
+  // sight. The eye goes on the higher of the two: the rear sight's top (the tallest thing
+  // near the procedural rear sight) or the front sight's tip (rays down the centre line
+  // near the muzzle; through a protective ring the post's top counts, not the ring's).
+  // A gun with no sights at all gets the eye just over its receiver.
   if (rig.sight.parent === root) {
-    const y = topNear(geo, mz.z, rig.sight.position.z + 0.1, rig.sight.position.y + 0.12);
-    if (y !== null) rig.sight.position.y = y + 0.006;
+    const cap = rig.sight.position.y + 0.12;
+    const probe = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ side: THREE.DoubleSide }));
+    const ray = new THREE.Raycaster();
+    const down = new THREE.Vector3(0, -1, 0);
+    const sz = rig.sight.position.z;
+    const rear = topNear(geo, sz - 0.08, sz + 0.08, cap);
+    let tip = -Infinity;
+    for (let z = mz.z; z <= mz.z + 0.35; z += 0.002) {
+      ray.set(new THREE.Vector3(0, cap, z), down);
+      const ys = ray.intersectObject(probe).map((h) => h.point.y);
+      if (!ys.length) continue;
+      const ring = ys.length >= 3 && ys[0] - ys[1] < 0.005 && ys[1] - ys[2] > 0.003;
+      tip = Math.max(tip, ring ? ys[2] : ys[0]);
+    }
+    const y = Math.max(rear ?? -Infinity, tip);
+    if (y > -Infinity) rig.sight.position.y = y + 0.003;
+    (probe.material as THREE.Material).dispose();
   }
   geo.dispose();
   return true;

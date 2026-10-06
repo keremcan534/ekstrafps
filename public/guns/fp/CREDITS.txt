@@ -1,5 +1,5 @@
 First-person weapon models (Sketchfab, CC BY 4.0 — https://creativecommons.org/licenses/by/4.0/).
 Packed for the game (WebP textures, quantized; bundled arms and pose dummies not used).
 
-ak47.glb   "Ak47" by wburton — https://sketchfab.com/3d-models/ak47-831519a097d84e079fd8bc4b15e5b57d
+ak47.glb   "Used AK 47 | GameReady FREE" by Vlasov Daniil (dan741vlasov) — https://sketchfab.com/3d-models/used-ak-47-gameready-free-31767ede3b7446ff873e2dc4d4f2a4b3 (the rifle only)
 scarh.glb  "SCAR" by JUST — https://sketchfab.com/3d-models/scar-afd0c02ccc1847e2a787917dad5ba260
