@@ -1,9 +1,10 @@
 #!/usr/bin/env node
 /**
- * Reference image → rigged, game-ready character, through the Meshy API:
+ * Reference image (or a text prompt) → rigged, game-ready character, through the Meshy API:
  *   node scripts/meshy-character.mjs <image.(png|jpg|webp)> <name> [height_m=1.8]
+ *   node scripts/meshy-character.mjs "text:<prompt>" <name> [height_m=1.8]
  *
- * 1. Image to 3D: smart topology, 15k triangles, PBR textures, A-pose.
+ * 1. Image (or text) to 3D: smart topology, 15k triangles, PBR textures, A-pose.
  * 2. Auto-rigging (humanoid, Mixamo-style skeleton).
  * 3. Download to production/assets/src/chars/<name>.glb (+ <name>.json with the task ids).
  * 4. Pack for the game (scripts/pack-character.mjs → public/chars/<name>.glb, m/<name>.glb).
@@ -75,8 +76,31 @@ const out = join(root, 'production/assets/src/chars');
 mkdirSync(out, { recursive: true });
 const log = { name, image, height };
 
-// 1. Image to 3D.
-const created = await call('POST', `${API}/image-to-3d`, {
+// 1. Image (or text) to 3D.
+const TEXT = 'https://api.meshy.ai/openapi/v2/text-to-3d';
+let created;
+let modelUrl;
+if (image.startsWith('text:')) {
+  const prompt = image.slice(5);
+  log.image = undefined;
+  log.prompt = prompt;
+  const preview = await call('POST', TEXT, {
+    mode: 'preview',
+    prompt,
+    ai_model: 'meshy-t2', // smart topology needs a T-series model
+    model_type: 'smart-topology',
+    topology: 'triangle',
+    target_polycount: 15000,
+    pose_mode: 'a-pose',
+    target_formats: ['glb'],
+  });
+  log.previewTask = preview.result;
+  console.log(`preview task ${preview.result}`);
+  await poll(`${TEXT}/${preview.result}`, 'preview');
+  created = await call('POST', TEXT, { mode: 'refine', preview_task_id: preview.result, enable_pbr: true, target_formats: ['glb'] });
+  console.log(`refine task ${created.result}`);
+  modelUrl = `${TEXT}/${created.result}`;
+} else created = await call('POST', `${API}/image-to-3d`, {
   image_url: dataUri(image),
   ai_model: 'meshy-t2', // smart topology needs a T-series model
   model_type: 'smart-topology',
@@ -89,7 +113,7 @@ const created = await call('POST', `${API}/image-to-3d`, {
 });
 log.modelTask = created.result;
 console.log(`model task ${created.result}`);
-const model = await poll(`${API}/image-to-3d/${created.result}`, 'model');
+const model = await poll(modelUrl ?? `${API}/image-to-3d/${created.result}`, 'model');
 log.modelCredits = model.consumed_credits;
 
 // 2. Rig.

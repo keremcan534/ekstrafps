@@ -16,7 +16,14 @@ const FILES: Record<string, string> = {
   salvage: 'salvager',
   choir: 'choir',
   staff: 'staff',
+  robot: 'robot_walker',
+  robotBrute: 'robot_loader',
 };
+
+/** Standing height per file when it isn't a person's 1.78 m. */
+const HEIGHTS: Record<string, number> = { robot_walker: 1.85, robot_loader: 1.95, warden: 1.86 };
+/** Width × depth for a model that came out too slight (the Warden's greatcoat read as a stick figure). */
+const GIRTH: Record<string, [number, number]> = { warden: [1.3, 1.25] };
 
 const bodies = new Map<string, ModelBody>();
 
@@ -24,10 +31,10 @@ const bodies = new Map<string, ModelBody>();
 export async function loadCharacterModels(mobile: boolean): Promise<void> {
   const test = new URLSearchParams(location.search).get('charmodel');
   const byFile = new Map<string, Promise<ModelBody | null>>();
-  const load = (url: string) => {
+  const load = (url: string, height?: number, girth?: [number, number]) => {
     let p = byFile.get(url);
     if (!p) {
-      p = loadModelBody(url).catch((e) => {
+      p = loadModelBody(url, height, girth).catch((e) => {
         if (test) console.warn(`character model ${url} failed`, e);
         return null;
       });
@@ -38,10 +45,15 @@ export async function loadCharacterModels(mobile: boolean): Promise<void> {
   await Promise.all(
     Object.entries(FILES).map(async ([palette, file]) => {
       const url = test ?? `${mobile ? 'chars/m' : 'chars'}/${file}.glb`;
-      const body = await load(url);
+      const body = await load(url, HEIGHTS[file], GIRTH[file]);
       if (body) bodies.set(palette, body);
     }),
   );
+}
+
+/** The loaded model for `palette` (null when it has none). */
+export function modelBody(palette: string): ModelBody | null {
+  return bodies.get(palette) ?? null;
 }
 
 /** The faction's model skin if one is loaded, else `base` unchanged. */

@@ -807,6 +807,17 @@ export class Humanoid {
   }
 
   /** Phones: many bodies in the shadow pass get expensive. */
+  /**
+   * A model body's look: its geometry (weighted to the same slots, rest pose on this
+   * body's joints) and materials. Pass `geometry` null to keep the shape and only
+   * swap the materials (e.g. per-body copies to tint). Procedural bodies ignore it.
+   */
+  setBodyLook(geometry: THREE.BufferGeometry | null, materials: THREE.Material[]): void {
+    if (!this.skin.body) return;
+    if (geometry) this.mesh.geometry = geometry;
+    this.mesh.material = materials;
+  }
+
   setCastShadow(cast: boolean): void {
     this.mesh.castShadow = cast;
   }

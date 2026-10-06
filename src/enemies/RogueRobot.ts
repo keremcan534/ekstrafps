@@ -3,6 +3,8 @@ import type { Physics } from '../core/Physics';
 import { clamp } from '../core/math';
 import { Humanoid, defaultPose, type DamageInfo, strideLength } from '../targets/Humanoid';
 import { robotSkin } from '../targets/RobotTarget';
+import { modelBody, withModel } from '../targets/CharacterModels';
+import { retargetBody } from '../targets/ModelBody';
 import { skinDetail } from './SoldierSkin';
 import type { NavGrid } from '../ai/NavGrid';
 import { OBSTACLES, obstacleAt, type Obstacle } from '../game/Obstacles';
@@ -78,7 +80,8 @@ export class RogueRobot {
     };
     const { paint, dark, visor } = this.materials;
     this.merged = new THREE.MeshStandardMaterial({ vertexColors: true, metalness: 0.6, roughness: 0.45 });
-    this.body = new Humanoid(physics, scene, robotSkin(paint, dark, visor, 100, this.merged), {
+    const skin = withModel('robot', robotSkin(paint, dark, visor, 100, this.merged));
+    this.body = new Humanoid(physics, scene, skin, {
       onDamage: (info) => {
         this.flash = 1;
         this.wake();
@@ -87,14 +90,43 @@ export class RogueRobot {
       onDeath: (info) => {
         this.state = 'dead';
         this.deadTime = 0;
-        this.materials.visor.emissiveIntensity = 0.2;
+        this.setVisor(0.2);
         hooks.onDeath(this, info);
       },
       onThud: (at, s) => hooks.onThud(at, s),
     }, this);
     this.pose.idle = false;
-    this.buildArmor();
+    if (skin.body) this.dressModel(skin.body.geometry, skin.body.materials);
+    else this.buildArmor();
     this.body.setActive(false);
+  }
+
+  /**
+   * Model robots (public/chars: K-7 Walker, the Loader for brutes): own copies of the
+   * materials, so each robot's visor glow and hit flash are its own.
+   */
+  private model: { walker: [THREE.BufferGeometry, THREE.MeshStandardMaterial[]]; brute: [THREE.BufferGeometry, THREE.MeshStandardMaterial[]] | null } | null = null;
+  private dressModel(geometry: THREE.BufferGeometry, materials: THREE.Material[]): void {
+    const own = (list: THREE.Material[]) => list.map((m) => (m as THREE.MeshStandardMaterial).clone());
+    const walker = modelBody('robot');
+    const loader = modelBody('robotBrute');
+    this.model = {
+      walker: [geometry, own(materials)],
+      brute: walker && loader ? [retargetBody(loader, walker), own(loader.materials)] : null,
+    };
+    this.body.setBodyLook(null, this.model.walker[1]);
+  }
+
+  /** The materials on show (model robots). */
+  private get looks(): THREE.MeshStandardMaterial[] {
+    if (!this.model) return [];
+    return this.variant === 'brute' && this.model.brute ? this.model.brute[1] : this.model.walker[1];
+  }
+
+  /** Visor glow, 2.6 = fully awake. */
+  private setVisor(intensity: number): void {
+    this.materials.visor.emissiveIntensity = intensity;
+    for (const m of this.looks) m.emissiveIntensity = Math.min(1.6, intensity / 1.6);
   }
 
   /** Brute plating: chest slab, shoulder pauldrons, a head crest (hidden unless brute). */
@@ -120,6 +152,10 @@ export class RogueRobot {
     this.variant = v;
     this.materials.visor.emissive.copy(VISORS[v]);
     for (const m of this.armor) m.visible = v === 'brute';
+    if (this.model) {
+      const [geo, mats] = v === 'brute' && this.model.brute ? this.model.brute : this.model.walker;
+      this.body.setBodyLook(geo, mats);
+    }
   }
 
   get active(): boolean {
@@ -154,7 +190,7 @@ export class RogueRobot {
     this.attackTime = -1;
     this.path = null;
     this.state = 'idle';
-    this.materials.visor.emissiveIntensity = 0.05;
+    this.setVisor(0.05);
     this.hooks.onShort?.(this, true);
   }
 
@@ -193,7 +229,7 @@ export class RogueRobot {
     this.body.root.rotation.y = this.yaw;
     this.body.setActive(true);
     this.body.reset(mode === 'rise');
-    this.materials.visor.emissiveIntensity = mode === 'idle' ? 0.35 : 2.6;
+    this.setVisor(mode === 'idle' ? 0.35 : 2.6);
   }
 
   recycle(): void {
@@ -209,6 +245,7 @@ export class RogueRobot {
     this.flash = Math.max(0, this.flash - dt * 8);
     const f = this.flash;
     this.merged.emissive.setRGB(f * 0.8, f * 0.7, f * 0.6);
+    for (const m of this.looks) m.color.setScalar(1 + f * 1.5);
     if (this.state === 'dead') {
       this.body.update(dt, this.pose);
       this.deadTime += dt;
@@ -224,7 +261,7 @@ export class RogueRobot {
         this.hooks.onShort?.(this, false);
       }
       // Dead visor that stutters back now and then.
-      this.materials.visor.emissiveIntensity = Math.random() < 0.08 ? 1.6 : 0.05;
+      this.setVisor(Math.random() < 0.08 ? 1.6 : 0.05);
       if (this.stunned <= 0) {
         this.stunned = 0;
         this.hooks.onReboot?.(this);
@@ -238,7 +275,7 @@ export class RogueRobot {
       if (this.state === 'waking') {
         this.wakeTime += dt;
         k = Math.max(0, 1 - this.wakeTime / 0.7);
-        this.materials.visor.emissiveIntensity = 0.35 + (1 - k) * 2.6 + (this.wakeTime < 0.3 ? Math.random() * 2 : 0);
+        this.setVisor(0.35 + (1 - k) * 2.6 + (this.wakeTime < 0.3 ? Math.random() * 2 : 0));
         if (this.wakeTime >= 0.7) this.state = 'chase';
       }
       // Wanderers drift around at a slumped shuffle.

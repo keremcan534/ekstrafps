@@ -3,6 +3,7 @@ import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeom
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import type { ModelKey } from './WeaponData';
 import { metalRoughness, metalTexture, polymerTexture, woodTexture } from '../fx/Textures';
+import { dressRig } from './WeaponMeshes';
 
 /**
  * Placeholder procedural weapon models with the moving parts the procedural
@@ -175,8 +176,14 @@ function hand(parent: THREE.Object3D, pos: V3, elbow: V3, size: V3): THREE.Group
   return g;
 }
 
+/** Parts added since child `from` are an optic: they stay on a dressed rig (WeaponMeshes). */
+function tagOptic(root: THREE.Object3D, from: number): void {
+  for (const c of root.children.slice(from)) c.userData.optic = true;
+}
+
 /** Tube-style red dot on a rail. Returns the sight point (the dot). */
 function redDot(root: THREE.Object3D, z: number, railTop: number): THREE.Object3D {
+  const n0 = root.children.length;
   const y = railTop + 0.04;
   box(root, mat.polymer, [0.03, 0.026, 0.05], [0, railTop + 0.013, z]);
   // Thin walls (they frame the view when aiming): a clean window, not a black box.
@@ -193,6 +200,7 @@ function redDot(root: THREE.Object3D, z: number, railTop: number): THREE.Object3
   const glow = new THREE.Mesh(new THREE.CircleGeometry(0.0024, 16), mat.dotGlow);
   glow.position.set(0, y, z - 0.0215);
   root.add(glow);
+  tagOptic(root, n0);
   return point(root, [0, y, z - 0.022]);
 }
 
@@ -313,6 +321,7 @@ function triggerGuard(parent: THREE.Object3D, material: THREE.Material, zFront: 
  * the window. Returns the sight point (the reticle centre).
  */
 function holoSight(root: THREE.Object3D, z: number, railTop: number): THREE.Object3D {
+  const n0 = root.children.length;
   const y = railTop + 0.034;
   const P = mat.black;
   box(root, P, [0.036, 0.012, 0.08], [0, railTop + 0.006, z]); // base / mount
@@ -347,6 +356,7 @@ function holoSight(root: THREE.Object3D, z: number, railTop: number): THREE.Obje
     tick.position.set(tx * 0.0049, y + ty * 0.0049, z - 0.035);
     root.add(tick);
   }
+  tagOptic(root, n0);
   return point(root, [0, y, z - 0.035]);
 }
 
@@ -1275,10 +1285,15 @@ const BUILDERS: Record<ModelKey, () => WeaponRig> = {
   scarh: buildSCARH,
 };
 
-export function buildWeaponModel(model: ModelKey, low = false): WeaponRig {
+/**
+ * `world`: a third-person gun (the light model file). A model from public/guns replaces
+ * the procedural looks when there is one (see WeaponMeshes).
+ */
+export function buildWeaponModel(model: ModelKey, low = false, world = low): WeaponRig {
   LOW = low;
   try {
     const r = BUILDERS[model]();
+    dressRig(r, model, world);
     r.root.traverse((o) => {
       o.frustumCulled = false;
     });
@@ -1316,6 +1331,8 @@ export function bakeRig(rig: WeaponRig): void {
   const m4 = new THREE.Matrix4();
   for (const m of meshes) {
     if (under(m, rig.leftHand) || under(m, rig.rightHand)) continue;
+    // A real model (textured, one or two meshes already) stays as it is.
+    if (m.userData.gunModel) continue;
     const mt = (Array.isArray(m.material) ? m.material[0] : m.material) as THREE.MeshStandardMaterial;
     const inMag = !!mag && under(m, mag);
     if (m !== mag) m.removeFromParent();
@@ -1400,7 +1417,7 @@ export function bakedRig(model: ModelKey, low = false): WeaponRig {
   const key = `${model}|${low}`;
   let t = bakedTemplates.get(key);
   if (!t) {
-    t = buildWeaponModel(model, low);
+    t = buildWeaponModel(model, low, true);
     bakeRig(t);
     t.leftHand.visible = false;
     t.rightHand.visible = false;
@@ -1523,6 +1540,16 @@ export function buildEnemyRifle(low = false): WeaponRig {
       const m = o as THREE.Mesh;
       if (m.isMesh && m.material === mat.tan) m.material = mat.black;
     });
+    if (dressRig(r, 'mk47', true)) {
+      // The model's tan furniture blacked out.
+      r.root.traverse((o) => {
+        const m = o as THREE.Mesh;
+        if (!m.isMesh || !m.userData.gunModel) return;
+        const dark = (m.material as THREE.MeshStandardMaterial).clone();
+        dark.color.setRGB(0.3, 0.3, 0.3);
+        m.material = dark;
+      });
+    }
     bakeRig(r);
     r.root.traverse((o) => {
       if ((o as THREE.Mesh).isMesh) (o as THREE.Mesh).castShadow = true;

@@ -541,7 +541,7 @@ export class Survival {
         rig.rightHand.removeFromParent();
         t = rig.root;
       } else {
-        const rig = buildWeaponModel(model);
+        const rig = buildWeaponModel(model, false, true);
         rig.leftHand.visible = false;
         rig.rightHand.visible = false;
         t = mergeStatic(rig.root);

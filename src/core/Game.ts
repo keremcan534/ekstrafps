@@ -50,6 +50,7 @@ import { SurvivalHUD } from '../ui/SurvivalHUD';
 import { MapOverlay, type MapState } from '../ui/MapOverlay';
 import { ScreenGrade } from '../fx/ScreenGrade';
 import { loadCharacterModels } from '../targets/CharacterModels';
+import { loadWeaponMeshes } from '../weapons/WeaponMeshes';
 import { MuzzleLights } from '../fx/MuzzleLights';
 import { Lighting } from '../game/Lighting';
 import { buildWeaponModel } from '../weapons/WeaponModels';
@@ -366,6 +367,7 @@ export class Game {
     const mapId = new URLSearchParams(location.search).get('map');
     // Character models (public/chars) load alongside the map; soldiers are built after.
     const characters = loadCharacterModels(this.mobile);
+    const guns = loadWeaponMeshes(this.mobile);
     this.arena = mapId === 'site9' ? new Site9(this.physics, this.mobile) : new Arena(this.physics, this.mobile);
     this.scene.add(this.arena.group);
     this.arena.sun.castShadow = this.quality.shadows;
@@ -382,6 +384,7 @@ export class Game {
     await paint();
     await audioReady;
     await characters;
+    await guns;
     // Sound through walls: one ray from your ear to the source (a little above it, so a
     // waist-high counter doesn't count as a wall).
     const occ = new THREE.Vector3();

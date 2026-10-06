@@ -72,8 +72,9 @@ const v = () => new THREE.Vector3();
 /**
  * Load a rigged character and convert it.
  * @param height standing height to scale it to (metres).
+ * @param girth extra width (x) and depth (z) for a model that came out too slight.
  */
-export async function loadModelBody(url: string, height = 1.78): Promise<ModelBody> {
+export async function loadModelBody(url: string, height = 1.78, girth: [number, number] = [1, 1]): Promise<ModelBody> {
   const gltf = await new GLTFLoader().loadAsync(url);
   const scene = gltf.scene;
   scene.updateMatrixWorld(true);
@@ -330,12 +331,63 @@ export async function loadModelBody(url: string, height = 1.78): Promise<ModelBo
     ankleL: J(limb.footL, new THREE.Vector3(-0.1, height * 0.05, 0)),
     ankleR: J(limb.footR, new THREE.Vector3(0.1, height * 0.05, 0)),
   };
+  if (girth[0] !== 1 || girth[1] !== 1) {
+    // Around the body's centre line (the hips sit on x = z = 0): joints move with it.
+    geometry.applyMatrix4(new THREE.Matrix4().makeScale(girth[0], 1, girth[1]));
+    for (const j of Object.values(joints)) j.set(j.x * girth[0], j.y, j.z * girth[1]);
+  }
   geometry.boundingSphere = new THREE.Sphere(new THREE.Vector3(0, 1, 0), 3.5);
   for (const m of mats) {
     const s = m as THREE.MeshStandardMaterial;
     s.vertexColors = false;
   }
   return { geometry, materials: mats, slots, joints, height };
+}
+
+/** The joint each slot turns about. */
+const SLOT_JOINT: Record<Slot, keyof Joints> = {
+  pelvis: 'hips',
+  torso: 'spine',
+  head: 'neck',
+  upperArmL: 'shoulderL',
+  upperArmR: 'shoulderR',
+  foreArmL: 'elbowL',
+  foreArmR: 'elbowR',
+  thighL: 'hipL',
+  thighR: 'hipR',
+  shinL: 'kneeL',
+  shinR: 'kneeR',
+  footL: 'ankleL',
+  footR: 'ankleR',
+};
+
+/**
+ * `body`'s geometry moved onto `onto`'s joints, so it can be worn by a Humanoid built
+ * for `onto` (a variant model swapped onto a pooled body): every vertex follows its
+ * bones' joints by their weights. Exact at the joints, close in between when the two
+ * builds are alike.
+ */
+export function retargetBody(body: ModelBody, onto: ModelBody): THREE.BufferGeometry {
+  const g = body.geometry.clone();
+  const pos = g.getAttribute('position');
+  const si = g.getAttribute('skinIndex');
+  const sw = g.getAttribute('skinWeight');
+  const delta = body.slots.map((slot) => {
+    const j = SLOT_JOINT[slot];
+    return onto.joints[j].clone().sub(body.joints[j]);
+  });
+  const d = new THREE.Vector3();
+  for (let i = 0; i < pos.count; i++) {
+    d.set(0, 0, 0);
+    for (let c = 0; c < 4; c++) {
+      const w = sw.getComponent(i, c);
+      if (w > 0) d.addScaledVector(delta[si.getComponent(i, c)], w);
+    }
+    pos.setXYZ(i, pos.getX(i) + d.x, pos.getY(i) + d.y, pos.getZ(i) + d.z);
+  }
+  pos.needsUpdate = true;
+  g.boundingSphere = body.geometry.boundingSphere?.clone() ?? null;
+  return g;
 }
 
 /**
