@@ -37,6 +37,11 @@ export interface WeaponRig {
   /** Stock/shoulder contact point: recoil rotates the weapon around it. */
   butt: THREE.Vector3;
   shellType: 'rifle' | 'pistol' | 'shotgun';
+  /**
+   * Aimed, the eye's distance behind `sight` (m), when the model sets it (a real rear
+   * sight is close to the eye); else the weapon data's sightDistance.
+   */
+  eyeRelief?: number;
 }
 
 const std = (color: number, metalness: number, roughness: number) => new THREE.MeshStandardMaterial({ color, metalness, roughness });

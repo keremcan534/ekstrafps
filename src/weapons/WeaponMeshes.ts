@@ -616,28 +616,62 @@ export function dressRig(rig: WeaponRig, key: ModelKey, world: boolean): boolean
     if (Math.abs(pos.getX(i)) < 0.03 && Math.abs(pos.getY(i) - mz.y) < 0.05) front = Math.min(front, pos.getZ(i));
   }
   if (rig.muzzle.parent === root && Math.abs(front - mz.z) < 0.15) mz.z = front;
-  // Aimed: the classic sight picture, the front post's tip level with the top of the rear
-  // sight. The eye goes on the higher of the two: the rear sight's top (the tallest thing
-  // near the procedural rear sight) or the front sight's tip (rays down the centre line
-  // near the muzzle; through a protective ring the post's top counts, not the ring's).
-  // A gun with no sights at all gets the eye just over its receiver.
+  // Aimed, from the model's own sights. The rear sight: the tallest thing on the centre
+  // line over the receiver (the rearmost of the near-tallest, so a pistol's front post
+  // doesn't count). A peep (a ray down its centre passes a thin ring, then a hole): the
+  // eye in the hole, close behind it. A notch or open sight: the classic picture, the
+  // front post's tip level with the rear sight's top, the eye a hand's width behind.
+  // The front post: rays down the centre line near the muzzle; through a protective
+  // ring the post's top counts, not the ring's.
   if (rig.sight.parent === root) {
     const cap = rig.sight.position.y + 0.12;
     const probe = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ side: THREE.DoubleSide }));
     const ray = new THREE.Raycaster();
     const down = new THREE.Vector3(0, -1, 0);
-    const sz = rig.sight.position.z;
-    const rear = topNear(geo, sz - 0.08, sz + 0.08, cap);
+    const hits = (z: number) => {
+      ray.set(new THREE.Vector3(0, cap, z), down);
+      return ray.intersectObject(probe).map((h) => h.point.y);
+    };
+    const bins: { z: number; y: number }[] = [];
+    for (let z = Math.max(mz.z + 0.1, -0.32); z <= 0.12; z += 0.002) {
+      const y = topNear(geo, z - 0.001, z + 0.001, cap);
+      if (y !== null) bins.push({ z, y });
+    }
+    const tallest = Math.max(...bins.map((b) => b.y));
+    const rearSight = bins.filter((b) => b.y > tallest - 0.002).reduce((a, b) => (b.z > a.z ? b : a), bins[0]);
+    let peep: { y: number; z: number } | null = null;
+    if (rearSight) {
+      for (let z = rearSight.z - 0.03; z <= rearSight.z + 0.03 && !peep; z += 0.001) {
+        const ys = hits(z);
+        // A thin ring (a notched leaf is a thick plate) whose top is the top of the sight
+        // there (a notch dips below its sides).
+        if (!(ys.length >= 3 && ys[0] > tallest - 0.012 && ys[0] - ys[1] < 0.003 && ys[1] - ys[2] > 0.002 && ys[1] - ys[2] < 0.008)) continue;
+        const slice = topNear(geo, z - 0.0015, z + 0.0015, cap);
+        if (slice !== null && ys[0] < slice - 0.0015) continue;
+        // A real aperture is closed at the sides too (not a gap under a leaf).
+        const c = new THREE.Vector3(0, (ys[1] + ys[2]) / 2, z);
+        const closed = [1, -1].every((sx) => {
+          ray.set(c, new THREE.Vector3(sx, 0, 0));
+          const h = ray.intersectObject(probe)[0];
+          return !!h && h.distance < 0.01;
+        });
+        if (closed) peep = { y: c.y, z };
+      }
+    }
     let tip = -Infinity;
     for (let z = mz.z; z <= mz.z + 0.35; z += 0.002) {
-      ray.set(new THREE.Vector3(0, cap, z), down);
-      const ys = ray.intersectObject(probe).map((h) => h.point.y);
+      const ys = hits(z);
       if (!ys.length) continue;
       const ring = ys.length >= 3 && ys[0] - ys[1] < 0.005 && ys[1] - ys[2] > 0.003;
       tip = Math.max(tip, ring ? ys[2] : ys[0]);
     }
-    const y = Math.max(rear ?? -Infinity, tip);
-    if (y > -Infinity) rig.sight.position.y = y + 0.003;
+    if (peep) {
+      rig.sight.position.set(0, peep.y, peep.z);
+      rig.eyeRelief = 0.07;
+    } else if (rearSight) {
+      rig.sight.position.set(0, Math.max(rearSight.y, tip) + 0.002, rearSight.z);
+      rig.eyeRelief = 0.13;
+    }
     (probe.material as THREE.Material).dispose();
   }
   geo.dispose();
