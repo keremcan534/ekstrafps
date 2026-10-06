@@ -103,7 +103,7 @@ export const DOSSIER_ENTRIES: DossierEntry[] = [
     notes: 'Follows your lead, covers flanks, revives when it is safe. Trust the squad. Do not trust the contract: clause 14 allows the consolidation office to [[!seal every exit]] at its discretion. VS-104 was signed off personally by [[Dr. Ezra Wick]]. Real name: [[!Cain Ashgrave]].',
     kit: ['M4A1 / AK-47 / SVD', 'Light plate carriers', 'Winter shells', 'Squad radio'],
     quote: 'Stay on me. Nobody gets left in here.',
-    photos: ['pike', 'anvil', 'glass'],
+    photos: ['vanta_unit'],
   },
   {
     id: 'rivals', file: 'RS-200', name: 'Rival Squads', role: 'Bravo · Charlie · Delta — the other contractor', place: 'Site-9, Hangar & Power Plant', year: '2041', date: '09 MAR 2041', source: 'B-2',
@@ -124,7 +124,7 @@ export const DOSSIER_ENTRIES: DossierEntry[] = [
     notes: 'Bravo pins you and sends a flanker; listen for the man who goes quiet. Charlie comes straight at you: hold a tight angle. Delta is dangerous in the dark and ordinary in the open. Varga’s night vision is SABLE issue; nobody has asked where he got it.',
     kit: ['AK-47 / MP5 / Saiga-12', 'Coloured squad armbands', 'Field radios', 'Breaching kit'],
     quote: 'Two left, one right. On my mark.',
-    photos: ['rossi', 'quinn', 'varga', 'varga2'],
+    photos: ['rival_tan', 'rival_green', 'rival_grey'],
   },
   {
     id: 'machines', file: 'RM-001', name: 'Rogue Machines', role: 'The facility’s own workforce', place: 'Site-9 Assembly Line', year: '2041', date: '11 MAR 2041', source: 'A-2',
@@ -187,7 +187,7 @@ export const DOSSIER_ENTRIES: DossierEntry[] = [
     notes: 'Loud, poorly coordinated, very hard to discourage. Move between cover in the open garden: Fedor is watching it.',
     kit: ['Saiga-12 / Mosin / PPSh', 'Gas masks', 'Mismatched armour', 'Bolt cutters'],
     quote: 'Nothing personal. You’re standing on my money.',
-    photos: ['rook', 'fedor'],
+    photos: ['salvager'],
   },
   {
     id: 'choir', file: 'CR-000', name: 'The Choir', role: 'Machine cult', place: 'Site-9, the dark', year: '2041', date: '13 MAR 2041', source: 'D-3',
@@ -207,7 +207,7 @@ export const DOSSIER_ENTRIES: DossierEntry[] = [
     notes: 'Only seen in blackouts. Keep your flashlight on them; they close in the moment it goes off. Never fight them in the dark with your back to a corridor. The voice they follow calls itself [[!Ivy]].',
     kit: ['Long blades', 'White masks', 'Robes stitched with circuitry'],
     quote: 'Below thirty, it remembers. Sing for it.',
-    photos: ['cantor', 'wren'],
+    photos: ['choir'],
   },
   {
     id: 'staff', file: 'LS-000', name: 'Lab Staff', role: 'Survivors still hiding in the labs', place: 'Site-9 Laboratories', year: '2041', date: '12 MAR 2041', source: 'B-1',
@@ -227,6 +227,6 @@ export const DOSSIER_ENTRIES: DossierEntry[] = [
     notes: 'Harmless. Do not shoot them: it costs you, and they may be the only ones who can open the cold room. Wick’s office ordered the fire doors fitted with [[manual locks]] and the suppression system with a [[!maintenance override]]. If you find him, keep him breathing.',
     kit: ['Keycards (Level II–V)', 'Encrypted notebook', 'Torches'],
     quote: 'There is nobody inside them. Only what we left behind.',
-    photos: ['wick', 'hale'],
+    photos: ['staff_lab'],
   },
 ];
