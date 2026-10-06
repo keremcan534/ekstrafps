@@ -38,10 +38,11 @@ export interface WeaponRig {
   butt: THREE.Vector3;
   shellType: 'rifle' | 'pistol' | 'shotgun';
   /**
-   * Aimed, the eye's distance behind `sight` (m), when the model sets it (a real rear
-   * sight is close to the eye); else the weapon data's sightDistance.
+   * How far `sight` was moved back (+z, m) from where the weapon data's sightDistance
+   * was tuned (a model's own rear sight): the eye stays at the tuned cheek weld, so
+   * the recoil pivot at the butt keeps its place behind it.
    */
-  eyeRelief?: number;
+  sightShift?: number;
 }
 
 const std = (color: number, metalness: number, roughness: number) => new THREE.MeshStandardMaterial({ color, metalness, roughness });

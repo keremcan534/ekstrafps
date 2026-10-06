@@ -186,7 +186,7 @@ export class Viewmodel {
     this.handling = handling;
     this.hipPos.set(...d.viewmodel.hipPosition);
     const s = this.rig.sight.position;
-    this.adsPos.set(-s.x, -s.y, -(this.rig.eyeRelief ?? d.sight.sightDistance) - s.z);
+    this.adsPos.set(-s.x, -s.y, -(d.sight.sightDistance - (this.rig.sightShift ?? 0)) - s.z);
     const b = this.rig.butt;
     this.recoilPivot.position.copy(b);
     this.buttOffset.position.set(-b.x, -b.y, -b.z);

@@ -665,12 +665,12 @@ export function dressRig(rig: WeaponRig, key: ModelKey, world: boolean): boolean
       const ring = ys.length >= 3 && ys[0] - ys[1] < 0.005 && ys[1] - ys[2] > 0.003;
       tip = Math.max(tip, ring ? ys[2] : ys[0]);
     }
-    if (peep) {
-      rig.sight.position.set(0, peep.y, peep.z);
-      rig.eyeRelief = 0.07;
-    } else if (rearSight) {
-      rig.sight.position.set(0, Math.max(rearSight.y, tip) + 0.002, rearSight.z);
-      rig.eyeRelief = 0.13;
+    // The eye itself stays where the weapon's sight distance puts it (the cheek weld the
+    // recoil was tuned around): only the line's height and the rear sight's place change.
+    const at = peep ?? (rearSight ? { y: Math.max(rearSight.y, tip) + 0.002, z: rearSight.z } : null);
+    if (at) {
+      rig.sightShift = at.z - rig.sight.position.z;
+      rig.sight.position.set(0, at.y, at.z);
     }
     (probe.material as THREE.Material).dispose();
   }
