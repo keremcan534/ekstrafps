@@ -8,7 +8,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { NodeIO } from '@gltf-transform/core';
 import { ALL_EXTENSIONS } from '@gltf-transform/extensions';
-import { center, prune } from '@gltf-transform/functions';
+import { center, metalRough, prune } from '@gltf-transform/functions';
 
 const io = new NodeIO().registerExtensions(ALL_EXTENSIONS);
 const cli = (args) =>
@@ -37,7 +37,8 @@ export async function pack(src, name, tiers, { keepAnimations = false, pivot = n
   for (const { dir, tris: target, color, maps } of tiers) {
     const doc = await io.read(src);
     if (!keepAnimations) for (const a of doc.getRoot().listAnimations()) a.dispose();
-    await doc.transform(prune(), ...(pivot ? [center({ pivot })] : []));
+    // Older exports (spec/gloss materials) read as plain white in three.js: convert.
+    await doc.transform(metalRough(), prune(), ...(pivot ? [center({ pivot })] : []));
     let tris = 0;
     for (const mesh of doc.getRoot().listMeshes()) {
       for (const p of mesh.listPrimitives()) {
@@ -56,6 +57,8 @@ export async function pack(src, name, tiers, { keepAnimations = false, pivot = n
     cli([
       'optimize', clean, out,
       '--compress', 'quantize',
+      // Repeated parts stay plain meshes (the game reads geometry, not GPU instances).
+      '--instance', 'false',
       '--texture-compress', 'webp',
       '--texture-size', String(color),
       ...(ratio < 1 ? ['--simplify', 'true', '--simplify-ratio', ratio.toFixed(4), '--simplify-error', '0.002'] : ['--simplify', 'false']),

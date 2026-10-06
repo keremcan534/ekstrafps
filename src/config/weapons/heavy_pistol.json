@@ -1,7 +1,7 @@
 {
   "id": "heavy_pistol",
-  "name": "HX-50 Heavy Pistol",
-  "short": "PISTOL",
+  "name": "M1911",
+  "short": "M1911",
   "model": "pistol",
   "animSet": "pistol",
   "category": "pistol",

@@ -17,7 +17,7 @@ import { ImpactSystem } from '../fx/ImpactSystem';
 import { Shells } from '../fx/Shells';
 import { DebugDraw } from '../fx/DebugDraw';
 import { WeaponController } from '../weapons/WeaponController';
-import { createWeaponDefs } from '../weapons/WeaponData';
+import { createWeaponDefs, liveWeaponId } from '../weapons/WeaponData';
 import { HUD } from '../ui/HUD';
 import { DebugHUD } from '../ui/DebugHUD';
 import { TuningPanel } from '../ui/TuningPanel';
@@ -582,7 +582,7 @@ export class Game {
       audio: this.audio,
       scene: this.scene,
       lowSpec: this.mobile,
-      weaponData: (id) => this.weapons.weapons.find((w) => w.data.id === id)?.data,
+      weaponData: (id) => this.weapons.weapons.find((w) => w.data.id === liveWeaponId(id))?.data,
     };
     const oldSable = new URLSearchParams(location.search).has('oldsable');
     for (const spawn of this.arena.squads) {
@@ -794,7 +794,7 @@ export class Game {
         map,
         survival: this.survival,
         soldierDeps: this.soldierDeps,
-        weaponData: (id) => this.weapons.weapons.find((w) => w.data.id === id)?.data,
+        weaponData: (id) => this.weapons.weapons.find((w) => w.data.id === liveWeaponId(id))?.data,
         audio: this.audio,
         status: this.status,
         hud: this.hud,
@@ -971,7 +971,7 @@ export class Game {
       player: this.player,
       playerC: this.playerC,
       health: this.health,
-      weaponData: (id) => this.weapons.weapons.find((w) => w.data.id === id)?.data,
+      weaponData: (id) => this.weapons.weapons.find((w) => w.data.id === liveWeaponId(id))?.data,
       status: this.status,
       hud: this.hud,
       setSpectator: (on) => (this.spectator = on),
@@ -1222,7 +1222,7 @@ export class Game {
     ally.points = hired ? 0 : START_POINTS;
     ally.spawn(at, this.player.yaw);
     // Contractors arrive armed; the starting squad has pistols like you.
-    ally.arm(hired ? (p.role === 'marksman' ? 'mosin' : p.role === 'assault' ? 'ppsh' : 'ak47') : SIDEARM);
+    ally.arm(hired ? (p.role === 'marksman' ? 'svd' : p.role === 'assault' ? 'ppsh' : 'ak47') : SIDEARM);
     ally.order = { kind: 'follow', leader: () => (this.health.dead ? null : { pos: this.player.feet, yaw: this.player.yaw + Math.PI, speed: this.player.horizontalSpeed }) };
     ally.soldier.skill = 1.35;
     ally.soldier.avoid = this.player.feet;
@@ -1241,7 +1241,7 @@ export class Game {
     });
     ally.soldier.body.friendly = true;
     ally.soldier.body.canGoDown = () => !this.health.dead || this.allies.some((a) => a !== ally && a.alive && !a.downed);
-    ally.armory = (id) => this.weapons.weapons.find((w) => w.data.id === id)?.data;
+    ally.armory = (id) => this.weapons.weapons.find((w) => w.data.id === liveWeaponId(id))?.data;
     return ally;
   }
 
@@ -1265,7 +1265,7 @@ export class Game {
         rows.push({ a, el, gun, pts, st, vals: ['-', '-', '-', '-'] }); // first update writes every cell
       }
     }
-    const short = (id: string) => this.weapons.weapons.find((w) => w.data.id === id)?.data.short ?? id;
+    const short = (id: string) => this.weapons.weapons.find((w) => w.data.id === liveWeaponId(id))?.data.short ?? id;
     for (const r of rows) {
       const a = r.a;
       const st = !a.alive ? '' : a.downed ? 'DOWN' : a.errand ? a.errand.kind : a.plan ? a.plan.status : a.target ? 'fighting' : '';
@@ -1374,7 +1374,7 @@ export class Game {
 
   /** What the main-menu unit showcase builds its lineups from. */
   showcaseDeps(): ShowcaseDeps {
-    return { soldierDeps: this.soldierDeps, physics: this.physics, nav: this.nav, weapon: (id) => this.weapons.weapons.find((w) => w.data.id === id)?.data };
+    return { soldierDeps: this.soldierDeps, physics: this.physics, nav: this.nav, weapon: (id) => this.weapons.weapons.find((w) => w.data.id === liveWeaponId(id))?.data };
   }
 
   /** The game loop is running (PLAY was pressed at least once). */

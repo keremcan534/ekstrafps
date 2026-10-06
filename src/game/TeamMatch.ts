@@ -387,7 +387,7 @@ export class TeamMatch {
       team.redeploy(at);
     }
     // Scavenged guns: cheap and mixed.
-    const junk = ['pump_shotgun', 'mosin', 'kar98', 'ppsh', 'glock18', 'mp5', 'saiga12', 'heavy_pistol'];
+    const junk = ['kar98', 'ppsh', 'mp5', 'heavy_pistol'];
     for (const a of this.scavs[0].agents) {
       a.arm(junk[(Math.random() * junk.length) | 0]);
       a.baseSkill = a.soldier.skill = 0.75;

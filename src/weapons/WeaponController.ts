@@ -14,7 +14,7 @@ import type { DebugDraw } from '../fx/DebugDraw';
 import { Laser } from '../fx/Laser';
 import { Trails } from '../fx/Trails';
 import { Weapon, type WeaponListener } from './Weapon';
-import type { WeaponData } from './WeaponData';
+import { liveWeaponId, type WeaponData } from './WeaponData';
 import { RecoilSystem } from './RecoilSystem';
 import { Viewmodel } from './Viewmodel';
 import { ProjectileSystem, type ProjectileHitReport } from './Ballistics';
@@ -513,7 +513,7 @@ export class WeaponController implements WeaponListener {
   }
 
   indexOf(id: string): number {
-    return this.weapons.findIndex((w) => w.data.id === id);
+    return this.weapons.findIndex((w) => w.data.id === liveWeaponId(id));
   }
 
   /** Survival: start with one weapon and limited spare ammo. */

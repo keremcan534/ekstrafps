@@ -4,15 +4,10 @@ import asval from '../config/weapons/asval.json';
 import m4a1 from '../config/weapons/m4a1.json';
 import rd704 from '../config/weapons/rd704.json';
 import ppsh from '../config/weapons/ppsh.json';
-import mosin from '../config/weapons/mosin.json';
 import kar98 from '../config/weapons/kar98.json';
 import heavyPistol from '../config/weapons/heavy_pistol.json';
-import pumpShotgun from '../config/weapons/pump_shotgun.json';
 import mp5 from '../config/weapons/mp5.json';
-import glock18 from '../config/weapons/glock18.json';
-import saiga12 from '../config/weapons/saiga12.json';
 import svd from '../config/weapons/svd.json';
-import m249 from '../config/weapons/m249.json';
 import scarh from '../config/weapons/scarh.json';
 
 export type ModelKey = 'ak47' | 'mk47' | 'asval' | 'm4a1' | 'rd704' | 'ppsh' | 'mosin' | 'kar98' | 'pistol' | 'shotgun'
@@ -160,7 +155,14 @@ export interface WeaponData {
   };
 }
 
-export const WEAPON_DEFAULTS: readonly WeaponData[] = [ak47, mk47, asval, m4a1, rd704, ppsh, mosin, kar98, heavyPistol, pumpShotgun, mp5, glock18, saiga12, svd, m249, scarh] as WeaponData[];
+export const WEAPON_DEFAULTS: readonly WeaponData[] = [ak47, mk47, asval, m4a1, rd704, ppsh, kar98, heavyPistol, mp5, svd, scarh] as WeaponData[];
+
+/**
+ * Weapons taken out of the game (no model of their own): their old ids, still in map
+ * tables and saved loadouts, stand for these.
+ */
+const RETIRED: Record<string, string> = { mosin: 'kar98', pump_shotgun: 'mp5', glock18: 'heavy_pistol', saiga12: 'ak47', m249: 'scarh' };
+export const liveWeaponId = (id: string): string => RETIRED[id] ?? id;
 
 /** Live, mutable copies the game and tuning panel share. */
 export const createWeaponDefs = (): WeaponData[] => WEAPON_DEFAULTS.map((w) => structuredClone(w));
@@ -177,15 +179,10 @@ if (import.meta.hot) {
       '../config/weapons/m4a1.json',
       '../config/weapons/rd704.json',
       '../config/weapons/ppsh.json',
-      '../config/weapons/mosin.json',
       '../config/weapons/kar98.json',
       '../config/weapons/heavy_pistol.json',
-      '../config/weapons/pump_shotgun.json',
       '../config/weapons/mp5.json',
-      '../config/weapons/glock18.json',
-      '../config/weapons/saiga12.json',
       '../config/weapons/svd.json',
-      '../config/weapons/m249.json',
       '../config/weapons/scarh.json',
     ],
     () => {},

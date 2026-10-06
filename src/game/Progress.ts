@@ -25,8 +25,7 @@ export interface Unlock {
 }
 
 export const SIDEARMS: (Unlock & { weapon: string })[] = [
-  { id: 'heavy_pistol', weapon: 'heavy_pistol', name: 'HX-50 HEAVY PISTOL', text: 'Nine big rounds. The standard issue.', level: 1, cost: 0 },
-  { id: 'glock18', weapon: 'glock18', name: 'G18C MACHINE PISTOL', text: 'Full auto 9 mm, 33 rounds: robots up close melt.', level: 2, cost: 400 },
+  { id: 'heavy_pistol', weapon: 'heavy_pistol', name: 'M1911', text: 'Nine big rounds. The standard issue.', level: 1, cost: 0 },
 ];
 
 export const PERKS: (Unlock & { id: PerkId })[] = [

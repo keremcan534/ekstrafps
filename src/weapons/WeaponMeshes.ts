@@ -475,8 +475,11 @@ function keepAttached(geo: THREE.BufferGeometry): THREE.BufferGeometry | null {
   }
   const list = [...parts.values()].sort((a, b) => b.tris.length - a.tris.length);
   const size = list[0].box.getSize(new THREE.Vector3()).length();
+  // A backdrop or floor card left in the scene: a few triangles spanning more than the gun.
+  const card = (p: { tris: number[]; box: THREE.Box3 }) => p.tris.length <= 16 && p.box.getSize(new THREE.Vector3()).length() > size * 0.6;
   const kept = [list[0]];
-  const rest = list.slice(1);
+  const rest = list.slice(1).filter((p) => !card(p));
+  const cards = list.length - 1 - rest.length;
   for (let grew = true; grew; ) {
     grew = false;
     for (let i = rest.length - 1; i >= 0; i--) {
@@ -487,7 +490,7 @@ function keepAttached(geo: THREE.BufferGeometry): THREE.BufferGeometry | null {
       }
     }
   }
-  if (!rest.length) return null;
+  if (!rest.length && !cards) return null;
   const keep = kept.flatMap((p) => p.tris);
   const out = new THREE.BufferGeometry();
   for (const name of Object.keys(geo.attributes)) {
