@@ -4,6 +4,7 @@ import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js
 import type { ModelKey } from './WeaponData';
 import type { WeaponRig } from './WeaponModels';
 import { loadArms } from './FirstPersonHands';
+import { dressGunMaterial } from './GunSurface';
 
 /**
  * Real weapon meshes, packed by scripts/pack-weapon.mjs: public/guns/fp/<key>.glb for the
@@ -228,6 +229,10 @@ async function loadOne(url: string, meshy: boolean): Promise<GunSource | null> {
     });
     const geometry = geos.length === 1 ? geos[0] : mergeGeometries(geos, false);
     if (!geometry || !materials.length) return null;
+    // The gun's length: its longest side (wood grain runs along it).
+    geometry.computeBoundingBox();
+    const size = geometry.boundingBox!.getSize(new THREE.Vector3());
+    const grain = new THREE.Vector3(size.x >= size.y && size.x >= size.z ? 1 : 0, size.y > size.x && size.y >= size.z ? 1 : 0, size.z > size.x && size.z > size.y ? 1 : 0);
     for (const m of materials) {
       const mt = m as THREE.MeshStandardMaterial;
       mt.side = THREE.FrontSide;
@@ -242,6 +247,8 @@ async function loadOne(url: string, meshy: boolean): Promise<GunSource | null> {
         mt.emissiveMap = null;
         mt.emissive.setRGB(0, 0, 0);
       }
+      // The gun in hand (flat palette colours): wood, steel and coating surfaces (GunSurface.ts).
+      if (!meshy) dressGunMaterial(mt, grain);
     }
     return { geometry, materials, parts };
   } catch {
