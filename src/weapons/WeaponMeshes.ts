@@ -5,17 +5,18 @@ import type { ModelKey } from './WeaponData';
 import type { WeaponRig } from './WeaponModels';
 
 /**
- * Real weapon meshes (Meshy, packed by scripts/pack-weapon.mjs): public/guns/<key>.glb for
- * the first-person gun on desktop, public/guns/m/<key>.glb for phones and every
- * third-person gun. They are dressed onto the procedural rigs, which keep doing the
+ * Real weapon meshes (Meshy, packed by scripts/pack-weapon.mjs): public/guns/<key>.glb, the
+ * model as made, for the gun in your hands (desktop and phones); public/guns/m/<key>.glb
+ * for every third-person gun. They are dressed onto the procedural rigs, which keep doing the
  * work (muzzle, sights, hands, recoil pivot, animations):
  *
  * - The model is turned and scaled onto the procedural gun by matching their side
  *   silhouettes (whichever end is the muzzle, whatever units it came in).
  * - Its triangles inside the procedural magazine / slide / bolt / pump are cut out and
  *   handed to those moving nodes, so reloads and cycling still move the right piece.
- * - The procedural parts go, except the hands, the round held for loading and the
- *   optics (red dot and holo: their reticle has to sit on the sight line).
+ * - The procedural parts go (optics too), except the hands and the round held for
+ *   loading. Aimed, the eye sits just over the model's highest point along the barrel,
+ *   so the gun never covers what you are aiming at.
  *
  * A gun without a file keeps its procedural model. `?gunmodel=ak47=guns/x.glb,...`
  * swaps in other files (testing an import).
@@ -69,9 +70,12 @@ async function loadOne(url: string): Promise<GunSource | null> {
     if (!geometry || !material) return null;
     const mt = material as THREE.MeshStandardMaterial;
     mt.side = THREE.FrontSide;
-    // Meshy finishes come out glossy (roughness ~0.35): under the first-person key light a
-    // black polymer frame reads as polished silver. Worn guns are satin.
-    mt.roughness = 1.6;
+    // Meshy finishes come out glossy (roughness ~0.35): in the first-person room light a
+    // black polymer frame reads as polished silver. A touch more satin.
+    mt.roughness = 1.3;
+    // Seen along the top at a grazing angle: without anisotropic filtering the textures
+    // smear into mud a hand's width from the eye.
+    for (const t of [mt.map, mt.normalMap, mt.roughnessMap, mt.metalnessMap, mt.aoMap]) if (t) t.anisotropy = 8;
     // Meshy bakes a little light into "emissive": none on a gun.
     if (mt.emissiveMap) {
       mt.emissiveMap = null;
@@ -84,13 +88,14 @@ async function loadOne(url: string): Promise<GunSource | null> {
 }
 
 /** Load every weapon model there is (missing ones are skipped). Never rejects. */
-export async function loadWeaponMeshes(mobile: boolean): Promise<void> {
+export async function loadWeaponMeshes(): Promise<void> {
   const override = new Map<string, string>();
   for (const pair of (new URLSearchParams(location.search).get('gunmodel') ?? '').split(',')) {
     const [k, url] = pair.split('=');
     if (k && url) override.set(k, url);
   }
-  const tiers: Tier[] = mobile ? ['world'] : ['view', 'world'];
+  // The gun in your hands is the full model on phones too; others carry the light one.
+  const tiers: Tier[] = ['view', 'world'];
   await Promise.all(
     KEYS.flatMap((k) =>
       tiers.map(async (tier) => {
@@ -312,7 +317,7 @@ function topNear(geo: THREE.BufferGeometry, z0: number, z1: number, below: numbe
   for (let i = 0; i < pos.count; i++) {
     const y = pos.getY(i);
     const z = pos.getZ(i);
-    if (Math.abs(pos.getX(i)) < 0.008 && z >= z0 && z <= z1 && y < below && y > top) top = y;
+    if (Math.abs(pos.getX(i)) < 0.02 && z >= z0 && z <= z1 && y < below && y > top) top = y;
   }
   return top > -Infinity ? top : null;
 }
@@ -326,7 +331,7 @@ export function dressRig(rig: WeaponRig, key: ModelKey, world: boolean): boolean
   if (!src) return false;
   const root = rig.root;
   const keepNodes = [rig.leftHand, rig.rightHand, rig.heldShell];
-  const isProc = (m: THREE.Mesh) => !under(m, keepNodes, root) && !m.userData.optic;
+  const isProc = (m: THREE.Mesh) => !under(m, keepNodes, root);
   let matrix = fits.get(key);
   if (matrix === undefined) {
     const ref = trianglesOf(root, (m) => isProc(m) && !(m.material as THREE.Material).transparent);
@@ -417,13 +422,12 @@ export function dressRig(rig: WeaponRig, key: ModelKey, world: boolean): boolean
     if (Math.abs(pos.getX(i)) < 0.03 && Math.abs(pos.getY(i) - mz.y) < 0.035) front = Math.min(front, pos.getZ(i));
   }
   if (rig.muzzle.parent === root && Math.abs(front - mz.z) < 0.15) mz.z = front;
-  // Iron sights: the line runs over the model's own front sight (the tallest thing on the
-  // centre line near the muzzle), level with the bore like the procedural one.
-  let optic = false;
-  root.traverse((o) => (optic ||= !!o.userData.optic));
-  if (!optic && rig.sight.parent === root) {
-    const y = topNear(geo, mz.z, mz.z + 0.2, rig.sight.position.y + 0.05);
-    if (y !== null && Math.abs(y - rig.sight.position.y) < 0.05) rig.sight.position.y = y + 0.0005;
+  // Aimed: the eye just over the highest point of the gun from the rear sight to the
+  // muzzle (on the centre line; side levers and handles don't count), level with the
+  // bore. Nothing of the model rises into the view, the shot still lands at the centre.
+  if (rig.sight.parent === root) {
+    const y = topNear(geo, mz.z, rig.sight.position.z + 0.1, rig.sight.position.y + 0.12);
+    if (y !== null) rig.sight.position.y = y + 0.006;
   }
   geo.dispose();
   return true;

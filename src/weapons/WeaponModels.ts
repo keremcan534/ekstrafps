@@ -176,14 +176,8 @@ function hand(parent: THREE.Object3D, pos: V3, elbow: V3, size: V3): THREE.Group
   return g;
 }
 
-/** Parts added since child `from` are an optic: they stay on a dressed rig (WeaponMeshes). */
-function tagOptic(root: THREE.Object3D, from: number): void {
-  for (const c of root.children.slice(from)) c.userData.optic = true;
-}
-
 /** Tube-style red dot on a rail. Returns the sight point (the dot). */
 function redDot(root: THREE.Object3D, z: number, railTop: number): THREE.Object3D {
-  const n0 = root.children.length;
   const y = railTop + 0.04;
   box(root, mat.polymer, [0.03, 0.026, 0.05], [0, railTop + 0.013, z]);
   // Thin walls (they frame the view when aiming): a clean window, not a black box.
@@ -200,7 +194,6 @@ function redDot(root: THREE.Object3D, z: number, railTop: number): THREE.Object3
   const glow = new THREE.Mesh(new THREE.CircleGeometry(0.0024, 16), mat.dotGlow);
   glow.position.set(0, y, z - 0.0215);
   root.add(glow);
-  tagOptic(root, n0);
   return point(root, [0, y, z - 0.022]);
 }
 
@@ -321,7 +314,6 @@ function triggerGuard(parent: THREE.Object3D, material: THREE.Material, zFront: 
  * the window. Returns the sight point (the reticle centre).
  */
 function holoSight(root: THREE.Object3D, z: number, railTop: number): THREE.Object3D {
-  const n0 = root.children.length;
   const y = railTop + 0.034;
   const P = mat.black;
   box(root, P, [0.036, 0.012, 0.08], [0, railTop + 0.006, z]); // base / mount
@@ -356,7 +348,6 @@ function holoSight(root: THREE.Object3D, z: number, railTop: number): THREE.Obje
     tick.position.set(tx * 0.0049, y + ty * 0.0049, z - 0.035);
     root.add(tick);
   }
-  tagOptic(root, n0);
   return point(root, [0, y, z - 0.035]);
 }
 

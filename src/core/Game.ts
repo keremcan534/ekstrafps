@@ -367,7 +367,7 @@ export class Game {
     const mapId = new URLSearchParams(location.search).get('map');
     // Character models (public/chars) load alongside the map; soldiers are built after.
     const characters = loadCharacterModels(this.mobile);
-    const guns = loadWeaponMeshes(this.mobile);
+    const guns = loadWeaponMeshes();
     this.arena = mapId === 'site9' ? new Site9(this.physics, this.mobile) : new Arena(this.physics, this.mobile);
     this.scene.add(this.arena.group);
     this.arena.sun.castShadow = this.quality.shadows;
