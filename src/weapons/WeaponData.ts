@@ -106,13 +106,17 @@ export interface WeaponData {
 
   sight: {
     type: 'iron' | 'reddot';
-    /** Horizontal FOV while aimed (1x optics: slight focus zoom). */
-    adsFov: number;
-    /** Eye-to-sight distance when aimed (m). */
-    sightDistance: number;
+    /**
+     * Horizontal FOV while aimed (1x optics: slight focus zoom). A weapon with a view
+     * profile (src/config/viewprofiles) has it there instead, with the rest of its placement.
+     */
+    adsFov?: number;
+    /** Eye-to-sight distance when aimed (m). Not for profiled weapons (ads.eyeRelief). */
+    sightDistance?: number;
   };
 
-  viewmodel: {
+  /** First-person placement, old style. A weapon with a view profile has none. */
+  viewmodel?: {
     /** Shouldered (point-fire) position relative to the eye, right shoulder. */
     hipPosition: [number, number, number];
     /** Shouldered turn (deg: pitch, yaw, roll), from gun-pose.html. Default: a slight cant. */

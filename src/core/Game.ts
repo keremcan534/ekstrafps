@@ -1878,9 +1878,8 @@ export class Game {
     this.physics.syncObjects();
 
     // --- Camera first, then aim the physical weapon, then fire from its muzzle ---
-    const w = this.weapons.current;
     this.weapons.updateState(dt, input);
-    this.camera.update(dt, alpha, this.player, this.weapons.adsAmount, w.data.sight.adsFov);
+    this.camera.update(dt, alpha, this.player, this.weapons.adsAmount, this.weapons.adsFov);
     this.camera.camera.updateMatrixWorld();
     this.director?.afterCamera(dt);
     if (this.cinematic) {
@@ -2086,6 +2085,7 @@ export class Game {
         cameraDir: this.weapons.cameraAimDir,
         muzzleDir: this.weapons.muzzleDir,
         aimError: this.weapons.aimErrorDeg,
+        adsAlign: this.weapons.viewmodel.adsCheck,
         recoil: this.weapons.viewmodel.recoilDeg,
         inertia: this.weapons.viewmodel.inertiaDeg,
         sway: this.weapons.viewmodel.swayDeg,

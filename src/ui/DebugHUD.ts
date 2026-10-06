@@ -3,6 +3,7 @@
  * text itself never costs frame time.
  */
 import type * as THREE from 'three';
+import type { Viewmodel } from '../weapons/Viewmodel';
 
 export interface DebugStats {
   fps: number;
@@ -23,6 +24,8 @@ export interface DebugStats {
   cameraDir: THREE.Vector3;
   muzzleDir: THREE.Vector3;
   aimError: number;
+  /** Aimed alignment of a profiled weapon (ADSPoint against its solved place). */
+  adsAlign: Viewmodel['adsCheck'];
   recoil: THREE.Vector2;
   inertia: THREE.Vector2;
   sway: THREE.Vector2;
@@ -44,6 +47,12 @@ export interface DebugStats {
 }
 
 const fmt = (v: THREE.Vector3): string => `${v.x.toFixed(3)} ${v.y.toFixed(3)} ${v.z.toFixed(3)}`;
+const align = (a: DebugStats['adsAlign']): string =>
+  !a.profiled
+    ? 'old placement'
+    : !a.aimed
+      ? '-'
+      : `solve ${a.solveDeg.toFixed(3)}° ${a.solveMm.toFixed(2)} mm | now ${a.liveDeg.toFixed(2)}° roll ${a.liveRollDeg.toFixed(2)}° | rest ${a.restDeg.toFixed(3)}°`;
 const bar = (v: number): string => '█'.repeat(Math.round(v * 10)).padEnd(10, '░');
 
 export class DebugHUD {
@@ -86,6 +95,7 @@ export class DebugHUD {
       `Camera dir ${fmt(s.cameraDir)}\n` +
       `Weapon dir ${fmt(s.muzzleDir)}\n` +
       `Aim error  ${s.aimError.toFixed(2)}° (camera vs bore)\n` +
+      `ADS align  ${align(s.adsAlign)}\n` +
       `Recoil     v ${s.recoil.x.toFixed(2)}°  h ${s.recoil.y.toFixed(2)}°\n` +
       `Inertia    p ${s.inertia.x.toFixed(2)}°  y ${s.inertia.y.toFixed(2)}°\n` +
       `Sway       p ${s.sway.x.toFixed(3)}°  y ${s.sway.y.toFixed(3)}°\n` +

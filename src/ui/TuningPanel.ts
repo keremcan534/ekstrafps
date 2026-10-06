@@ -3,6 +3,7 @@ import { AI_TUNING, PROFILES } from '../ai/Tuning';
 import type { WeaponData } from '../weapons/WeaponData';
 import { WEAPON_DEFAULTS, weaponFile } from '../weapons/WeaponData';
 import { AMMO_DEFAULTS, ammoTable } from '../weapons/AmmoData';
+import { viewProfile } from '../weapons/ViewProfile';
 import { playerConfig, playerConfigDefaults } from '../player/PlayerConfig';
 import { feel, feelDefaults } from '../config/Feel';
 import { aiMonitor } from './AIMonitor';
@@ -264,16 +265,22 @@ export class TuningPanel {
     const ads = f.addFolder('Aim / sights').close();
     ads.add(w.aim, 'hipConvergence', 2, 100, 0.5).name('Point-fire convergence (m)');
     ads.add(w.aim, 'zeroDistance', 10, 300, 5).name('Zero (m)  [ / ]').listen();
-    ads.add(w.sight, 'adsFov', 20, 110, 0.5).name('ADS FOV (horizontal)');
-    ads.add(w.sight, 'sightDistance', 0.05, 0.6, 0.005).name('Eye to sight (m)').onChange(tuned);
-    const hip = { x: w.viewmodel.hipPosition[0], y: w.viewmodel.hipPosition[1], z: w.viewmodel.hipPosition[2] };
-    const setHip = () => {
-      w.viewmodel.hipPosition = [hip.x, hip.y, hip.z];
-      tuned();
-    };
-    ads.add(hip, 'x', -0.4, 0.4, 0.001).name('Shoulder pos X').onChange(setHip);
-    ads.add(hip, 'y', -0.4, 0.2, 0.001).name('Shoulder pos Y').onChange(setHip);
-    ads.add(hip, 'z', -0.8, 0, 0.001).name('Shoulder pos Z').onChange(setHip);
+    const vm = w.viewmodel;
+    if (viewProfile(w.id) || !vm) {
+      // Its first-person placement lives in its view profile, edited in the calibration page.
+      ads.add({ file: 'weapon-calibration.html' }, 'file').name('Placement').disable();
+    } else {
+      ads.add(w.sight, 'adsFov', 20, 110, 0.5).name('ADS FOV (horizontal)');
+      ads.add(w.sight, 'sightDistance', 0.05, 0.6, 0.005).name('Eye to sight (m)').onChange(tuned);
+      const hip = { x: vm.hipPosition[0], y: vm.hipPosition[1], z: vm.hipPosition[2] };
+      const setHip = () => {
+        vm.hipPosition = [hip.x, hip.y, hip.z];
+        tuned();
+      };
+      ads.add(hip, 'x', -0.4, 0.4, 0.001).name('Shoulder pos X').onChange(setHip);
+      ads.add(hip, 'y', -0.4, 0.2, 0.001).name('Shoulder pos Y').onChange(setHip);
+      ads.add(hip, 'z', -0.8, 0, 0.001).name('Shoulder pos Z').onChange(setHip);
+    }
 
     const fx = f.addFolder('FX').close();
     fx.add(w.fx, 'tracerEvery', 0, 10, 1).name('Visual tracer every N');

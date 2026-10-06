@@ -4,6 +4,7 @@ import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js
 import type { ModelKey } from './WeaponData';
 import { metalRoughness, metalTexture, polymerTexture, woodTexture } from '../fx/Textures';
 import { dressRig } from './WeaponMeshes';
+import type { ProfiledView } from './ProfiledRig';
 
 /**
  * Placeholder procedural weapon models with the moving parts the procedural
@@ -50,6 +51,11 @@ export interface WeaponRig {
   sightTilt?: number;
   /** Aimed, the eye's distance behind `sight` (m) when the model asks for it (a reflex sight). */
   eyeRelief?: number;
+  /**
+   * Built from a view profile (ProfiledRig.ts): `sight` is the ADSPoint and every point
+   * comes from the profile; sightShift / sightTilt / eyeRelief above don't apply.
+   */
+  view?: ProfiledView;
 }
 
 const std = (color: number, metalness: number, roughness: number) => new THREE.MeshStandardMaterial({ color, metalness, roughness });
@@ -1298,13 +1304,14 @@ const BUILDERS: Record<ModelKey, () => WeaponRig> = {
 
 /**
  * `world`: a third-person gun (the light model file). A model from public/guns replaces
- * the procedural looks when there is one (see WeaponMeshes).
+ * the procedural looks when there is one (see WeaponMeshes). `eyeBack`: the weapon's
+ * sightDistance, for the gun in your hands (its sights are worked out from your eye).
  */
-export function buildWeaponModel(model: ModelKey, low = false, world = low): WeaponRig {
+export function buildWeaponModel(model: ModelKey, low = false, world = low, eyeBack?: number): WeaponRig {
   LOW = low;
   try {
     const r = BUILDERS[model]();
-    dressRig(r, model, world);
+    dressRig(r, model, world, eyeBack);
     r.root.traverse((o) => {
       o.frustumCulled = false;
     });

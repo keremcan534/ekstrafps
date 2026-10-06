@@ -6,9 +6,12 @@ import { fileURLToPath } from 'node:url';
 const root = path.dirname(fileURLToPath(import.meta.url));
 
 /**
- * Dev-only endpoint used by the in-game tuning panel ("Save to source").
+ * Dev-only endpoint used by the in-game tuning panel ("Save to source") and the weapon
+ * calibration page.
  * POST /__tuning/save  { file: "weapons/assault_rifle", data: {...} }
- * writes src/config/<file>.json so tuned values become the new defaults.
+ * writes src/config/<file>.json so tuned values become the new defaults. `text` instead of
+ * `data` writes that JSON text as formatted. A view profile (viewprofiles/<id>) may be new;
+ * every other config must already exist.
  */
 function tuningSavePlugin(): Plugin {
   const configDir = path.resolve(root, 'src/config');
@@ -26,11 +29,13 @@ function tuningSavePlugin(): Plugin {
         req.on('data', (chunk: Buffer) => (body += chunk));
         req.on('end', () => {
           try {
-            const { file, data } = JSON.parse(body) as { file: string; data: unknown };
+            const { file, data, text } = JSON.parse(body) as { file: string; data?: unknown; text?: string };
             if (!/^[a-z0-9_]+(\/[a-z0-9_]+)?$/.test(file)) throw new Error('bad file name');
             const target = path.join(configDir, `${file}.json`);
-            if (!fs.existsSync(target)) throw new Error(`unknown config ${file}`);
-            fs.writeFileSync(target, JSON.stringify(data, null, 2) + '\n');
+            if (!fs.existsSync(target) && !file.startsWith('viewprofiles/')) throw new Error(`unknown config ${file}`);
+            if (typeof text === 'string') JSON.parse(text);
+            const out = typeof text === 'string' ? text : JSON.stringify(data, null, 2);
+            fs.writeFileSync(target, out.endsWith('\n') ? out : out + '\n');
             res.setHeader('Content-Type', 'application/json');
             res.end(JSON.stringify({ ok: true, file: path.relative(root, target) }));
           } catch (err) {

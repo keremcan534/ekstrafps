@@ -79,7 +79,8 @@ const hfovToVfov = (h) => (2 * Math.atan(Math.tan((h * DEG) / 2) / (16 / 9))) / 
 const HIP_FOV = 90;
 
 await loadWeaponMeshes();
-const defs = createWeaponDefs();
+// Weapons with a view profile are placed in weapon-calibration.html, not here.
+const defs = createWeaponDefs().filter((d) => d.viewmodel);
 
 const view = document.getElementById('view');
 const renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -160,7 +161,7 @@ function defaults(def, rig) {
 function load(id) {
   if (current) pivot.remove(current.rig.root);
   const def = defs.find((d) => d.id === id);
-  const rig = buildWeaponModel(def.model);
+  const rig = buildWeaponModel(def.model, false, false, def.sight.sightDistance);
   compactViewRig(rig);
   pivot.add(rig.root);
   const base = defaults(def, rig);

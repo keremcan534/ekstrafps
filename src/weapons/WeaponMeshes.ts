@@ -21,14 +21,33 @@ import type { WeaponRig } from './WeaponModels';
  *
  * A gun without a file keeps its procedural model. `?gunmodel=ak47=guns/x.glb,...`
  * swaps in other files (testing an import).
+ *
+ * A weapon with a view profile (ViewProfile.ts) takes only its first-person model from here
+ * (gunSource): none of the guessing below. Its placement is the profile's (ProfiledRig.ts).
  */
 
 type Tier = 'view' | 'world';
 
-interface GunSource {
-  /** Non-indexed; attribute `mat` holds each vertex's index into `materials`. */
+/** A named piece of a model file: a bone of its skeleton, or a mesh node. */
+export interface GunPart {
+  name: string;
+  /** Index of the enclosing piece in `parts`, -1 at the top. */
+  parent: number;
+  /** Where the piece's own origin sits, model space (a bone's head: what it turns about). */
+  head: THREE.Vector3;
+}
+
+export interface GunSource {
+  /**
+   * Model space (the file's scene, its own units and axes), non-indexed. Attribute `mat`:
+   * each vertex's index into `materials`; `part`: its index into `parts` (the bone that
+   * moves it most, or its mesh node).
+   */
   geometry: THREE.BufferGeometry;
   materials: THREE.Material[];
+  parts: GunPart[];
+  /** Loose pieces already dropped (keepAttached). */
+  clean?: boolean;
 }
 
 const sources = new Map<string, GunSource>();
@@ -141,6 +160,24 @@ function skinnedGeometry(m: THREE.SkinnedMesh): THREE.BufferGeometry {
   return g;
 }
 
+/** Per vertex (non-indexed order): the bone that moves it most. */
+function dominantBones(m: THREE.SkinnedMesh): THREE.Bone[] {
+  const src = m.geometry.index ? m.geometry.toNonIndexed() : m.geometry;
+  const si = src.getAttribute('skinIndex');
+  const sw = src.getAttribute('skinWeight');
+  const out: THREE.Bone[] = [];
+  for (let i = 0; i < si.count; i++) {
+    let best = 0;
+    let most = -1;
+    for (let k = 0; k < 4; k++) {
+      const w = sw.getComponent(i, k);
+      if (w > most) [most, best] = [w, si.getComponent(i, k)];
+    }
+    out.push(m.skeleton.bones[best]);
+  }
+  return out;
+}
+
 /**
  * First-person packs often ship arms, gloves, a crosshair or a pose dummy with the gun:
  * not ours (the rig has its own hands).
@@ -160,14 +197,32 @@ async function loadOne(url: string, meshy: boolean): Promise<GunSource | null> {
     gltf.scene.updateMatrixWorld(true);
     const geos: THREE.BufferGeometry[] = [];
     const materials: THREE.Material[] = [];
+    // The file's named pieces (bones, mesh nodes): a view profile picks its moving parts by name.
+    const parts: GunPart[] = [];
+    const partOf = new Map<THREE.Object3D, number>();
+    const partIndex = (o: THREE.Object3D): number => {
+      let i = partOf.get(o);
+      if (i === undefined) {
+        const parent = o.parent && o.parent !== gltf.scene ? partIndex(o.parent) : -1;
+        i = parts.push({ name: o.name, parent, head: o.getWorldPosition(new THREE.Vector3()) }) - 1;
+        partOf.set(o, i);
+      }
+      return i;
+    };
     gltf.scene.traverse((o) => {
       const m = o as THREE.Mesh;
       if (!m.isMesh || notGun(m)) return;
       const mt = Array.isArray(m.material) ? m.material[0] : m.material;
       let idx = materials.indexOf(mt);
       if (idx < 0) idx = materials.push(mt) - 1;
-      const g = (m as THREE.SkinnedMesh).isSkinnedMesh ? skinnedGeometry(m as THREE.SkinnedMesh) : floatGeometry(m.geometry, m.matrixWorld);
-      g.setAttribute('mat', new THREE.BufferAttribute(new Float32Array(g.getAttribute('position').count).fill(idx), 1));
+      const skinned = (m as THREE.SkinnedMesh).isSkinnedMesh;
+      const g = skinned ? skinnedGeometry(m as THREE.SkinnedMesh) : floatGeometry(m.geometry, m.matrixWorld);
+      const n = g.getAttribute('position').count;
+      g.setAttribute('mat', new THREE.BufferAttribute(new Float32Array(n).fill(idx), 1));
+      const part = new Float32Array(n);
+      if (skinned) dominantBones(m as THREE.SkinnedMesh).forEach((b, i) => (part[i] = partIndex(b)));
+      else part.fill(partIndex(m));
+      g.setAttribute('part', new THREE.BufferAttribute(part, 1));
       geos.push(g);
     });
     const geometry = geos.length === 1 ? geos[0] : mergeGeometries(geos, false);
@@ -187,10 +242,32 @@ async function loadOne(url: string, meshy: boolean): Promise<GunSource | null> {
         mt.emissive.setRGB(0, 0, 0);
       }
     }
-    return { geometry, materials };
+    return { geometry, materials, parts };
   } catch {
     return null;
   }
+}
+
+/** Drop loose pieces once (spare rounds floating in the air, a backdrop card). */
+function cleanSource(s: GunSource): void {
+  if (s.clean) return;
+  s.geometry = keepAttached(s.geometry) ?? s.geometry;
+  s.clean = true;
+}
+
+/** The first-person model for `key` as loaded (loose pieces dropped), or null when there is none. */
+export function gunSource(key: string): GunSource | null {
+  const s = sources.get(`${key}|view`);
+  if (s) cleanSource(s);
+  return s ?? null;
+}
+
+/**
+ * The old automatic fit of `key`'s first-person model (model → weapon space), once a rig
+ * has been dressed with it. Only to seed a new view profile: profiled weapons never fit.
+ */
+export function legacyFit(key: ModelKey): THREE.Matrix4 | null {
+  return fits.get(`${key}|view`)?.clone() ?? null;
 }
 
 /** Load every weapon model there is (missing ones are skipped). Never rejects. */
@@ -604,8 +681,11 @@ function topNear(geo: THREE.BufferGeometry, z0: number, z1: number, below: numbe
  * Dress `rig` (fresh from its builder) in the model for `key`, if there is one.
  * `world`: the light third-person file.
  */
-export function dressRig(rig: WeaponRig, key: ModelKey, world: boolean): boolean {
+export function dressRig(rig: WeaponRig, key: ModelKey, world: boolean, eyeBack?: number): boolean {
   const tier: Tier = world ? 'world' : 'view';
+  // Aimed, the eye sits `eyeBack` behind the procedural sight point (the weapon's
+  // sightDistance): the sight line is worked out from there, where the player looks from.
+  const eyeZ = eyeBack === undefined ? undefined : rig.sight.position.z + eyeBack;
   const src = sources.get(`${key}|${tier}`);
   if (!src) return false;
   const root = rig.root;
@@ -614,7 +694,7 @@ export function dressRig(rig: WeaponRig, key: ModelKey, world: boolean): boolean
   let matrix = fits.get(`${key}|${tier}`);
   if (matrix === undefined) {
     const ref = trianglesOf(root, (m) => isProc(m) && !(m.material as THREE.Material).transparent);
-    src.geometry = keepAttached(src.geometry) ?? src.geometry;
+    cleanSource(src);
     const pos = src.geometry.getAttribute('position').array as Float32Array;
     matrix = ref.length ? fit(ref, pos, !!FLIP[`${key}|${tier}`], LENGTH[key]) : null;
     if (matrix) matrix = levelBarrel(pos, matrix);
@@ -780,7 +860,7 @@ export function dressRig(rig: WeaponRig, key: ModelKey, world: boolean): boolean
       // nothing on the way: it looks through the notch or hole, or just over the top. The
       // line from there to the tip is the sight line; aimed, the gun tips so it's level and
       // the post sits dead centre.
-      const cheek = rearSight.z + 0.3;
+      const cheek = eyeZ ?? rearSight.z + 0.3;
       const target = new THREE.Vector3(0, tip, tipZ);
       const from = new THREE.Vector3();
       const dir = new THREE.Vector3();
@@ -790,8 +870,11 @@ export function dressRig(rig: WeaponRig, key: ModelKey, world: boolean): boolean
         from.set(0, y, cheek);
         const span = dir.subVectors(target, from).length();
         ray.set(from, dir.normalize());
+        // Not the stock under the cheek (clipped by the near plane), not the post itself.
+        ray.near = 0.06;
         ray.far = span - 0.006;
         const blocked = ray.intersectObject(probe).length > 0;
+        ray.near = 0;
         ray.far = Infinity;
         if (!blocked) {
           eye = y + 0.002; // a little air over the sight: an open picture, not a slit

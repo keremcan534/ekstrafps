@@ -128,6 +128,11 @@ export class WeaponController implements WeaponListener {
     return this.viewmodel.adsAmount;
   }
 
+  /** Aimed horizontal FOV of the weapon in hand (its view profile, or the old sight data). */
+  get adsFov(): number {
+    return this.viewmodel.adsFov;
+  }
+
   /** Camera aim (intent) direction this frame. */
   get cameraAimDir(): THREE.Vector3 {
     return this.aim;
@@ -270,10 +275,11 @@ export class WeaponController implements WeaponListener {
     // --- Wall / obstacle probes from the shoulder along the aim ---
     const reach = vm.restReach(this.adsAmount) + 0.04;
     const range = 0.55 * d.handling.length + 0.1;
+    const hip = vm.hipPosition;
     let nearest = Infinity;
     for (let i = 0; i < 3; i++) {
-      const ox = (d.viewmodel.hipPosition[0] * 0.6 + (i === 2 ? 0.05 : 0)) * this.shoulder;
-      const oy = d.viewmodel.hipPosition[1] * 0.6 + (i === 1 ? 0.05 : 0);
+      const ox = (hip[0] * 0.6 + (i === 2 ? 0.05 : 0)) * this.shoulder;
+      const oy = hip[1] * 0.6 + (i === 1 ? 0.05 : 0);
       this.probeFrom.set(ox, oy, 0);
       cam.localToWorld(this.probeFrom);
       const hit = physics.raycast(this.probeFrom, this.aim, reach + 0.2);
@@ -310,7 +316,7 @@ export class WeaponController implements WeaponListener {
 
     const rig = vm.activeRig!;
     vm.toWorld(rig.muzzle, cam, this.muzzleWorld);
-    vm.forwardWorld(rig.muzzle, cam, this.muzzleDir, true);
+    vm.shotDirection(cam, this.muzzleDir);
     this.aimErrorDeg = Math.acos(Math.min(1, this.muzzleDir.dot(this.aim))) / DEG;
 
     // Test laser: parallel to the bore, from the emitter under the barrel.

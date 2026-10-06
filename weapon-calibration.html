@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="tr">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Silah Kalibrasyonu</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        overflow: hidden;
+        background: #1b1d21;
+        color: #e8e8e8;
+        font: 12px/1.45 ui-monospace, Consolas, monospace;
+      }
+      #view {
+        position: fixed;
+        inset: 0;
+      }
+      #centre {
+        position: fixed;
+        left: 50%;
+        top: 50%;
+        width: 7px;
+        height: 7px;
+        margin: -4px 0 0 -4px;
+        border: 1px solid #2ad4ff;
+        border-radius: 50%;
+        pointer-events: none;
+      }
+      #info,
+      #report {
+        position: fixed;
+        left: 8px;
+        margin: 0;
+        padding: 8px 10px;
+        background: rgba(0, 0, 0, 0.62);
+        white-space: pre;
+        pointer-events: none;
+      }
+      #info {
+        top: 8px;
+      }
+      #report {
+        bottom: 8px;
+        max-height: 48vh;
+        overflow: auto;
+        pointer-events: auto;
+        display: none;
+      }
+      .bad {
+        color: #ff7062;
+      }
+      .ok {
+        color: #7dffa0;
+      }
+      .dim {
+        color: #9aa3ad;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="view"></div>
+    <div id="centre"></div>
+    <pre id="info"></pre>
+    <pre id="report"></pre>
+    <script type="module" src="/src/dev/calibration.ts"></script>
+  </body>
+</html>
