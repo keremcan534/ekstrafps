@@ -5,6 +5,7 @@ import { MenuMusic } from '../audio/MenuMusic';
 import { playerConfig } from '../player/PlayerConfig';
 import { MenuScene } from './MenuScene';
 import { Dossier } from './Dossier';
+import { Terminal } from '../minigames/Terminal';
 import { makeGrime, wearMask } from './DossierGrime';
 import { PERKS, SIDEARMS, levelOf, loadProfile, perkSlots, saveProfile, type PerkId } from '../game/Progress';
 import { FPS_CAPS, loadGraphics, maxResolution, presetSettings, type GraphicsSettings } from '../config/Graphics';
@@ -93,7 +94,7 @@ export function applyPrefs(game: Game, p: Prefs): void {
 
 const MAPS = {
   lab: { name: 'WEAPON LAB', tag: 'TRAINING RANGE', text: 'Graybox firing range, robot targets and the SABLE container yard. Learn every gun.' },
-  site9: { name: 'SITE-9', tag: 'VANTA DYNAMICS CAMPUS', text: 'Sixteen rooms of a robotics facility gone dark. Four squads, rogue machines, raids.' },
+  site9: { name: 'SITE-9', tag: 'VANTA DYNAMICS CAMPUS', text: 'Sixteen rooms of a robotics facility gone dark, 40 km from Blackpine. Four squads, rogue machines, raids.' },
 };
 const MODES = {
   teams: { name: '4 TEAMS', tag: 'PvPvE', text: 'Your squad of four against three AI squads and the robots. No score cap: build your lead, then extract when the clock runs out.' },
@@ -110,7 +111,7 @@ const WATCH = {
 const KEYS: [string, string][] = [
   ['W A S D', 'Move'], ['Mouse', 'Look'], ['Shift', 'Sprint'], ['Space', 'Jump'], ['C', 'Crouch'],
   ['Q / E', 'Lean'], ['V', 'Swap shoulder'], ['LMB', 'Fire'], ['RMB', 'Aim down sights'], ['R', 'Reload'],
-  ['B', 'Fire mode'], ['1 – 0', 'Weapons'], ['F', 'Use / buy'], ['M', 'Map'], ['L', 'Flashlight / laser'], ['Esc', 'Pause'],
+  ['B', 'Fire mode'], ['1 – 0', 'Weapons'], ['F', 'Use / buy'], ['M', 'Map'], ['L', 'Flashlight / laser'], ['G', 'Observer (lab)'], ['Esc', 'Pause'],
   ['P', 'Tuning panel (Weapon Lab)'],
 ];
 
@@ -166,6 +167,7 @@ export class MainMenu {
     this.button('OPERATIONS', '', () => this.show('operations'), 'operations');
     this.button('ARMORY', '', () => this.show('armory'), 'armory');
     this.button('DOSSIER', '', () => this.openDossier(), 'dossier');
+    this.button('TERMINAL', '', () => this.openTerminal(), 'terminal');
     this.button('SETTINGS', '', () => this.show('settings'), 'settings');
     this.button('CONTROLS', '', () => this.show('controls'), 'controls');
     this.button('MAIN MENU', 'tomenu', () => {
@@ -277,6 +279,14 @@ export class MainMenu {
 
   private section: string | null = null;
   private dossier: Dossier | null = null;
+
+  private terminal: Terminal | null = null;
+
+  /** ELEKTRON-30, the death tapes: full screen over the menu (Esc returns). `id` runs one tape and closes. */
+  openTerminal(id?: string): void {
+    this.terminal ??= new Terminal(document.body);
+    this.terminal.open(id);
+  }
 
   /** The character dossier: full screen over the menu (Esc / Back returns). */
   private openDossier(): void {

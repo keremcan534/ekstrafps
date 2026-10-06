@@ -917,7 +917,8 @@ export class Game {
   /** The player as a combatant for the lab's SABLE (alive / downed kept current). */
   private labPlayerC(): Combatant {
     const pc = (this.playerC ??= this.makePlayerC());
-    pc.alive = !this.health.dead;
+    // Observer (G in the lab): the AI carries on as if you weren't there.
+    pc.alive = !this.health.dead && !this.observer;
     pc.downed = this.health.downed;
     return pc;
   }
@@ -1384,6 +1385,8 @@ export class Game {
 
   /** ?dev: developer tools (debug HUD, tuning panel, aim rays, god mode, AI toggle, F8...). */
   readonly dev = new URLSearchParams(location.search).has('dev');
+  /** Weapon Lab observer (G): god mode, and the AI doesn't see you. */
+  private observer = false;
 
   private onKey(code: string): void {
     const w = this.weapons;
@@ -1391,6 +1394,13 @@ export class Game {
     // J is build mode on Site-9 (a player key there), the debug crosshair elsewhere.
     // P / Tab (tuning panel) also work in the Weapon Lab without ?dev.
     const labTuning = (code === 'KeyP' || code === 'Tab') && !(this.arena instanceof Site9);
+    // G in the Weapon Lab (no ?dev): observer mode, walk up to the squads and look at them.
+    if (code === 'KeyG' && !this.dev && !(this.arena instanceof Site9)) {
+      this.observer = !this.observer;
+      feel.godMode = this.observer;
+      this.hud.toast(this.observer ? 'Observer: invulnerable, the AI ignores you (G to leave)' : 'Observer off', 2.5);
+      return;
+    }
     if (!this.dev && devOnly.includes(code) && !(code === 'KeyJ' && this.survival) && !labTuning) return;
     switch (code) {
       case 'KeyH':
