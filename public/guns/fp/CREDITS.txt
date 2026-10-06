@@ -3,3 +3,6 @@ Packed for the game (WebP textures, quantized; bundled arms and pose dummies not
 
 ak47.glb   "Used AK 47 | GameReady FREE" by Vlasov Daniil (dan741vlasov) — https://sketchfab.com/3d-models/used-ak-47-gameready-free-31767ede3b7446ff873e2dc4d4f2a4b3 (the rifle only)
 scarh.glb  "SCAR" by JUST — https://sketchfab.com/3d-models/scar-afd0c02ccc1847e2a787917dad5ba260
+pistol.glb "9mm Pistol" by TORI106 — https://sketchfab.com/3d-models/9mm-pistol-43bc09f5aace4346a8a2b6e1580fc03f
+asval.glb  "ASVAL. Free Highpolly game asset" by rgrimes2686 — https://sketchfab.com/3d-models/asval-free-highpolly-game-asset-01736aeadb88468ca5fb6a9d50050e6f
+svd.glb    "Svd Dragunov" by Pieter Ferreira — https://sketchfab.com/3d-models/svd-dragunov-7281b0f78e6d439ab28a7728a69ae346
