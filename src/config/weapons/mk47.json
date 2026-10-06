@@ -1,7 +1,7 @@
 {
   "id": "mk47",
-  "name": "MK47 Mutant",
-  "short": "MK47",
+  "name": "DT MDR",
+  "short": "MDR",
   "model": "mk47",
   "animSet": "rifle",
   "category": "rifle",
@@ -41,7 +41,7 @@
     "zeroDistance": 100
   },
   "sight": {
-    "type": "reddot",
+    "type": "iron",
     "adsFov": 66,
     "sightDistance": 0.3
   },

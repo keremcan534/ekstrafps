@@ -1,7 +1,7 @@
 {
   "id": "scarh",
-  "name": "SCAR-H",
-  "short": "SCAR",
+  "name": "FN FAL",
+  "short": "FAL",
   "model": "scarh",
   "animSet": "rifle",
   "category": "rifle",
@@ -41,7 +41,7 @@
     "zeroDistance": 100
   },
   "sight": {
-    "type": "reddot",
+    "type": "iron",
     "adsFov": 66,
     "sightDistance": 0.3
   },

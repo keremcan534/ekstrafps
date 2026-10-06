@@ -1,7 +1,7 @@
 {
   "id": "m4a1",
-  "name": "M4A1",
-  "short": "M4A1",
+  "name": "Bushmaster ACR",
+  "short": "ACR",
   "model": "m4a1",
   "animSet": "rifle",
   "category": "rifle",
@@ -41,7 +41,7 @@
     "zeroDistance": 100
   },
   "sight": {
-    "type": "reddot",
+    "type": "iron",
     "adsFov": 66,
     "sightDistance": 0.3
   },

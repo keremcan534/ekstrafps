@@ -135,7 +135,7 @@ const pivot = new THREE.Group();
 vm.add(pivot);
 
 // ------------------------------------------------------------------ state
-const STORE = 'gunpose.v1';
+const STORE = 'gunpose.v2';
 let saved = {};
 try { saved = JSON.parse(localStorage.getItem(STORE) || '{}'); } catch { saved = {}; }
 let mode = 'hip';

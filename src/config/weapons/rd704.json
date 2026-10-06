@@ -1,7 +1,7 @@
 {
   "id": "rd704",
-  "name": "RD-704",
-  "short": "RD704",
+  "name": "Kalashnikov SR1",
+  "short": "SR1",
   "model": "rd704",
   "animSet": "rifle",
   "category": "rifle",
@@ -41,7 +41,7 @@
     "zeroDistance": 100
   },
   "sight": {
-    "type": "reddot",
+    "type": "iron",
     "adsFov": 66,
     "sightDistance": 0.3
   },

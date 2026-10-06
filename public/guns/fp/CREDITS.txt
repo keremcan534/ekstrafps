@@ -2,7 +2,11 @@ First-person weapon models (Sketchfab, CC BY 4.0 — https://creativecommons.org
 Packed for the game (WebP textures, quantized; bundled arms and pose dummies not used).
 
 ak47.glb   "Low-Poly AK-74" by TastyTony — https://sketchfab.com/3d-models/low-poly-ak-74-b27f9003622a4c7499bfd8d2a06dc47b
-scarh.glb  "SCAR" by JUST — https://sketchfab.com/3d-models/scar-afd0c02ccc1847e2a787917dad5ba260
 pistol.glb "9mm Pistol" by TORI106 — https://sketchfab.com/3d-models/9mm-pistol-43bc09f5aace4346a8a2b6e1580fc03f
-asval.glb  "ASVAL. Free Highpolly game asset" by rgrimes2686 — https://sketchfab.com/3d-models/asval-free-highpolly-game-asset-01736aeadb88468ca5fb6a9d50050e6f
 svd.glb    "Svd Dragunov" by Pieter Ferreira — https://sketchfab.com/3d-models/svd-dragunov-7281b0f78e6d439ab28a7728a69ae346
+rd704.glb  "Low-Poly Kalashnikov SR1" by TastyTony — https://sketchfab.com/TastyTony
+m4a1.glb   "Low-Poly Bushmaster ACR" by TastyTony — https://sketchfab.com/TastyTony
+mk47.glb   "Low-Poly DT MDR" by TastyTony — https://sketchfab.com/TastyTony
+scarh.glb  "Low-Poly FN FAL" by TastyTony — https://sketchfab.com/TastyTony
+asval.glb  "Low-Poly AS Val" by TastyTony — https://sketchfab.com/3d-models/low-poly-as-val-ed889df2d45c4dd0bcea2e66513c4b57
+The same files are used for the third-person guns (public/guns/m) of those weapons.
