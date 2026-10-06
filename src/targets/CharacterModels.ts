@@ -8,7 +8,7 @@ import { loadModelBody, skinFromModel, type ModelBody } from './ModelBody';
  */
 const FILES: Record<string, string> = {
   bd: 'sable',
-  bdboss: 'warden',
+  bdboss: 'sable', // the Warden wears his own model once one exists ('warden')
   vanta: 'vanta',
   bravo: 'rival',
   charlie: 'rival',

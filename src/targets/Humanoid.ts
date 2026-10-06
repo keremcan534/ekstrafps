@@ -294,6 +294,7 @@ export class Humanoid {
         slot === 'footL' ? this.feet[0] : slot === 'footR' ? this.feet[1] : this.part(slot as PartName).group;
       const { geometry, materials, slots } = this.skin.body;
       this.mesh = new THREE.SkinnedMesh(geometry, materials);
+      this.mesh.boundingSphere = new THREE.Sphere(new THREE.Vector3(0, 1, 0), 3.5);
       this.mesh.castShadow = true;
       this.mesh.receiveShadow = true;
       this.root.add(this.mesh);
@@ -357,6 +358,9 @@ export class Humanoid {
     // Generous fixed bounds (the ragdoll can spread a few metres from the root).
     geometry.boundingSphere = new THREE.Sphere(new THREE.Vector3(0, 1, 0), 3.5);
     this.mesh = new THREE.SkinnedMesh(geometry, mats);
+    // The mesh's own sphere (three computes it once from the first pose, then keeps it):
+    // generous and fixed, or a ragdoll that falls away from the root gets frustum-culled.
+    this.mesh.boundingSphere = geometry.boundingSphere.clone();
     this.mesh.castShadow = true;
     this.mesh.receiveShadow = true;
     this.root.add(this.mesh);
