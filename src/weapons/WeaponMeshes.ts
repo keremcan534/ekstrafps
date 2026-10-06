@@ -3,6 +3,7 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import type { ModelKey } from './WeaponData';
 import type { WeaponRig } from './WeaponModels';
+import { loadHands } from './FirstPersonHands';
 
 /**
  * Real weapon meshes, packed by scripts/pack-weapon.mjs: public/guns/fp/<key>.glb for the
@@ -279,6 +280,8 @@ export async function loadWeaponMeshes(): Promise<void> {
   }
   // The gun in your hands is the full model on phones too; others carry the light one.
   const tiers: Tier[] = ['view', 'world'];
+  // The first-person hands come with the guns (src/weapons/FirstPersonHands.ts).
+  const hands = loadHands();
   await Promise.all(
     KEYS.flatMap((k) =>
       tiers.map(async (tier) => {
@@ -288,6 +291,7 @@ export async function loadWeaponMeshes(): Promise<void> {
       }),
     ),
   );
+  await hands;
 }
 
 // ------------------------------------------------------------------ fitting

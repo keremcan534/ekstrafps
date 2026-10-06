@@ -38,6 +38,8 @@ export const LIMITS = {
   /** Hip presentation: share of the screen, share of the centre zone (middle 30% × 30%). */
   hipScreenPct: 15,
   hipCentrePct: 5,
+  /** Reloading the hands bring the action up into view. */
+  reloadCentrePct: 15,
 };
 
 /** The solid meshes of the weapon in hand that draw (not glass, glow or the muzzle flash). */
@@ -283,7 +285,7 @@ export function runStateChecks(h: Harness): StateRow[] {
     let n = 0;
     const track = () => {
       if (n++ % 3 === 0) {
-        const c = coverage(vm, camera);
+        const c = coverage(vm, vm.camera);
         row.nearestM = Math.min(row.nearestM, c.nearestM);
         row.screenPct = Math.max(row.screenPct, c.screenPct);
         row.centrePct = Math.max(row.centrePct, vm.adsAmount < 0.05 ? c.centrePct : 0);
@@ -320,7 +322,7 @@ export function runStateChecks(h: Harness): StateRow[] {
       row.ok = false;
       row.notes.push(why);
     };
-    if (row.nearestM < camera.near + LIMITS.nearMargin) fail(`geometry ${(row.nearestM * 100).toFixed(1)} cm from the eye`);
+    if (row.nearestM < vm.camera.near + LIMITS.nearMargin) fail(`geometry ${(row.nearestM * 100).toFixed(1)} cm from the eye`);
     if (aimedState) {
       const offLimit = state.includes('shoot') || state.includes('recoil') ? LIMITS.shootDeg : state === 'ads-still' || state.includes('crouch') ? LIMITS.stillDeg : LIMITS.moveDeg;
       const splitLimit = state.includes('shoot') || state.includes('recoil') ? LIMITS.splitShootDeg : LIMITS.splitDeg;
@@ -330,7 +332,8 @@ export function runStateChecks(h: Harness): StateRow[] {
       if (row.rollDeg > rollLimit) fail(`cant ${row.rollDeg.toFixed(2)}° (> ${rollLimit})`);
       if (row.settleDeg > LIMITS.settleDeg || row.settleMm > LIMITS.settleMm) fail(`not back on calibration: ${row.settleDeg.toFixed(3)}° ${row.settleMm.toFixed(2)} mm`);
     } else {
-      if (row.centrePct > LIMITS.hipCentrePct) fail(`covers ${row.centrePct.toFixed(1)}% of the centre`);
+      const centreLimit = state.startsWith('reload') ? LIMITS.reloadCentrePct : LIMITS.hipCentrePct;
+      if (row.centrePct > centreLimit) fail(`covers ${row.centrePct.toFixed(1)}% of the centre`);
       if (row.screenPct > LIMITS.hipScreenPct) fail(`covers ${row.screenPct.toFixed(1)}% of the screen`);
     }
     if (row.settleMotionMm > 0.1 || row.settleMotionDeg > 0.01) fail(`motion left over: ${row.settleMotionMm.toFixed(2)} mm ${row.settleMotionDeg.toFixed(3)}°`);

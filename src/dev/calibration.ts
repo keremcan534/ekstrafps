@@ -13,6 +13,7 @@ import { orientationMatrix, poseQuaternion, viewProfile, type Axis, type ViewPro
 import { playerConfig } from '../player/PlayerConfig';
 import { feel } from '../config/Feel';
 import { DEG, hfovToVfov } from '../core/math';
+import { dressHands, handConfig } from '../weapons/FirstPersonHands';
 import { LIMITS, coverage, runStateChecks, sightLine, sightPicture, type StateRow } from './viewChecks';
 
 /**
@@ -529,7 +530,7 @@ Object.assign(window as object, {
   __calibApply: apply,
   __calibSave: save,
   __calibSeed: seedFromLegacy,
-  __calibLib: { THREE, gunSource, orientationMatrix },
+  __calibLib: { THREE, gunSource, orientationMatrix, dressHands, handConfig },
   __calibSideCam: sideCam,
   // Background tabs get no animation frames: `steps` advances the weapon first (1/60 s each).
   __calibShot: (steps = 0): string => {

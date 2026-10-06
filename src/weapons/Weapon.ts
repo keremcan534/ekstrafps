@@ -190,9 +190,11 @@ export class Weapon {
 
   /**
    * The weapon can be aimed in its state: ready, nearly raised, or loading shells into a
-   * pump gun. Not while a bolt action loads: its bolt stands open, back at the eye.
+   * pump gun. Not while a bolt action loads or works its bolt: the bolt stands open, back at
+   * the eye, and the hand on it sweeps past the face (the head comes up off the stock).
    */
   get aimable(): boolean {
+    if (this.data.animSet === 'bolt' && this.cycling) return false;
     if (this.state === 'reloading') return this.data.reload.kind === 'shell' && this.data.animSet !== 'bolt';
     return this.state === 'ready' || (this.state === 'equipping' && this.stateProgress > 0.6);
   }

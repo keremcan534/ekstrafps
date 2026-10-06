@@ -36,7 +36,7 @@ export interface ViewProfile {
      * the muzzle) and up; then a small fine turn (deg [pitch, yaw, roll], yaw → pitch →
      * roll), a uniform scale, and the position (m) of the model's origin.
      */
-    orientation: { forward: Axis; up: Axis; rotation: V3; scale: number; position: V3 };
+    orientation: ViewOrientation;
     /** Moving pieces (reloads, bolt work). */
     parts: { mag?: ViewPart; bolt?: ViewPart };
   };
@@ -72,6 +72,15 @@ export interface ViewProfile {
   motion: { sway: number; inertia: number; bob: number; recoil: number };
 }
 
+/** A model file's own axes along the barrel and up, a small fine turn (deg), scale, position (m). */
+export interface ViewOrientation {
+  forward: Axis;
+  up: Axis;
+  rotation: V3;
+  scale: number;
+  position: V3;
+}
+
 /**
  * A moving piece of the model: its bones / nodes by name (each with what hangs under it),
  * and/or the model's own loose pieces lying under the given points (model space: a model
@@ -82,6 +91,8 @@ export interface ViewPart {
   names?: string[];
   pieces?: V3[];
   pivot?: V3;
+  /** A bolt handle's knob (model space): the firing hand reaches for it to work the bolt. */
+  knob?: V3;
 }
 
 export interface ViewPose {
@@ -128,7 +139,11 @@ const AXIS: Record<Axis, readonly [number, number, number]> = {
 
 /** Model → weapon space (the OrientationRoot): axes, fine turn, scale, position. */
 export function orientationMatrix(p: Readonly<ViewProfile>, out: THREE.Matrix4): THREE.Matrix4 {
-  const o = p.model.orientation;
+  return orientMatrix(p.model.orientation, out);
+}
+
+/** A model file's own axes, fine turn, scale and position → our space (-Z forward, +Y up). */
+export function orientMatrix(o: Readonly<ViewOrientation>, out: THREE.Matrix4): THREE.Matrix4 {
   // The weapon's axes in model space: -Z along the barrel, +Y up, +X = Y × Z.
   const z = new THREE.Vector3(...AXIS[o.forward]).negate();
   const y = new THREE.Vector3(...AXIS[o.up]);

@@ -22,7 +22,7 @@ export interface ProfiledView {
   /** ADSPoint frame in weapon space: origin on the rear sight, -Z along the sight line. */
   frame: THREE.Matrix4;
   /** Moving pieces: their node (weapon space, at the pivot) and model-space pivot. */
-  pieces: { node: THREE.Object3D; pivot: THREE.Vector3; orient: THREE.Group }[];
+  pieces: { node: THREE.Object3D; pivot: THREE.Vector3; orient: THREE.Group; knob?: THREE.Vector3 }[];
 }
 
 const FORWARD = new THREE.Vector3(0, 0, -1);
@@ -146,7 +146,7 @@ export function buildProfiledRig(profile: Readonly<ViewProfile>, data: WeaponDat
     const p = spec[piece];
     const named = src.parts.find((x) => p?.names?.includes(x.name));
     const pivot = p?.pivot ? new THREE.Vector3(...p.pivot) : named ? named.head.clone() : eject.clone();
-    pieces.push({ node, pivot, orient });
+    pieces.push({ node, pivot, orient, knob: p?.knob ? new THREE.Vector3(...p.knob) : undefined });
     root.add(node);
     return node;
   };
@@ -195,6 +195,8 @@ export function layoutProfiledRig(rig: WeaponRig): void {
     piece.node.position.copy(at);
     piece.orient.matrix.makeTranslation(-at.x, -at.y, -at.z).multiply(O);
     piece.orient.matrixWorldNeedsUpdate = true;
+    // The knob in the piece's own frame (WeaponAnimator turns and slides it with the bolt).
+    if (piece.knob) piece.node.userData.knob = piece.knob.clone().applyMatrix4(O).sub(at);
   }
   adsFrame(p, v.frame);
   rig.sight.position.setFromMatrixPosition(v.frame);

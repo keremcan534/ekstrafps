@@ -6,6 +6,7 @@ import { feel } from '../config/Feel';
 import { MuzzleFlash } from '../fx/MuzzleFlash';
 import { buildWeaponModel, compactViewRig, type WeaponRig } from './WeaponModels';
 import { buildProfiledRig, type ProfiledView } from './ProfiledRig';
+import { dressHands } from './FirstPersonHands';
 import { adsTarget, poseQuaternion, solveAdsPose, viewProfile, type ViewProfile } from './ViewProfile';
 import { updateVisibleMatrices } from '../core/VisibleMatrices';
 import { WeaponAnimator, type PoseOffset } from './WeaponAnimator';
@@ -301,9 +302,10 @@ export class Viewmodel {
     for (const w of weapons) {
       const profile = viewProfile(w.id);
       const r = (profile && buildProfiledRig(profile, w)) || this.legacyRig(w);
-      // No arms in first person: the gun alone.
+      // Hands only on a profiled weapon (its grip points are measured); the old rigs' are hidden.
       r.leftHand.visible = false;
       r.rightHand.visible = false;
+      if (r.view) dressHands(r);
       r.root.visible = false;
       (r.view ? this.proceduralRoot : this.mirror).add(r.root);
       this.rigs.set(w.id, r);
@@ -870,6 +872,7 @@ export class Viewmodel {
     if (!r) return false;
     r.leftHand.visible = false;
     r.rightHand.visible = false;
+    dressHands(r);
     r.root.visible = false;
     const old = this.rigs.get(data.id);
     if (old) {
