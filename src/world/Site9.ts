@@ -1340,17 +1340,10 @@ export class Site9 implements GameMap {
 
   private buildHangar(): void {
     const R = 'hangar';
-    // VTOL transport on the pad.
+    // The transport that came down on the pad: a wreck nose to tail along the hangar,
+    // solid along the fuselage (the rotor blades overhead are not).
     this.box(R, 'yellow', [18, 0.05, 18], [-88, 0.03, 50], false);
-    this.cyl(R, 'offwhite', 2.2, 16, [-88, 3.2, 50], true, [Math.PI / 2, 0, 0], 20);
-    this.box(R, 'offwhite', [22, 0.4, 3.2], [-88, 4.8, 49], false);
-    this.box(R, 'offwhite', [0.4, 4, 3], [-88, 6.6, 57.5], false);
-    for (const x of [-99, -77]) {
-      this.cyl(R, 'gunmetal', 1.4, 2.4, [x, 4.8, 49], false, [Math.PI / 2, 0, 0], 16);
-      this.box(R, 'dark', [7, 0.08, 0.4], [x, 6.3, 49], false);
-    }
-    this.clearBox(R, [3.2, 1.2, 2.2], [-88, 4.6, 42.4]);
-    this.box(R, 'vanta', [0.05, 1.2, 6], [-85.78, 3.4, 52], false);
+    this.prop(R, 'helicopter', [-88, 0, 50], Math.PI / 2, { collider: [12.5, 3.6, 3.6] });
     // Cargo truck, containers, fuel tanks, the giant hangar door (west wall).
     this.box(R, 'gunmetal', [2.6, 3.0, 9], [-72, 1.9, 28], true, undefined, METAL);
     this.box(R, 'vanta', [2.6, 2.4, 2.6], [-72, 1.6, 34.2], true, undefined, METAL);

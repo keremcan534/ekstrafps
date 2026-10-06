@@ -26,7 +26,8 @@ export type PropId =
   | 'utilityBox'
   | 'medkit'
   | 'jerrycan'
-  | 'container';
+  | 'container'
+  | 'helicopter';
 
 interface PropDef {
   file: string;
@@ -53,6 +54,8 @@ export const PROPS: Record<PropId, PropDef> = {
   medkit: { file: 'medical_box', scale: 1, size: [0.53, 0.1, 0.35] },
   jerrycan: { file: 'metal_jerrycan_green', scale: 1, size: [0.37, 0.5, 0.17] },
   container: { file: 'industrial_pastic_container', scale: 1, size: [0.48, 0.42, 0.63] },
+  // Meshy (scripts/pack-prop.mjs): a transport helicopter wreck, 15 m nose to tail.
+  helicopter: { file: 'crashed_helicopter', scale: 7.9, size: [15, 4.23, 12.4] },
 };
 
 interface Batch {

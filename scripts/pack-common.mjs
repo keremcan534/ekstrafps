@@ -8,7 +8,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { NodeIO } from '@gltf-transform/core';
 import { ALL_EXTENSIONS } from '@gltf-transform/extensions';
-import { prune } from '@gltf-transform/functions';
+import { center, prune } from '@gltf-transform/functions';
 
 const io = new NodeIO().registerExtensions(ALL_EXTENSIONS);
 const cli = (args) =>
@@ -29,14 +29,15 @@ function shrinkImage(tex, size, tmp) {
 /**
  * Pack `src` into each tier's `dir/<name>.glb`.
  * @param tiers [{ dir, tris, color, maps }]
+ * @param pivot 'below' puts the base on y = 0, centred (props); null leaves it.
  */
-export async function pack(src, name, tiers, { keepAnimations = false } = {}) {
+export async function pack(src, name, tiers, { keepAnimations = false, pivot = null } = {}) {
   const tmp = join(tmpdir(), `site9-pack-${name}`);
   mkdirSync(tmp, { recursive: true });
   for (const { dir, tris: target, color, maps } of tiers) {
     const doc = await io.read(src);
     if (!keepAnimations) for (const a of doc.getRoot().listAnimations()) a.dispose();
-    await doc.transform(prune());
+    await doc.transform(prune(), ...(pivot ? [center({ pivot })] : []));
     let tris = 0;
     for (const mesh of doc.getRoot().listMeshes()) {
       for (const p of mesh.listPrimitives()) {
