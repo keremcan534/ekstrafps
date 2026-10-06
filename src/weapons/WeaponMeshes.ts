@@ -5,9 +5,10 @@ import type { ModelKey } from './WeaponData';
 import type { WeaponRig } from './WeaponModels';
 
 /**
- * Real weapon meshes (Meshy, packed by scripts/pack-weapon.mjs): public/guns/<key>.glb, the
- * model as made, for the gun in your hands (desktop and phones); public/guns/m/<key>.glb
- * for every third-person gun. They are dressed onto the procedural rigs, which keep doing the
+ * Real weapon meshes, packed by scripts/pack-weapon.mjs: public/guns/fp/<key>.glb for the
+ * gun in your hands (hand-made models, e.g. Sketchfab, kept as made: AI-generated meshes
+ * melt at a hand's width from the eye, so a gun without one stays procedural there), and
+ * public/guns/m/<key>.glb for every third-person gun and wall buy (Meshy is fine at range). They are dressed onto the procedural rigs, which keep doing the
  * work (muzzle, sights, hands, recoil pivot, animations):
  *
  * - The model is turned and scaled onto the procedural gun by matching their side
@@ -25,22 +26,23 @@ import type { WeaponRig } from './WeaponModels';
 type Tier = 'view' | 'world';
 
 interface GunSource {
+  /** Non-indexed; attribute `mat` holds each vertex's index into `materials`. */
   geometry: THREE.BufferGeometry;
-  material: THREE.Material;
+  materials: THREE.Material[];
 }
 
 const sources = new Map<string, GunSource>();
-/** Fitted root-space transform per model key (both tiers share the source coordinates). */
+/** Fitted root-space transform per `${key}|${tier}` (each file has its own coordinates). */
 const fits = new Map<string, THREE.Matrix4 | null>();
 
 /** Models the fit turns the wrong way round (a stock thinner than the barrel). */
-const FLIP: Partial<Record<ModelKey, boolean>> = { m249: true };
+const FLIP: Record<string, boolean> = { 'm249|world': true };
 
 const KEYS: ModelKey[] = ['ak47', 'mk47', 'asval', 'm4a1', 'rd704', 'ppsh', 'mosin', 'kar98', 'pistol', 'shotgun', 'mp5', 'glock', 'saiga', 'svd', 'm249', 'scarh'];
 
-/** Float copies of every attribute (quantized files come as normalized integers). */
+/** Float copies of position / normal / uv (quantized files come as normalized integers), non-indexed. */
 function floatGeometry(src: THREE.BufferGeometry, matrix: THREE.Matrix4): THREE.BufferGeometry {
-  const g = new THREE.BufferGeometry();
+  let g = new THREE.BufferGeometry();
   for (const name of ['position', 'normal', 'uv']) {
     const a = src.getAttribute(name);
     if (!a) continue;
@@ -50,38 +52,98 @@ function floatGeometry(src: THREE.BufferGeometry, matrix: THREE.Matrix4): THREE.
   }
   if (src.index) g.setIndex(src.index.clone());
   g.applyMatrix4(matrix);
+  if (g.index) g = g.toNonIndexed();
+  if (!g.getAttribute('normal')) g.computeVertexNormals();
+  if (!g.getAttribute('uv')) g.setAttribute('uv', new THREE.BufferAttribute(new Float32Array(g.getAttribute('position').count * 2), 2));
   return g;
 }
 
-async function loadOne(url: string): Promise<GunSource | null> {
+/**
+ * A skinned mesh as it stands (positions and normals through its bones, then into world
+ * space): Sketchfab first-person packs come rigged, and quantized skinned files keep their
+ * scale in the bind matrices, not the node.
+ */
+function skinnedGeometry(m: THREE.SkinnedMesh): THREE.BufferGeometry {
+  const g = floatGeometry(m.geometry, new THREE.Matrix4());
+  const src = m.geometry.index ? m.geometry.toNonIndexed() : m.geometry;
+  const si = src.getAttribute('skinIndex');
+  const sw = src.getAttribute('skinWeight');
+  const pos = g.getAttribute('position');
+  const nor = g.getAttribute('normal');
+  const sk = m.skeleton;
+  const bones = sk.bones.map((b, i) => new THREE.Matrix4().multiplyMatrices(b.matrixWorld, sk.boneInverses[i]));
+  const pre = m.bindMatrix;
+  const post = new THREE.Matrix4().multiplyMatrices(m.matrixWorld, m.bindMatrixInverse);
+  const blend = new THREE.Matrix4();
+  const full = new THREE.Matrix4();
+  const n3 = new THREE.Matrix3();
+  const v = new THREE.Vector3();
+  for (let i = 0; i < pos.count; i++) {
+    blend.set(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
+    for (let k = 0; k < 4; k++) {
+      const w = sw.getComponent(i, k);
+      if (w <= 0) continue;
+      const b = bones[si.getComponent(i, k)].elements;
+      for (let e = 0; e < 16; e++) blend.elements[e] += b[e] * w;
+    }
+    full.multiplyMatrices(post, blend).multiply(pre);
+    v.fromBufferAttribute(pos, i).applyMatrix4(full);
+    pos.setXYZ(i, v.x, v.y, v.z);
+    if (nor) {
+      v.fromBufferAttribute(nor, i).applyMatrix3(n3.getNormalMatrix(full)).normalize();
+      nor.setXYZ(i, v.x, v.y, v.z);
+    }
+  }
+  return g;
+}
+
+/**
+ * First-person packs often ship arms, gloves, a crosshair or a pose dummy with the gun:
+ * not ours (the rig has its own hands).
+ */
+const NOT_GUN = /glove|sleeve|\barms?\b|\bhands?\b|finger|crosshair|shape_?pose/i;
+
+function notGun(m: THREE.Mesh): boolean {
+  const mats = Array.isArray(m.material) ? m.material : [m.material];
+  for (let o: THREE.Object3D | null = m; o; o = o.parent) if (NOT_GUN.test(o.name)) return true;
+  return mats.every((mt) => NOT_GUN.test(mt.name));
+}
+
+/** `meshy`: an AI model (glossy finish to tone down). */
+async function loadOne(url: string, meshy: boolean): Promise<GunSource | null> {
   try {
     const gltf = await new GLTFLoader().loadAsync(url);
     gltf.scene.updateMatrixWorld(true);
     const geos: THREE.BufferGeometry[] = [];
-    let material: THREE.Material | null = null;
+    const materials: THREE.Material[] = [];
     gltf.scene.traverse((o) => {
       const m = o as THREE.Mesh;
-      if (!m.isMesh) return;
-      const g = floatGeometry(m.geometry, m.matrixWorld);
-      geos.push(g.index ? g.toNonIndexed() : g);
-      material ??= Array.isArray(m.material) ? m.material[0] : m.material;
+      if (!m.isMesh || notGun(m)) return;
+      const mt = Array.isArray(m.material) ? m.material[0] : m.material;
+      let idx = materials.indexOf(mt);
+      if (idx < 0) idx = materials.push(mt) - 1;
+      const g = (m as THREE.SkinnedMesh).isSkinnedMesh ? skinnedGeometry(m as THREE.SkinnedMesh) : floatGeometry(m.geometry, m.matrixWorld);
+      g.setAttribute('mat', new THREE.BufferAttribute(new Float32Array(g.getAttribute('position').count).fill(idx), 1));
+      geos.push(g);
     });
     const geometry = geos.length === 1 ? geos[0] : mergeGeometries(geos, false);
-    if (!geometry || !material) return null;
-    const mt = material as THREE.MeshStandardMaterial;
-    mt.side = THREE.FrontSide;
-    // Meshy finishes come out glossy (roughness ~0.35): in the first-person room light a
-    // black polymer frame reads as polished silver. A touch more satin.
-    mt.roughness = 1.3;
-    // Seen along the top at a grazing angle: without anisotropic filtering the textures
-    // smear into mud a hand's width from the eye.
-    for (const t of [mt.map, mt.normalMap, mt.roughnessMap, mt.metalnessMap, mt.aoMap]) if (t) t.anisotropy = 8;
-    // Meshy bakes a little light into "emissive": none on a gun.
-    if (mt.emissiveMap) {
-      mt.emissiveMap = null;
-      mt.emissive.setRGB(0, 0, 0);
+    if (!geometry || !materials.length) return null;
+    for (const m of materials) {
+      const mt = m as THREE.MeshStandardMaterial;
+      mt.side = THREE.FrontSide;
+      // Meshy finishes come out glossy (roughness ~0.35): in the first-person room light a
+      // black polymer frame reads as polished silver. A touch more satin.
+      if (meshy) mt.roughness = 1.3;
+      // Seen along the top at a grazing angle: without anisotropic filtering the textures
+      // smear into mud a hand's width from the eye.
+      for (const t of [mt.map, mt.normalMap, mt.roughnessMap, mt.metalnessMap, mt.aoMap]) if (t) t.anisotropy = 8;
+      // Meshy bakes a little light into "emissive": none on a gun.
+      if (meshy && mt.emissiveMap) {
+        mt.emissiveMap = null;
+        mt.emissive.setRGB(0, 0, 0);
+      }
     }
-    return { geometry, material: mt };
+    return { geometry, materials };
   } catch {
     return null;
   }
@@ -99,16 +161,12 @@ export async function loadWeaponMeshes(): Promise<void> {
   await Promise.all(
     KEYS.flatMap((k) =>
       tiers.map(async (tier) => {
-        const url = override.get(k) ?? `${tier === 'view' ? 'guns' : 'guns/m'}/${k}.glb`;
-        const s = await loadOne(url);
+        const url = override.get(k) ?? `${tier === 'view' ? 'guns/fp' : 'guns/m'}/${k}.glb`;
+        const s = await loadOne(url, tier === 'world');
         if (s) sources.set(`${k}|${tier}`, s);
       }),
     ),
   );
-}
-
-export function hasWeaponMesh(key: ModelKey): boolean {
-  return sources.has(`${key}|world`) || sources.has(`${key}|view`);
 }
 
 // ------------------------------------------------------------------ fitting
@@ -217,6 +275,63 @@ function boundsOf(tris: Float32Array): THREE.Box3 {
  * the two side silhouettes.
  */
 function fit(ref: Float32Array, model: Float32Array, flip = false): THREE.Matrix4 {
+  // A model posed at an angle (first-person packs hold the gun canted): turn it square
+  // onto its principal axes first, then fit as usual with a little pitch search.
+  const P = principalFrame(model);
+  if (!P) return fitSquare(ref, model, flip, [0]);
+  const turned = new Float32Array(model.length);
+  const v = new THREE.Vector3();
+  for (let i = 0; i < model.length; i += 3) v.set(model[i], model[i + 1], model[i + 2]).applyMatrix4(P).toArray(turned, i);
+  return fitSquare(ref, turned, flip, [-6, -4.5, -3, -1.5, 0, 1.5, 3, 4.5, 6]).multiply(P);
+}
+
+/**
+ * Rotation onto the model's principal axes (largest spread first → x, y, z), or null
+ * when they already run along the file's own axes (within 4°): most models are square.
+ */
+function principalFrame(model: Float32Array): THREE.Matrix4 | null {
+  const n = model.length / 3;
+  const mean = [0, 0, 0];
+  for (let i = 0; i < model.length; i += 3) for (let k = 0; k < 3; k++) mean[k] += model[i + k] / n;
+  const C = [[0, 0, 0], [0, 0, 0], [0, 0, 0]];
+  for (let i = 0; i < model.length; i += 3) {
+    const d = [model[i] - mean[0], model[i + 1] - mean[1], model[i + 2] - mean[2]];
+    for (let a = 0; a < 3; a++) for (let b = 0; b < 3; b++) C[a][b] += (d[a] * d[b]) / n;
+  }
+  // Jacobi rotations: V's columns become the eigenvectors.
+  const V = [[1, 0, 0], [0, 1, 0], [0, 0, 1]];
+  for (let sweep = 0; sweep < 20; sweep++) {
+    for (const [p, q] of [[0, 1], [0, 2], [1, 2]]) {
+      if (Math.abs(C[p][q]) < 1e-12) continue;
+      const th = 0.5 * Math.atan2(2 * C[p][q], C[q][q] - C[p][p]);
+      const c = Math.cos(th), s = Math.sin(th);
+      for (let k = 0; k < 3; k++) {
+        const kp = C[k][p], kq = C[k][q];
+        C[k][p] = c * kp - s * kq;
+        C[k][q] = s * kp + c * kq;
+      }
+      for (let k = 0; k < 3; k++) {
+        const pk = C[p][k], qk = C[q][k];
+        C[p][k] = c * pk - s * qk;
+        C[q][k] = s * pk + c * qk;
+      }
+      for (let k = 0; k < 3; k++) {
+        const kp = V[k][p], kq = V[k][q];
+        V[k][p] = c * kp - s * kq;
+        V[k][q] = s * kp + c * kq;
+      }
+    }
+  }
+  const order = [0, 1, 2].sort((a, b) => C[b][b] - C[a][a]);
+  const ax = order.map((j) => new THREE.Vector3(V[0][j], V[1][j], V[2][j]).normalize());
+  const square = ax.every((a) => Math.max(Math.abs(a.x), Math.abs(a.y), Math.abs(a.z)) > Math.cos((4 * Math.PI) / 180));
+  if (square) return null;
+  const z = new THREE.Vector3().crossVectors(ax[0], ax[1]);
+  return new THREE.Matrix4().set(ax[0].x, ax[0].y, ax[0].z, 0, ax[1].x, ax[1].y, ax[1].z, 0, z.x, z.y, z.z, 0, 0, 0, 0, 1);
+}
+
+/** fit() for a model square to its axes; `pitches` (degrees) are also tried, best first pass refined. */
+function fitSquare(ref: Float32Array, model: Float32Array, flip: boolean, pitches: number[]): THREE.Matrix4 {
   const rb = boundsOf(ref);
   const mb = boundsOf(model);
   const ms = mb.getSize(new THREE.Vector3());
@@ -249,7 +364,7 @@ function fit(ref: Float32Array, model: Float32Array, flip = false): THREE.Matrix
   const end = ms.getComponent(L) * 0.12;
   const thinAtMax = span(mb.max.getComponent(L) - end, Infinity) < span(-Infinity, mb.min.getComponent(L) + end);
   const sl = thinAtMax !== flip ? -1 : 1;
-  let best = { score: -1, m: new THREE.Matrix4() };
+  let best = { score: -1, m: new THREE.Matrix4(), place: (_deg: number) => new THREE.Matrix4() };
   {
     for (const sh of [1, -1]) {
       // Source axis L → +Z·sl, H → +Y·sh, the third by the right hand.
@@ -265,18 +380,37 @@ function fit(ref: Float32Array, model: Float32Array, flip = false): THREE.Matrix
       );
       for (const k of [0.94, 0.97, 1, 1.03, 1.06]) {
         const s = (len / ms.getComponent(L)) * k;
-        const m = new THREE.Matrix4()
-          .makeTranslation(rc.x, rc.y, rc.z)
-          .multiply(new THREE.Matrix4().makeScale(s, s, s))
-          .multiply(rot)
-          .multiply(new THREE.Matrix4().makeTranslation(-mc.x, -mc.y, -mc.z));
+        const place = (deg: number) =>
+          new THREE.Matrix4()
+            .makeTranslation(rc.x, rc.y, rc.z)
+            .multiply(new THREE.Matrix4().makeScale(s, s, s))
+            .multiply(new THREE.Matrix4().makeRotationX((deg * Math.PI) / 180))
+            .multiply(rot)
+            .multiply(new THREE.Matrix4().makeTranslation(-mc.x, -mc.y, -mc.z));
+        const m = place(0);
         const g = grid();
         rasterize(model, g, m);
         for (let dy = -8; dy <= 8; dy++) {
           for (let dz = -8; dz <= 8; dz++) {
             const score = iou(refGrid, g, dz, dy);
-            if (score > best.score) best = { score, m: new THREE.Matrix4().makeTranslation(0, dy * CELL, dz * CELL).multiply(m) };
+            if (score > best.score) best = { score, m: new THREE.Matrix4().makeTranslation(0, dy * CELL, dz * CELL).multiply(m), place };
           }
+        }
+      }
+    }
+  }
+  // Pitch: the principal axis leans a little toward the magazine and stock; search around it.
+  if (pitches.length > 1) {
+    const base = best;
+    for (const deg of pitches) {
+      if (deg === 0) continue;
+      const m = base.place(deg);
+      const g = grid();
+      rasterize(model, g, m);
+      for (let dy = -10; dy <= 10; dy++) {
+        for (let dz = -6; dz <= 6; dz++) {
+          const score = iou(refGrid, g, dz, dy);
+          if (score > best.score) best = { score, m: new THREE.Matrix4().makeTranslation(0, dy * CELL, dz * CELL).multiply(m), place: base.place };
         }
       }
     }
@@ -310,6 +444,62 @@ function partBounds(rig: WeaponRig, node: THREE.Object3D): THREE.Box3 {
   return boundsOf(trianglesOf(rig.root, (m) => !!under(m, [node], rig.root) && !under(m, [rig.leftHand, rig.rightHand, rig.heldShell], rig.root)));
 }
 
+/**
+ * `geo` without loose pieces: split into connected parts (shared corners), keep the
+ * biggest and every part whose bounds touch a kept one, drop the rest (spare rounds
+ * floating where a reload animation would use them). Null if nothing is dropped.
+ */
+function keepAttached(geo: THREE.BufferGeometry): THREE.BufferGeometry | null {
+  const pos = geo.getAttribute('position');
+  const tris = pos.count / 3;
+  const parent = new Int32Array(tris).map((_, i) => i);
+  const find = (i: number): number => (parent[i] === i ? i : (parent[i] = find(parent[i])));
+  const corner = new Map<string, number>();
+  for (let t = 0; t < tris; t++) {
+    for (let k = 0; k < 3; k++) {
+      const i = t * 3 + k;
+      const key = `${pos.getX(i).toFixed(5)},${pos.getY(i).toFixed(5)},${pos.getZ(i).toFixed(5)}`;
+      const o = corner.get(key);
+      if (o === undefined) corner.set(key, t);
+      else parent[find(t)] = find(o);
+    }
+  }
+  const parts = new Map<number, { tris: number[]; box: THREE.Box3 }>();
+  const v = new THREE.Vector3();
+  for (let t = 0; t < tris; t++) {
+    const r = find(t);
+    let p = parts.get(r);
+    if (!p) parts.set(r, (p = { tris: [], box: new THREE.Box3() }));
+    p.tris.push(t);
+    for (let k = 0; k < 3; k++) p.box.expandByPoint(v.fromBufferAttribute(pos, t * 3 + k));
+  }
+  const list = [...parts.values()].sort((a, b) => b.tris.length - a.tris.length);
+  const size = list[0].box.getSize(new THREE.Vector3()).length();
+  const kept = [list[0]];
+  const rest = list.slice(1);
+  for (let grew = true; grew; ) {
+    grew = false;
+    for (let i = rest.length - 1; i >= 0; i--) {
+      const near = rest[i].box.clone().expandByScalar(size * 0.005);
+      if (kept.some((k) => k.box.intersectsBox(near))) {
+        kept.push(...rest.splice(i, 1));
+        grew = true;
+      }
+    }
+  }
+  if (!rest.length) return null;
+  const keep = kept.flatMap((p) => p.tris);
+  const out = new THREE.BufferGeometry();
+  for (const name of Object.keys(geo.attributes)) {
+    const a = geo.getAttribute(name);
+    const arr = new Float32Array(keep.length * 3 * a.itemSize);
+    let i = 0;
+    for (const t of keep) for (let k = 0; k < 3; k++, i++) for (let j = 0; j < a.itemSize; j++) arr[i * a.itemSize + j] = a.getComponent(t * 3 + k, j);
+    out.setAttribute(name, new THREE.BufferAttribute(arr, a.itemSize));
+  }
+  return out;
+}
+
 /** Highest point of the model on the bore's centre plane between depths z0..z1 (root space), under `below`. */
 function topNear(geo: THREE.BufferGeometry, z0: number, z1: number, below: number): number | null {
   const pos = geo.getAttribute('position');
@@ -327,19 +517,19 @@ function topNear(geo: THREE.BufferGeometry, z0: number, z1: number, below: numbe
  * `world`: the light third-person file.
  */
 export function dressRig(rig: WeaponRig, key: ModelKey, world: boolean): boolean {
-  const src = (!world && sources.get(`${key}|view`)) || sources.get(`${key}|world`);
+  const tier: Tier = world ? 'world' : 'view';
+  const src = sources.get(`${key}|${tier}`);
   if (!src) return false;
   const root = rig.root;
   const keepNodes = [rig.leftHand, rig.rightHand, rig.heldShell];
   const isProc = (m: THREE.Mesh) => !under(m, keepNodes, root);
-  let matrix = fits.get(key);
+  let matrix = fits.get(`${key}|${tier}`);
   if (matrix === undefined) {
     const ref = trianglesOf(root, (m) => isProc(m) && !(m.material as THREE.Material).transparent);
-    // Fit on the light tier when there is one (same coordinates, fewer triangles).
-    const fitSrc = sources.get(`${key}|world`) ?? src;
-    const pos = fitSrc.geometry.getAttribute('position').array as Float32Array;
-    matrix = ref.length ? fit(ref, pos, !!FLIP[key]) : null;
-    fits.set(key, matrix);
+    src.geometry = keepAttached(src.geometry) ?? src.geometry;
+    const pos = src.geometry.getAttribute('position').array as Float32Array;
+    matrix = ref.length ? fit(ref, pos, !!FLIP[`${key}|${tier}`]) : null;
+    fits.set(`${key}|${tier}`, matrix);
   }
   if (!matrix) return false;
 
@@ -378,7 +568,9 @@ export function dressRig(rig: WeaponRig, key: ModelKey, world: boolean): boolean
   const pos = geo.getAttribute('position');
   const nor = geo.getAttribute('normal');
   const uv = geo.getAttribute('uv');
-  const buckets = new Map<THREE.Object3D, number[]>();
+  const mat = geo.getAttribute('mat');
+  // Per moving node and material.
+  const buckets = new Map<string, { node: THREE.Object3D; mat: number; starts: number[] }>();
   const c = new THREE.Vector3();
   const a = new THREE.Vector3();
   for (let t = 0; t < pos.count; t += 3) {
@@ -387,12 +579,14 @@ export function dressRig(rig: WeaponRig, key: ModelKey, world: boolean): boolean
     c.multiplyScalar(1 / 3);
     const r = regions.find((r) => r.box.containsPoint(c));
     const node = r?.node ?? root;
-    let list = buckets.get(node);
-    if (!list) buckets.set(node, (list = []));
-    list.push(t);
+    const mi = mat ? mat.getX(t) : 0;
+    const key = `${node.uuid}|${mi}`;
+    let b = buckets.get(key);
+    if (!b) buckets.set(key, (b = { node, mat: mi, starts: [] }));
+    b.starts.push(t);
   }
   root.updateMatrixWorld(true);
-  for (const [node, starts] of buckets) {
+  for (const { node, mat: mi, starts } of buckets.values()) {
     const n = starts.length * 3;
     const P = new Float32Array(n * 3), N = new Float32Array(n * 3), U = new Float32Array(n * 2);
     let i = 0;
@@ -410,7 +604,7 @@ export function dressRig(rig: WeaponRig, key: ModelKey, world: boolean): boolean
     // Into the node's own space (its rest place in the root).
     if (node !== root) part.applyMatrix4(new THREE.Matrix4().copy(node.matrixWorld).invert().multiply(root.matrixWorld));
     part.computeBoundingSphere();
-    const mesh = new THREE.Mesh(part, src.material);
+    const mesh = new THREE.Mesh(part, src.materials[mi]);
     mesh.userData.gunModel = true;
     mesh.castShadow = true;
     node.add(mesh);
@@ -419,7 +613,7 @@ export function dressRig(rig: WeaponRig, key: ModelKey, world: boolean): boolean
   const mz = rig.muzzle.position;
   let front = Infinity;
   for (let i = 0; i < pos.count; i++) {
-    if (Math.abs(pos.getX(i)) < 0.03 && Math.abs(pos.getY(i) - mz.y) < 0.035) front = Math.min(front, pos.getZ(i));
+    if (Math.abs(pos.getX(i)) < 0.03 && Math.abs(pos.getY(i) - mz.y) < 0.05) front = Math.min(front, pos.getZ(i));
   }
   if (rig.muzzle.parent === root && Math.abs(front - mz.z) < 0.15) mz.z = front;
   // Aimed: the eye just over the highest point of the gun from the rear sight to the
