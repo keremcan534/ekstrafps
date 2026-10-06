@@ -1,3 +1,4 @@
+import { withModel } from '../targets/CharacterModels';
 import * as THREE from 'three';
 import type { Physics } from '../core/Physics';
 import { clamp } from '../core/math';
@@ -70,7 +71,7 @@ export class Cultist {
     readonly index: number,
     private hooks: CultistHooks,
   ) {
-    this.body = new Humanoid(physics, scene, choirSkin(index), {
+    this.body = new Humanoid(physics, scene, withModel('choir', choirSkin(index)), {
       onDamage: () => {
         // Shot: no flinch-and-run (that's the light); they just keep coming, faster.
         this.cooldown = Math.min(this.cooldown, 0.5);

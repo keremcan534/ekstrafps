@@ -8,12 +8,14 @@ import { loadModelBody, skinFromModel, type ModelBody } from './ModelBody';
  */
 const FILES: Record<string, string> = {
   bd: 'sable',
-  bdboss: 'sable', // the Warden wears his own model once one exists ('warden')
+  bdboss: 'warden',
   vanta: 'vanta',
-  bravo: 'rival',
-  charlie: 'rival',
-  delta: 'rival',
+  bravo: 'rival_tan',
+  charlie: 'rival_green',
+  delta: 'rival_grey',
   salvage: 'salvager',
+  choir: 'choir',
+  staff: 'staff',
 };
 
 const bodies = new Map<string, ModelBody>();

@@ -1,3 +1,4 @@
+import { withModel } from '../targets/CharacterModels';
 import * as THREE from 'three';
 import type { Physics } from '../core/Physics';
 import { clamp } from '../core/math';
@@ -51,7 +52,7 @@ export class Civilian {
     readonly index: number,
     hooks: CivilianHooks,
   ) {
-    this.body = new Humanoid(physics, scene, labSkin(index), {
+    this.body = new Humanoid(physics, scene, withModel('staff', labSkin(index)), {
       onDamage: (info) => {
         this.scare(info.hit.point, 8);
         if (!info.killed) hooks.onHurt?.(this, info);

@@ -78,7 +78,7 @@ const log = { name, image, height };
 // 1. Image to 3D.
 const created = await call('POST', `${API}/image-to-3d`, {
   image_url: dataUri(image),
-  ai_model: 'latest',
+  ai_model: 'meshy-t2', // smart topology needs a T-series model
   model_type: 'smart-topology',
   topology: 'triangle',
   target_polycount: 15000,
