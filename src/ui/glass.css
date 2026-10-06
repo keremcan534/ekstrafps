@@ -301,7 +301,7 @@ kbd, .sv-key {
 .menu.paused { background: transparent; }
 
 /* HUD hidden while the menu is up (the pause menu keeps the frozen game visible behind the glass). */
-.in-menu .ui-layer, .in-menu .post-fx, .in-menu .post-vignette { display: none; }
+.in-menu .ui-layer, .in-menu .post-vignette { display: none; }
 .menu-nav .gbtn.quit { height: 48px; font-size: 14px; color: var(--g-dim); }
 .menu-nav .gbtn:nth-child(5) { animation-delay: 480ms; }
 
@@ -328,7 +328,7 @@ kbd, .sv-key {
 .ex-bar { margin-top: 10px; height: 4px; border-radius: 4px; background: rgba(255, 255, 255, 0.1); overflow: hidden; }
 .ex-bar i { display: block; height: 100%; background: linear-gradient(90deg, var(--g-good), #c6ffe3); transform-origin: left; box-shadow: 0 0 12px var(--g-good); }
 
-.cinematic .ui-layer, .cinematic .post-fx { opacity: 0; transition: opacity 300ms; }
+.cinematic .ui-layer { opacity: 0; transition: opacity 300ms; }
 .ex-letterbox { position: fixed; inset: 0; pointer-events: none; z-index: 40; }
 .ex-letterbox i { position: absolute; left: 0; right: 0; height: 0; background: #000; transition: height 700ms cubic-bezier(.2,.8,.2,1); }
 .ex-letterbox i:first-child { top: 0; }

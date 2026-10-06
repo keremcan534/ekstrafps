@@ -4,9 +4,9 @@ import * as THREE from 'three';
  * Colour grade (one extra full-screen pass): the frame renders into an HDR target, then
  * a quad tone-maps it and grades it — a light sharpen (desktop), cold, slightly
  * desaturated shadows, reds and warm flashes kept saturated, a filmic toe (blacks lifted
- * a hair, so dark rooms read as murk rather than void), a touch more contrast, a vignette
- * and film grain (in the shader: free here, unlike a blended CSS overlay). `mood` 0..1
- * scales it (darker, redder when the power is out).
+ * a hair, so dark rooms read as murk rather than void), a touch more contrast and a
+ * vignette. No film grain: a clean image. `mood` 0..1 scales it (darker, redder when the
+ * power is out).
  */
 export class ScreenGrade {
   readonly target: THREE.WebGLRenderTarget;
@@ -24,7 +24,6 @@ export class ScreenGrade {
         tDiffuse: { value: this.target.texture },
         mood: { value: 0 },
         texel: { value: new THREE.Vector2(1 / size.x, 1 / size.y) },
-        time: { value: 0 },
       },
       defines: sharpen ? { SHARPEN: 1 } : {},
       vertexShader: /* glsl */ `
@@ -34,7 +33,6 @@ export class ScreenGrade {
         uniform sampler2D tDiffuse;
         uniform float mood;
         uniform vec2 texel;
-        uniform float time;
         varying vec2 vUv;
         void main() {
           vec3 src = texture2D(tDiffuse, vUv).rgb;
@@ -66,11 +64,6 @@ export class ScreenGrade {
           // Vignette (on top of the CSS one, stronger in the dark).
           vec2 d = vUv - 0.5;
           c *= 1.0 - mix(0.12, 0.32, mood) * smoothstep(0.2, 0.75, length(d * vec2(1.0, 0.85)) * 1.25);
-          // Film grain: strongest in the mid-darks, gone in the highlights.
-          vec2 gp = floor(vUv / texel) + fract(time * vec2(37.0, 17.0)) * 113.0;
-          float grain = fract(sin(dot(gp, vec2(12.9898, 78.233))) * 43758.5453) - 0.5;
-          float gl = dot(c, vec3(0.2126, 0.7152, 0.0722));
-          c += grain * (0.045 + 0.02 * mood) * (1.0 - smoothstep(0.25, 0.85, gl));
           gl_FragColor = vec4(clamp(c, 0.0, 1.0), 1.0);
         }`,
       depthTest: false,
@@ -96,8 +89,6 @@ export class ScreenGrade {
   end(): void {
     this.renderer.setRenderTarget(null);
     this.mat.uniforms.mood.value = this.mood;
-    // Grain moves 24 times a second (film), not every frame.
-    this.mat.uniforms.time.value = Math.floor(performance.now() / 41.7) * 0.0137;
     this.renderer.render(this.scene, this.camera);
   }
 }

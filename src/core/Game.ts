@@ -69,20 +69,6 @@ import type { ShowcaseDeps } from '../ui/Showcase';
 
 const FIXED_DT = 1 / 120;
 
-/** Small tileable monochrome noise for the film-grain overlay. */
-function grainDataUrl(): string {
-  const c = document.createElement('canvas');
-  c.width = c.height = 128;
-  const g = c.getContext('2d')!;
-  const img = g.createImageData(128, 128);
-  for (let i = 0; i < img.data.length; i += 4) {
-    const v = Math.random() * 255;
-    img.data[i] = img.data[i + 1] = img.data[i + 2] = v;
-    img.data[i + 3] = 255;
-  }
-  g.putImageData(img, 0, 0);
-  return c.toDataURL();
-}
 const MAX_STEPS = 6;
 /** Dynamic resolution never goes below half the chosen resolution. */
 const DYN_FLOOR = 0.5;
@@ -424,11 +410,7 @@ export class Game {
       this.audio.play('player.jump');
     };
 
-    // Subtle camera look: vignette + animated film grain (pure CSS, no post pass).
-    const post = document.createElement('div');
-    post.className = 'post-fx';
-    post.style.backgroundImage = `url(${grainDataUrl()})`;
-    this.container.appendChild(post);
+    // Subtle camera look: a vignette (pure CSS, no post pass). No film grain.
     const vignette = document.createElement('div');
     vignette.className = 'post-vignette';
     this.container.appendChild(vignette);

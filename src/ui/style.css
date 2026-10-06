@@ -223,14 +223,9 @@ canvas { display: block; touch-action: none; }
 .btn-use { left: 50%; transform: translateX(-50%); bottom: calc(26vh); width: 64px; height: 40px; font-size: 12px; font-weight: 800; border-color: #e0a51c; color: #ffd25a; }
 .btn-map { left: calc(194px + env(safe-area-inset-left)); font-size: 9px; }
 
-/* ---------- Camera look: vignette + film grain ---------- */
-.post-fx { position: absolute; inset: 0; pointer-events: none; z-index: 1; opacity: 0.055; mix-blend-mode: overlay; animation: grain 0.5s steps(4) infinite; }
+/* ---------- Camera look: vignette ---------- */
 .post-vignette { position: absolute; inset: 0; pointer-events: none; z-index: 1; background: radial-gradient(ellipse at center, rgba(0,0,0,0) 58%, rgba(0,0,0,0.42) 100%); }
-@keyframes grain { 0% { background-position: 0 0; } 25% { background-position: -37px 21px; } 50% { background-position: 53px -11px; } 75% { background-position: -19px -47px; } 100% { background-position: 0 0; } }
-.is-touch .post-fx { animation: none; }
-.no-postfx .post-fx, .no-postfx .post-vignette { display: none; }
-/* The grade pass draws its own grain (fx/ScreenGrade): no second, blended layer. */
-.grade-on .post-fx { display: none; }
+.no-postfx .post-vignette { display: none; }
 .fps-meter { position: absolute; left: 50%; top: 64px; transform: translateX(-50%); z-index: 30; pointer-events: none; padding: 2px 8px; border-radius: 6px; background: rgba(0, 0, 0, 0.45); color: #b8ff6a; font: 600 11px ui-monospace, Menlo, Consolas, monospace; letter-spacing: 0.04em; white-space: nowrap; }
 
 /* ---------- Downed (last stand) ---------- */
@@ -349,8 +344,6 @@ canvas { display: block; touch-action: none; }
 .ai-test-panel i { color: #9dff4a; font-style: normal; }
 .ai-test-panel small { color: #8fa3b8; }
 
-/* Phones: the animated film grain is a full-screen blend layer (costly on mobile compositors). */
-.is-touch .post-fx { display: none; }
 
 /* Phones: everything sized for ~640 px of height scales down to the real screen
    (a phone in landscape is ~400 px tall), and no frosted glass: each blurred panel
@@ -363,7 +356,7 @@ canvas { display: block; touch-action: none; }
 body.no-glass *, body.no-glass *::before, body.no-glass *::after,
 body.perf-lite *, body.perf-lite *::before, body.perf-lite *::after { -webkit-backdrop-filter: none !important; backdrop-filter: none !important; }
 body.perf-lite *, body.perf-lite *::before, body.perf-lite *::after { mix-blend-mode: normal !important; }
-body.perf-lite .post-fx, body.perf-lite .menu-grain { display: none; }
+body.perf-lite .menu-grain { display: none; }
 /* Infinite pulses repaint the HUD every frame: a static colour carries the warning instead. */
 .is-touch .hp.low .hp-text, .is-touch .sb-note.urgent,
 body.perf-lite .hp.low .hp-text, body.perf-lite .sb-note.urgent { animation: none; opacity: 1; }
