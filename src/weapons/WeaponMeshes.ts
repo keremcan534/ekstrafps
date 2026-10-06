@@ -35,6 +35,47 @@ const sources = new Map<string, GunSource>();
 /** Fitted root-space transform per `${key}|${tier}` (each file has its own coordinates). */
 const fits = new Map<string, THREE.Matrix4 | null>();
 
+/** Models whose rear sight is in the way (a folding sight left up): cut off at the rail. */
+const NO_REAR_SIGHT = new Set<ModelKey>(['svd']);
+
+/** `geo` (root space) without its rear sight: whatever stands above the rail there. */
+function stripRearSight(geo: THREE.BufferGeometry): THREE.BufferGeometry {
+  // The rear sight: the tallest thing on the centre line over the receiver.
+  let best = { z: 0, y: -Infinity };
+  for (let z = -0.25; z <= 0.06; z += 0.004) {
+    const y = topNear(geo, z - 0.002, z + 0.002, 1);
+    if (y !== null && y > best.y) best = { z, y };
+  }
+  // The rail just in front of it.
+  const rail = topNear(geo, best.z - 0.12, best.z - 0.06, best.y - 0.005);
+  if (rail === null) return geo;
+  const pos = geo.getAttribute('position');
+  const keep: number[] = [];
+  const c = new THREE.Vector3();
+  const a = new THREE.Vector3();
+  for (let t = 0; t < pos.count; t += 3) {
+    c.set(0, 0, 0);
+    for (let k = 0; k < 3; k++) c.add(a.fromBufferAttribute(pos, t + k));
+    c.multiplyScalar(1 / 3);
+    if (Math.abs(c.z - best.z) < 0.035 && c.y > rail + 0.003 && Math.abs(c.x) < 0.03) continue;
+    keep.push(t);
+  }
+  const out = new THREE.BufferGeometry();
+  for (const name of Object.keys(geo.attributes)) {
+    const at = geo.getAttribute(name);
+    const arr = new Float32Array(keep.length * 3 * at.itemSize);
+    let i = 0;
+    for (const t of keep) for (let k = 0; k < 3; k++, i++) for (let j = 0; j < at.itemSize; j++) arr[i * at.itemSize + j] = at.getComponent(t + k, j);
+    out.setAttribute(name, new THREE.BufferAttribute(arr, at.itemSize));
+  }
+  geo.dispose();
+  return out;
+}
+
+/** The lit dot put in a model's reflex sight (it has a window, not a lens). */
+const RETICLE = new THREE.MeshBasicMaterial({ color: 0xff3030, toneMapped: false });
+const RETICLE_GLOW = new THREE.MeshBasicMaterial({ color: 0xff2020, transparent: true, opacity: 0.3, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false });
+
 /** Models the fit turns the wrong way round (a stock thinner than the barrel). */
 const FLIP: Record<string, boolean> = { 'm249|world': true };
 
@@ -434,6 +475,47 @@ function fitSquare(ref: Float32Array, model: Float32Array, flip: boolean, pitche
   return best.m;
 }
 
+/**
+ * The silhouette fit gets the pitch to a degree or two; the barrel settles it. Slices
+ * along the front of the gun give the middle of what's on the centre line there; the
+ * median slope between them (outliers like a front sight or gas block don't move a
+ * median) is the bore's tilt, turned out about the muzzle.
+ */
+function levelBarrel(model: Float32Array, m: THREE.Matrix4): THREE.Matrix4 {
+  const v = new THREE.Vector3();
+  const pts: { z: number; y: number; x: number }[] = [];
+  let front = Infinity;
+  for (let i = 0; i < model.length; i += 3) {
+    v.set(model[i], model[i + 1], model[i + 2]).applyMatrix4(m);
+    pts.push({ x: v.x, y: v.y, z: v.z });
+    front = Math.min(front, v.z);
+  }
+  const mids: { z: number; y: number }[] = [];
+  for (let z = front + 0.005; z < front + 0.3; z += 0.01) {
+    let lo = Infinity, hi = -Infinity;
+    for (const p of pts) {
+      if (Math.abs(p.z - z) > 0.004 || Math.abs(p.x) > 0.025) continue;
+      lo = Math.min(lo, p.y);
+      hi = Math.max(hi, p.y);
+    }
+    // A thin section only (the barrel, not a handguard or magazine well).
+    if (hi > lo && hi - lo < 0.05) mids.push({ z, y: (lo + hi) / 2 });
+  }
+  if (mids.length < 4) return m;
+  const slopes: number[] = [];
+  for (let i = 0; i < mids.length; i++) for (let j = i + 2; j < mids.length; j++) slopes.push((mids[j].y - mids[i].y) / (mids[j].z - mids[i].z));
+  slopes.sort((a, b) => a - b);
+  const tilt = Math.atan(slopes[slopes.length >> 1]);
+  if (Math.abs(tilt) < 0.1 * (Math.PI / 180) || Math.abs(tilt) > 8 * (Math.PI / 180)) return m;
+  // Rising toward the back (+z) means the muzzle dips: turn it back about the muzzle.
+  const pivot = new THREE.Vector3(0, mids[0].y, mids[0].z);
+  return new THREE.Matrix4()
+    .makeTranslation(pivot.x, pivot.y, pivot.z)
+    .multiply(new THREE.Matrix4().makeRotationX(tilt))
+    .multiply(new THREE.Matrix4().makeTranslation(-pivot.x, -pivot.y, -pivot.z))
+    .multiply(m);
+}
+
 // ------------------------------------------------------------------ dressing
 
 /** Is `o` (or an ancestor up to `root`) one of `nodes`? */
@@ -535,6 +617,7 @@ export function dressRig(rig: WeaponRig, key: ModelKey, world: boolean): boolean
     src.geometry = keepAttached(src.geometry) ?? src.geometry;
     const pos = src.geometry.getAttribute('position').array as Float32Array;
     matrix = ref.length ? fit(ref, pos, !!FLIP[`${key}|${tier}`], LENGTH[key]) : null;
+    if (matrix) matrix = levelBarrel(pos, matrix);
     fits.set(`${key}|${tier}`, matrix);
   }
   if (!matrix) return false;
@@ -570,7 +653,8 @@ export function dressRig(rig: WeaponRig, key: ModelKey, world: boolean): boolean
   }
 
   // Cut the model up: each triangle goes to the region its centre is in, else the body.
-  const geo = src.geometry.clone().applyMatrix4(matrix);
+  let geo = src.geometry.clone().applyMatrix4(matrix);
+  if (NO_REAR_SIGHT.has(key)) geo = stripRearSight(geo);
   const pos = geo.getAttribute('position');
   const nor = geo.getAttribute('normal');
   const uv = geo.getAttribute('uv');
@@ -639,29 +723,37 @@ export function dressRig(rig: WeaponRig, key: ModelKey, world: boolean): boolean
       return ray.intersectObject(probe).map((h) => h.point.y);
     };
     const bins: { z: number; y: number }[] = [];
-    for (let z = Math.max(mz.z + 0.1, -0.32); z <= 0.12; z += 0.002) {
+    // Up to just behind the grip: further back is the stock, not a sight.
+    for (let z = Math.max(mz.z + 0.1, -0.32); z <= 0.06; z += 0.002) {
       const y = topNear(geo, z - 0.001, z + 0.001, cap);
       if (y !== null) bins.push({ z, y });
     }
     const tallest = Math.max(...bins.map((b) => b.y));
     const rearSight = bins.filter((b) => b.y > tallest - 0.002).reduce((a, b) => (b.z > a.z ? b : a), bins[0]);
-    let peep: { y: number; z: number } | null = null;
+    // A red dot / reflex sight on the model: a ring around a window 1-5 cm across at the
+    // top of the gun, closed at the sides. The eye goes in its middle a hand's width
+    // behind, and a dot is lit at the front of the window (low-poly optics have no lens).
+    let optic: { y: number; front: number; back: number } | null = null;
     if (rearSight) {
-      for (let z = rearSight.z - 0.03; z <= rearSight.z + 0.03 && !peep; z += 0.001) {
+      // Over the receiver only: a front sight's protective ring is open ahead too.
+      for (let z = Math.max(rearSight.z - 0.08, -0.15); z <= rearSight.z + 0.08; z += 0.002) {
         const ys = hits(z);
-        // A thin ring (a notched leaf is a thick plate) whose top is the top of the sight
-        // there (a notch dips below its sides).
-        if (!(ys.length >= 3 && ys[0] > tallest - 0.012 && ys[0] - ys[1] < 0.003 && ys[1] - ys[2] > 0.002 && ys[1] - ys[2] < 0.008)) continue;
-        const slice = topNear(geo, z - 0.0015, z + 0.0015, cap);
-        if (slice !== null && ys[0] < slice - 0.0015) continue;
-        // A real aperture is closed at the sides too (not a gap under a leaf).
+        if (!(ys.length >= 3 && ys[0] > tallest - 0.015 && ys[0] - ys[1] < 0.012 && ys[1] - ys[2] > 0.015 && ys[1] - ys[2] < 0.05)) continue;
         const c = new THREE.Vector3(0, (ys[1] + ys[2]) / 2, z);
+        const half = (ys[1] - ys[2]) / 2;
         const closed = [1, -1].every((sx) => {
           ray.set(c, new THREE.Vector3(sx, 0, 0));
           const h = ray.intersectObject(probe)[0];
-          return !!h && h.distance < 0.01;
+          return !!h && h.distance < half * 1.6 + 0.004;
         });
-        if (closed) peep = { y: c.y, z };
+        if (!closed) continue;
+        // Through a sight's window the way ahead is open (a bolt's or receiver's hole
+        // looks straight into metal).
+        ray.set(c, new THREE.Vector3(0, 0, -1));
+        const ahead = ray.intersectObject(probe)[0];
+        if (ahead && ahead.distance < 0.15) continue;
+        if (!optic) optic = { y: c.y, front: z, back: z };
+        else if (Math.abs(c.y - optic.y) < 0.004) optic.back = z;
       }
     }
     let tip = -Infinity;
@@ -673,32 +765,44 @@ export function dressRig(rig: WeaponRig, key: ModelKey, world: boolean): boolean
       const y = ring ? ys[2] : ys[0];
       if (y > tip) [tip, tipZ] = [y, z];
     }
-    // A notch: across the rear sight the centre line dips below the sides; its bottom is
-    // where the post's tip sits in a zeroed picture. No dip: the sight's top.
-    let notch = rearSight?.y ?? -Infinity;
-    if (rearSight && !peep) {
-      const side = (x: number, z: number) => {
-        ray.set(new THREE.Vector3(x, cap, z), down);
-        return ray.intersectObject(probe)[0]?.point.y ?? -Infinity;
-      };
-      for (let z = rearSight.z - 0.015; z <= rearSight.z + 0.015; z += 0.001) {
-        const c = hits(z)[0];
-        if (c === undefined || Math.min(side(-0.006, z), side(0.006, z)) < tallest - 0.003) continue;
-        if (c > tallest - 0.012) notch = Math.min(notch, c);
+    if (optic) {
+      rig.sightShift = optic.back - rig.sight.position.z;
+      rig.sight.position.set(0, optic.y, optic.back);
+      rig.eyeRelief = 0.12;
+      const dot = new THREE.Mesh(new THREE.CircleGeometry(0.0011, 16), RETICLE);
+      dot.position.set(0, optic.y, optic.front - 0.001);
+      const glow = new THREE.Mesh(new THREE.CircleGeometry(0.0024, 16), RETICLE_GLOW);
+      glow.position.set(0, optic.y, optic.front - 0.0008);
+      root.add(dot, glow);
+    } else if (rearSight && tip > -Infinity) {
+      // Iron sights, whatever their kind (notch, peep, open leaf, a bare rail): the eye at
+      // the cheek goes to the lowest height from which a ray to the front post's tip meets
+      // nothing on the way: it looks through the notch or hole, or just over the top. The
+      // line from there to the tip is the sight line; aimed, the gun tips so it's level and
+      // the post sits dead centre.
+      const cheek = rearSight.z + 0.3;
+      const target = new THREE.Vector3(0, tip, tipZ);
+      const from = new THREE.Vector3();
+      const dir = new THREE.Vector3();
+      let eye = tip;
+      // Not under the rear sight (a gap below a leaf is not a sight): from its notch down.
+      for (let y = Math.max(tip - 0.002, rearSight.y - 0.012); y <= tip + 0.06; y += 0.0005) {
+        from.set(0, y, cheek);
+        const span = dir.subVectors(target, from).length();
+        ray.set(from, dir.normalize());
+        ray.far = span - 0.006;
+        const blocked = ray.intersectObject(probe).length > 0;
+        ray.far = Infinity;
+        if (!blocked) {
+          eye = y + 0.002; // a little air over the sight: an open picture, not a slit
+          break;
+        }
       }
-    }
-    // The line runs from the rear sight (hole centre or notch bottom) to the post's tip.
-    // The eye stays where the weapon's sight distance puts it (the cheek weld the recoil
-    // was tuned around); aimed, the gun tips by the line's angle to its bore so the post
-    // sits dead centre whatever height the model's maker zeroed it at.
-    const rear = peep ?? (rearSight ? { y: notch, z: rearSight.z } : null);
-    if (rear) {
-      rig.sightShift = rear.z - rig.sight.position.z;
-      rig.sight.position.set(0, rear.y, rear.z);
-      if (tip > -Infinity && rear.z - tipZ > 0.1) {
-        const tilt = Math.atan2(rear.y - tip, rear.z - tipZ);
-        if (Math.abs(tilt) < 2 * (Math.PI / 180)) rig.sightTilt = tilt;
-      }
+      const rearY = tip + ((eye - tip) * (rearSight.z - tipZ)) / (cheek - tipZ);
+      rig.sightShift = rearSight.z - rig.sight.position.z;
+      rig.sight.position.set(0, rearY, rearSight.z);
+      const tilt = Math.atan2(eye - tip, cheek - tipZ);
+      if (Math.abs(tilt) < 4 * (Math.PI / 180)) rig.sightTilt = tilt;
     }
     (probe.material as THREE.Material).dispose();
   }

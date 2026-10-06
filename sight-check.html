@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="tr"><head><meta charset="utf-8"><title>Nişan Kontrolü</title>
+<!-- Every weapon aimed, with the game's projection and its sight placement (auto or the
+     hand-set pose), over a target 25 m out. ?ids=ak47,m4a1 for a few, &big for large tiles. --><style>body{margin:0;background:#222}canvas{display:block}</style></head>
+<body><script type="module">
+import * as THREE from 'three';
+import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
+import { buildWeaponModel, compactViewRig } from '/src/weapons/WeaponModels.ts';
+import { loadWeaponMeshes } from '/src/weapons/WeaponMeshes.ts';
+import { createWeaponDefs } from '/src/weapons/WeaponData.ts';
+const DEG = Math.PI / 180;
+const ids = new URLSearchParams(location.search).get('ids')?.split(',');
+await loadWeaponMeshes();
+const defs = createWeaponDefs().filter((d) => !ids || ids.includes(d.id));
+const big = new URLSearchParams(location.search).has("big"); const TW = big ? 960 : 480, TH = big ? 540 : 270, COLS = big ? 2 : 3;
+const r = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
+r.setSize(TW * COLS, TH * Math.ceil(defs.length / COLS)); r.toneMapping = THREE.ACESFilmicToneMapping;
+document.body.appendChild(r.domElement);
+r.setScissorTest(true);
+const H = TH * Math.ceil(defs.length / COLS);
+const world = new THREE.Scene(); world.background = new THREE.Color(0x6b7480);
+const tgt = new THREE.Mesh(new THREE.CircleGeometry(0.3, 32), new THREE.MeshBasicMaterial({ color: 0xffffff })); tgt.position.z = -25; world.add(tgt);
+const dot = new THREE.Mesh(new THREE.CircleGeometry(0.06, 16), new THREE.MeshBasicMaterial({ color: 0xff0000 })); dot.position.z = -24.9; world.add(dot);
+defs.forEach((d, i) => {
+  const vm = new THREE.Scene();
+  vm.environment = new THREE.PMREMGenerator(r).fromScene(new RoomEnvironment(), 0.04).texture; vm.environmentIntensity = 0.6;
+  vm.add(new THREE.HemisphereLight(0xdfe8ff, 0x4a4540, 1.35));
+  const k = new THREE.DirectionalLight(0xfff2e0, 2.5); k.position.set(0.6, 1, 0.4); vm.add(k);
+  const rig = buildWeaponModel(d.model); compactViewRig(rig);
+  rig.leftHand.visible = rig.rightHand.visible = false;
+  const pivot = new THREE.Group(); vm.add(pivot); pivot.add(rig.root);
+  const s = rig.sight.position;
+  const ads = d.viewmodel.ads;
+  if (ads) {
+    pivot.position.set(...ads.position);
+    pivot.rotation.set(ads.rotation[0] * DEG, ads.rotation[1] * DEG, ads.rotation[2] * DEG, 'YXZ');
+  } else {
+    const tilt = rig.sightTilt ?? 0;
+    pivot.position.set(-s.x, -s.y + s.z * Math.sin(tilt), -(rig.eyeRelief ?? d.sight.sightDistance - (rig.sightShift ?? 0)) - s.z);
+    pivot.rotation.set(tilt, 0, 0, 'YXZ');
+  }
+  const vf = (2 * Math.atan(Math.tan((d.sight.adsFov * DEG) / 2) / (16 / 9))) / DEG;
+  const cam = new THREE.PerspectiveCamera(vf, TW / TH, 0.055, 100);
+  const wcam = new THREE.PerspectiveCamera(vf, TW / TH, 0.03, 400);
+  const x = (i % COLS) * TW, y = H - TH - Math.floor(i / COLS) * TH;
+  r.setViewport(x, y, TW, TH); r.setScissor(x, y, TW, TH);
+  r.autoClear = true; r.render(world, wcam); r.autoClear = false; r.clearDepth(); r.render(vm, cam);
+});
+window.__names = defs.map((d) => d.id + (d.viewmodel.ads ? '*' : ''));
+window.__done = true;
+</script></body></html>

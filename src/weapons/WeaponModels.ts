@@ -48,6 +48,8 @@ export interface WeaponRig {
    * the gun tips up by it so the line, not the bore axis, points at the target.
    */
   sightTilt?: number;
+  /** Aimed, the eye's distance behind `sight` (m) when the model asks for it (a reflex sight). */
+  eyeRelief?: number;
 }
 
 const std = (color: number, metalness: number, roughness: number) => new THREE.MeshStandardMaterial({ color, metalness, roughness });

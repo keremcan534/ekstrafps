@@ -191,7 +191,7 @@ export class Viewmodel {
     const s = this.rig.sight.position;
     const ads = d.viewmodel.ads;
     if (ads) this.adsPos.set(...ads.position);
-    else this.adsPos.set(-s.x, -s.y, -(d.sight.sightDistance - (this.rig.sightShift ?? 0)) - s.z);
+    else this.adsPos.set(-s.x, -s.y, -(this.rig.eyeRelief ?? d.sight.sightDistance - (this.rig.sightShift ?? 0)) - s.z);
     const b = this.rig.butt;
     this.recoilPivot.position.copy(b);
     this.buttOffset.position.set(-b.x, -b.y, -b.z);

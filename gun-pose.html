@@ -145,7 +145,7 @@ const r2 = (v) => Math.round(v * 100) / 100;
 
 function defaults(def, rig) {
   const s = rig.sight.position;
-  const dist = def.sight.sightDistance - (rig.sightShift ?? 0);
+  const dist = rig.eyeRelief ?? def.sight.sightDistance - (rig.sightShift ?? 0);
   const tilt = (rig.sightTilt ?? 0) / DEG;
   // A pose already in the weapon's data starts from there.
   const vmd = def.viewmodel;
