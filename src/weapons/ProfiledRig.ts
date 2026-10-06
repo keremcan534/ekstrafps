@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { gunSource } from './WeaponMeshes';
 import { adsFrame, orientationMatrix, type ViewProfile } from './ViewProfile';
+import { gripQuaternion } from './HandPose';
 import type { WeaponData } from './WeaponData';
 import type { WeaponRig } from './WeaponModels';
 
@@ -10,7 +11,10 @@ import type { WeaponRig } from './WeaponModels';
  *   WeaponInstance (rig.root, weapon space)
  *   ├─ OrientationRoot (model → weapon) ─ the model file's meshes, untouched
  *   ├─ mag, bolt     moving pieces at their pivots, cut from the model by bone / node name
- *   └─ ADSPoint (rig.sight), MuzzlePoint (rig.muzzle), eject port, laser, hand IK points
+ *   └─ ADSPoint (rig.sight), MuzzlePoint (rig.muzzle), eject port, laser,
+ *      RightHandGrip / LeftHandGrip (where the hands hold it: position and rotation, from the
+ *      profile's `hands`) and the animated hand points (RightHandIK / LeftHandIK, which rest
+ *      on the grips and are moved by reloads and bolt work)
  *
  * Nothing is read off the mesh's shape: every point comes from the profile, so changing
  * another weapon or the motion layers can't move this one.
@@ -23,6 +27,9 @@ export interface ProfiledView {
   frame: THREE.Matrix4;
   /** Moving pieces: their node (weapon space, at the pivot) and model-space pivot. */
   pieces: { node: THREE.Object3D; pivot: THREE.Vector3; orient: THREE.Group; knob?: THREE.Vector3 }[];
+  /** RightHandGrip / LeftHandGrip (weapon space; hand axes, see HandPose.ts). */
+  rightGrip: THREE.Object3D;
+  leftGrip: THREE.Object3D;
 }
 
 const FORWARD = new THREE.Vector3(0, 0, -1);
@@ -172,11 +179,13 @@ export function buildProfiledRig(profile: Readonly<ViewProfile>, data: WeaponDat
     leftHandRest: new THREE.Vector3(),
     rightHand: point('RightHandIK'),
     rightHandRest: new THREE.Vector3(),
+    handIk: { left: 1, right: 1 },
+    handPose: { left: 'grip', right: 'grip' },
     heldShell: null,
     laser: point('Laser'),
     butt: new THREE.Vector3(),
     shellType: data.category === 'pistol' ? 'pistol' : data.category === 'shotgun' ? 'shotgun' : 'rifle',
-    view: { profile, orientation, frame: new THREE.Matrix4(), pieces },
+    view: { profile, orientation, frame: new THREE.Matrix4(), pieces, rightGrip: point('RightHandGrip'), leftGrip: point('LeftHandGrip') },
   };
   layoutProfiledRig(rig);
   return rig;
@@ -210,9 +219,15 @@ export function layoutProfiledRig(rig: WeaponRig): void {
   rig.laser.position.y -= 0.03;
   rig.laser.quaternion.copy(rig.muzzle.quaternion);
   rig.ejectPort.position.copy(W(p.points.eject));
-  rig.leftHandRest.copy(W(p.points.gripLeft));
+  // The hands: their grips, and the animated points resting on them.
+  const h = p.hands;
+  for (const [grip, def] of [[v.rightGrip, h?.rightGrip], [v.leftGrip, h?.leftGrip]] as const) {
+    grip.position.copy(def ? W(def.position) : new THREE.Vector3());
+    gripQuaternion(def?.rotation ?? [0, 0, 0], grip.quaternion);
+  }
+  rig.leftHandRest.copy(v.leftGrip.position);
   rig.leftHand.position.copy(rig.leftHandRest);
-  rig.rightHandRest.copy(W(p.points.gripRight));
+  rig.rightHandRest.copy(v.rightGrip.position);
   rig.rightHand.position.copy(rig.rightHandRest);
   rig.butt.copy(W(p.points.butt));
 }

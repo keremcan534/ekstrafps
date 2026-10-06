@@ -13,17 +13,21 @@ import { orientationMatrix, poseQuaternion, viewProfile, type Axis, type ViewPro
 import { playerConfig } from '../player/PlayerConfig';
 import { feel } from '../config/Feel';
 import { DEG, hfovToVfov } from '../core/math';
-import { dressHands, handConfig } from '../weapons/FirstPersonHands';
+import { handConfig } from '../weapons/FirstPersonHands';
 import { LIMITS, coverage, runStateChecks, sightLine, sightPicture, type StateRow } from './viewChecks';
+import { handFolder, handReport, handView, seedHands } from './handEditor';
+import { gripRotation } from '../weapons/HandPose';
+import { WeaponSurface, fingerGaps, fitFingers, gloveInside } from './handChecks';
 
 /**
  * Weapon calibration (dev server: /weapon-calibration.html). Pick a weapon and set its view
  * profile: OrientationRoot, ADSPoint (rear + front sight), hip and sprint poses, reference
- * points, motion taste. "Kaydet" writes src/config/viewprofiles/<id>.json, the one place
+ * points, motion taste, and the hands (grips, finger poses: handEditor.ts). "Kaydet" writes src/config/viewprofiles/<id>.json, the one place
  * it lives. The game's own Viewmodel draws and measures everything here.
  *
  * Gizmos: camera aim ray (cyan), sight line through the ADSPoint (green; rear and front sight
- * as dots), muzzle ray (red), hand IK points (yellow), butt (magenta), eject port (orange).
+ * as dots), muzzle ray (red), hand IK points (yellow), butt (magenta), eject port (orange);
+ * the hands' grips (forward blue, up green) have their own switch.
  * Aimed and still, green lies on cyan.
  */
 
@@ -295,9 +299,9 @@ function buildGui(): void {
   pointFolder(pts, 'muzzle', 'Namlu ağzı (MuzzlePoint)');
   pointFolder(pts, 'boreRear', 'Namlu ekseninde arka nokta');
   pointFolder(pts, 'eject', 'Kartuş çıkışı');
-  pointFolder(pts, 'gripRight', 'Sağ el (kabza)');
-  pointFolder(pts, 'gripLeft', 'Sol el (el kundağı)');
   pointFolder(pts, 'butt', 'Dipçik omuz noktası');
+
+  handFolder(gui, { vm, profile, apply, save, toast });
 
   const mo = gui.addFolder('Hareket çarpanları').close();
   for (const k of ['sway', 'inertia', 'bob', 'recoil'] as const) mo.add(p.motion, k, 0, 2, 0.01).name(k);
@@ -363,7 +367,7 @@ function seedFromLegacy(): void {
   const p: ViewProfile = {
     id: d.id,
     model: { key: d.model, orientation: { forward: nearest(V(0, 0, -1)), up: nearest(V(0, 1, 0)), rotation: [0, 0, 0], scale: round(fs.x, 8), position: [0, 0, 0] }, parts: {} },
-    points: { sightRear: [0, 0, 0], sightFront: [0, 0, 0], muzzle: [0, 0, 0], boreRear: [0, 0, 0], eject: [0, 0, 0], gripRight: [0, 0, 0], gripLeft: [0, 0, 0], butt: [0, 0, 0] },
+    points: { sightRear: [0, 0, 0], sightFront: [0, 0, 0], muzzle: [0, 0, 0], boreRear: [0, 0, 0], eject: [0, 0, 0], butt: [0, 0, 0] },
     ads: { eyeRelief: round(legacy.eyeRelief ?? d.sight.sightDistance! - (legacy.sightShift ?? 0), 3), fov: d.sight.adsFov!, offset: [0, 0, 0], roll: 0 },
     hip: { position: [...d.viewmodel.hipPosition] as [number, number, number], rotation: [0, 0, 0] },
     sprint: { position: [0, 0, 0], rotation: [0, 0, 0] },
@@ -382,8 +386,9 @@ function seedFromLegacy(): void {
   p.points.muzzle = toModel(legacy.muzzle.position);
   p.points.boreRear = toModel(legacy.muzzle.position.clone().add(V(0, 0, 0.3)));
   p.points.eject = toModel(legacy.ejectPort.position);
-  p.points.gripRight = toModel(legacy.rightHandRest);
-  p.points.gripLeft = toModel(legacy.leftHandRest);
+  p.hands = seedHands(p);
+  p.hands.rightGrip.position = toModel(legacy.rightHandRest);
+  p.hands.leftGrip.position = toModel(legacy.leftHandRest);
   p.points.butt = toModel(legacy.butt);
   // The same look at the hip and sprinting: old pose · the stray turn.
   const deg = (q: THREE.Quaternion) => {
@@ -417,10 +422,10 @@ function checkStates(): void {
   (window as unknown as { __calib: unknown }).__calib = { rows, ms };
   const el = document.getElementById('report')!;
   const f = (v: number, d = 2) => (Number.isFinite(v) ? v.toFixed(d) : '-');
-  const head = 'DURUM              SONUÇ  merkez°  ayrılma°  yatma°  en yakın  ekran%  merkez%  oturunca';
+  const head = 'DURUM              SONUÇ  merkez°  ayrılma°  yatma°  en yakın  ekran%  merkez%  bilek°  parmak  eldiven  oturunca';
   const lines = rows.map(
     (r: StateRow) =>
-      `${r.state.padEnd(19)}${(r.ok ? 'OK' : 'HATA').padEnd(7)}${f(r.offDeg).padStart(7)}  ${f(r.splitDeg, 3).padStart(8)}  ${f(r.rollDeg).padStart(6)}  ${(f(r.nearestM * 100, 1) + ' cm').padStart(8)}  ${f(r.screenPct, 1).padStart(6)}  ${f(r.centrePct, 1).padStart(7)}  ${f(r.settleDeg, 4)}° ${f(r.settleMm, 2)} mm` +
+      `${r.state.padEnd(19)}${(r.ok ? 'OK' : 'HATA').padEnd(7)}${f(r.offDeg).padStart(7)}  ${f(r.splitDeg, 3).padStart(8)}  ${f(r.rollDeg).padStart(6)}  ${(f(r.nearestM * 100, 1) + ' cm').padStart(8)}  ${f(r.screenPct, 1).padStart(6)}  ${f(r.centrePct, 1).padStart(7)}  ${f(r.wristDeg, 0).padStart(6)}  ${(f(r.fingerGapMm, 0) + ' mm').padStart(6)}  ${(f(r.gloveInMm, 0) + ' mm').padStart(7)}  ${f(r.settleDeg, 4)}° ${f(r.settleMm, 2)} mm` +
       (r.notes.length ? `\n${''.padEnd(19)}↳ ${r.notes.join('; ')}` : ''),
   );
   const bad = rows.filter((r) => !r.ok).length;
@@ -439,6 +444,8 @@ function toast(text: string, bad = false): void {
 }
 
 let infoAt = 0;
+let handsAt = 0;
+let hands: string[] = [];
 let pictureAt = 0;
 let picture: ReturnType<typeof sightPicture> | null = null;
 function info(now: number): void {
@@ -474,6 +481,11 @@ function info(now: number): void {
   const s = `Ekran        %${c.screenPct.toFixed(1)} kaplıyor, merkez bölge %${c.centrePct.toFixed(1)}, en yakın ${(c.nearestM * 100).toFixed(1)} cm (near ${(near * 100).toFixed(1)} cm)`;
   const hipBad = vm.adsAmount < 0.05 && (c.centrePct > LIMITS.hipCentrePct || c.screenPct > LIMITS.hipScreenPct);
   out.push(hipBad || c.nearestM < near + LIMITS.nearMargin ? bad(s) : s);
+  if (now > handsAt) {
+    handsAt = now + 500;
+    hands = handReport(vm);
+  }
+  out.push(...hands);
   if (st.pick) out.push(`<span class="ok">Nokta seçimi: ${st.pick} — modelin üstüne tıkla</span>`);
   if (now < toastUntil) out.push(toastBad ? bad(toastText) : `<span class="ok">${toastText}</span>`);
   out.push(`<span class="dim">camgöbeği: kamera ekseni · yeşil: gez→arpacık · kırmızı: namlu · sarı: eller · mor: dipçik · turuncu: kartuş</span>`);
@@ -492,8 +504,36 @@ function tick(now: number): void {
   requestAnimationFrame(tick);
 }
 
+/** The hands' animation scrub (handEditor): the weapon held at that moment of it. */
+function scrub(): void {
+  const w = weapon;
+  const s = handView.scrub;
+  const mag = data.reload.kind === 'magazine';
+  if (s === 'none' || (mag && s.startsWith('shell')) || (!mag && (s === 'tactical' || s === 'empty'))) {
+    if (w.state === 'reloading') w.state = 'ready';
+    w.pumpTime = 99;
+    return;
+  }
+  if (s === 'bolt') {
+    w.state = 'ready';
+    w.pumpTime = handView.t * w.cycleDuration;
+    return;
+  }
+  w.state = 'reloading';
+  if (mag) {
+    w.reloadEmpty = s === 'empty';
+    w.reloadDuration = w.reloadEmpty ? data.reload.emptyTime : data.reload.time;
+    w.stateTime = handView.t * w.reloadDuration;
+  } else {
+    w.reloadEmpty = false;
+    w.shellPhase = s === 'shellStart' ? 'start' : s === 'shellInsert' ? 'insert' : 'end';
+    w.shellPhaseTime = handView.t * w.shellPhaseDuration;
+  }
+}
+
 /** One simulation step of the weapon in the chosen stance. */
 function step(dt: number): void {
+  scrub();
   player.sprinting = st.mode === 'sprint';
   const ads = vm.adsAmount;
   aimPoint.set(0, 0, -(data.aim.hipConvergence + (data.aim.zeroDistance - data.aim.hipConvergence) * ads));
@@ -530,7 +570,8 @@ Object.assign(window as object, {
   __calibApply: apply,
   __calibSave: save,
   __calibSeed: seedFromLegacy,
-  __calibLib: { THREE, gunSource, orientationMatrix, dressHands, handConfig },
+  __calibLib: { THREE, gunSource, orientationMatrix, handConfig },
+  __calibHands: { view: handView, WeaponSurface, fingerGaps, fitFingers, gloveInside, gripRotation, report: () => handReport(vm) },
   __calibSideCam: sideCam,
   // Background tabs get no animation frames: `steps` advances the weapon first (1/60 s each).
   __calibShot: (steps = 0): string => {

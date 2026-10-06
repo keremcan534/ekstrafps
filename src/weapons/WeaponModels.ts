@@ -5,6 +5,7 @@ import type { ModelKey } from './WeaponData';
 import { metalRoughness, metalTexture, polymerTexture, woodTexture } from '../fx/Textures';
 import { dressRig } from './WeaponMeshes';
 import type { ProfiledView } from './ProfiledRig';
+import type { HandAction } from './HandPose';
 
 /**
  * Placeholder procedural weapon models with the moving parts the procedural
@@ -31,6 +32,13 @@ export interface WeaponRig {
   /** Right (trigger) hand: works the bolt on bolt actions. */
   rightHand: THREE.Object3D;
   rightHandRest: THREE.Vector3;
+  /**
+   * What each hand does (WeaponAnimator writes it every frame): `handIk` is its weight on
+   * the weapon's grip (1 holding, 0 where the animation has it), `handPose` its fingers.
+   * The first-person arms read both (FirstPersonHands.ts).
+   */
+  handIk: { left: number; right: number };
+  handPose: { left: HandAction; right: HandAction };
   /** Round/shell held in hand during single-round reloads. */
   heldShell: THREE.Object3D | null;
   /** Test laser emitter; the beam runs parallel to the bore. */
@@ -391,11 +399,13 @@ function ribbedMag(parent: THREE.Object3D, material: THREE.Material, segs: numbe
 
 function rig(
   root: THREE.Group,
-  parts: Omit<WeaponRig, 'root' | 'leftHandRest' | 'rightHandRest' | 'butt'> & { butt: V3 },
+  parts: Omit<WeaponRig, 'root' | 'leftHandRest' | 'rightHandRest' | 'butt' | 'handIk' | 'handPose'> & { butt: V3 },
 ): WeaponRig {
   return {
     ...parts,
     root,
+    handIk: { left: 1, right: 1 },
+    handPose: { left: 'grip', right: 'grip' },
     leftHandRest: parts.leftHand.position.clone(),
     rightHandRest: parts.rightHand.position.clone(),
     butt: new THREE.Vector3(...parts.butt),
@@ -1358,6 +1368,8 @@ function cloneRig(t: WeaponRig): WeaponRig {
     laser: m(t.laser),
     leftHandRest: t.leftHandRest.clone(),
     rightHandRest: t.rightHandRest.clone(),
+    handIk: { ...t.handIk },
+    handPose: { ...t.handPose },
     butt: t.butt.clone(),
   };
 }

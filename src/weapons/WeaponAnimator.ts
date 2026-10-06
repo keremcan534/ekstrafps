@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { smoothstep } from '../core/math';
 import type { Weapon } from './Weapon';
 import type { WeaponRig } from './WeaponModels';
+import type { HandAction } from './HandPose';
 
 /**
  * Procedural weapon animation: fire cycling (slide, pump), reloads (magazine,
@@ -11,6 +12,11 @@ import type { WeaponRig } from './WeaponModels';
  * Rifle reload keyframes are built from each rig's anchors (where its magazine
  * and charging handle are), so every long gun shares one animation.
  * Output: moves rig parts directly and writes a whole-weapon pose offset.
+ *
+ * The hands: besides moving the hand points, every frame says what each hand is doing
+ * (rig.handPose: holding the grip, open, on the magazine, working the bolt) and how much it
+ * is on its grip (rig.handIk: 1 at the grip, easing to 0 over the first 4 cm away), so the
+ * arms let go of the grip and take it back without a jump.
  */
 
 type Key1 = [number, number];
@@ -48,6 +54,8 @@ interface MagReloadAnim {
   magRot: Key1[];
   hand: Key3[];
   bolt?: Key1[];
+  /** The support hand's fingers from each time on (it starts on the grip). */
+  poses: [number, HandAction][];
 }
 
 type V = [number, number, number];
@@ -69,6 +77,7 @@ function rifleAnims(M: V, B: V, boltTravel: number): { tactical: MagReloadAnim; 
       mag: [[0, 0, 0, 0], [0.2, 0, 0, 0], [0.24, 0, -0.04, 0.01], at(0.34, magDown), at(0.44, magDown), [0.55, 0, -0.05, 0.01], [0.6, 0, 0, 0]],
       magRot: [[0, 0], [0.22, 0], [0.34, 0.5], [0.44, 0.5], [0.55, 0.05], [0.6, 0]],
       hand: [at(0, Z), at(0.14, M), at(0.22, add(M, [0, 0.01, 0])), at(0.34, D), at(0.44, D), at(0.55, add(M, [0, -0.03, 0])), at(0.6, M), at(0.66, add(M, [0, -0.02, 0])), at(0.82, Z)],
+      poses: [[0.02, 'open'], [0.11, 'reload'], [0.62, 'open'], [0.78, 'grip']],
     },
     empty: {
       blend: [[0, 0], [0.12, 1], [0.56, 1], [0.64, 0.55], [0.84, 0.55], [1, 0]],
@@ -79,6 +88,7 @@ function rifleAnims(M: V, B: V, boltTravel: number): { tactical: MagReloadAnim; 
         at(0.6, B), at(0.66, B), at(0.7, add(B, [0, 0, boltTravel])), at(0.75, add(B, [0, 0, boltTravel])), at(0.78, add(B, [0, 0.02, 0.03])), at(0.92, Z),
       ],
       bolt: [[0, 0], [0.66, 0], [0.7, boltTravel], [0.76, boltTravel], [0.785, 0]],
+      poses: [[0.02, 'open'], [0.09, 'reload'], [0.5, 'open'], [0.57, 'interaction'], [0.8, 'open'], [0.9, 'grip']],
     },
   };
 }
@@ -88,6 +98,7 @@ const PISTOL_TACTICAL: MagReloadAnim = {
   mag: [[0, 0, 0, 0], [0.18, 0, 0, 0], [0.26, 0, -0.12, 0.02], [0.3, 0, -0.4, 0.05], [0.42, -0.03, -0.35, 0.06], [0.54, 0, -0.05, 0.01], [0.6, 0, 0, 0]],
   magRot: [[0, 0], [0.26, 0], [0.32, 0.2], [0.42, 0.3], [0.54, 0.02], [0.6, 0]],
   hand: [[0, 0, 0, 0], [0.16, -0.06, -0.08, 0.05], [0.3, -0.08, -0.3, 0.08], [0.42, -0.03, -0.3, 0.06], [0.54, 0.025, -0.09, 0.0], [0.6, 0.025, -0.07, 0.0], [0.66, 0.025, -0.09, 0.0], [0.82, 0, 0, 0]],
+  poses: [[0.02, 'open'], [0.26, 'reload'], [0.62, 'open'], [0.78, 'grip']],
 };
 
 const PISTOL_EMPTY: MagReloadAnim = {
@@ -96,6 +107,7 @@ const PISTOL_EMPTY: MagReloadAnim = {
   magRot: [[0, 0], [0.21, 0], [0.27, 0.2], [0.36, 0.3], [0.46, 0.02], [0.5, 0]],
   hand: [[0, 0, 0, 0], [0.13, -0.06, -0.08, 0.05], [0.25, -0.08, -0.3, 0.08], [0.36, -0.03, -0.3, 0.06], [0.46, 0.025, -0.09, 0], [0.5, 0.025, -0.07, 0], [0.6, 0.025, 0.12, 0.0], [0.68, 0.025, 0.12, 0.02], [0.73, 0.025, 0.12, 0.065], [0.76, 0.025, 0.14, 0.05], [0.9, 0, 0, 0]],
   bolt: [[0, 0.045], [0.68, 0.045], [0.73, 0.055], [0.745, 0]],
+  poses: [[0.02, 'open'], [0.22, 'reload'], [0.5, 'open'], [0.58, 'interaction'], [0.78, 'open'], [0.88, 'grip']],
 };
 
 /** Whole-weapon reload poses (rotation x/y/z rad, position x/y/z m). */
@@ -122,6 +134,9 @@ export interface PoseOffset {
   pos: THREE.Vector3;
   rot: THREE.Vector3;
 }
+
+/** How far from its grip (m) a hand has fully let go of it. */
+const HAND_AWAY = 0.04;
 
 // Bolt-action loading path for the right hand (offsets from its rest position, root space).
 const ROUND_POUCH: V = [0.09, -0.2, 0.06];
@@ -189,6 +204,8 @@ export class WeaponAnimator {
         at(1, [0, 0, 0]),
       ];
       rig.rightHand.position.copy(h).add(kf3(phaseT, keys, this.tmp));
+      // Fingers on a round from the pouch to the port.
+      if (phaseT > 0.12 && phaseT < 0.94) rig.handPose.right = 'interaction';
       if (rig.heldShell) rig.heldShell.visible = phaseT > 0.35 && phaseT < 0.9;
     } else {
       const s = weapon.shellPhaseTime;
@@ -199,20 +216,32 @@ export class WeaponAnimator {
     const lift = Math.min(1, open * 1.6);
     const slide = Math.max(0, open * 1.6 - 0.6);
     this.setBolt(rig, lift, slide);
-    if (weapon.shellPhase !== 'insert') this.handOnKnob(rig, grab);
+    if (weapon.shellPhase !== 'insert') {
+      this.handOnKnob(rig, grab);
+      if (grab > 0.05) rig.handPose.right = 'interaction';
+    }
     const pose = RELOAD_POSE.bolt;
     out.rot.set(pose.rot[0] * blend, pose.rot[1] * blend, pose.rot[2] * blend);
     out.pos.set(pose.pos[0] * blend, pose.pos[1] * blend, pose.pos[2] * blend);
   }
 
-  /** Writes reload/cycle pose into `out` and moves rig parts. */
+  /** Writes reload/cycle pose into `out`, moves rig parts and says what the hands do. */
   update(weapon: Weapon, out: PoseOffset): void {
     const rig = this.rig;
     if (!rig) return;
+    this.animate(weapon, rig, out);
+    // On the grip until the hand is 4 cm away from it.
+    rig.handIk.left = 1 - smoothstep(rig.leftHand.position.distanceTo(rig.leftHandRest) / HAND_AWAY);
+    rig.handIk.right = 1 - smoothstep(rig.rightHand.position.distanceTo(rig.rightHandRest) / HAND_AWAY);
+  }
+
+  private animate(weapon: Weapon, rig: WeaponRig, out: PoseOffset): void {
     out.pos.set(0, 0, 0);
     out.rot.set(0, 0, 0);
     rig.leftHand.position.copy(rig.leftHandRest);
     rig.rightHand.position.copy(rig.rightHandRest);
+    rig.handPose.left = 'grip';
+    rig.handPose.right = 'grip';
     if (rig.mag) {
       rig.mag.position.copy(this.magRest);
       rig.mag.rotation.x = 0;
@@ -243,6 +272,7 @@ export class WeaponAnimator {
         const grab = kf(t, [[0, 0], [0.13, 1], [0.8, 1], [0.95, 0]]);
         this.setBolt(rig, lift, slide);
         this.handOnKnob(rig, grab);
+        if (grab > 0.05) rig.handPose.right = 'interaction';
         const cant = kf(t, [[0, 0], [0.15, 1], [0.75, 1], [1, 0]]);
         out.rot.z += 0.16 * cant;
         out.rot.x += 0.03 * cant;
@@ -278,6 +308,7 @@ export class WeaponAnimator {
         rig.mag.rotation.x = kf(t, anim.magRot);
       }
       rig.leftHand.position.add(kf3(t, anim.hand, this.tmp));
+      for (const [pt, p] of anim.poses) if (t >= pt) rig.handPose.left = p;
       if (rig.bolt && anim.bolt) {
         rig.bolt.position.set(this.boltRest.x, this.boltRest.y, this.boltRest.z + kf(t, anim.bolt));
       }

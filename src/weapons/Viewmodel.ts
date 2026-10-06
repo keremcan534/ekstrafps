@@ -6,7 +6,7 @@ import { feel } from '../config/Feel';
 import { MuzzleFlash } from '../fx/MuzzleFlash';
 import { buildWeaponModel, compactViewRig, type WeaponRig } from './WeaponModels';
 import { buildProfiledRig, type ProfiledView } from './ProfiledRig';
-import { dressHands } from './FirstPersonHands';
+import { FirstPersonArms } from './FirstPersonHands';
 import { adsTarget, poseQuaternion, solveAdsPose, viewProfile, type ViewProfile } from './ViewProfile';
 import { updateVisibleMatrices } from '../core/VisibleMatrices';
 import { WeaponAnimator, type PoseOffset } from './WeaponAnimator';
@@ -134,6 +134,8 @@ export class Viewmodel {
 
   // Profiled weapons (see above).
   readonly aimReference = new THREE.Group();
+  /** The player's arms on a profiled weapon's grips (FirstPersonHands.ts). */
+  readonly arms = new FirstPersonArms();
   private weaponRig = new THREE.Group();
   private basePoseRoot = new THREE.Group();
   private proceduralRoot = new THREE.Group();
@@ -293,6 +295,7 @@ export class Viewmodel {
     this.scene.add(this.aimReference);
     this.aimReference.add(this.weaponRig);
     this.weaponRig.add(this.basePoseRoot);
+    this.weaponRig.add(this.arms.group);
     this.basePoseRoot.add(this.proceduralRoot);
     this.scene.add(this.pivot);
     this.pivot.add(this.recoilPivot);
@@ -302,10 +305,9 @@ export class Viewmodel {
     for (const w of weapons) {
       const profile = viewProfile(w.id);
       const r = (profile && buildProfiledRig(profile, w)) || this.legacyRig(w);
-      // Hands only on a profiled weapon (its grip points are measured); the old rigs' are hidden.
+      // The old rigs' own hands stay hidden; arms are drawn on profiled weapons (see `arms`).
       r.leftHand.visible = false;
       r.rightHand.visible = false;
-      if (r.view) dressHands(r);
       r.root.visible = false;
       (r.view ? this.proceduralRoot : this.mirror).add(r.root);
       this.rigs.set(w.id, r);
@@ -493,6 +495,8 @@ export class Viewmodel {
     // The weapon in hand only: the fifteen holstered rigs (and the parts merged into
     // their anchors) are hidden. Points under hidden parts are read with getWorldPosition.
     updateVisibleMatrices(view ? this.aimReference : this.pivot, true);
+    const w = this.weapon;
+    this.arms.update(dt, view ? rig : null, this.weaponRig, { ads: this.adsAmount, sprint: this.sprintBlend, sinceShot: w.timeSinceShot, reloading: w.state === 'reloading' });
   }
 
   /** Every motion layer for this frame (springs, noise, poses), before any is placed. */
@@ -872,7 +876,6 @@ export class Viewmodel {
     if (!r) return false;
     r.leftHand.visible = false;
     r.rightHand.visible = false;
-    dressHands(r);
     r.root.visible = false;
     const old = this.rigs.get(data.id);
     if (old) {

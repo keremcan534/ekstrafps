@@ -7,6 +7,7 @@ import { getAmmo } from '../weapons/AmmoData';
 import type { Viewmodel, ViewmodelPlayer } from '../weapons/Viewmodel';
 import type { WeaponData } from '../weapons/WeaponData';
 import { playerConfig } from '../player/PlayerConfig';
+import { WeaponSurface, fingerGaps, gloveInside } from './handChecks';
 
 /**
  * Measurements of the first-person weapon, taken on the real Viewmodel (no copied maths):
@@ -40,6 +41,13 @@ export const LIMITS = {
   hipCentrePct: 5,
   /** Reloading the hands bring the action up into view. */
   reloadCentrePct: 15,
+  /**
+   * Hands: the wrist's bend (forearm against hand, deg: a support hand palm up under a
+   * handguard bends most), the deepest finger into the weapon (mm), glove inside it (mm).
+   */
+  wristDeg: 80,
+  fingerInMm: 16,
+  gloveInMm: 15,
 };
 
 /** The solid meshes of the weapon in hand that draw (not glass, glow or the muzzle flash). */
@@ -47,7 +55,8 @@ export function drawnMeshes(vm: Viewmodel): THREE.Mesh[] {
   const rig = vm.activeRig;
   const out: THREE.Mesh[] = [];
   if (!rig) return out;
-  rig.root.traverse((o) => {
+  const roots = vm.arms.group.visible ? [rig.root, vm.arms.group] : [rig.root];
+  for (const root of roots) root.traverse((o) => {
     const m = o as THREE.Mesh;
     if (!m.isMesh || m.userData.gizmo || ([] as THREE.Material[]).concat(m.material).some((mt) => mt.transparent)) return;
     for (let p: THREE.Object3D | null = m; p; p = p.parent) if (!p.visible) return;
@@ -147,10 +156,14 @@ export function coverage(vm: Viewmodel, camera: THREE.PerspectiveCamera): { scre
     const pos = m.geometry.getAttribute('position');
     const idx = m.geometry.index;
     const n = idx ? idx.count : pos.count;
+    // A skinned mesh (the gloves) as it is posed, not its bind pose.
+    const skinned = (m as THREE.SkinnedMesh).isSkinnedMesh ? skinnedPositions(m as THREE.SkinnedMesh) : null;
     for (let t = 0; t + 2 < n; t += 3) {
       let ok = true;
       for (let k = 0; k < 3; k++) {
-        v.fromBufferAttribute(pos, idx ? idx.getX(t + k) : t + k).applyMatrix4(m.matrixWorld);
+        const i = idx ? idx.getX(t + k) : t + k;
+        if (skinned) v.fromArray(skinned, i * 3);
+        else v.fromBufferAttribute(pos, i).applyMatrix4(m.matrixWorld);
         const d = -v.z;
         if (d > 0 && Math.abs(v.x / d) < tx && Math.abs(v.y / d) < ty) nearest = Math.min(nearest, d);
         if (d < near) ok = false;
@@ -191,6 +204,20 @@ export function coverage(vm: Viewmodel, camera: THREE.PerspectiveCamera): { scre
   return { screenPct: (100 * all) / (W * H), centrePct: (100 * mid) / midN, nearestM: nearest };
 }
 
+/** A skinned mesh's vertices as posed, world space. */
+function skinnedPositions(m: THREE.SkinnedMesh): Float32Array {
+  const pos = m.geometry.getAttribute('position');
+  const out = new Float32Array(pos.count * 3);
+  const v = new THREE.Vector3();
+  for (let i = 0; i < pos.count; i++) {
+    m.getVertexPosition(i, v).applyMatrix4(m.matrixWorld);
+    out[i * 3] = v.x;
+    out[i * 3 + 1] = v.y;
+    out[i * 3 + 2] = v.z;
+  }
+  return out;
+}
+
 /** Offset of the ProceduralRoot from rest (the motion layers): mm and degrees. */
 export function motionOffset(vm: Viewmodel): { mm: number; deg: number } {
   const p = vm.scene.getObjectByName('ProceduralRoot');
@@ -210,6 +237,11 @@ export interface StateRow {
   nearestM: number;
   screenPct: number;
   centrePct: number;
+  /** Hands, over the state (while holding the grips): the wrist's most bend (deg), the deepest
+   * finger into the weapon (mm, negative = in), the deepest glove vertex inside it (mm). */
+  wristDeg: number;
+  fingerGapMm: number;
+  gloveInMm: number;
   /** After the state, 2.5 s still with sway off. */
   settleDeg: number;
   settleMm: number;
@@ -281,9 +313,22 @@ export function runStateChecks(h: Harness): StateRow[] {
   const rows: StateRow[] = [];
   const run = (state: string, aimedState: boolean, body: (track: () => void) => void) => {
     reset();
-    const row: StateRow = { state, ok: true, notes: [], offDeg: 0, splitDeg: 0, rollDeg: 0, nearestM: Infinity, screenPct: 0, centrePct: 0, settleDeg: 0, settleMm: 0, settleMotionMm: 0, settleMotionDeg: 0 };
+    const row: StateRow = { state, ok: true, notes: [], offDeg: 0, splitDeg: 0, rollDeg: 0, nearestM: Infinity, screenPct: 0, centrePct: 0, wristDeg: 0, fingerGapMm: Infinity, gloveInMm: 0, settleDeg: 0, settleMm: 0, settleMotionMm: 0, settleMotionDeg: 0 };
     let n = 0;
     const track = () => {
+      // Hands on their grips (not while an animation has them): wrist, fingers, glove.
+      if (n % 15 === 0 && vm.arms.group.visible) {
+        const surf = new WeaponSurface(vm);
+        for (const side of ['right', 'left'] as const) {
+          const s = vm.arms.stats[side];
+          if (s.ik < 0.99) continue;
+          row.wristDeg = Math.max(row.wristDeg, s.wristBendDeg);
+          const g = fingerGaps(vm, side, surf);
+          // The thumb's metacarpal is the ball of the thumb (the palm): the glove measure has it.
+          for (const [name, f] of Object.entries(g)) row.fingerGapMm = Math.min(row.fingerGapMm, ...f.slice(name === 'thumb' ? 1 : 0).map((x) => x * 1000));
+          row.gloveInMm = Math.max(row.gloveInMm, gloveInside(vm, side, surf, 8).maxMm);
+        }
+      }
       if (n++ % 3 === 0) {
         const c = coverage(vm, vm.camera);
         row.nearestM = Math.min(row.nearestM, c.nearestM);
@@ -337,6 +382,9 @@ export function runStateChecks(h: Harness): StateRow[] {
       if (row.screenPct > LIMITS.hipScreenPct) fail(`covers ${row.screenPct.toFixed(1)}% of the screen`);
     }
     if (row.settleMotionMm > 0.1 || row.settleMotionDeg > 0.01) fail(`motion left over: ${row.settleMotionMm.toFixed(2)} mm ${row.settleMotionDeg.toFixed(3)}°`);
+    if (row.wristDeg > LIMITS.wristDeg) fail(`wrist bent ${row.wristDeg.toFixed(0)}° (> ${LIMITS.wristDeg})`);
+    if (row.fingerGapMm < -LIMITS.fingerInMm) fail(`a finger ${(-row.fingerGapMm).toFixed(0)} mm into the weapon`);
+    if (row.gloveInMm > LIMITS.gloveInMm) fail(`glove ${row.gloveInMm.toFixed(0)} mm inside the weapon`);
     rows.push(row);
   };
 

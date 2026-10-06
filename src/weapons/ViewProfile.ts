@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import type { WeaponHands } from './HandPose';
 
 type V3 = [number, number, number];
 
@@ -51,9 +52,6 @@ export interface ViewProfile {
     boreRear: V3;
     /** Ejection port. */
     eject: V3;
-    /** Hand IK targets: firing hand on the grip, support hand on the handguard. */
-    gripRight: V3;
-    gripLeft: V3;
     /** Stock's shoulder contact: hip recoil turns about it. */
     butt: V3;
   };
@@ -70,6 +68,8 @@ export interface ViewProfile {
   sprint: ViewPose;
   /** This weapon's taste on the shared motion layers (1 = as its handling gives). */
   motion: { sway: number; inertia: number; bob: number; recoil: number };
+  /** How the hands hold it: grips, finger poses, trigger finger (HandPose.ts). No arms without. */
+  hands?: WeaponHands;
 }
 
 /** A model file's own axes along the barrel and up, a small fine turn (deg), scale, position (m). */

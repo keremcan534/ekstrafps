@@ -3,7 +3,7 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import type { ModelKey } from './WeaponData';
 import type { WeaponRig } from './WeaponModels';
-import { loadHands } from './FirstPersonHands';
+import { loadArms } from './FirstPersonHands';
 
 /**
  * Real weapon meshes, packed by scripts/pack-weapon.mjs: public/guns/fp/<key>.glb for the
@@ -273,6 +273,8 @@ export function legacyFit(key: ModelKey): THREE.Matrix4 | null {
 
 /** Load every weapon model there is (missing ones are skipped). Never rejects. */
 export async function loadWeaponMeshes(): Promise<void> {
+  // The first-person arms come with the guns (src/weapons/FirstPersonHands.ts).
+  const arms = loadArms();
   const override = new Map<string, string>();
   for (const pair of (new URLSearchParams(location.search).get('gunmodel') ?? '').split(',')) {
     const [k, url] = pair.split('=');
@@ -280,8 +282,6 @@ export async function loadWeaponMeshes(): Promise<void> {
   }
   // The gun in your hands is the full model on phones too; others carry the light one.
   const tiers: Tier[] = ['view', 'world'];
-  // The first-person hands come with the guns (src/weapons/FirstPersonHands.ts).
-  const hands = loadHands();
   await Promise.all(
     KEYS.flatMap((k) =>
       tiers.map(async (tier) => {
@@ -291,7 +291,7 @@ export async function loadWeaponMeshes(): Promise<void> {
       }),
     ),
   );
-  await hands;
+  await arms;
 }
 
 // ------------------------------------------------------------------ fitting
