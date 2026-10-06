@@ -92,6 +92,8 @@ class Snow {
 }
 
 /** The Warden's poses (public/menu), each with its height on the stage (close-ups smaller). */
+/** The Warden himself (greatcoat, respirator): opens the menu and returns every third cut. */
+const WARDEN: [string, number] = ['warden_mask', 0.97];
 const POSES: [string, number][] = [
   ['operator', 1],
   ['warden2', 0.93],
@@ -103,8 +105,9 @@ const POSES: [string, number][] = [
   ['warden8', 0.93],
   ['warden3', 0.93],
 ];
-/** Seconds each pose holds before the next cuts in. */
+/** Seconds each pose holds before the next cuts in (the Warden stays longer). */
 const POSE_HOLD = 8;
+const WARDEN_HOLD = 12;
 
 export class MenuScene {
   readonly root: HTMLDivElement;
@@ -116,10 +119,12 @@ export class MenuScene {
   private t0 = performance.now();
   private op: HTMLDivElement;
   private img: HTMLImageElement;
-  private pose = 0;
+  private pose = -1;
   /** Seconds of menu time on the current pose (only counts while the menu is up). */
   private held = 0;
   private staged = false;
+  private cuts = 0;
+  private onWarden = true;
 
   constructor(parent: HTMLElement, mobile: boolean, private active: () => boolean) {
     this.root = document.createElement('div');
@@ -129,7 +134,7 @@ export class MenuScene {
       <div class="ms-mist far"></div>
       <canvas class="ms-snow back"></canvas>
       <div class="ms-op">
-        <img src="menu/operator.webp" alt="" draggable="false" /><div class="ms-tear"></div>
+        <img src="menu/${WARDEN[0]}.webp" alt="" draggable="false" /><div class="ms-tear"></div>
       </div>
       <div class="ms-mist near"></div>
       <canvas class="ms-snow front"></canvas>`;
@@ -139,7 +144,8 @@ export class MenuScene {
     this.op = this.root.querySelector<HTMLDivElement>('.ms-op')!;
     this.img = this.op.querySelector('img')!;
     // Warm the cache so each cut swaps instantly (~30 KB each).
-    for (const [id] of POSES.slice(1)) new Image().src = `menu/${id}.webp`;
+    for (const [id] of POSES) new Image().src = `menu/${id}.webp`;
+    this.op.style.height = `${95 * WARDEN[1]}%`;
     const dpr = Math.min(mobile ? 1 : 1.5, window.devicePixelRatio || 1);
     const [b, f] = [...this.root.querySelectorAll<HTMLCanvasElement>('.ms-snow')];
     this.back = new Snow(b, mobile ? 90 : 220, [1, 2.6], [14, 46], [0.35, 0.85], dpr);
@@ -175,7 +181,7 @@ export class MenuScene {
     this.back.step(dt, t, wind);
     this.front.step(dt, t, wind * 1.3);
     this.held += dt;
-    if (this.held > POSE_HOLD) {
+    if (this.held > (this.onWarden ? WARDEN_HOLD : POSE_HOLD)) {
       this.held = 0;
       this.cut();
     }
@@ -183,8 +189,11 @@ export class MenuScene {
 
   /** Next pose, through a short dark signal glitch (no flash). */
   private cut(): void {
-    this.pose = (this.pose + 1) % POSES.length;
-    const [id, h] = POSES[this.pose];
+    // Warden, two SABLE poses, Warden, two more…
+    this.cuts++;
+    this.onWarden = this.cuts % 3 === 0;
+    if (!this.onWarden) this.pose = (this.pose + 1) % POSES.length;
+    const [id, h] = this.onWarden ? WARDEN : POSES[this.pose];
     this.op.classList.remove('cut');
     void this.op.offsetWidth;
     this.op.classList.add('cut');
