@@ -47,6 +47,11 @@ export interface HumanoidSkin {
   bluntFactor?: number;
   /** Vertex-coloured material the plain materials are merged into (fewer draw calls). */
   merge?: THREE.MeshStandardMaterial;
+  /**
+   * A whole model body (targets/ModelBody): rest-pose skinned geometry weighted over
+   * `slots` (part names, plus footL / footR for the ankle bones). Replaces the parts' builds.
+   */
+  body?: { geometry: THREE.BufferGeometry; materials: THREE.Material[]; slots: string[] };
   idleKnee?: number;
 }
 
@@ -283,6 +288,20 @@ export class Humanoid {
       this.feet.push(foot);
     }
     this.root.updateMatrixWorld(true);
+    if (this.skin.body) {
+      // A model body: its geometry is already in the rest pose, weighted by slot name.
+      const bone = (slot: string): THREE.Bone =>
+        slot === 'footL' ? this.feet[0] : slot === 'footR' ? this.feet[1] : this.part(slot as PartName).group;
+      const { geometry, materials, slots } = this.skin.body;
+      this.mesh = new THREE.SkinnedMesh(geometry, materials);
+      this.mesh.castShadow = true;
+      this.mesh.receiveShadow = true;
+      this.root.add(this.mesh);
+      this.mesh.updateMatrixWorld(true);
+      this.mesh.bind(new THREE.Skeleton(slots.map(bone)));
+      this.pendingGeo.length = 0;
+      return;
+    }
     const merge = this.skin.merge;
     const byMat = new Map<THREE.Material, THREE.BufferGeometry[]>();
     const plain = (m: THREE.Material) => {
