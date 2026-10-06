@@ -150,6 +150,8 @@ body .menu .menu-nav .gbtn:not(.primary) { background-color: transparent; }
 .menu-scene { position: absolute; inset: 0; z-index: 0; overflow: hidden; background: #080b11; pointer-events: none; }
 .menu.paused .menu-scene { display: none; }
 .ms-bg { position: absolute; inset: -3%; background: center 72% / cover no-repeat; animation: ms-push 80s ease-in-out infinite alternate; }
+.ms-bg.forest { background-position: center 60%; opacity: 0; transition: opacity 0.25s steps(3); }
+.ms-bg.forest.on { opacity: 1; }
 @keyframes ms-push { from { transform: scale(1); } to { transform: scale(1.06) translateX(-1%); } }
 /* Sized in % of the stage, not vh: phones zoom the whole menu. */
 .ms-op { position: absolute; right: 1.5%; bottom: -1%; height: 95%; transform-origin: 50% 100%;

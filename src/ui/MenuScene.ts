@@ -130,7 +130,8 @@ export class MenuScene {
     this.root = document.createElement('div');
     this.root.className = 'menu-scene';
     this.root.innerHTML = `
-      <div class="ms-bg"></div>
+      <div class="ms-bg steppe"></div>
+      <div class="ms-bg forest on"></div>
       <div class="ms-mist far"></div>
       <canvas class="ms-snow back"></canvas>
       <div class="ms-op">
@@ -140,7 +141,9 @@ export class MenuScene {
       <canvas class="ms-snow front"></canvas>`;
     parent.prepend(this.root);
     // Relative to the page (the desktop and Android builds load from a file / app origin).
-    this.root.querySelector<HTMLElement>('.ms-bg')!.style.backgroundImage = 'url(menu/steppe.webp)';
+    this.root.querySelector<HTMLElement>('.ms-bg.steppe')!.style.backgroundImage = 'url(menu/steppe.webp)';
+    // The Warden stands in the misty forest; the SABLE poses on the steppe.
+    this.root.querySelector<HTMLElement>('.ms-bg.forest')!.style.backgroundImage = 'url(menu/forest.webp)';
     this.op = this.root.querySelector<HTMLDivElement>('.ms-op')!;
     this.img = this.op.querySelector('img')!;
     // Warm the cache so each cut swaps instantly (~30 KB each).
@@ -200,6 +203,7 @@ export class MenuScene {
     window.setTimeout(() => {
       this.img.src = `menu/${id}.webp`;
       this.op.style.height = `${95 * h}%`;
+      this.root.querySelector('.ms-bg.forest')!.classList.toggle('on', this.onWarden);
     }, 180);
     window.setTimeout(() => this.op.classList.remove('cut'), 600);
   }

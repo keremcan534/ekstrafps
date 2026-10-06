@@ -81,7 +81,7 @@ export const DOSSIER_ENTRIES: DossierEntry[] = [
     notes: 'Plate under the coat: body shots barely slow it. Aim for the head and the joints. It hunts personally and counts the dead out loud on an open channel; when the count stops, it is already close. Do not engage alone.',
     kit: ['Suppressed MK47 / SCAR-H', 'Armoured frame under a wool greatcoat', 'Sealed mask', 'Open-band command radio'],
     quote: 'I have your count. I intend to finish it.',
-    photos: ['warden_mask'],
+    photos: ['warden_ruins', 'warden_mask'],
   },
   {
     id: 'vanta', file: 'VS-100', name: 'Vanta Security', role: 'Contract recovery team — your squad', place: 'Site-9, Arrival Lobby', year: '2041', date: '02 MAR 2041', source: 'A-1',
