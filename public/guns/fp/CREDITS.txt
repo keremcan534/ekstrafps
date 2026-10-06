@@ -1,12 +1,18 @@
-First-person weapon models (Sketchfab, CC BY 4.0 — https://creativecommons.org/licenses/by/4.0/).
+Weapon models (Sketchfab, CC BY 4.0 — https://creativecommons.org/licenses/by/4.0/).
 Packed for the game (WebP textures, quantized; bundled arms and pose dummies not used).
+public/guns/fp: the gun in your hands. public/guns/m: the same TastyTony models worn by
+soldiers and hung on wall buys (other third-person guns there are generated with Meshy).
 
-ak47.glb   "Low-Poly AK-74" by TastyTony — https://sketchfab.com/3d-models/low-poly-ak-74-b27f9003622a4c7499bfd8d2a06dc47b
+By TastyTony (https://sketchfab.com/TastyTony):
+ak47.glb   "Low-Poly AK-74" — https://sketchfab.com/3d-models/low-poly-ak-74-b27f9003622a4c7499bfd8d2a06dc47b
+rd704.glb  "Low-Poly Kalashnikov SR1" — https://sketchfab.com/TastyTony
+m4a1.glb   "Low-Poly M4a1" — https://sketchfab.com/3d-models/low-poly-m4a1-8cab1cbeb82c4396a154f9fc8771417b
+mk47.glb   "Low-Poly Mk47 Mutant" — https://sketchfab.com/3d-models/low-poly-mk47-mutant-1964698639bd44d29b2c84b93b7b7bc2
+scarh.glb  "Low-Poly FN FAL" — https://sketchfab.com/TastyTony
+asval.glb  "Low-Poly AS Val" — https://sketchfab.com/3d-models/low-poly-as-val-ed889df2d45c4dd0bcea2e66513c4b57
+svd.glb    "Low-Poly SR-25" — https://sketchfab.com/3d-models/low-poly-sr-25-81976c51d61543a288cf135fd7485951
+kar98.glb  "Low-Poly Kar98K" — https://sketchfab.com/3d-models/low-poly-kar98k-d0ffca9b52864541ae5adbafb8d14064
+ppsh.glb   "Low-Poly PPSH 41" — https://sketchfab.com/3d-models/low-poly-ppsh-41-e6c9ed3ac78e42cfac42f91c232f7783
+mp5.glb    "Low-Poly HK MP5" — https://sketchfab.com/3d-models/low-poly-hk-mp5-80980f757c2c463ebc73460a31611652
+
 pistol.glb "9mm Pistol" by TORI106 — https://sketchfab.com/3d-models/9mm-pistol-43bc09f5aace4346a8a2b6e1580fc03f
-svd.glb    "Svd Dragunov" by Pieter Ferreira — https://sketchfab.com/3d-models/svd-dragunov-7281b0f78e6d439ab28a7728a69ae346
-rd704.glb  "Low-Poly Kalashnikov SR1" by TastyTony — https://sketchfab.com/TastyTony
-m4a1.glb   "Low-Poly Bushmaster ACR" by TastyTony — https://sketchfab.com/TastyTony
-mk47.glb   "Low-Poly DT MDR" by TastyTony — https://sketchfab.com/TastyTony
-scarh.glb  "Low-Poly FN FAL" by TastyTony — https://sketchfab.com/TastyTony
-asval.glb  "Low-Poly AS Val" by TastyTony — https://sketchfab.com/3d-models/low-poly-as-val-ed889df2d45c4dd0bcea2e66513c4b57
-The same files are used for the third-person guns (public/guns/m) of those weapons.

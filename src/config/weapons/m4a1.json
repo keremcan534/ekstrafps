@@ -1,7 +1,7 @@
 {
   "id": "m4a1",
-  "name": "Bushmaster ACR",
-  "short": "ACR",
+  "name": "M4A1",
+  "short": "M4A1",
   "model": "m4a1",
   "animSet": "rifle",
   "category": "rifle",

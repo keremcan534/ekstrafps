@@ -1,7 +1,7 @@
 {
   "id": "svd",
-  "name": "SVD Dragunov",
-  "short": "SVD",
+  "name": "SR-25",
+  "short": "SR25",
   "model": "svd",
   "animSet": "rifle",
   "category": "rifle",
