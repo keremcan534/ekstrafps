@@ -114,6 +114,13 @@ export interface WeaponData {
   viewmodel: {
     /** Shouldered (point-fire) position relative to the eye, right shoulder. */
     hipPosition: [number, number, number];
+    /** Shouldered turn (deg: pitch, yaw, roll), from gun-pose.html. Default: a slight cant. */
+    hipRotation?: [number, number, number];
+    /**
+     * Aimed pose set by hand in gun-pose.html (position m, rotation deg, both relative to
+     * the eye). Default: worked out from the model's sights and sight.sightDistance.
+     */
+    ads?: { position: [number, number, number]; rotation: [number, number, number] };
   };
 
   reload: {

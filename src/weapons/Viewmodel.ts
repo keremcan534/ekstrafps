@@ -149,6 +149,9 @@ export class Viewmodel {
     for (const w of weapons) {
       const r = buildWeaponModel(w.model);
       compactViewRig(r);
+      // No arms in first person: the gun alone.
+      r.leftHand.visible = false;
+      r.rightHand.visible = false;
       r.root.visible = false;
       this.mirror.add(r.root);
       this.rigs.set(w.id, r);
@@ -186,7 +189,9 @@ export class Viewmodel {
     this.handling = handling;
     this.hipPos.set(...d.viewmodel.hipPosition);
     const s = this.rig.sight.position;
-    this.adsPos.set(-s.x, -s.y, -(d.sight.sightDistance - (this.rig.sightShift ?? 0)) - s.z);
+    const ads = d.viewmodel.ads;
+    if (ads) this.adsPos.set(...ads.position);
+    else this.adsPos.set(-s.x, -s.y, -(d.sight.sightDistance - (this.rig.sightShift ?? 0)) - s.z);
     const b = this.rig.butt;
     this.recoilPivot.position.copy(b);
     this.buttOffset.position.set(-b.x, -b.y, -b.z);
@@ -329,12 +334,17 @@ export class Viewmodel {
     const toSight = this.v3.copy(input.aimPoint).sub(this.v.copy(pos).add(rig.sight.position));
     const sightYaw = Math.atan2(-toSight.x, -toSight.z);
     const sightPitch = Math.atan2(toSight.y, Math.hypot(toSight.x, toSight.z));
-    const alignYaw = boreYaw + (sightYaw - boreYaw) * adsEase;
-    // A model whose sight line slopes to its bore: tip it so the line itself is level,
-    // about the rear sight (the point the eye looks through stays put).
-    const tilt = (rig.sightTilt ?? 0) * adsEase;
-    const alignPitch = borePitch + (sightPitch - borePitch) * adsEase + tilt;
+    // A pose set by hand (gun-pose.html) is the sight picture as it should be: aimed, the
+    // gun takes exactly that turn. Else a model whose sight line slopes to its bore tips
+    // so the line itself is level, about the rear sight (where the eye looks through).
+    const handAds = d.viewmodel.ads;
+    const adsRot = handAds?.rotation;
+    const alignYaw = handAds ? boreYaw * (1 - adsEase) + adsRot![1] * DEG * adsEase : boreYaw + (sightYaw - boreYaw) * adsEase;
+    const tilt = handAds ? 0 : (rig.sightTilt ?? 0) * adsEase;
+    const alignPitch = handAds ? borePitch * (1 - adsEase) + adsRot![0] * DEG * adsEase : borePitch + (sightPitch - borePitch) * adsEase + tilt;
     pos.y += rig.sight.position.z * Math.sin(tilt);
+    const hipRot = d.viewmodel.hipRotation;
+    const hipK = (1 - adsEase) * (1 - this.sprintBlend * (1 - ads));
     this.zero.pitch = borePitch - alignPitch;
     this.zero.yaw = boreYaw - alignYaw;
 
@@ -440,11 +450,12 @@ export class Viewmodel {
     this.pivot.position.copy(pos);
 
     this.euler.set(
-      alignPitch + iner.x + swayX + bobPitch + landPitch + sp.rot[0] * sb + this.pose.rot.x + jr.x - 0.9 * equipDown + raise * 0.95,
-      alignYaw + iner.y + swayY + bobYaw + (sp.rot[1] * sb + this.pose.rot.y) * sideSign + jr.y + 0.15 * equipDown * sideSign - linP.x * 0.4,
+      alignPitch + iner.x + swayX + bobPitch + landPitch + sp.rot[0] * sb + this.pose.rot.x + jr.x - 0.9 * equipDown + raise * 0.95 + (hipRot ? hipRot[0] * DEG * hipK : 0),
+      alignYaw + iner.y + swayY + bobYaw + (sp.rot[1] * sb + this.pose.rot.y) * sideSign + jr.y + 0.15 * equipDown * sideSign - linP.x * 0.4 + (hipRot ? hipRot[1] * DEG * hipK * sideSign : 0),
       iner.y * 0.6 + iner.z + bobRoll + (sp.rot[2] * sb + this.pose.rot.z) * sideSign + jr.z + 0.35 * equipDown * sideSign + raise * 0.25 * sideV +
         // Hip carry: the gun sits canted, top toward the centre (gone when aimed or sprinting).
-        HIP_CANT * (1 - adsEase) * (1 - sb) * sideSign,
+        (hipRot ? hipRot[2] * DEG * hipK : HIP_CANT * (1 - adsEase) * (1 - sb)) * sideSign +
+        (handAds ? adsRot![2] * DEG * adsEase : 0),
     );
     this.pivot.quaternion.setFromEuler(this.euler);
     // The shoulder stops the gun: rearward travel is capped, so recoil can never shove the

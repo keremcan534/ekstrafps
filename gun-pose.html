@@ -1,0 +1,308 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Silah Pozu</title>
+<style>
+  :root { --bg: #101317; --panel: #171b21; --line: #2a3038; --text: #d8dde3; --dim: #8a929c; --accent: #ff7a1a; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 13px/1.4 system-ui, sans-serif; display: flex; height: 100vh; overflow: hidden; }
+  #view { flex: 1; position: relative; min-width: 0; }
+  #view canvas { display: block; width: 100%; height: 100%; cursor: grab; }
+  #view canvas:active { cursor: grabbing; }
+  #cross { position: absolute; left: 50%; top: 50%; width: 6px; height: 6px; margin: -3px 0 0 -3px; border-radius: 50%; background: #ff2a2a; box-shadow: 0 0 0 1px #000; pointer-events: none; }
+  #hint { position: absolute; left: 12px; bottom: 10px; color: var(--dim); font-size: 12px; pointer-events: none; text-shadow: 0 1px 2px #000; }
+  aside { width: 330px; background: var(--panel); border-left: 1px solid var(--line); padding: 14px; overflow-y: auto; }
+  h1 { font-size: 15px; margin: 0 0 10px; letter-spacing: .04em; }
+  h2 { font-size: 12px; margin: 16px 0 6px; color: var(--dim); text-transform: uppercase; letter-spacing: .08em; }
+  select, button, textarea, input[type=number] { font: inherit; color: var(--text); background: #0e1115; border: 1px solid var(--line); border-radius: 6px; }
+  select { width: 100%; padding: 6px; }
+  .modes { display: flex; gap: 6px; margin-top: 10px; }
+  .modes button { flex: 1; padding: 8px; cursor: pointer; }
+  .modes button.on { background: var(--accent); border-color: var(--accent); color: #111; font-weight: 600; }
+  .row { display: grid; grid-template-columns: 54px 1fr 74px; gap: 8px; align-items: center; margin: 5px 0; }
+  .row label { color: var(--dim); }
+  .row input[type=range] { width: 100%; accent-color: var(--accent); }
+  .row input[type=number] { width: 100%; padding: 3px 5px; }
+  .checks label { display: flex; gap: 8px; align-items: center; margin: 4px 0; cursor: pointer; }
+  .btns { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+  .btns button { padding: 7px 10px; cursor: pointer; }
+  .btns button.main { background: var(--accent); border-color: var(--accent); color: #111; font-weight: 600; }
+  textarea { width: 100%; height: 150px; margin-top: 8px; padding: 6px; font: 11px/1.35 ui-monospace, monospace; resize: vertical; }
+  .note { color: var(--dim); font-size: 12px; margin-top: 6px; }
+  @media (max-width: 760px) { body { flex-direction: column; height: auto; overflow: auto; } #view { height: 56vh; flex: none; } aside { width: 100%; border-left: 0; border-top: 1px solid var(--line); } }
+</style>
+</head>
+<body>
+<div id="view">
+  <div id="cross"></div>
+  <div id="hint">Sol tık sürükle: döndür · Sağ tık / Shift sürükle: kaydır · Tekerlek: ileri-geri · Alt: ince ayar</div>
+</div>
+<aside>
+  <h1>Silah Pozu</h1>
+  <select id="weapon"></select>
+  <div class="modes"><button id="mHip" class="on">Kalça</button><button id="mAds">Nişan (ADS)</button></div>
+
+  <h2>Konum (m)</h2>
+  <div id="pos"></div>
+  <h2>Dönüş (derece)</h2>
+  <div id="rot"></div>
+  <h2>Görüş açısı</h2>
+  <div id="fovRow"></div>
+
+  <h2>Görünüm</h2>
+  <div class="checks">
+    <label><input type="checkbox" id="cCross" checked> Ekran merkezi (kırmızı nokta)</label>
+    <label><input type="checkbox" id="cHands"> Eller</label>
+    <label><input type="checkbox" id="cRange" checked> Atış poligonu</label>
+  </div>
+
+  <div class="btns">
+    <button id="reset">Bu modu sıfırla</button>
+    <button id="copy" class="main">Ayarları kopyala</button>
+  </div>
+  <textarea id="out" readonly></textarea>
+  <div class="note">Ayarladığın her silah burada birikir (tarayıcı hatırlar). Bitince "Ayarları kopyala"ya basıp sohbete yapıştır.</div>
+</aside>
+
+<script type="module">
+import * as THREE from 'three';
+import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
+import { buildWeaponModel, compactViewRig } from '/src/weapons/WeaponModels.ts';
+import { loadWeaponMeshes } from '/src/weapons/WeaponMeshes.ts';
+import { createWeaponDefs } from '/src/weapons/WeaponData.ts';
+
+const DEG = Math.PI / 180;
+// Same projection as the game: horizontal FOV turned into vertical for a 16:9 frame.
+const hfovToVfov = (h) => (2 * Math.atan(Math.tan((h * DEG) / 2) / (16 / 9))) / DEG;
+const HIP_FOV = 90;
+
+await loadWeaponMeshes();
+const defs = createWeaponDefs();
+
+const view = document.getElementById('view');
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(2, devicePixelRatio));
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.05;
+view.prepend(renderer.domElement);
+
+// World: a dim range with targets at 10 / 25 / 50 m (drawn first, like the game).
+const world = new THREE.Scene();
+world.background = new THREE.Color(0x232830);
+world.fog = new THREE.Fog(0x232830, 30, 90);
+world.add(new THREE.HemisphereLight(0xc8d4e6, 0x30302c, 1.2));
+const range = new THREE.Group();
+world.add(range);
+const floor = new THREE.Mesh(new THREE.PlaneGeometry(40, 120), new THREE.MeshStandardMaterial({ color: 0x3a3f46, roughness: 0.95 }));
+floor.rotation.x = -Math.PI / 2;
+floor.position.set(0, -1.6, -50);
+range.add(floor);
+const grid = new THREE.GridHelper(120, 60, 0x55606c, 0x3b434d);
+grid.position.set(0, -1.59, -50);
+range.add(grid);
+for (const d of [10, 25, 50]) {
+  const t = new THREE.Group();
+  t.position.set(0, 0, -d);
+  const board = new THREE.Mesh(new THREE.PlaneGeometry(0.6, 0.9), new THREE.MeshStandardMaterial({ color: 0xd9cfb4, roughness: 0.9 }));
+  t.add(board);
+  for (const [r, c] of [[0.22, 0x222222], [0.15, 0xd9cfb4], [0.07, 0x222222], [0.025, 0xff3b2f]]) {
+    const ring = new THREE.Mesh(new THREE.CircleGeometry(r, 40), new THREE.MeshBasicMaterial({ color: c }));
+    ring.position.z = 0.001 + (0.25 - r) * 0.001;
+    t.add(ring);
+  }
+  const post = new THREE.Mesh(new THREE.BoxGeometry(0.06, 1.6, 0.06), new THREE.MeshStandardMaterial({ color: 0x555b62 }));
+  post.position.y = -1.2;
+  t.add(post);
+  range.add(t);
+}
+const worldCam = new THREE.PerspectiveCamera(60, 1, 0.03, 400);
+
+// Viewmodel scene: the game's lights and room reflections.
+const vm = new THREE.Scene();
+vm.environment = new THREE.PMREMGenerator(renderer).fromScene(new RoomEnvironment(), 0.04).texture;
+vm.environmentIntensity = 0.6;
+vm.add(new THREE.HemisphereLight(0xdfe8ff, 0x4a4540, 1.35));
+const key = new THREE.DirectionalLight(0xfff2e0, 2.5);
+key.position.set(0.6, 1, 0.4);
+vm.add(key);
+const rim = new THREE.DirectionalLight(0x9fc4ff, 0.9);
+rim.position.set(-0.8, 0.3, -0.6);
+vm.add(rim);
+const vmCam = new THREE.PerspectiveCamera(60, 1, 0.01, 10);
+const pivot = new THREE.Group();
+vm.add(pivot);
+
+// ------------------------------------------------------------------ state
+const STORE = 'gunpose.v1';
+let saved = {};
+try { saved = JSON.parse(localStorage.getItem(STORE) || '{}'); } catch { saved = {}; }
+let mode = 'hip';
+let current = null; // { def, rig, poses: { hip, ads } }
+const r4 = (v) => Math.round(v * 10000) / 10000;
+const r2 = (v) => Math.round(v * 100) / 100;
+
+function defaults(def, rig) {
+  const s = rig.sight.position;
+  const dist = def.sight.sightDistance - (rig.sightShift ?? 0);
+  const tilt = (rig.sightTilt ?? 0) / DEG;
+  return {
+    hip: { pos: [...def.viewmodel.hipPosition], rot: [0, 0, 6.9], fov: HIP_FOV },
+    ads: { pos: [r4(-s.x), r4(-s.y), r4(-dist - s.z)], rot: [r2(tilt), 0, 0], fov: def.sight.adsFov },
+  };
+}
+
+function load(id) {
+  if (current) pivot.remove(current.rig.root);
+  const def = defs.find((d) => d.id === id);
+  const rig = buildWeaponModel(def.model);
+  compactViewRig(rig);
+  pivot.add(rig.root);
+  const base = defaults(def, rig);
+  const prev = saved[id];
+  current = { def, rig, base, poses: prev ? structuredClone(prev) : structuredClone(base) };
+  setHands();
+  sync();
+}
+
+function setHands() {
+  if (!current) return;
+  const on = document.getElementById('cHands').checked;
+  current.rig.leftHand.visible = on;
+  current.rig.rightHand.visible = on;
+}
+
+// ------------------------------------------------------------------ UI
+const pose = () => current.poses[mode];
+const sliders = [];
+function slider(parent, label, get, set, min, max, step) {
+  const row = document.createElement('div');
+  row.className = 'row';
+  row.innerHTML = `<label>${label}</label><input type="range" min="${min}" max="${max}" step="${step}"><input type="number" step="${step}">`;
+  const [range, num] = row.querySelectorAll('input');
+  const put = (v) => { set(v); sync(); };
+  range.addEventListener('input', () => put(Number(range.value)));
+  num.addEventListener('change', () => put(Number(num.value)));
+  parent.appendChild(row);
+  sliders.push(() => { const v = get(); range.value = v; num.value = v; });
+}
+const P = document.getElementById('pos');
+slider(P, 'Sağ/sol X', () => pose().pos[0], (v) => (pose().pos[0] = v), -0.4, 0.4, 0.0005);
+slider(P, 'Yukarı Y', () => pose().pos[1], (v) => (pose().pos[1] = v), -0.5, 0.2, 0.0005);
+slider(P, 'İleri Z', () => pose().pos[2], (v) => (pose().pos[2] = v), -0.9, 0.2, 0.0005);
+const R = document.getElementById('rot');
+slider(R, 'Pitch', () => pose().rot[0], (v) => (pose().rot[0] = v), -25, 25, 0.05);
+slider(R, 'Yaw', () => pose().rot[1], (v) => (pose().rot[1] = v), -25, 25, 0.05);
+slider(R, 'Roll', () => pose().rot[2], (v) => (pose().rot[2] = v), -45, 45, 0.05);
+slider(document.getElementById('fovRow'), 'FOV', () => pose().fov, (v) => (pose().fov = v), 30, 110, 0.5);
+
+const sel = document.getElementById('weapon');
+for (const d of defs) {
+  const o = document.createElement('option');
+  o.value = d.id;
+  o.textContent = `${d.name}${saved[d.id] ? '  ✓' : ''}`;
+  sel.appendChild(o);
+}
+sel.addEventListener('change', () => load(sel.value));
+const setMode = (m) => {
+  mode = m;
+  document.getElementById('mHip').classList.toggle('on', m === 'hip');
+  document.getElementById('mAds').classList.toggle('on', m === 'ads');
+  sync();
+};
+document.getElementById('mHip').onclick = () => setMode('hip');
+document.getElementById('mAds').onclick = () => setMode('ads');
+document.getElementById('cHands').onchange = setHands;
+document.getElementById('cCross').onchange = (e) => (document.getElementById('cross').style.display = e.target.checked ? '' : 'none');
+document.getElementById('cRange').onchange = (e) => (range.visible = e.target.checked);
+document.getElementById('reset').onclick = () => { current.poses[mode] = structuredClone(current.base[mode]); sync(); };
+document.getElementById('copy').onclick = async () => {
+  const text = document.getElementById('out').value;
+  try { await navigator.clipboard.writeText(text); } catch { document.getElementById('out').select(); document.execCommand('copy'); }
+  const b = document.getElementById('copy');
+  b.textContent = 'Kopyalandı';
+  setTimeout(() => (b.textContent = 'Ayarları kopyala'), 1200);
+};
+
+function sync() {
+  if (!current) return;
+  for (const s of sliders) s();
+  const p = pose();
+  pivot.position.set(...p.pos);
+  pivot.rotation.set(p.rot[0] * DEG, p.rot[1] * DEG, p.rot[2] * DEG, 'YXZ');
+  // Changed from the defaults: remember it (per weapon, both modes).
+  saved[current.def.id] = structuredClone(current.poses);
+  try { localStorage.setItem(STORE, JSON.stringify(saved)); } catch {}
+  const opt = [...sel.options].find((o) => o.value === current.def.id);
+  if (opt) opt.textContent = `${current.def.name}  ✓`;
+  const out = {};
+  for (const [id, v] of Object.entries(saved)) {
+    out[id] = {
+      hip: { pos: v.hip.pos.map(r4), rot: v.hip.rot.map(r2), fov: v.hip.fov },
+      ads: { pos: v.ads.pos.map(r4), rot: v.ads.rot.map(r2), fov: v.ads.fov },
+    };
+  }
+  document.getElementById('out').value = '{\n' + Object.entries(out).map(([id, v]) => ` "${id}": ${JSON.stringify(v)}`).join(',\n') + '\n}';
+  draw();
+}
+
+// ------------------------------------------------------------------ mouse
+const canvas = renderer.domElement;
+let drag = null;
+canvas.addEventListener('contextmenu', (e) => e.preventDefault());
+canvas.addEventListener('pointerdown', (e) => {
+  canvas.setPointerCapture(e.pointerId);
+  drag = { x: e.clientX, y: e.clientY, move: e.button === 2 || e.shiftKey };
+});
+canvas.addEventListener('pointermove', (e) => {
+  if (!drag || !current) return;
+  const dx = e.clientX - drag.x;
+  const dy = e.clientY - drag.y;
+  drag.x = e.clientX;
+  drag.y = e.clientY;
+  const fine = e.altKey ? 0.15 : 1;
+  const p = pose();
+  if (drag.move) {
+    p.pos[0] = r4(p.pos[0] + dx * 0.0006 * fine);
+    p.pos[1] = r4(p.pos[1] - dy * 0.0006 * fine);
+  } else {
+    p.rot[1] = r2(p.rot[1] - dx * 0.08 * fine);
+    p.rot[0] = r2(p.rot[0] - dy * 0.08 * fine);
+  }
+  sync();
+});
+canvas.addEventListener('pointerup', () => (drag = null));
+canvas.addEventListener('wheel', (e) => {
+  if (!current) return;
+  e.preventDefault();
+  const p = pose();
+  p.pos[2] = r4(p.pos[2] + Math.sign(e.deltaY) * 0.005 * (e.altKey ? 0.2 : 1));
+  sync();
+}, { passive: false });
+
+// ------------------------------------------------------------------ draw
+function draw() {
+  if (!current) return;
+  const w = view.clientWidth, h = view.clientHeight;
+  renderer.setSize(w, h, false);
+  const p = pose();
+  for (const cam of [worldCam, vmCam]) {
+    cam.fov = hfovToVfov(p.fov);
+    cam.aspect = w / h;
+  }
+  // Aimed, the game clips the stock at the cheek.
+  vmCam.near = mode === 'ads' ? 0.055 : 0.01;
+  worldCam.updateProjectionMatrix();
+  vmCam.updateProjectionMatrix();
+  renderer.autoClear = true;
+  renderer.render(world, worldCam);
+  renderer.autoClear = false;
+  renderer.clearDepth();
+  renderer.render(vm, vmCam);
+}
+addEventListener('resize', draw);
+load(defs.find((d) => d.id.startsWith('ak'))?.id ?? defs[0].id);
+</script>
+</body>
+</html>
