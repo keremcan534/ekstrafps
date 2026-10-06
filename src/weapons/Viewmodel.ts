@@ -330,7 +330,11 @@ export class Viewmodel {
     const sightYaw = Math.atan2(-toSight.x, -toSight.z);
     const sightPitch = Math.atan2(toSight.y, Math.hypot(toSight.x, toSight.z));
     const alignYaw = boreYaw + (sightYaw - boreYaw) * adsEase;
-    const alignPitch = borePitch + (sightPitch - borePitch) * adsEase;
+    // A model whose sight line slopes to its bore: tip it so the line itself is level,
+    // about the rear sight (the point the eye looks through stays put).
+    const tilt = (rig.sightTilt ?? 0) * adsEase;
+    const alignPitch = borePitch + (sightPitch - borePitch) * adsEase + tilt;
+    pos.y += rig.sight.position.z * Math.sin(tilt);
     this.zero.pitch = borePitch - alignPitch;
     this.zero.yaw = boreYaw - alignYaw;
 

@@ -659,18 +659,40 @@ export function dressRig(rig: WeaponRig, key: ModelKey, world: boolean): boolean
       }
     }
     let tip = -Infinity;
+    let tipZ = mz.z;
     for (let z = mz.z; z <= mz.z + 0.35; z += 0.002) {
       const ys = hits(z);
       if (!ys.length) continue;
       const ring = ys.length >= 3 && ys[0] - ys[1] < 0.005 && ys[1] - ys[2] > 0.003;
-      tip = Math.max(tip, ring ? ys[2] : ys[0]);
+      const y = ring ? ys[2] : ys[0];
+      if (y > tip) [tip, tipZ] = [y, z];
     }
-    // The eye itself stays where the weapon's sight distance puts it (the cheek weld the
-    // recoil was tuned around): only the line's height and the rear sight's place change.
-    const at = peep ?? (rearSight ? { y: Math.max(rearSight.y, tip) + 0.002, z: rearSight.z } : null);
-    if (at) {
-      rig.sightShift = at.z - rig.sight.position.z;
-      rig.sight.position.set(0, at.y, at.z);
+    // A notch: across the rear sight the centre line dips below the sides; its bottom is
+    // where the post's tip sits in a zeroed picture. No dip: the sight's top.
+    let notch = rearSight?.y ?? -Infinity;
+    if (rearSight && !peep) {
+      const side = (x: number, z: number) => {
+        ray.set(new THREE.Vector3(x, cap, z), down);
+        return ray.intersectObject(probe)[0]?.point.y ?? -Infinity;
+      };
+      for (let z = rearSight.z - 0.015; z <= rearSight.z + 0.015; z += 0.001) {
+        const c = hits(z)[0];
+        if (c === undefined || Math.min(side(-0.006, z), side(0.006, z)) < tallest - 0.003) continue;
+        if (c > tallest - 0.012) notch = Math.min(notch, c);
+      }
+    }
+    // The line runs from the rear sight (hole centre or notch bottom) to the post's tip.
+    // The eye stays where the weapon's sight distance puts it (the cheek weld the recoil
+    // was tuned around); aimed, the gun tips by the line's angle to its bore so the post
+    // sits dead centre whatever height the model's maker zeroed it at.
+    const rear = peep ?? (rearSight ? { y: notch, z: rearSight.z } : null);
+    if (rear) {
+      rig.sightShift = rear.z - rig.sight.position.z;
+      rig.sight.position.set(0, rear.y, rear.z);
+      if (tip > -Infinity && rear.z - tipZ > 0.1) {
+        const tilt = Math.atan2(rear.y - tip, rear.z - tipZ);
+        if (Math.abs(tilt) < 2 * (Math.PI / 180)) rig.sightTilt = tilt;
+      }
     }
     (probe.material as THREE.Material).dispose();
   }

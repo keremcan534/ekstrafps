@@ -43,6 +43,11 @@ export interface WeaponRig {
    * the recoil pivot at the butt keeps its place behind it.
    */
   sightShift?: number;
+  /**
+   * The sight line's slope to the bore (rad, + = front sight lower than the rear): aimed,
+   * the gun tips up by it so the line, not the bore axis, points at the target.
+   */
+  sightTilt?: number;
 }
 
 const std = (color: number, metalness: number, roughness: number) => new THREE.MeshStandardMaterial({ color, metalness, roughness });
