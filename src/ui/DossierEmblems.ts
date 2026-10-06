@@ -26,6 +26,12 @@ const EMBLEMS: Record<string, string> = {
     <path d="M32 8.5 L50 15 V30 C50 41.5 42.5 49.5 32 55 C21.5 49.5 14 41.5 14 30 V15 Z" fill="none" stroke="currentColor" stroke-opacity=".35" stroke-width="1.2"/>
     <path d="M17 25 H47 L42.5 31.5 H21.5 Z" fill="#d4231b"/>
     <path d="M25 37 H39 L32 50 Z" fill="currentColor"/>`),
+  // WARDEN: the SABLE shield, a commander's double bar across it, the fang below.
+  warden: SVG(`
+    <path d="M32 3 L55 11 V30 C55 45 45 55 32 61 C19 55 9 45 9 30 V11 Z" fill="#0c0c0e" stroke="currentColor" stroke-width="2.6" stroke-linejoin="round"/>
+    <path d="M17 18 H47 M17 25 H47" stroke="#d4231b" stroke-width="4"/>
+    <path d="M22 32 H42 L32 52 Z" fill="currentColor"/>
+    <circle cx="32" cy="38" r="2.6" fill="#0c0c0e"/>`),
   // Vanta Dynamics: a ring and the company chevron.
   vanta: SVG(`
     <circle cx="32" cy="32" r="27" fill="#0b1220" stroke="currentColor" stroke-width="2.6"/>
@@ -45,6 +51,14 @@ const EMBLEMS: Record<string, string> = {
     <rect x="17" y="20" width="30" height="24" rx="2" fill="#0d0d0f" stroke="currentColor" stroke-width="1.6"/>
     <rect x="21" y="29" width="22" height="5" fill="#ff2a3a"/>
     <circle cx="40" cy="24.5" r="1.8" fill="#ff2a3a"/>`),
+  // Blackpine: a black pine beside a thermometer, the −30 mark in ice blue.
+  blackpine: SVG(`
+    <rect x="4" y="4" width="56" height="56" rx="3" fill="#0d1820" stroke="currentColor" stroke-width="2.6"/>
+    <path d="M22 10 L33 28 H27 L36 42 H27 V52 H17 V42 H8 L17 28 H11 Z" fill="currentColor"/>
+    <rect x="43" y="10" width="7" height="32" rx="3.5" fill="none" stroke="currentColor" stroke-width="2"/>
+    <circle cx="46.5" cy="47" r="6" fill="#9fd3ff" stroke="currentColor" stroke-width="2"/>
+    <rect x="45" y="30" width="3" height="14" fill="#9fd3ff"/>
+    <path d="M38 30 H42" stroke="#9fd3ff" stroke-width="2.4"/>`),
   // Salvagers: a crossed wrench and crowbar on a round plate.
   salvage: SVG(`
     <circle cx="32" cy="32" r="28" fill="#1d1710" stroke="currentColor" stroke-width="2.6"/>
