@@ -147,9 +147,13 @@ function defaults(def, rig) {
   const s = rig.sight.position;
   const dist = def.sight.sightDistance - (rig.sightShift ?? 0);
   const tilt = (rig.sightTilt ?? 0) / DEG;
+  // A pose already in the weapon's data starts from there.
+  const vmd = def.viewmodel;
   return {
-    hip: { pos: [...def.viewmodel.hipPosition], rot: [0, 0, 6.9], fov: HIP_FOV },
-    ads: { pos: [r4(-s.x), r4(-s.y), r4(-dist - s.z)], rot: [r2(tilt), 0, 0], fov: def.sight.adsFov },
+    hip: { pos: [...vmd.hipPosition], rot: vmd.hipRotation ? [...vmd.hipRotation] : [0, 0, 6.9], fov: HIP_FOV },
+    ads: vmd.ads
+      ? { pos: [...vmd.ads.position], rot: [...vmd.ads.rotation], fov: def.sight.adsFov }
+      : { pos: [r4(-s.x), r4(-s.y), r4(-dist - s.z)], rot: [r2(tilt), 0, 0], fov: def.sight.adsFov },
   };
 }
 

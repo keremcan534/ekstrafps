@@ -42,7 +42,7 @@
   },
   "sight": {
     "type": "iron",
-    "adsFov": 70,
+    "adsFov": 60,
     "sightDistance": 0.36
   },
   "viewmodel": {
@@ -50,7 +50,11 @@
       0.165,
       -0.225,
       -0.4
-    ]
+    ],
+    "ads": {
+      "position": [0, -0.0859, -0.16],
+      "rotation": [-1.6, 0.1, 0]
+    }
   },
   "reload": {
     "kind": "magazine",
