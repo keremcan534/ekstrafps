@@ -83,10 +83,13 @@ interface AdsCut {
   jolt: number;
   recoilShift: number;
   recoilRoll: number;
+  /** The weapon's own animation pose (bolt work, reloads): its turn and its shift. */
+  poseTurn: number;
+  poseShift: number;
   air: number;
 }
-const LEGACY_CUT: AdsCut = { inertia: 0.35, inertiaRoll: 0, inertiaShift: 0, strafeRoll: 0.8, linear: 0, sway: 0.55, bobTurn: 0.8, bobShift: 0.8, landing: 0, jolt: 0, recoilShift: 0, recoilRoll: 0, air: 0 };
-const PROFILED_CUT: AdsCut = { inertia: 0.8, inertiaRoll: 0.9, inertiaShift: 0.95, strafeRoll: 0.95, linear: 0.97, sway: 0.6, bobTurn: 0.85, bobShift: 0.95, landing: 0.7, jolt: 0.6, recoilShift: 0.8, recoilRoll: 0.7, air: 0.9 };
+const LEGACY_CUT: AdsCut = { inertia: 0.35, inertiaRoll: 0, inertiaShift: 0, strafeRoll: 0.8, linear: 0, sway: 0.55, bobTurn: 0.8, bobShift: 0.8, landing: 0, jolt: 0, recoilShift: 0, recoilRoll: 0, poseTurn: 0, poseShift: 0, air: 0 };
+const PROFILED_CUT: AdsCut = { inertia: 0.85, inertiaRoll: 0.9, inertiaShift: 0.95, strafeRoll: 0.95, linear: 0.97, sway: 0.6, bobTurn: 0.85, bobShift: 0.95, landing: 0.7, jolt: 0.6, recoilShift: 0.8, recoilRoll: 0.7, poseTurn: 0.95, poseShift: 0.95, air: 0.9 };
 
 /** Near plane of the weapon pass for profiled weapons (m). Fixed: nothing is hidden by moving it. */
 const VIEW_NEAR = 0.01;
@@ -772,16 +775,21 @@ export class Viewmodel {
     const roll = (1 - K.inertiaRoll * ads) * inr;
     const land = 1 - K.landing * ads;
     const jolt = 1 - K.jolt * ads;
+    // Bolt work and reloads aimed (a bolt action, a shell gun): the gun stays on the eye line.
+    const poseTurn = 1 - K.poseTurn * ads;
+    const poseShift = 1 - K.poseShift * ads;
+    const poseR = pose.rot;
+    const poseP = pose.pos;
 
-    const pitch = iner.x * inr + m.swayX * sway + m.bobPitch * bob + m.landPitch * land + jr.x * jolt + pose.rot.x - 0.9 * m.equipDown + m.raise * 0.95;
-    const yaw = (iner.y * inr + m.swayY * sway + m.bobYaw * bob + jr.y * jolt - linP.x * 0.4 * lin) * s + pose.rot.y + 0.15 * m.equipDown;
-    const rollA = (iner.y * 0.6 * roll + iner.z * inr + m.bobRoll * bob + jr.z * jolt) * s + pose.rot.z + 0.35 * m.equipDown + m.raise * 0.25 * side;
+    const pitch = iner.x * inr + m.swayX * sway + m.bobPitch * bob + m.landPitch * land + jr.x * jolt + poseR.x * poseTurn - 0.9 * m.equipDown + m.raise * 0.95;
+    const yaw = (iner.y * inr + m.swayY * sway + m.bobYaw * bob + jr.y * jolt - linP.x * 0.4 * lin) * s + poseR.y * poseTurn + 0.15 * m.equipDown;
+    const rollA = (iner.y * 0.6 * roll + iner.z * inr + m.bobRoll * bob + jr.z * jolt) * s + poseR.z * poseTurn + 0.35 * m.equipDown + m.raise * 0.25 * side;
     const qM = this.t.q1.setFromEuler(this.euler.set(pitch, yaw, rollA, 'YXZ'));
     const shiftV = this.t.a.set(
-      (iner.y * 0.06 * shift - m.latVel * 0.001 * (1 - ads) + linP.x * lin + m.bobX * bob) * s + pose.pos.x - m.raise * 0.03 * side,
-      iner.x * 0.05 * shift + linP.y * lin + m.bobY * bob + pose.pos.y + this.airOffset * (1 - K.air * ads) + m.landY * land + m.crouchY - 0.28 * m.equipDown + m.raise * 0.05 -
+      (iner.y * 0.06 * shift - m.latVel * 0.001 * (1 - ads) + linP.x * lin + m.bobX * bob) * s + poseP.x * poseShift - m.raise * 0.03 * side,
+      iner.x * 0.05 * shift + linP.y * lin + m.bobY * bob + poseP.y * poseShift + this.airOffset * (1 - K.air * ads) + m.landY * land + m.crouchY - 0.28 * m.equipDown + m.raise * 0.05 -
         Math.sin(adsEase * Math.PI) * 0.012 - m.sideTransit * 0.09,
-      linP.z * lin + pose.pos.z + 0.04 * m.equipDown + m.pull,
+      linP.z * lin + poseP.z * poseShift + 0.04 * m.equipDown + m.pull,
     );
 
     // Recoil, in the gun's own frame. The shoulder stops the gun: rearward travel is capped,

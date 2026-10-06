@@ -27,8 +27,9 @@ export const LIMITS = {
   /** Rear and front sight apart as seen from the eye (deg): a broken sight picture. */
   splitDeg: 0.08,
   splitShootDeg: 0.35,
-  /** Optic cant (deg). */
+  /** Optic cant (deg); shooting (recoil, a bolt worked aimed) a little more. */
   rollDeg: 0.35,
+  rollShootDeg: 1,
   /** Once the motion settles (sway off): back on the calibration. */
   settleDeg: 0.01,
   settleMm: 0.1,
@@ -255,7 +256,8 @@ export function runStateChecks(h: Harness): StateRow[] {
     if (dv.length() <= rate * dt) player.velocity.add(dv);
     else player.velocity.addScaledVector(dv.normalize(), rate * dt);
     player.bobPhase += Math.hypot(player.velocity.x, player.velocity.z) * dt * (Math.PI / 1.9) * playerConfig.cameraBobFrequency;
-    const canAds = (held.state === 'ready' || (held.state === 'equipping' && held.stateProgress > 0.6) || (held.state === 'reloading' && d.reload.kind === 'shell')) && vm.wallCompression < 0.5 && !vm.switchingShoulder;
+    // The game's own rule (WeaponController.updateState).
+    const canAds = held.aimable && vm.wallCompression < 0.5 && !vm.switchingShoulder;
     const ads = vm.adsAmount;
     aimPoint.set(0, 0, -(d.aim.hipConvergence + (d.aim.zeroDistance - d.aim.hipConvergence) * ads));
     camera.fov = hfovToVfov(playerConfig.baseFov + (vm.adsFov - playerConfig.baseFov) * ads);
@@ -320,11 +322,12 @@ export function runStateChecks(h: Harness): StateRow[] {
     };
     if (row.nearestM < camera.near + LIMITS.nearMargin) fail(`geometry ${(row.nearestM * 100).toFixed(1)} cm from the eye`);
     if (aimedState) {
-      const offLimit = state.includes('shoot') ? LIMITS.shootDeg : state === 'ads-still' || state.includes('crouch') ? LIMITS.stillDeg : LIMITS.moveDeg;
-      const splitLimit = state.includes('shoot') ? LIMITS.splitShootDeg : LIMITS.splitDeg;
+      const offLimit = state.includes('shoot') || state.includes('recoil') ? LIMITS.shootDeg : state === 'ads-still' || state.includes('crouch') ? LIMITS.stillDeg : LIMITS.moveDeg;
+      const splitLimit = state.includes('shoot') || state.includes('recoil') ? LIMITS.splitShootDeg : LIMITS.splitDeg;
       if (row.offDeg > offLimit) fail(`sight ${row.offDeg.toFixed(2)}° off centre (> ${offLimit})`);
       if (row.splitDeg > splitLimit) fail(`rear/front split ${row.splitDeg.toFixed(3)}° (> ${splitLimit})`);
-      if (row.rollDeg > LIMITS.rollDeg) fail(`cant ${row.rollDeg.toFixed(2)}° (> ${LIMITS.rollDeg})`);
+      const rollLimit = state.includes('shoot') || state.includes('recoil') ? LIMITS.rollShootDeg : LIMITS.rollDeg;
+      if (row.rollDeg > rollLimit) fail(`cant ${row.rollDeg.toFixed(2)}° (> ${rollLimit})`);
       if (row.settleDeg > LIMITS.settleDeg || row.settleMm > LIMITS.settleMm) fail(`not back on calibration: ${row.settleDeg.toFixed(3)}° ${row.settleMm.toFixed(2)} mm`);
     } else {
       if (row.centrePct > LIMITS.hipCentrePct) fail(`covers ${row.centrePct.toFixed(1)}% of the centre`);
@@ -376,16 +379,15 @@ export function runStateChecks(h: Harness): StateRow[] {
     loop(36, { ads: true, fire: true }, t);
     loop(90, { ads: true }, t);
   });
-  run('reload', false, (t) => {
-    gun.ammo = 5;
-    loop(1, { reload: true }, t);
-    loop(Math.ceil(h.data.reload.time * 60) + 30, {}, t);
-  });
-  run('reload-ads', true, (t) => {
-    gun.ammo = 5;
-    loop(1, { reload: true }, t);
-    loop(Math.ceil(h.data.reload.time * 60) + 60, { ads: true }, t);
-  });
+  // Until the reload is done (a shell-by-shell reload has no fixed time), then a moment.
+  const reload = (o: Parameters<typeof frame>[0], t: () => void) => {
+    gun.ammo = Math.max(0, Math.min(5, h.data.magazineSize - 2));
+    loop(1, { ...o, reload: true }, t);
+    for (let i = 0; i < 900 && gun.state === 'reloading'; i++) loop(1, o, t);
+    loop(45, o, t);
+  };
+  run('reload', false, (t) => reload({}, t));
+  run('reload-ads', true, (t) => reload({ ads: true }, t));
   run('sprint-ads', true, (t) => {
     player.sprinting = true;
     loop(60, { speed: [0, -playerConfig.sprintSpeed] }, t);

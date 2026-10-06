@@ -37,8 +37,8 @@ export interface ViewProfile {
      * roll), a uniform scale, and the position (m) of the model's origin.
      */
     orientation: { forward: Axis; up: Axis; rotation: V3; scale: number; position: V3 };
-    /** Moving pieces by bone / node name in the model file (each with what hangs under it). */
-    parts: { mag?: string[]; bolt?: string[] };
+    /** Moving pieces (reloads, bolt work). */
+    parts: { mag?: ViewPart; bolt?: ViewPart };
   };
   /** Reference points, model space. */
   points: {
@@ -70,6 +70,18 @@ export interface ViewProfile {
   sprint: ViewPose;
   /** This weapon's taste on the shared motion layers (1 = as its handling gives). */
   motion: { sway: number; inertia: number; bob: number; recoil: number };
+}
+
+/**
+ * A moving piece of the model: its bones / nodes by name (each with what hangs under it),
+ * and/or the model's own loose pieces lying under the given points (model space: a model
+ * without a skeleton, its bolt handle a separate piece). It turns about `pivot` (model
+ * space; default its first named bone's head).
+ */
+export interface ViewPart {
+  names?: string[];
+  pieces?: V3[];
+  pivot?: V3;
 }
 
 export interface ViewPose {

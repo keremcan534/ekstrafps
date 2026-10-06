@@ -97,17 +97,6 @@ export const SOUND_BANK: Record<string, SoundEvent> = {
     pitchVariance: 0.025,
     maxVoices: 16,
   },
-  'rd704.fire': {
-    layers: [
-      { files: shots('mg', 4), gain: 1.25, range: 'near' },
-      { synth: 'ak_punch', gain: 1.0, range: 'near' },
-      { file: 'audio/guns/tail_hall.wav', gain: 0.45, tail: true },
-      ...distant(1.1),
-    ],
-    reverb: 0.55,
-    pitchVariance: 0.02,
-    maxVoices: 16,
-  },
   'val.fire': {
     layers: [
       { files: shots('val', 3), gain: 1.0, range: 'near' },

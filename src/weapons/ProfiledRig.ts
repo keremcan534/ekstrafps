@@ -28,6 +28,48 @@ export interface ProfiledView {
 const FORWARD = new THREE.Vector3(0, 0, -1);
 
 type Piece = 'body' | 'mag' | 'bolt';
+const MOVING = ['mag', 'bolt'] as const;
+
+/**
+ * Per triangle: the moving part whose points lie on its loose piece of the model (a piece:
+ * triangles joined by shared corners, as the model was built), or undefined.
+ */
+function pickedPieces(geo: THREE.BufferGeometry, spec: ViewProfile['model']['parts']): (Piece | undefined)[] {
+  const pos = geo.getAttribute('position');
+  const tris = pos.count / 3;
+  const out: (Piece | undefined)[] = new Array(tris);
+  if (!MOVING.some((k) => spec[k]?.pieces?.length)) return out;
+  const parent = Int32Array.from({ length: tris }, (_, i) => i);
+  const find = (i: number): number => (parent[i] === i ? i : (parent[i] = find(parent[i])));
+  const corner = new Map<string, number>();
+  const centre = new Float32Array(tris * 3);
+  for (let t = 0; t < tris; t++) {
+    for (let k = 0; k < 3; k++) {
+      const i = t * 3 + k;
+      const key = `${pos.getX(i).toFixed(5)},${pos.getY(i).toFixed(5)},${pos.getZ(i).toFixed(5)}`;
+      const o = corner.get(key);
+      if (o === undefined) corner.set(key, t);
+      else parent[find(t)] = find(o);
+      centre[t * 3] += pos.getX(i) / 3;
+      centre[t * 3 + 1] += pos.getY(i) / 3;
+      centre[t * 3 + 2] += pos.getZ(i) / 3;
+    }
+  }
+  const owner = new Map<number, Piece>();
+  for (const k of MOVING) {
+    for (const p of spec[k]?.pieces ?? []) {
+      let best = -1;
+      let near = Infinity;
+      for (let t = 0; t < tris; t++) {
+        const d = (centre[t * 3] - p[0]) ** 2 + (centre[t * 3 + 1] - p[1]) ** 2 + (centre[t * 3 + 2] - p[2]) ** 2;
+        if (d < near) [near, best] = [d, t];
+      }
+      if (best >= 0) owner.set(find(best), k);
+    }
+  }
+  for (let t = 0; t < tris; t++) out[t] = owner.get(find(t));
+  return out;
+}
 
 /** The weapon for `profile`, or null when its model file didn't load. */
 export function buildProfiledRig(profile: Readonly<ViewProfile>, data: WeaponData): WeaponRig | null {
@@ -40,16 +82,15 @@ export function buildProfiledRig(profile: Readonly<ViewProfile>, data: WeaponDat
   orientation.matrixAutoUpdate = false;
   root.add(orientation);
 
-  // Each named part's piece: its own name or the nearest named one above it.
-  const names = profile.model.parts;
+  // Each triangle's piece: a moving part's own loose pieces (under its points), else its
+  // named bones / nodes (or the nearest named one above), else the body.
+  const spec = profile.model.parts;
   const pieceOf: Piece[] = src.parts.map((_, i) => {
-    for (let j = i; j >= 0; j = src.parts[j].parent) {
-      if (names.mag?.includes(src.parts[j].name)) return 'mag';
-      if (names.bolt?.includes(src.parts[j].name)) return 'bolt';
-    }
+    for (let j = i; j >= 0; j = src.parts[j].parent) for (const k of MOVING) if (spec[k]?.names?.includes(src.parts[j].name)) return k;
     return 'body';
   });
   const geo = src.geometry;
+  const picked = pickedPieces(geo, spec);
   const pos = geo.getAttribute('position');
   const nor = geo.getAttribute('normal');
   const uv = geo.getAttribute('uv');
@@ -57,7 +98,7 @@ export function buildProfiledRig(profile: Readonly<ViewProfile>, data: WeaponDat
   const part = geo.getAttribute('part');
   const buckets = new Map<Piece, Map<number, number[]>>();
   for (let t = 0; t < pos.count; t += 3) {
-    const piece = part ? pieceOf[part.getX(t)] : 'body';
+    const piece = picked[t / 3] ?? (part ? pieceOf[part.getX(t)] : 'body');
     const byMat = buckets.get(piece) ?? new Map<number, number[]>();
     buckets.set(piece, byMat);
     const mi = mat ? mat.getX(t) : 0;
@@ -93,7 +134,7 @@ export function buildProfiledRig(profile: Readonly<ViewProfile>, data: WeaponDat
 
   const eject = new THREE.Vector3(...profile.points.eject);
   const pieces: ProfiledView['pieces'] = [];
-  const makePiece = (piece: Piece, partNames: string[] | undefined): THREE.Object3D => {
+  const makePiece = (piece: 'mag' | 'bolt'): THREE.Object3D => {
     const node = new THREE.Group();
     node.name = piece;
     const orient = new THREE.Group();
@@ -101,15 +142,17 @@ export function buildProfiledRig(profile: Readonly<ViewProfile>, data: WeaponDat
     node.add(orient);
     const meshes = meshesOf(piece);
     if (meshes.length) orient.add(...meshes);
-    // It turns about its bone's head (where a magazine latches); no named part: the eject port.
-    const named = src.parts.find((p) => partNames?.includes(p.name));
-    pieces.push({ node, pivot: named ? named.head.clone() : eject.clone(), orient });
+    // It turns about its pivot, else its first bone's head (where a magazine latches), else the eject port.
+    const p = spec[piece];
+    const named = src.parts.find((x) => p?.names?.includes(x.name));
+    const pivot = p?.pivot ? new THREE.Vector3(...p.pivot) : named ? named.head.clone() : eject.clone();
+    pieces.push({ node, pivot, orient });
     root.add(node);
     return node;
   };
-  const mag = names.mag?.length ? makePiece('mag', names.mag) : null;
+  const mag = spec.mag?.names?.length || spec.mag?.pieces?.length ? makePiece('mag') : null;
   // Long-gun reloads also work a bolt node (the charging handle), even a model without one.
-  const bolt = makePiece('bolt', names.bolt);
+  const bolt = makePiece('bolt');
 
   const point = (name: string) => {
     const o = new THREE.Object3D();

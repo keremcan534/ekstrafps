@@ -86,9 +86,6 @@ const mat = {
   sleeve: poly(0x3e444d, 0.95, 0),
   brass: std(0xc9a046, 0.95, 0.3),
   shellRed: std(0xa11d1d, 0.1, 0.6),
-  dot: new THREE.MeshBasicMaterial({ color: 0xff3030, toneMapped: false }),
-  dotGlow: new THREE.MeshBasicMaterial({ color: 0xff2020, transparent: true, opacity: 0.25, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false }),
-  lens: new THREE.MeshStandardMaterial({ color: 0x88ccff, metalness: 0.1, roughness: 0.05, transparent: true, opacity: 0.12, depthWrite: false }),
   bead: new THREE.MeshBasicMaterial({ color: 0xb8ff6a, toneMapped: false }),
   akWood: wood(0x8c4b1e, 0.55),
   akGrip: poly(0x5c2216, 0.5, 0.05),
@@ -193,27 +190,6 @@ function hand(parent: THREE.Object3D, pos: V3, elbow: V3, size: V3): THREE.Group
   arm.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), to.clone().normalize());
   g.add(arm);
   return g;
-}
-
-/** Tube-style red dot on a rail. Returns the sight point (the dot). */
-function redDot(root: THREE.Object3D, z: number, railTop: number): THREE.Object3D {
-  const y = railTop + 0.04;
-  box(root, mat.polymer, [0.03, 0.026, 0.05], [0, railTop + 0.013, z]);
-  // Thin walls (they frame the view when aiming): a clean window, not a black box.
-  box(root, mat.polymer, [0.0025, 0.038, 0.022], [0.0195, y, z - 0.01]);
-  box(root, mat.polymer, [0.0025, 0.038, 0.022], [-0.0195, y, z - 0.01]);
-  box(root, mat.polymer, [0.0415, 0.0025, 0.022], [0, y + 0.0195, z - 0.01]);
-  box(root, mat.polymer, [0.0415, 0.0025, 0.022], [0, y - 0.0195, z - 0.01]);
-  const lens = new THREE.Mesh(new THREE.PlaneGeometry(0.037, 0.037), mat.lens);
-  lens.position.set(0, y, z - 0.02);
-  root.add(lens);
-  const dot = new THREE.Mesh(new THREE.CircleGeometry(0.0014, 12), mat.dot);
-  dot.position.set(0, y, z - 0.022);
-  root.add(dot);
-  const glow = new THREE.Mesh(new THREE.CircleGeometry(0.0024, 16), mat.dotGlow);
-  glow.position.set(0, y, z - 0.0215);
-  root.add(glow);
-  return point(root, [0, y, z - 0.022]);
 }
 
 /** Rear notch (two posts). `line` = height of the sight line. Returns the sight point. */
@@ -815,49 +791,6 @@ function buildPPSh(): WeaponRig {
   });
 }
 
-/** RD-704: heavy AK-pattern rifle, long rail, folding stock, red dot. 0.95 m. */
-function buildRD704(): WeaponRig {
-  const R = new THREE.Group();
-  box(R, mat.black, [0.05, 0.074, 0.28], [0, 0.025, -0.06]);
-  box(R, mat.gunmetal, [0.052, 0.022, 0.22], [0, 0.071, -0.04]);
-  box(R, mat.black, [0.036, 0.012, 0.55], [0, 0.088, -0.22]);
-  box(R, mat.black, [0.066, 0.066, 0.3], [0, 0.045, -0.35]);
-  for (let i = 0; i < 5; i++) box(R, mat.gunmetal, [0.068, 0.012, 0.03], [0, 0.04, -0.24 - i * 0.055]);
-  tube(R, mat.blued, 0.012, 0.08, [0, 0.035, -0.54]);
-  box(R, mat.gunmetal, [0.034, 0.034, 0.05], [0, 0.035, -0.6]);
-  box(R, mat.black, [0.038, 0.085, 0.2], [0, 0.02, 0.22]);
-  box(R, mat.polymer, [0.046, 0.1, 0.016], [0, 0.015, 0.33]);
-  box(R, mat.black, [0.034, 0.09, 0.045], [0, -0.065, 0.03], [0.3, 0, 0]);
-  box(R, mat.black, [0.008, 0.026, 0.05], [0, -0.022, -0.03]);
-  box(R, mat.steel, [0.004, 0.02, 0.1], [0.027, 0.04, -0.05]);
-  const sight = redDot(R, -0.06, 0.094);
-  const mag = group(R, [0, -0.012, -0.12]);
-  curvedMag(mag, mat.black, 4, 0.03, 0.068, 0.12);
-  const bolt = group(R, [0.032, 0.04, -0.1]);
-  box(bolt, mat.steel, [0.022, 0.012, 0.03], [0.008, 0, 0]);
-  box(R, mat.polymer, [0.022, 0.022, 0.05], [0.04, 0.045, -0.42]);
-  const rightHand = hand(R, [0, -0.06, 0.035], [0.1, -0.25, 0.36], [0.05, 0.085, 0.085]);
-  const leftHand = hand(R, [-0.005, 0.0, -0.4], [-0.22, -0.24, -0.08], [0.056, 0.052, 0.1]);
-  railTeeth(R, 0.04, -0.48, 0.094);
-  for (const sx of [-1, 1]) {
-    rivets(R, mat.steel, [[0.026 * sx, 0.04, -0.18], [0.026 * sx, 0.01, -0.18], [0.026 * sx, 0.04, 0.06], [0.026 * sx, 0.01, 0.06]]);
-    row(R, mat.darkHole, 4, [0.002, 0.01, 0.03], [0.0335 * sx, 0.06, -0.255], [0, 0, -0.055]);
-  }
-  row(R, mat.gunmetal, 4, [0.054, 0.003, 0.006], [0, 0.083, 0.04], [0, 0, -0.035]);
-  box(R, mat.blued, [0.004, 0.014, 0.12], [0.027, 0.036, -0.03], [-0.08, 0, 0]);
-  triggerGuard(R, mat.black, -0.07, 0.0, -0.011, 0.034);
-  box(R, mat.gunmetal, [0.024, 0.016, 0.02], [0, 0.02, 0.32]); // folding-stock latch
-  for (let i = 0; i < 4; i++) box(R, mat.darkHole, [0.036, 0.004, 0.008], [0, 0.035, -0.585 - i * 0.012]);
-  slingLoop(R, [0.022, 0.0, 0.28]);
-  return rig(R, {
-    muzzle: point(R, [0, 0.035, -0.625]),
-    ejectPort: point(R, [0.03, 0.04, -0.06]),
-    laser: point(R, [0.04, 0.045, -0.446]),
-    sight, mag, bolt, pump: null, leftHand, rightHand, heldShell: null, shellType: 'rifle',
-    butt: [0, 0.015, 0.33],
-  });
-}
-
 // ------------------------------------------------------------------ pistol / shotgun
 
 function buildPistol(): WeaponRig {
@@ -1281,7 +1214,6 @@ const BUILDERS: Record<ModelKey, () => WeaponRig> = {
   mk47: buildMK47,
   asval: buildASVAL,
   m4a1: buildM4A1,
-  rd704: buildRD704,
   ppsh: buildPPSh,
   mosin: buildMosin,
   kar98: buildKar98,

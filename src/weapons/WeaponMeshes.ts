@@ -98,7 +98,7 @@ const RETICLE_GLOW = new THREE.MeshBasicMaterial({ color: 0xff2020, transparent:
 /** Models the fit turns the wrong way round (a stock thinner than the barrel). */
 const FLIP: Record<string, boolean> = { 'm249|world': true };
 
-const KEYS: ModelKey[] = ['ak47', 'mk47', 'asval', 'm4a1', 'rd704', 'ppsh', 'mosin', 'kar98', 'pistol', 'shotgun', 'mp5', 'glock', 'saiga', 'svd', 'm249', 'scarh', 'qbz192', 'g36c', 'cz805', 'ak109', 'mp5sd', 'ash127'];
+const KEYS: ModelKey[] = ['ak47', 'mk47', 'asval', 'm4a1', 'ppsh', 'mosin', 'kar98', 'pistol', 'shotgun', 'mp5', 'glock', 'saiga', 'svd', 'm249', 'scarh', 'qbz192', 'g36c', 'cz805', 'ak109', 'mp5sd', 'ash127'];
 
 /** Overall length (m) for guns borrowing a relative's rig: the model is scaled to its own, not the rig's. */
 const LENGTH: Partial<Record<ModelKey, number>> = { qbz192: 0.84, g36c: 0.72, cz805: 0.91, ak109: 0.94, mp5sd: 0.78, ash127: 0.75 };

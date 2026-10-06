@@ -22,7 +22,6 @@ export const PROMPTS = {
   mk47: 'CMMG MK47 Mutant rifle, AR-15 style upper and lower receiver in flat dark earth, AK steel magazine, M-LOK handguard, flat top picatinny rail without optic, large muzzle brake, collapsible stock',
   asval: 'AS VAL integrally suppressed rifle, thick long suppressor barrel, skeletal folding steel stock, black polymer pistol grip, short 20-round magazine, iron sights',
   m4a1: 'M4A1 carbine, black anodized aluminium, quad picatinny rail handguard, flat top upper receiver without optic, collapsible stock, 30-round STANAG magazine, front sight post',
-  rd704: 'heavy AK-pattern rifle with long black picatinny rail handguard, black folding triangle stock, steel receiver, curved magazine, top rail without optic',
   ppsh: 'WW2 Soviet PPSh-41 submachine gun, large round drum magazine under the receiver in front of the trigger guard, full wooden rifle stock, short barrel inside a perforated steel cooling jacket with round holes, blued steel, no optic',
   mosin: 'Mosin-Nagant M91/30 bolt action rifle, long orange shellac wooden stock, round receiver, straight bolt handle, hooded front sight, no bayonet',
   kar98: 'Mauser Kar98k bolt action rifle, dark walnut wooden stock, turned down bolt handle, blued steel barrel, hooded front sight',

@@ -10,8 +10,8 @@
       "position": [0.00053, -0.08571, -0.12815]
     },
     "parts": {
-      "mag": ["mag_02"],
-      "bolt": ["bolt_01"]
+      "mag": { "names": ["mag_02"] },
+      "bolt": { "names": ["bolt_01"] }
     }
   },
   "points": {

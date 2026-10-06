@@ -34,8 +34,8 @@ On the start screen, click anywhere or press Enter. Esc releases the mouse.
 | LMB / RMB | fire (point fire, no crosshair) / aim down sights |
 | R / B / T | reload / fire mode / inspect (magazine, chamber) |
 | [ / ] | zero distance |
-| 1-9, 0, mouse wheel | AK-47, MK47, AS VAL, M4A1, RD-704, PPSh-41, Mosin, Kar98k, pistol, shotgun |
-| same number again | MP5, G18, Saiga-12K, SVD, M249, SCAR-H (1 → 11 … 6 → 16) |
+| 1-9, 0, mouse wheel | AK-47, AK-109, MK47 Mutant, AS VAL, M4A1, G36C, QBZ-192, CZ 805 BREN, PPSh-41, Kar98k |
+| same number again | M1911, MP5, MP5SD, SR-25, FN FAL, ASh-12.7 (1 → 11 … 6 → 16) |
 | **Lab** | |
 | G | aim rays: camera ray, bore ray, muzzle vector, wall probes, bullet trajectories |
 | L | test laser (parallel to the bore) |

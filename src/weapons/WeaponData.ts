@@ -2,7 +2,6 @@ import ak47 from '../config/weapons/ak47.json';
 import mk47 from '../config/weapons/mk47.json';
 import asval from '../config/weapons/asval.json';
 import m4a1 from '../config/weapons/m4a1.json';
-import rd704 from '../config/weapons/rd704.json';
 import ppsh from '../config/weapons/ppsh.json';
 import kar98 from '../config/weapons/kar98.json';
 import heavyPistol from '../config/weapons/heavy_pistol.json';
@@ -16,7 +15,7 @@ import ak109 from '../config/weapons/ak109.json';
 import mp5sd from '../config/weapons/mp5sd.json';
 import ash127 from '../config/weapons/ash127.json';
 
-export type ModelKey = 'ak47' | 'mk47' | 'asval' | 'm4a1' | 'rd704' | 'ppsh' | 'mosin' | 'kar98' | 'pistol' | 'shotgun'
+export type ModelKey = 'ak47' | 'mk47' | 'asval' | 'm4a1' | 'ppsh' | 'mosin' | 'kar98' | 'pistol' | 'shotgun'
   | 'mp5' | 'glock' | 'saiga' | 'svd' | 'm249' | 'scarh' | 'qbz192' | 'g36c' | 'cz805' | 'ak109' | 'mp5sd' | 'ash127';
 export type AnimSet = 'rifle' | 'pistol' | 'shotgun' | 'bolt';
 export type FireMode = 'auto' | 'semi' | 'pump' | 'bolt';
@@ -165,13 +164,13 @@ export interface WeaponData {
   };
 }
 
-export const WEAPON_DEFAULTS: readonly WeaponData[] = [ak47, ak109, mk47, asval, m4a1, g36c, qbz192, cz805, rd704, ppsh, kar98, heavyPistol, mp5, mp5sd, svd, scarh, ash127] as WeaponData[];
+export const WEAPON_DEFAULTS: readonly WeaponData[] = [ak47, ak109, mk47, asval, m4a1, g36c, qbz192, cz805, ppsh, kar98, heavyPistol, mp5, mp5sd, svd, scarh, ash127] as WeaponData[];
 
 /**
  * Weapons taken out of the game (no model of their own): their old ids, still in map
  * tables and saved loadouts, stand for these.
  */
-const RETIRED: Record<string, string> = { mosin: 'kar98', pump_shotgun: 'mp5', glock18: 'heavy_pistol', saiga12: 'ak47', m249: 'scarh' };
+const RETIRED: Record<string, string> = { mosin: 'kar98', pump_shotgun: 'mp5', glock18: 'heavy_pistol', saiga12: 'ak47', m249: 'scarh', rd704: 'scarh' };
 export const liveWeaponId = (id: string): string => RETIRED[id] ?? id;
 
 /** Live, mutable copies the game and tuning panel share. */
@@ -187,7 +186,6 @@ if (import.meta.hot) {
       '../config/weapons/mk47.json',
       '../config/weapons/asval.json',
       '../config/weapons/m4a1.json',
-      '../config/weapons/rd704.json',
       '../config/weapons/ppsh.json',
       '../config/weapons/kar98.json',
       '../config/weapons/heavy_pistol.json',

@@ -245,10 +245,7 @@ export class WeaponController implements WeaponListener {
     const vm = this.viewmodel;
 
     // --- ADS intent: needs a ready gun, room in front of it, and no shoulder swap ---
-    const canAds =
-      (w.state === 'ready' || (w.state === 'equipping' && w.stateProgress > 0.6) || (w.state === 'reloading' && w.data.reload.kind === 'shell')) &&
-      vm.wallCompression < 0.5 &&
-      !vm.switchingShoulder;
+    const canAds = w.aimable && vm.wallCompression < 0.5 && !vm.switchingShoulder;
     this.adsWanted = input.adsHeld && canAds;
     const wantsFire = input.fireHeld || input.firePressed;
     // Firing or aiming always wins over sprinting.

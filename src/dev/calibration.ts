@@ -398,8 +398,8 @@ function seedFromLegacy(): void {
   const names = src.parts.map((x) => x.name);
   const mag = names.find((n) => /mag/i.test(n) && !/release|catch/i.test(n));
   const bolt = names.find((n) => /bolt|slide|charg/i.test(n));
-  if (mag) p.model.parts.mag = [mag];
-  if (bolt) p.model.parts.bolt = [bolt];
+  if (mag) p.model.parts.mag = { names: [mag] };
+  if (bolt) p.model.parts.bolt = { names: [bolt] };
   working.set(d.id, p);
   select(d.id);
   toast('Profil oluşturuldu: gez ve arpacığı modelde tıklayarak ayarla, sonra Kaydet');
@@ -484,17 +484,21 @@ const SIDE_BACKGROUND = new THREE.Color(0x30343a);
 const aimPoint = V();
 let last = performance.now();
 function tick(now: number): void {
-  const dt = Math.min(0.05, (now - last) / 1000);
+  step(Math.min(0.05, (now - last) / 1000));
   last = now;
+  draw();
+  info(now);
+  requestAnimationFrame(tick);
+}
+
+/** One simulation step of the weapon in the chosen stance. */
+function step(dt: number): void {
   player.sprinting = st.mode === 'sprint';
   const ads = vm.adsAmount;
   aimPoint.set(0, 0, -(data.aim.hipConvergence + (data.aim.zeroDistance - data.aim.hipConvergence) * ads));
   mainCam.fov = hfovToVfov(playerConfig.baseFov + (vm.adsFov - playerConfig.baseFov) * ads);
   mainCam.updateProjectionMatrix();
   vm.update(dt, { player, lookYaw: 0, lookPitch: 0, adsTarget: st.mode === 'ads' ? 1 : 0, aimPoint, dropAngle: 0, mainCamera: mainCam, stamina: 1, wallTarget: 0, shoulder: st.leftShoulder ? -1 : 1 });
-  draw();
-  info(now);
-  requestAnimationFrame(tick);
 }
 
 function draw(): void {
@@ -516,13 +520,20 @@ function draw(): void {
 
 select(st.id);
 requestAnimationFrame(tick);
-// Scripting hooks (screenshots and checks from the console).
+// Scripting hooks (screenshots, checks and measuring from the console).
 Object.assign(window as object, {
   __calibVm: vm,
   __calibState: st,
   __calibSelect: select,
+  __calibProfile: profile,
+  __calibApply: apply,
+  __calibSave: save,
+  __calibSeed: seedFromLegacy,
+  __calibLib: { THREE, gunSource, orientationMatrix },
   __calibSideCam: sideCam,
-  __calibShot: (): string => {
+  // Background tabs get no animation frames: `steps` advances the weapon first (1/60 s each).
+  __calibShot: (steps = 0): string => {
+    for (let i = 0; i < steps; i++) step(1 / 60);
     draw();
     return renderer.domElement.toDataURL('image/jpeg', 0.92);
   },
