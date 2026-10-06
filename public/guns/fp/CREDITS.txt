@@ -16,3 +16,9 @@ ppsh.glb   "Low-Poly PPSH 41" — https://sketchfab.com/3d-models/low-poly-ppsh-
 mp5.glb    "Low-Poly HK MP5" — https://sketchfab.com/3d-models/low-poly-hk-mp5-80980f757c2c463ebc73460a31611652
 
 pistol.glb "9mm Pistol" by TORI106 — https://sketchfab.com/3d-models/9mm-pistol-43bc09f5aace4346a8a2b6e1580fc03f
+qbz192.glb "Low-Poly QBZ-192" (TastyTony) — https://sketchfab.com/3d-models/low-poly-qbz-192-2ade5a1f7f0842fa968e235f780b1e34
+g36c.glb   "Low-Poly HK G36c" (TastyTony) — https://sketchfab.com/3d-models/low-poly-hk-g36c-bed5e5d5364f44f8921321a52c54b6b5
+cz805.glb  "Low-Poly CZ 805 Bren" (TastyTony) — https://sketchfab.com/3d-models/low-poly-cz-805-bren-ffc93e9963ab4566b8908f57209f98a1
+ak109.glb  "Low-Poly AK-109" (TastyTony) — https://sketchfab.com/3d-models/low-poly-ak-109-8f701898b61f4ae19547af53acedafd9
+mp5sd.glb  "Low-Poly HK MP5SD" (TastyTony) — https://sketchfab.com/3d-models/low-poly-hk-mp5sd-a79689d37bb547c4a1ab6628f60dd05f
+ash127.glb "Low-Poly ASh 12.7" (TastyTony) — https://sketchfab.com/3d-models/low-poly-ash-127-f1d14ed30ee0459eb248319ae57c4cc3

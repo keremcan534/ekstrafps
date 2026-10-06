@@ -59,6 +59,7 @@ export interface HazardSpot {
 export const WEAPON_PRICES: Record<string, number> = {
   heavy_pistol: 300, kar98: 600, glock18: 700, pump_shotgun: 900, mosin: 1000, mp5: 1100, ppsh: 1200, ak47: 1400, saiga12: 1500, asval: 1600,
   m4a1: 1800, mk47: 2000, svd: 2100, rd704: 2250, scarh: 2400, m249: 2600,
+  mp5sd: 1300, ak109: 1500, g36c: 1700, qbz192: 1800, cz805: 1900, ash127: 2600,
 };
 /** Team start rooms (4-team mode): cheap guns on their walls, a guaranteed ammo cache. */
 export const TEAM_STARTS: Record<string, { room: string; zone: string; pos: [number, number] }> = {
@@ -71,6 +72,7 @@ const START_WEAPONS = ['kar98', 'pump_shotgun', 'mosin', 'glock18'];
 const RANDOM_WEAPONS = [
   'pump_shotgun', 'mosin', 'ppsh', 'ak47', 'asval', 'm4a1', 'mk47', 'rd704', 'pump_shotgun', 'ppsh', 'ak47',
   'mp5', 'mp5', 'saiga12', 'svd', 'scarh', 'm249',
+  'mp5sd', 'ak109', 'g36c', 'qbz192', 'cz805', 'ash127',
 ];
 
 export interface Terminal {

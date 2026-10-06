@@ -1,0 +1,86 @@
+{
+  "id": "ak109",
+  "name": "AK-109",
+  "short": "AK109",
+  "model": "ak109",
+  "animSet": "rifle",
+  "category": "rifle",
+  "ammo": "762x39_ps",
+  "fireModes": [
+    "auto",
+    "semi"
+  ],
+  "fireRate": 650,
+  "magazineSize": 30,
+  "closedBolt": true,
+  "barrelLength": 0.415,
+  "handling": {
+    "weight": 3.6,
+    "length": 0.94,
+    "ergonomics": 45
+  },
+  "accuracy": {
+    "moa": 3.5
+  },
+  "recoil": {
+    "vertical": 1.08,
+    "horizontal": 0.504,
+    "horizontalBias": 0.3,
+    "back": 0.027,
+    "shoulder": 160,
+    "damping": 0.55,
+    "cameraTransfer": 0.35,
+    "cameraKeep": 0.22,
+    "cameraRecovery": 3.5,
+    "dispersion": 0.12,
+    "punch": 0.35,
+    "roll": 1.5
+  },
+  "aim": {
+    "hipConvergence": 15,
+    "zeroDistance": 100
+  },
+  "sight": {
+    "type": "iron",
+    "adsFov": 60,
+    "sightDistance": 0.36
+  },
+  "viewmodel": {
+    "hipPosition": [
+      0.165,
+      -0.225,
+      -0.4
+    ]
+  },
+  "reload": {
+    "kind": "magazine",
+    "time": 2.1,
+    "emptyTime": 2.7,
+    "shellStart": 0,
+    "shellInsert": 0,
+    "shellEnd": 0
+  },
+  "equipTime": 0.5,
+  "holsterTime": 0.25,
+  "sprintToFireTime": 0.12,
+  "fx": {
+    "tracerEvery": 4,
+    "muzzleFlashScale": 1.2,
+    "smoke": 0.7,
+    "shellEjectDelay": 0.02,
+    "shellEjectSpeed": 3.2
+  },
+  "audio": {
+    "fire": "ak.fire",
+    "dry": "dry_fire",
+    "equip": "equip.rifle",
+    "reloadStart": "reload.rifle.start",
+    "magOut": "reload.rifle.magout",
+    "magIn": "reload.rifle.magin",
+    "boltBack": "reload.rifle.boltback",
+    "boltForward": "reload.rifle.boltforward",
+    "shellInsert": "",
+    "pump": ""
+  },
+  "boltCycleTime": 0
+}

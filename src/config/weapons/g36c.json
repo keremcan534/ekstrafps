@@ -1,0 +1,86 @@
+{
+  "id": "g36c",
+  "name": "G36C",
+  "short": "G36C",
+  "model": "g36c",
+  "animSet": "rifle",
+  "category": "rifle",
+  "ammo": "556_m855",
+  "fireModes": [
+    "auto",
+    "semi"
+  ],
+  "fireRate": 750,
+  "magazineSize": 30,
+  "closedBolt": true,
+  "barrelLength": 0.368,
+  "handling": {
+    "weight": 2.8,
+    "length": 0.72,
+    "ergonomics": 65
+  },
+  "accuracy": {
+    "moa": 1.6
+  },
+  "recoil": {
+    "vertical": 0.72,
+    "horizontal": 0.306,
+    "horizontalBias": 0.1,
+    "back": 0.0198,
+    "shoulder": 190,
+    "damping": 0.6,
+    "cameraTransfer": 0.32,
+    "cameraKeep": 0.18,
+    "cameraRecovery": 4.5,
+    "dispersion": 0.06,
+    "punch": 0.25,
+    "roll": 1.0
+  },
+  "aim": {
+    "hipConvergence": 15,
+    "zeroDistance": 100
+  },
+  "sight": {
+    "type": "iron",
+    "adsFov": 66,
+    "sightDistance": 0.3
+  },
+  "viewmodel": {
+    "hipPosition": [
+      0.165,
+      -0.22,
+      -0.42
+    ]
+  },
+  "reload": {
+    "kind": "magazine",
+    "time": 1.85,
+    "emptyTime": 2.35,
+    "shellStart": 0,
+    "shellInsert": 0,
+    "shellEnd": 0
+  },
+  "equipTime": 0.42,
+  "holsterTime": 0.21,
+  "sprintToFireTime": 0.12,
+  "fx": {
+    "tracerEvery": 4,
+    "muzzleFlashScale": 1.0,
+    "smoke": 0.5,
+    "shellEjectDelay": 0.02,
+    "shellEjectSpeed": 3.2
+  },
+  "audio": {
+    "fire": "ar.fire",
+    "dry": "dry_fire",
+    "equip": "equip.rifle",
+    "reloadStart": "reload.rifle.start",
+    "magOut": "reload.rifle.magout",
+    "magIn": "reload.rifle.magin",
+    "boltBack": "reload.rifle.boltback",
+    "boltForward": "reload.rifle.boltforward",
+    "shellInsert": "",
+    "pump": ""
+  },
+  "boltCycleTime": 0
+}

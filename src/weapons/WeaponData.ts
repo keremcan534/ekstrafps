@@ -9,9 +9,15 @@ import heavyPistol from '../config/weapons/heavy_pistol.json';
 import mp5 from '../config/weapons/mp5.json';
 import svd from '../config/weapons/svd.json';
 import scarh from '../config/weapons/scarh.json';
+import qbz192 from '../config/weapons/qbz192.json';
+import g36c from '../config/weapons/g36c.json';
+import cz805 from '../config/weapons/cz805.json';
+import ak109 from '../config/weapons/ak109.json';
+import mp5sd from '../config/weapons/mp5sd.json';
+import ash127 from '../config/weapons/ash127.json';
 
 export type ModelKey = 'ak47' | 'mk47' | 'asval' | 'm4a1' | 'rd704' | 'ppsh' | 'mosin' | 'kar98' | 'pistol' | 'shotgun'
-  | 'mp5' | 'glock' | 'saiga' | 'svd' | 'm249' | 'scarh';
+  | 'mp5' | 'glock' | 'saiga' | 'svd' | 'm249' | 'scarh' | 'qbz192' | 'g36c' | 'cz805' | 'ak109' | 'mp5sd' | 'ash127';
 export type AnimSet = 'rifle' | 'pistol' | 'shotgun' | 'bolt';
 export type FireMode = 'auto' | 'semi' | 'pump' | 'bolt';
 
@@ -155,7 +161,7 @@ export interface WeaponData {
   };
 }
 
-export const WEAPON_DEFAULTS: readonly WeaponData[] = [ak47, mk47, asval, m4a1, rd704, ppsh, kar98, heavyPistol, mp5, svd, scarh] as WeaponData[];
+export const WEAPON_DEFAULTS: readonly WeaponData[] = [ak47, ak109, mk47, asval, m4a1, g36c, qbz192, cz805, rd704, ppsh, kar98, heavyPistol, mp5, mp5sd, svd, scarh, ash127] as WeaponData[];
 
 /**
  * Weapons taken out of the game (no model of their own): their old ids, still in map
@@ -184,6 +190,12 @@ if (import.meta.hot) {
       '../config/weapons/mp5.json',
       '../config/weapons/svd.json',
       '../config/weapons/scarh.json',
+      '../config/weapons/qbz192.json',
+      '../config/weapons/g36c.json',
+      '../config/weapons/cz805.json',
+      '../config/weapons/ak109.json',
+      '../config/weapons/mp5sd.json',
+      '../config/weapons/ash127.json',
     ],
     () => {},
   );

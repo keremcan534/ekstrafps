@@ -38,7 +38,10 @@ const fits = new Map<string, THREE.Matrix4 | null>();
 /** Models the fit turns the wrong way round (a stock thinner than the barrel). */
 const FLIP: Record<string, boolean> = { 'm249|world': true };
 
-const KEYS: ModelKey[] = ['ak47', 'mk47', 'asval', 'm4a1', 'rd704', 'ppsh', 'mosin', 'kar98', 'pistol', 'shotgun', 'mp5', 'glock', 'saiga', 'svd', 'm249', 'scarh'];
+const KEYS: ModelKey[] = ['ak47', 'mk47', 'asval', 'm4a1', 'rd704', 'ppsh', 'mosin', 'kar98', 'pistol', 'shotgun', 'mp5', 'glock', 'saiga', 'svd', 'm249', 'scarh', 'qbz192', 'g36c', 'cz805', 'ak109', 'mp5sd', 'ash127'];
+
+/** Overall length (m) for guns borrowing a relative's rig: the model is scaled to its own, not the rig's. */
+const LENGTH: Partial<Record<ModelKey, number>> = { qbz192: 0.84, g36c: 0.72, cz805: 0.91, ak109: 0.94, mp5sd: 0.78, ash127: 0.75 };
 
 /** Float copies of position / normal / uv (quantized files come as normalized integers), non-indexed. */
 function floatGeometry(src: THREE.BufferGeometry, matrix: THREE.Matrix4): THREE.BufferGeometry {
@@ -274,15 +277,15 @@ function boundsOf(tris: Float32Array): THREE.Box3 {
  * either way, either side up) and a small scale / offset search that best matches
  * the two side silhouettes.
  */
-function fit(ref: Float32Array, model: Float32Array, flip = false): THREE.Matrix4 {
+function fit(ref: Float32Array, model: Float32Array, flip = false, length?: number): THREE.Matrix4 {
   // A model posed at an angle (first-person packs hold the gun canted): turn it square
   // onto its principal axes first, then fit as usual with a little pitch search.
   const P = principalFrame(model);
-  if (!P) return fitSquare(ref, model, flip, [0]);
+  if (!P) return fitSquare(ref, model, flip, [0], length);
   const turned = new Float32Array(model.length);
   const v = new THREE.Vector3();
   for (let i = 0; i < model.length; i += 3) v.set(model[i], model[i + 1], model[i + 2]).applyMatrix4(P).toArray(turned, i);
-  return fitSquare(ref, turned, flip, [-6, -4.5, -3, -1.5, 0, 1.5, 3, 4.5, 6]).multiply(P);
+  return fitSquare(ref, turned, flip, [-6, -4.5, -3, -1.5, 0, 1.5, 3, 4.5, 6], length).multiply(P);
 }
 
 /**
@@ -331,7 +334,7 @@ function principalFrame(model: Float32Array): THREE.Matrix4 | null {
 }
 
 /** fit() for a model square to its axes; `pitches` (degrees) are also tried, best first pass refined. */
-function fitSquare(ref: Float32Array, model: Float32Array, flip: boolean, pitches: number[]): THREE.Matrix4 {
+function fitSquare(ref: Float32Array, model: Float32Array, flip: boolean, pitches: number[], length?: number): THREE.Matrix4 {
   const rb = boundsOf(ref);
   const mb = boundsOf(model);
   const ms = mb.getSize(new THREE.Vector3());
@@ -379,7 +382,7 @@ function fitSquare(ref: Float32Array, model: Float32Array, flip: boolean, pitche
         0, 0, 0, 1,
       );
       for (const k of [0.94, 0.97, 1, 1.03, 1.06]) {
-        const s = (len / ms.getComponent(L)) * k;
+        const s = ((length ?? len) / ms.getComponent(L)) * k;
         const place = (deg: number) =>
           new THREE.Matrix4()
             .makeTranslation(rc.x, rc.y, rc.z)
@@ -531,7 +534,7 @@ export function dressRig(rig: WeaponRig, key: ModelKey, world: boolean): boolean
     const ref = trianglesOf(root, (m) => isProc(m) && !(m.material as THREE.Material).transparent);
     src.geometry = keepAttached(src.geometry) ?? src.geometry;
     const pos = src.geometry.getAttribute('position').array as Float32Array;
-    matrix = ref.length ? fit(ref, pos, !!FLIP[`${key}|${tier}`]) : null;
+    matrix = ref.length ? fit(ref, pos, !!FLIP[`${key}|${tier}`], LENGTH[key]) : null;
     fits.set(`${key}|${tier}`, matrix);
   }
   if (!matrix) return false;
@@ -618,7 +621,7 @@ export function dressRig(rig: WeaponRig, key: ModelKey, world: boolean): boolean
   for (let i = 0; i < pos.count; i++) {
     if (Math.abs(pos.getX(i)) < 0.03 && Math.abs(pos.getY(i) - mz.y) < 0.05) front = Math.min(front, pos.getZ(i));
   }
-  if (rig.muzzle.parent === root && Math.abs(front - mz.z) < 0.15) mz.z = front;
+  if (rig.muzzle.parent === root && Math.abs(front - mz.z) < 0.3) mz.z = front;
   // Aimed, from the model's own sights. The rear sight: the tallest thing on the centre
   // line over the receiver (the rearmost of the near-tallest, so a pistol's front post
   // doesn't count). A peep (a ray down its centre passes a thin ring, then a hole): the

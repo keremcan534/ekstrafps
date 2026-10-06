@@ -1285,6 +1285,13 @@ const BUILDERS: Record<ModelKey, () => WeaponRig> = {
   svd: buildSVD,
   m249: buildM249,
   scarh: buildSCARH,
+  // Newer guns: the rig of their closest relative (the model is fitted to its own length).
+  qbz192: buildM4A1,
+  g36c: buildM4A1,
+  cz805: buildM4A1,
+  ak109: buildAK47,
+  mp5sd: buildMP5,
+  ash127: buildSCARH,
 };
 
 /**
