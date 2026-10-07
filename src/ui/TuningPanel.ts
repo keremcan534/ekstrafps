@@ -7,6 +7,7 @@ import { viewProfile } from '../weapons/ViewProfile';
 import { playerConfig, playerConfigDefaults } from '../player/PlayerConfig';
 import { feel, feelDefaults } from '../config/Feel';
 import { motionTuning, motionTuningDefaults } from '../weapons/motion/MotionTuning';
+import { TARKOV } from '../weapons/TarkovRecoil';
 import { aiMonitor } from './AIMonitor';
 
 export interface TuningHooks {
@@ -109,7 +110,6 @@ export class TuningPanel {
     const feelF = this.gui.addFolder('Global feel').close();
     feelF.add(feel, 'recoilScale', 0, 3, 0.05).name('Weapon recoil scale');
     feelF.add(feel, 'cameraRecoilScale', 0, 3, 0.05).name('View recoil scale');
-    feelF.add(feel, 'adsRecoilRearward', 0, 1, 0.05).name('ADS recoil rearward (0 = old flip)');
     feelF.add(feel, 'inertiaScale', 0, 3, 0.05).name('Inertia scale').onChange(tuned);
     feelF.add(feel, 'swayScale', 0, 3, 0.05).name('Sway scale').onChange(tuned);
     feelF.add(feel, 'armStamina').name('Arm stamina');
@@ -258,19 +258,20 @@ export class TuningPanel {
     m.add(w.reload, 'emptyTime', 0.2, 5, 0.05).name('Empty reload time');
     m.add(w, 'equipTime', 0.05, 2, 0.01);
 
-    const rc = f.addFolder('Recoil (procedural)');
-    rc.add(w.recoil, 'vertical', 0, 12, 0.05).name('Muzzle climb (deg)');
-    rc.add(w.recoil, 'horizontal', 0, 5, 0.05).name('Horizontal random');
-    rc.add(w.recoil, 'horizontalBias', -3, 3, 0.05).name('Horizontal bias');
-    rc.add(w.recoil, 'back', 0, 0.15, 0.001).name('Translation kick (m)');
-    rc.add(w.recoil, 'shoulder', 30, 500, 5).name('Shoulder absorption');
-    rc.add(w.recoil, 'damping', 0.2, 1.2, 0.01).name('Recoil damping');
-    rc.add(w.recoil, 'cameraTransfer', 0, 1, 0.01).name('View transfer');
-    rc.add(w.recoil, 'cameraKeep', 0, 1, 0.01).name('View kept (player corrects)');
-    rc.add(w.recoil, 'cameraRecovery', 0, 15, 0.1).name('View recovery speed');
-    rc.add(w.recoil, 'dispersion', 0, 1, 0.01).name('Recoil dispersion (deg)');
-    rc.add(w.recoil, 'punch', 0, 3, 0.05).name('Camera punch (visual)');
-    rc.add(w.recoil, 'roll', 0, 8, 0.1).name('Roll kick');
+    // Recoil: the weapon's Tarkov numbers (src/config/tarkovRecoil.json), live; not saved from here.
+    const tk = TARKOV.weapons[w.id];
+    if (tk) {
+      const rc = f.addFolder(`Recoil (Tarkov: ${tk.source})`).close();
+      rc.add(tk, 'up', 0, 600, 1).name('RecoilForceUp');
+      rc.add(tk, 'back', 0, 1000, 1).name('RecoilForceBack');
+      rc.add(tk, 'angle', 45, 135, 1).name('RecoilAngle');
+      rc.add(tk, 'dispersion', 0, 45, 0.5).name('RecolDispersion');
+      rc.add(tk, 'returnSpeed', 0.5, 8, 0.05).name('Return speed');
+      rc.add(tk, 'damping', 0.3, 1.2, 0.01).name('Damping');
+      rc.add(tk, 'camera', 0, 0.1, 0.005).name('RecoilCamera');
+      rc.add(tk, 'cameraSnap', 0.5, 8, 0.1).name('CameraSnap');
+      rc.add(tk, 'stableShot', 1, 10, 1).name('Stable after shot');
+    }
 
     const ads = f.addFolder('Aim / sights').close();
     ads.add(w.aim, 'hipConvergence', 2, 100, 0.5).name('Point-fire convergence (m)');
@@ -386,11 +387,15 @@ export class TuningPanel {
     id.add(M.idleNoise, 'position', 0, 0.002, 0.0001).name('Position (m)');
     id.add(M.idleNoise, 'correction', 0, 0.4, 0.01).name('Hand corrections (°)');
 
-    const rc = f('Recoil');
-    rc.add(M.recoil, 'instability', 0, 1.5, 0.05).name('Sustained-fire instability');
-    rc.add(M.recoil, 'heatDecay', 0.2, 8, 0.1).name('Instability decay (/s)');
-    rc.add(M.recoil, 'drift', 0, 1, 0.01).name('Arms recovery share');
-    rc.add(M.recoil, 'handResponse', 0, 3, 0.05).name('Hand response ×');
+    // Tarkov recoil: how its numbers become motion (shared by every weapon; not saved from here).
+    const rc = f('Recoil (Tarkov model)');
+    const T = TARKOV.model;
+    rc.add(T, 'forceToDegPerSec', 0.1, 3, 0.05).name('Kick (deg/s per force)');
+    rc.add(T, 'returnToOmega', 0.5, 6, 0.05).name('Return spring ×');
+    rc.add(T, 'dampingToZeta', 0.3, 1.5, 0.01).name('Damping ×');
+    rc.add(T, 'cameraShare', 0, 20, 0.5).name('View share ×');
+    rc.add(T, 'cameraFollow', 0.2, 8, 0.1).name('View follow ×');
+    rc.add(T, 'backToMeters', 0, 0.01, 0.0001).name('Rearward kick (m/s per force)');
 
     const ld = f('Landing / crouch');
     ld.add(M.landing, 'strength', 0, 3, 0.05).name('Landing strength ×');

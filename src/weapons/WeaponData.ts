@@ -64,37 +64,6 @@ export interface WeaponData {
     moa: number;
   };
 
-  /**
-   * Procedural recoil. Each shot is an impulse into the weapon's recoil springs;
-   * leftover energy from previous shots makes bursts climb naturally.
-   */
-  recoil: {
-    /** Muzzle climb per shot (deg, for a 3.5 kg reference weapon). */
-    vertical: number;
-    /** Random horizontal kick (±deg). */
-    horizontal: number;
-    /** Consistent horizontal drift per shot (deg, + right). */
-    horizontalBias: number;
-    /** Rearward kick into the shoulder (m). */
-    back: number;
-    /** Shoulder/hands stiffness: how hard the shooter holds the gun on target. */
-    shoulder: number;
-    /** Damping ratio of the recoil spring (0.3 bouncy .. 1 dead). */
-    damping: number;
-    /** Fraction of the muzzle climb the shooter's view follows. */
-    cameraTransfer: number;
-    /** Fraction of the view climb that stays (the player must pull it back down). */
-    cameraKeep: number;
-    /** How fast the recovering part of the view returns (1/s). */
-    cameraRecovery: number;
-    /** Extra random dispersion from the gun moving under recoil (deg). */
-    dispersion: number;
-    /** Visual-only camera punch (deg). Kept small: weapon recoil dominates. */
-    punch: number;
-    /** Roll kick (deg). */
-    roll: number;
-  };
-
   /** Where the physical weapon points. */
   aim: {
     /** Point fire: the shouldered weapon points at the camera ray this far out (m). */

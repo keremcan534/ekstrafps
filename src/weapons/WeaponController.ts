@@ -117,6 +117,7 @@ export class WeaponController implements WeaponListener {
   constructor(defs: WeaponData[], aspect: number, private deps: WeaponControllerDeps) {
     this.weapons = defs.map((d) => new Weapon(d, this));
     this.viewmodel = new Viewmodel(aspect, defs);
+    this.recoil.attach(this.viewmodel.stack.recoil.tarkov);
     this.projectiles = new ProjectileSystem(deps.physics, deps.impacts, deps.impacts.sparks, deps.debugDraw, this.trails);
     this.projectiles.onHit = (r) => this.onProjectileHit(r);
     this.worldFlash = new THREE.PointLight(0xffaa55, 0, 9, 2);
@@ -157,7 +158,6 @@ export class WeaponController implements WeaponListener {
   private activate(index: number): void {
     this.currentIndex = index;
     this.current = this.weapons[index];
-    this.recoil.setWeapon(this.current.data);
     this.ammo = getAmmo(this.current.data.ammo);
     this.handling = computeHandling(this.current.data, this.ammo);
     this.current.raiseScale = this.handling.raiseScale;
@@ -416,15 +416,13 @@ export class WeaponController implements WeaponListener {
     this.right.normalize();
     this.up.crossVectors(this.muzzleDir, this.right).normalize();
 
-    // Mechanical dispersion (MOA cone) plus a little extra while the gun is still
-    // moving from previous shots. Standing still there is no hip-fire bloom: aim
-    // comes from the weapon itself. On the move you can't hold it steady: running
-    // and gunning from the hip scatters, aimed fire on the move a little, mid-air a lot.
-    const rd = vm.recoilDeg;
-    const recoilEnergy = Math.min(1, Math.hypot(rd.x, rd.y) / Math.max(0.5, d.recoil.vertical * 2));
+    // Mechanical dispersion (MOA cone). Like Tarkov, recoil adds none: rounds go where the
+    // muzzle points, and recoil moves the muzzle. Standing still there is no hip-fire bloom:
+    // aim comes from the weapon itself. On the move you can't hold it steady: running and
+    // gunning from the hip scatters, aimed fire on the move a little, mid-air a lot.
     const moving = Math.min(1, Math.max(0, (this.deps.player.horizontalSpeed - 0.6) / 4));
     const moveDeg = moving * (2.2 - 1.5 * this.adsAmount) + (this.deps.player.grounded ? 0 : 3);
-    const coneRad = (this.handling.dispersionDeg * 0.5 + d.recoil.dispersion * recoilEnergy + moveDeg) * DEG;
+    const coneRad = (this.handling.dispersionDeg * 0.5 + moveDeg) * DEG;
     const v0 = muzzleVelocity(ammo, d.barrelLength);
     this.lastMuzzleVelocity = v0;
     const pellets = Math.max(1, ammo.pellets);
@@ -451,9 +449,8 @@ export class WeaponController implements WeaponListener {
       this.projectiles.fire(this.origin, this.pelletDir, v0 * (0.985 + Math.random() * 0.03), ammo, this.shotId, tracer && i === 0, i < 3, null, false, false, 'alpha', assist);
     }
 
-    // Recoil: an impulse into the weapon; part of it reaches the view.
-    const kick = vm.kick(d, ammo, player.crouching);
-    this.recoil.onShot(d, kick, camera, this.adsAmount);
+    // Recoil (Tarkov's model): the hands turn, the view carries its share (RecoilSystem).
+    vm.kick(d, ammo, player.crouching);
 
     // Your own gun a little over everything else (+2 dB).
     audio.play(d.audio.fire, { volume: 1.25 });

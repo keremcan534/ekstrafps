@@ -1,89 +1,53 @@
 import * as THREE from 'three';
-import { Spring3, tuneSpring } from '../../core/Spring';
-import { Noise1D } from '../../core/Noise';
-import { DEG, clamp, randSign } from '../../core/math';
+import { DEG, clamp } from '../../core/math';
 import { feel } from '../../config/Feel';
+import { skillFx } from '../../game/Skills';
 import type { WeaponData } from '../WeaponData';
 import type { AmmoData } from '../AmmoData';
-import type { Handling } from '../Handling';
-import { motionTuning } from './MotionTuning';
-
-/** Effective vertical / horizontal kick of a shot (deg), for the camera transfer. */
-export interface RecoilKick {
-  vertical: number;
-  horizontal: number;
-}
-
-/** How much of the aimed recoil goes rearward instead of flipping the muzzle (0..1). */
-export const rearwardShare = (ads: number): number => feel.adsRecoilRearward * ads * ads;
+import { TarkovRecoil } from '../TarkovRecoil';
 
 /**
- * The weapon's own recoil, in its frame: a rotation (climb, sideways, roll about the
- * shoulder) and a position (mostly straight back into it), each an impulse into a spring,
- * so tap fire, bursts and full auto feel different without shot tables.
- *
- * On top: the arms. A slower spring takes part of every shot and gives it back late (a
- * two-stage recovery, hands then shoulder), and sustained fire heats up: the sideways
- * scatter and roll grow and a slow coherent wander builds, so a long burst gets less
- * steady instead of repeating the same kick. Visual only: the camera transfer (what moves
- * the aim) gets exactly the kick it always did.
+ * The weapon's side of recoil: Escape from Tarkov's model (TarkovRecoil) with each weapon's
+ * own Tarkov numbers. The hands' turn is split: the share the view carries goes to the
+ * camera (RecoilSystem reads `tarkov.cam`), the rest turns the gun on screen about the
+ * shoulder, so the muzzle (and every bullet) points by the whole turn; the per-shot curves'
+ * flip, swing and roll go on top. The rearward kick and the curves' moves drive the position.
  */
 export class RecoilLayer {
-  /** Rotation (rad: x climb, y sideways, z roll) and position (m) this frame, clamped. */
+  /** Rotation (rad: x climb, y sideways, z roll) and position (m) this frame. */
   readonly rr = new THREE.Vector3();
   readonly rp = new THREE.Vector3();
-  private rot = new Spring3(170, 16);
-  private pos = new Spring3(270, 22);
-  private arms = new Spring3(81, 15);
-  private heat = 0;
-  private shots = 0;
-  private nWander = new Noise1D(131);
+  readonly tarkov = new TarkovRecoil();
+  private weaponId = '';
+  private side = 1;
 
-  kick(data: WeaponData, ammo: AmmoData, crouching: boolean, h: Handling, ads: number, side: number, response: number): RecoilKick {
-    const r = data.recoil;
-    const R = motionTuning.recoil;
-    const scale = feel.recoilScale * ammo.recoilModifier * h.recoilMass * (crouching ? 0.9 : 1) * (1 - 0.1 * ads);
-    const k = r.shoulder;
-    this.rot.stiffness = k;
-    this.rot.damping = 2 * r.damping * Math.sqrt(k);
-    this.pos.stiffness = k * 1.6;
-    this.pos.damping = 2 * 0.7 * Math.sqrt(k * 1.6);
-    const w = Math.sqrt(k) * 1.9 * DEG;
-    const vertical = r.vertical * scale * (0.9 + Math.random() * 0.2);
-    const horizontal = (r.horizontalBias + (Math.random() * 2 - 1) * r.horizontal) * scale;
-    // Sustained fire: more scatter and a slow wander (the weapon only; the view gets `horizontal`).
-    const inst = R.instability * (1 - Math.exp(-this.heat / 3));
-    const loose = (Math.random() * 2 - 1) * r.horizontal * 2 * inst + this.nWander.sample(this.shots * 0.37) * r.horizontal * 2 * inst;
-    const hz = horizontal + loose * scale;
-    // Aimed recoil "rework": when shouldered and aimed, the gun drives straight back
-    // into the shoulder instead of flipping the sights out of view; the climb is
-    // carried by the view instead (RecoilSystem), so the dot stays on the target.
-    const rw = rearwardShare(ads);
-    this.rot.impulse(vertical * w * (1 - 0.85 * rw), -hz * w * side * (1 - 0.6 * rw), randSign() * r.roll * scale * w * (1 - 0.5 * rw) * (1 + inst));
-    const wp = Math.sqrt(k * 1.6) * 1.9;
-    this.pos.impulse((Math.random() * 2 - 1) * r.back * 0.1 * wp, r.back * (0.15 - 0.1 * rw) * wp, r.back * scale * wp * (1 + 0.9 * rw));
-    // The arms: part of the climb and the wander, returned slowly.
-    const wa = 9 * response;
-    tuneSpring(this.arms, wa, 0.85);
-    const a = R.drift * R.handResponse * wa * DEG;
-    this.arms.impulse(vertical * a * (1 - 0.85 * rw), -hz * a * side * (1 - 0.6 * rw), 0);
-    this.heat += 1;
-    this.shots++;
-    return { vertical, horizontal };
+  /** One shot. `side`: the shoulder (1 right, −1 left). */
+  kick(data: WeaponData, ammo: AmmoData, crouching: boolean, ads: number, side: number): void {
+    if (data.id !== this.weaponId) {
+      this.weaponId = data.id;
+      this.tarkov.setWeapon(data.id, data.fireRate);
+    }
+    this.side = side;
+    this.tarkov.fire(feel.recoilScale * ammo.recoilModifier * skillFx.recoil, ads, crouching);
   }
 
   update(dt: number, ads: number): void {
-    this.heat *= Math.exp(-motionTuning.recoil.heatDecay * dt);
-    this.rp.copy(this.pos.update(dt));
-    const rr = this.rr.copy(this.rot.update(dt)).add(this.arms.update(dt));
-    rr.x = clamp(rr.x, -6 * DEG, (14 - 10 * rearwardShare(ads)) * DEG);
-    rr.y = clamp(rr.y, -6 * DEG, 6 * DEG);
+    const t = this.tarkov;
+    t.aim = ads;
+    t.update(dt);
+    const c = t.curveRot;
+    this.rr.set(
+      clamp(t.hand.x - t.cam.x + c.x, -20, 20) * DEG,
+      clamp(-(t.hand.y - t.cam.y + c.y) * this.side, -15, 15) * DEG,
+      clamp(-c.z * this.side, -10, 10) * DEG,
+    );
+    this.rp.set(t.curvePos.x * this.side, t.curvePos.y, t.back + t.curvePos.z);
   }
 
   reset(): void {
-    this.rot.reset();
-    this.pos.reset();
-    this.arms.reset();
-    this.heat = 0;
+    this.tarkov.reset();
+    this.weaponId = '';
+    this.rr.set(0, 0, 0);
+    this.rp.set(0, 0, 0);
   }
 }

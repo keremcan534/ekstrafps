@@ -18,6 +18,8 @@ export class PlayerCamera {
   /** Aim displacement from recoil (radians). Bullets follow this. */
   aimPitch = 0;
   aimYaw = 0;
+  /** The view's roll from recoil (radians, visual only). */
+  recoilRoll = 0;
 
   /** Visual-only punch (x = pitch, y = yaw, z = roll), radians. */
   readonly punch = new Spring3(180, 18);
@@ -143,7 +145,7 @@ export class PlayerCamera {
     this.euler.set(
       player.pitch + this.aimPitch + this.punch.value.x + this.landingPitch.value + shakePitch + deathPitch,
       player.yaw + this.aimYaw + this.punch.value.y + shakeYaw,
-      this.punch.value.z + this.roll + shakeRoll - leanA * 0.9 + deathRoll + this.downedBlend * 0.18,
+      this.punch.value.z + this.recoilRoll + this.roll + shakeRoll - leanA * 0.9 + deathRoll + this.downedBlend * 0.18,
     );
     this.camera.quaternion.setFromEuler(this.euler);
 

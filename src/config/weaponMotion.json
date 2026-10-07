@@ -62,12 +62,6 @@
     "position": 0.0004,
     "correction": 0.08
   },
-  "recoil": {
-    "instability": 0.35,
-    "heatDecay": 2.2,
-    "drift": 0.25,
-    "handResponse": 1
-  },
   "landing": {
     "strength": 1,
     "dip": 0.035,

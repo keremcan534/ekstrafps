@@ -14,7 +14,6 @@ import { updateVisibleMatrices } from '../core/VisibleMatrices';
 import { WeaponAnimator, type PoseOffset, type ReloadEvent } from './WeaponAnimator';
 import { WeaponMotionStack } from './motion/WeaponMotionStack';
 import { LEGACY_CUT, MotionOffset, NEUTRAL_TASTE, PROFILED_CUT, type AdsCut } from './motion/MotionTypes';
-import { rearwardShare, type RecoilKick } from './motion/RecoilLayer';
 import type { MechanicalEvent } from './motion/Interaction';
 import { motionTuning } from './motion/MotionTuning';
 import type { Weapon } from './Weapon';
@@ -58,9 +57,6 @@ export interface ViewmodelInput {
   /** +1 right shoulder, -1 left shoulder. */
   shoulder: number;
 }
-
-export type { RecoilKick };
-export { rearwardShare };
 
 /** Roll of the weapon at the hip (rad) for weapons without a view profile: canted toward the centre. */
 const HIP_CANT = 0.12;
@@ -409,17 +405,12 @@ export class Viewmodel {
     return -(z + this.rig.muzzle.position.z);
   }
 
-  /**
-   * One shot = one impulse into the recoil springs. Leftover motion from earlier
-   * shots stays in the springs, so tap fire, bursts and full auto feel different
-   * without any shot-index tables.
-   */
-  kick(data: WeaponData, ammo: AmmoData, crouching: boolean): RecoilKick {
+  /** One shot: Tarkov's recoil kicks the hands (motion/RecoilLayer); the view's share is RecoilSystem's. */
+  kick(data: WeaponData, ammo: AmmoData, crouching: boolean): void {
     const side = this.side.value >= 0 ? 1 : -1;
-    const kick = this.stack.recoil.kick(data, ammo, crouching, this.handling!, this.adsAmount, side, this.stack.classOf(this.weapon!).response);
+    this.stack.recoil.kick(data, ammo, crouching, this.adsAmount, side);
     if (feel.muzzleFlash) this.flash.trigger(data.fx.muzzleFlashScale * (1 - 0.25 * this.adsAmount));
     this.sinceKick = 0;
-    return kick;
   }
 
   /** Small physical jolts on mechanical events (mag seated, bolt release, pump...). */

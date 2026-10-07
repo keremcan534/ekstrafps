@@ -21,20 +21,6 @@
   "accuracy": {
     "moa": 3.0
   },
-  "recoil": {
-    "vertical": 0.62,
-    "horizontal": 0.36,
-    "horizontalBias": 0.12,
-    "back": 0.016,
-    "shoulder": 230,
-    "damping": 0.66,
-    "cameraTransfer": 0.3,
-    "cameraKeep": 0.2,
-    "cameraRecovery": 3.8,
-    "dispersion": 0.1,
-    "punch": 0.25,
-    "roll": 0.9
-  },
   "aim": {
     "hipConvergence": 15,
     "zeroDistance": 100

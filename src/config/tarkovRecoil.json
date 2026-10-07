@@ -1,0 +1,1309 @@
+{
+ "_note": "Escape from Tarkov recoil parameters (SPT 4.0 database: items.json + globals.json), default presets with their mods applied. See src/weapons/TarkovRecoil.ts for how each one is used.",
+ "model": {
+  "forceToDegPerSec": 0.85,
+  "returnToOmega": 2.15,
+  "dampingToZeta": 0.87,
+  "cameraShare": 8,
+  "cameraFollow": 2,
+  "aimCameraFollow": 0.6,
+  "backToMeters": 0.0037,
+  "burstGap": 1.5
+ },
+ "globals": {
+  "convergence": 1,
+  "cameraSnapMult": 2,
+  "intensityCrouch": [0.7, 0.7, 0.7],
+  "intensityStand": [1, 1, 1]
+ },
+ "weapons": {
+  "ak47": {
+   "source": "weapon_izhmash_akm_762x39 default preset",
+   "up": 108.8,
+   "back": 275.9,
+   "category": 0.19,
+   "angle": 85,
+   "dispersion": 11,
+   "returnSpeed": 2.4,
+   "damping": 0.86,
+   "pathDamping": 0.48,
+   "camera": 0.05,
+   "cameraSnap": 3.5,
+   "stableShot": 5,
+   "stableStep": 2.5,
+   "stableAngle": 28,
+   "postVertical": [-1.5, 0],
+   "postHorizontal": [-1.5, 1.5],
+   "backMult": 1,
+   "curves": [
+    {
+     "target": "HandsRotation",
+     "axis": "Y",
+     "hip": 1,
+     "aim": 0.6,
+     "speed": 1.8,
+     "keys": [
+      [0, 0],
+      [0.1, 2],
+      [0.3, -0.75],
+      [1, 0]
+     ]
+    },
+    {
+     "target": "HandsPosition",
+     "axis": "Y",
+     "hip": 0.004,
+     "aim": 0.003,
+     "speed": 4,
+     "keys": [
+      [0, 0],
+      [0.1, 2],
+      [0.3, -0.75],
+      [1, 0]
+     ]
+    },
+    {
+     "target": "CameraRotation",
+     "axis": "Z",
+     "hip": 0.17,
+     "aim": 0.1,
+     "speed": 1,
+     "keys": [
+      [0, 0],
+      [0.1, 2],
+      [0.3, -0.75],
+      [1, 0]
+     ]
+    }
+   ]
+  },
+  "ak109": {
+   "source": "weapon_izhmash_ak12_545x39 default preset",
+   "up": 68.0,
+   "back": 205.4,
+   "category": 0.19,
+   "angle": 90,
+   "dispersion": 8,
+   "returnSpeed": 2.5,
+   "damping": 0.85,
+   "pathDamping": 0.48,
+   "camera": 0.04,
+   "cameraSnap": 3.5,
+   "stableShot": 5,
+   "stableStep": 2.45,
+   "stableAngle": 28,
+   "postVertical": [-1.5, 0],
+   "postHorizontal": [-1.5, 1.5],
+   "backMult": 1,
+   "curves": [
+    {
+     "target": "HandsRotation",
+     "axis": "Y",
+     "hip": 0.76,
+     "aim": 0.36,
+     "speed": 1.5,
+     "keys": [
+      [0, 0],
+      [0.1, 2],
+      [0.3, -0.75],
+      [1, 0]
+     ]
+    },
+    {
+     "target": "HandsPosition",
+     "axis": "Y",
+     "hip": 0.002,
+     "aim": 0.0015,
+     "speed": 4,
+     "keys": [
+      [0, 0],
+      [0.1, 2],
+      [0.3, -0.75],
+      [1, 0]
+     ]
+    },
+    {
+     "target": "CameraRotation",
+     "axis": "Z",
+     "hip": 0.13,
+     "aim": 0.07,
+     "speed": 1,
+     "keys": [
+      [0, 0],
+      [0.1, 2],
+      [0.3, -0.75],
+      [1, 0]
+     ]
+    }
+   ]
+  },
+  "ash127": {
+   "source": "weapon_ckib_ash_12_127x55 default preset",
+   "up": 106.2,
+   "back": 352.8,
+   "category": 0.19,
+   "angle": 90,
+   "dispersion": 12,
+   "returnSpeed": 2.2,
+   "damping": 0.87,
+   "pathDamping": 0.48,
+   "camera": 0.08,
+   "cameraSnap": 3.5,
+   "stableShot": 5,
+   "stableStep": 2.5,
+   "stableAngle": 30,
+   "postVertical": [-1.5, 0],
+   "postHorizontal": [-1.5, 1.5],
+   "backMult": 1,
+   "curves": [
+    {
+     "target": "HandsRotation",
+     "axis": "Y",
+     "hip": 1,
+     "aim": 0.4,
+     "speed": 1,
+     "keys": [
+      [0, 0],
+      [0.1, 2],
+      [0.3, -0.75],
+      [1, 0]
+     ]
+    },
+    {
+     "target": "HandsPosition",
+     "axis": "Y",
+     "hip": 0.004,
+     "aim": 0.003,
+     "speed": 5,
+     "keys": [
+      [0, 0],
+      [0.1, 2],
+      [0.3, -0.75],
+      [1, 0]
+     ]
+    },
+    {
+     "target": "CameraRotation",
+     "axis": "Z",
+     "hip": 0.34,
+     "aim": 0.26,
+     "speed": 1.2,
+     "keys": [
+      [0, 0],
+      [0.1, 2],
+      [0.3, -0.75],
+      [1, 0]
+     ]
+    }
+   ]
+  },
+  "asval": {
+   "source": "weapon_tochmash_val_9x39 default preset",
+   "up": 54.4,
+   "back": 183.6,
+   "category": 0.19,
+   "angle": 90,
+   "dispersion": 13,
+   "returnSpeed": 2.7,
+   "damping": 0.84,
+   "pathDamping": 0.48,
+   "camera": 0.04,
+   "cameraSnap": 3,
+   "stableShot": 5,
+   "stableStep": 2.5,
+   "stableAngle": 28,
+   "postVertical": [-1.5, 0],
+   "postHorizontal": [-1.5, 1.5],
+   "backMult": 1,
+   "curves": [
+    {
+     "target": "HandsRotation",
+     "axis": "Y",
+     "hip": 0.8,
+     "aim": 0.5,
+     "speed": 2,
+     "keys": [
+      [0, 0],
+      [0.1, 2],
+      [0.3, -0.75],
+      [1, 0]
+     ]
+    },
+    {
+     "target": "HandsPosition",
+     "axis": "Y",
+     "hip": 0.003,
+     "aim": 0.002,
+     "speed": 4,
+     "keys": [
+      [0, 0],
+      [0.1, 2],
+      [0.3, -0.75],
+      [1, 0]
+     ]
+    },
+    {
+     "target": "CameraRotation",
+     "axis": "Z",
+     "hip": 0.13,
+     "aim": 0.06,
+     "speed": 1,
+     "keys": [
+      [0, 0],
+      [0.1, 2],
+      [0.3, -0.75],
+      [1, 0]
+     ]
+    }
+   ]
+  },
+  "cz805": {
+   "source": "weapon_izhmash_ak101_556x45 default preset",
+   "up": 70.3,
+   "back": 203.8,
+   "category": 0.19,
+   "angle": 100,
+   "dispersion": 7,
+   "returnSpeed": 2.4,
+   "damping": 0.85,
+   "pathDamping": 0.48,
+   "camera": 0.04,
+   "cameraSnap": 3.5,
+   "stableShot": 5,
+   "stableStep": 2.5,
+   "stableAngle": 28,
+   "postVertical": [-1.5, 0],
+   "postHorizontal": [-1.5, 1.5],
+   "backMult": 1,
+   "curves": [
+    {
+     "target": "HandsRotation",
+     "axis": "Y",
+     "hip": 0.82,
+     "aim": 0.4,
+     "speed": 1.5,
+     "keys": [
+      [0, 0],
+      [0.1, 2],
+      [0.3, -0.75],
+      [1, 0]
+     ]
+    },
+    {
+     "target": "HandsPosition",
+     "axis": "Y",
+     "hip": 0.0026,
+     "aim": 0.002,
+     "speed": 4,
+     "keys": [
+      [0, 0],
+      [0.1, 2],
+      [0.3, -0.75],
+      [1, 0]
+     ]
+    },
+    {
+     "target": "CameraRotation",
+     "axis": "Z",
+     "hip": 0.14,
+     "aim": 0.075,
+     "speed": 1,
+     "keys": [
+      [0, 0],
+      [0.1, 2],
+      [0.3, -0.75],
+      [1, 0]
+     ]
+    }
+   ]
+  },
+  "g36c": {
+   "source": "weapon_hk_g36_556x45 default preset",
+   "up": 69.7,
+   "back": 196.0,
+   "category": 0.19,
+   "angle": 90,
+   "dispersion": 8,
+   "returnSpeed": 2.45,
+   "damping": 0.84,
+   "pathDamping": 0.48,
+   "camera": 0.04,
+   "cameraSnap": 3.5,
+   "stableShot": 5,
+   "stableStep": 2.4,
+   "stableAngle": 28,
+   "postVertical": [-1.5, 0],
+   "postHorizontal": [-1.5, 1.5],
+   "backMult": 1,
+   "curves": [
+    {
+     "target": "HandsRotation",
+     "axis": "Y",
+     "hip": 0.65,
+     "aim": 0.23,
+     "speed": 1.6,
+     "keys": [
+      [0, 0],
+      [0.1, 2],
+      [0.3, -0.75],
+      [1, 0]
+     ]
+    },
+    {
+     "target": "HandsPosition",
+     "axis": "Y",
+     "hip": 0.0025,
+     "aim": 0.0005,
+     "speed": 4,
+     "keys": [
+      [0, 0],
+      [0.1, 2],
+      [0.3, -0.75],
+      [1, 0]
+     ]
+    },
+    {
+     "target": "CameraRotation",
+     "axis": "Z",
+     "hip": 0.155,
+     "aim": 0.095,
+     "speed": 1,
+     "keys": [
+      [0, 0],
+      [0.1, 2],
+      [0.3, -0.75],
+      [1, 0]
+     ]
+    }
+   ]
+  },
+  "kar98": {
+   "source": "weapon_izhmash_mosin_rifle_762x54 default preset",
+   "up": 201.6,
+   "back": 613.9,
+   "category": 0.19,
+   "angle": 90,
+   "dispersion": 10,
+   "returnSpeed": 2.1,
+   "damping": 0.85,
+   "pathDamping": 0.41,
+   "camera": 0.07,
+   "cameraSnap": 3.5,
+   "stableShot": 3,
+   "stableStep": 2.5,
+   "stableAngle": 30,
+   "postVertical": [-1.3, 0],
+   "postHorizontal": [-0.7, 0.7],
+   "backMult": 1,
+   "curves": [
+    {
+     "target": "HandsRotation",
+     "axis": "Y",
+     "hip": 2.5,
+     "aim": 1.5,
+     "speed": 1.3,
+     "keys": [
+      [0, 0],
+      [0.1, 2],
+      [0.3, -0.75],
+      [1, 0]
+     ]
+    },
+    {
+     "target": "HandsPosition",
+     "axis": "Y",
+     "hip": 0.007,
+     "aim": 0,
+     "speed": 3,
+     "keys": [
+      [0, 0],
+      [0.1, 2],
+      [0.3, -0.75],
+      [1, 0]
+     ]
+    },
+    {
+     "target": "CameraRotation",
+     "axis": "Z",
+     "hip": 0.4,
+     "aim": 0.28,
+     "speed": 1,
+     "keys": [
+      [0, 0],
+      [0.1, 2],
+      [0.3, -0.75],
+      [1, 0]
+     ]
+    }
+   ]
+  },
+  "mosin": {
+   "source": "weapon_izhmash_mosin_rifle_762x54 default preset",
+   "up": 201.6,
+   "back": 613.9,
+   "category": 0.19,
+   "angle": 90,
+   "dispersion": 10,
+   "returnSpeed": 2.1,
+   "damping": 0.85,
+   "pathDamping": 0.41,
+   "camera": 0.07,
+   "cameraSnap": 3.5,
+   "stableShot": 3,
+   "stableStep": 2.5,
+   "stableAngle": 30,
+   "postVertical": [-1.3, 0],
+   "postHorizontal": [-0.7, 0.7],
+   "backMult": 1,
+   "curves": [
+    {
+     "target": "HandsRotation",
+     "axis": "Y",
+     "hip": 2.5,
+     "aim": 1.5,
+     "speed": 1.3,
+     "keys": [
+      [0, 0],
+      [0.1, 2],
+      [0.3, -0.75],
+      [1, 0]
+     ]
+    },
+    {
+     "target": "HandsPosition",
+     "axis": "Y",
+     "hip": 0.007,
+     "aim": 0,
+     "speed": 3,
+     "keys": [
+      [0, 0],
+      [0.1, 2],
+      [0.3, -0.75],
+      [1, 0]
+     ]
+    },
+    {
+     "target": "CameraRotation",
+     "axis": "Z",
+     "hip": 0.4,
+     "aim": 0.28,
+     "speed": 1,
+     "keys": [
+      [0, 0],
+      [0.1, 2],
+      [0.3, -0.75],
+      [1, 0]
+     ]
+    }
+   ]
+  },
+  "m4a1": {
+   "source": "weapon_colt_m4a1_556x45 default preset",
+   "up": 84.5,
+   "back": 242.8,
+   "category": 0.19,
+   "angle": 90,
+   "dispersion": 10,
+   "returnSpeed": 2.5,
+   "damping": 0.85,
+   "pathDamping": 0.48,
+   "camera": 0.04,
+   "cameraSnap": 3.5,
+   "stableShot": 5,
+   "stableStep": 2.4,
+   "stableAngle": 28,
+   "postVertical": [-1.5, 0],
+   "postHorizontal": [-1.5, 1.5],
+   "backMult": 1,
+   "curves": [
+    {
+     "target": "HandsRotation",
+     "axis": "Y",
+     "hip": 0.7,
+     "aim": 0.4,
+     "speed": 2,
+     "keys": [
+      [0, 0],
+      [0.1, 2],
+      [0.3, -0.75],
+      [1, 0]
+     ]
+    },
+    {
+     "target": "HandsPosition",
+     "axis": "Y",
+     "hip": 0.003,
+     "aim": 0.002,
+     "speed": 4,
+     "keys": [
+      [0, 0],
+      [0.1, 2],
+      [0.3, -0.75],
+      [1, 0]
+     ]
+    },
+    {
+     "target": "CameraRotation",
+     "axis": "Z",
+     "hip": 0.15,
+     "aim": 0.09,
+     "speed": 1,
+     "keys": [
+      [0, 0],
+      [0.1, 2],
+      [0.3, -0.75],
+      [1, 0]
+     ]
+    }
+   ]
+  },
+  "mk47": {
+   "source": "weapon_cmmg_mk47_762x39 default preset",
+   "up": 103.4,
+   "back": 256.4,
+   "category": 0.19,
+   "angle": 90,
+   "dispersion": 11,
+   "returnSpeed": 2.5,
+   "damping": 0.85,
+   "pathDamping": 0.48,
+   "camera": 0.05,
+   "cameraSnap": 3.5,
+   "stableShot": 5,
+   "stableStep": 2.5,
+   "stableAngle": 28,
+   "postVertical": [-1.5, 0],
+   "postHorizontal": [-1.5, 1.5],
+   "backMult": 1,
+   "curves": [
+    {
+     "target": "HandsRotation",
+     "axis": "Y",
+     "hip": 1,
+     "aim": 0.4,
+     "speed": 1,
+     "keys": [
+      [0, 0],
+      [0.1, 2],
+      [0.3, -0.75],
+      [1, 0]
+     ]
+    },
+    {
+     "target": "HandsPosition",
+     "axis": "Y",
+     "hip": 0.0045,
+     "aim": 0.0022,
+     "speed": 4,
+     "keys": [
+      [0, 0],
+      [0.1, 2],
+      [0.3, -0.75],
+      [1, 0]
+     ]
+    },
+    {
+     "target": "CameraRotation",
+     "axis": "Z",
+     "hip": 0.2,
+     "aim": 0.11,
+     "speed": 1,
+     "keys": [
+      [0, 0],
+      [0.1, 2],
+      [0.3, -0.75],
+      [1, 0]
+     ]
+    }
+   ]
+  },
+  "mp5": {
+   "source": "weapon_hk_mp5_navy3_9x19 default preset",
+   "up": 42.6,
+   "back": 209.0,
+   "category": 0.2,
+   "angle": 90,
+   "dispersion": 8,
+   "returnSpeed": 3.1,
+   "damping": 0.84,
+   "pathDamping": 0.45,
+   "camera": 0.03,
+   "cameraSnap": 3.5,
+   "stableShot": 4,
+   "stableStep": 2.2,
+   "stableAngle": 28,
+   "postVertical": [-1.3, 0],
+   "postHorizontal": [-2, 2],
+   "backMult": 1,
+   "curves": [
+    {
+     "target": "HandsRotation",
+     "axis": "Y",
+     "hip": 0.6,
+     "aim": 0.4,
+     "speed": 1,
+     "keys": [
+      [0, 0],
+      [0.1, 2],
+      [0.3, -0.75],
+      [1, 0]
+     ]
+    },
+    {
+     "target": "HandsPosition",
+     "axis": "Y",
+     "hip": 0.0035,
+     "aim": 0.0025,
+     "speed": 6,
+     "keys": [
+      [0, 0],
+      [0.1, 2],
+      [0.3, -0.75],
+      [1, 0]
+     ]
+    },
+    {
+     "target": "CameraRotation",
+     "axis": "Z",
+     "hip": 0.11,
+     "aim": 0.075,
+     "speed": 0.75,
+     "keys": [
+      [0, 0],
+      [0.1, 2],
+      [0.3, -0.75],
+      [1, 0]
+     ]
+    }
+   ]
+  },
+  "mp5sd": {
+   "source": "weapon_hk_mp5_navy3_9x19 default preset",
+   "up": 42.6,
+   "back": 209.0,
+   "category": 0.2,
+   "angle": 90,
+   "dispersion": 8,
+   "returnSpeed": 3.1,
+   "damping": 0.84,
+   "pathDamping": 0.45,
+   "camera": 0.03,
+   "cameraSnap": 3.5,
+   "stableShot": 4,
+   "stableStep": 2.2,
+   "stableAngle": 28,
+   "postVertical": [-1.3, 0],
+   "postHorizontal": [-2, 2],
+   "backMult": 1,
+   "curves": [
+    {
+     "target": "HandsRotation",
+     "axis": "Y",
+     "hip": 0.6,
+     "aim": 0.4,
+     "speed": 1,
+     "keys": [
+      [0, 0],
+      [0.1, 2],
+      [0.3, -0.75],
+      [1, 0]
+     ]
+    },
+    {
+     "target": "HandsPosition",
+     "axis": "Y",
+     "hip": 0.0035,
+     "aim": 0.0025,
+     "speed": 6,
+     "keys": [
+      [0, 0],
+      [0.1, 2],
+      [0.3, -0.75],
+      [1, 0]
+     ]
+    },
+    {
+     "target": "CameraRotation",
+     "axis": "Z",
+     "hip": 0.11,
+     "aim": 0.075,
+     "speed": 0.75,
+     "keys": [
+      [0, 0],
+      [0.1, 2],
+      [0.3, -0.75],
+      [1, 0]
+     ]
+    }
+   ]
+  },
+  "ppsh": {
+   "source": "weapon_zis_ppsh41_762x25 default preset",
+   "up": 66.8,
+   "back": 220.5,
+   "category": 0.2,
+   "angle": 90,
+   "dispersion": 12,
+   "returnSpeed": 2,
+   "damping": 0.86,
+   "pathDamping": 0.45,
+   "camera": 0.05,
+   "cameraSnap": 3.5,
+   "stableShot": 7,
+   "stableStep": 2.9,
+   "stableAngle": 35,
+   "postVertical": [-1.3, 0],
+   "postHorizontal": [-2, 2],
+   "backMult": 1,
+   "curves": [
+    {
+     "target": "HandsRotation",
+     "axis": "Y",
+     "hip": 0.86,
+     "aim": 0.6,
+     "speed": 1.4,
+     "keys": [
+      [0, 0],
+      [0.1, 2],
+      [0.3, -0.75],
+      [1, 0]
+     ]
+    },
+    {
+     "target": "HandsPosition",
+     "axis": "Y",
+     "hip": 0.005,
+     "aim": 0.003,
+     "speed": 6,
+     "keys": [
+      [0, 0],
+      [0.1, 2],
+      [0.3, -0.75],
+      [1, 0]
+     ]
+    },
+    {
+     "target": "CameraRotation",
+     "axis": "Z",
+     "hip": 0.08,
+     "aim": 0.035,
+     "speed": 0.75,
+     "keys": [
+      [0, 0],
+      [0.1, 2],
+      [0.3, -0.75],
+      [1, 0]
+     ]
+    }
+   ]
+  },
+  "qbz192": {
+   "source": "weapon_steyr_aug_a1_556x45 default preset",
+   "up": 77.4,
+   "back": 229.6,
+   "category": 0.19,
+   "angle": 90,
+   "dispersion": 10,
+   "returnSpeed": 2.6,
+   "damping": 0.85,
+   "pathDamping": 0.48,
+   "camera": 0.04,
+   "cameraSnap": 3.5,
+   "stableShot": 5,
+   "stableStep": 2.4,
+   "stableAngle": 28,
+   "postVertical": [-1.5, 0],
+   "postHorizontal": [-1.5, 1.5],
+   "backMult": 1,
+   "curves": [
+    {
+     "target": "HandsRotation",
+     "axis": "Y",
+     "hip": 0.65,
+     "aim": 0.25,
+     "speed": 1.6,
+     "keys": [
+      [0, 0],
+      [0.1, 2],
+      [0.3, -0.75],
+      [1, 0]
+     ]
+    },
+    {
+     "target": "HandsPosition",
+     "axis": "Y",
+     "hip": 0.003,
+     "aim": 0.002,
+     "speed": 4,
+     "keys": [
+      [0, 0],
+      [0.1, 2],
+      [0.3, -0.75],
+      [1, 0]
+     ]
+    },
+    {
+     "target": "CameraRotation",
+     "axis": "Z",
+     "hip": 0.12,
+     "aim": 0.08,
+     "speed": 1,
+     "keys": [
+      [0, 0],
+      [0.1, 2],
+      [0.3, -0.75],
+      [1, 0]
+     ]
+    }
+   ]
+  },
+  "scarh": {
+   "source": "weapon_fn_mk17_762x51 default preset",
+   "up": 98.8,
+   "back": 246.4,
+   "category": 0.19,
+   "angle": 90,
+   "dispersion": 12,
+   "returnSpeed": 2.5,
+   "damping": 0.87,
+   "pathDamping": 0.48,
+   "camera": 0.05,
+   "cameraSnap": 4,
+   "stableShot": 5,
+   "stableStep": 2.5,
+   "stableAngle": 28,
+   "postVertical": [-1.5, 0],
+   "postHorizontal": [-1.5, 1.5],
+   "backMult": 0.6,
+   "curves": [
+    {
+     "target": "HandsRotation",
+     "axis": "Y",
+     "hip": 0.8,
+     "aim": 0.3,
+     "speed": 1.6,
+     "keys": [
+      [0, 0],
+      [0.1, 2],
+      [0.3, -0.75],
+      [1, 0]
+     ]
+    },
+    {
+     "target": "HandsPosition",
+     "axis": "Y",
+     "hip": 0.003,
+     "aim": 0.002,
+     "speed": 4,
+     "keys": [
+      [0, 0],
+      [0.1, 2],
+      [0.3, -0.75],
+      [1, 0]
+     ]
+    },
+    {
+     "target": "CameraRotation",
+     "axis": "Z",
+     "hip": 0.2,
+     "aim": 0.12,
+     "speed": 1,
+     "keys": [
+      [0, 0],
+      [0.1, 2],
+      [0.3, -0.75],
+      [1, 0]
+     ]
+    }
+   ]
+  },
+  "svd": {
+   "source": "weapon_izhmash_svd_s_762x54 default preset",
+   "up": 138.2,
+   "back": 432.0,
+   "category": 0.21,
+   "angle": 90,
+   "dispersion": 11,
+   "returnSpeed": 2.4,
+   "damping": 0.86,
+   "pathDamping": 0.4,
+   "camera": 0.07,
+   "cameraSnap": 3.5,
+   "stableShot": 3,
+   "stableStep": 2.5,
+   "stableAngle": 28,
+   "postVertical": [-1.3, 0],
+   "postHorizontal": [-1, 1],
+   "backMult": 1,
+   "curves": [
+    {
+     "target": "HandsRotation",
+     "axis": "Y",
+     "hip": 0.8,
+     "aim": 0.35,
+     "speed": 2,
+     "keys": [
+      [0, 0],
+      [0.1, 2],
+      [0.3, -0.75],
+      [1, 0]
+     ]
+    },
+    {
+     "target": "HandsPosition",
+     "axis": "Y",
+     "hip": 0.001,
+     "aim": 0,
+     "speed": 2,
+     "keys": [
+      [0, 0],
+      [0.1, 2],
+      [0.3, -0.75],
+      [1, 0]
+     ]
+    },
+    {
+     "target": "CameraRotation",
+     "axis": "Z",
+     "hip": 0.25,
+     "aim": 0.18,
+     "speed": 1,
+     "keys": [
+      [0, 0],
+      [0.1, 2],
+      [0.3, -0.75],
+      [1, 0]
+     ]
+    }
+   ]
+  },
+  "heavy_pistol": {
+   "source": "weapon_colt_m1911a1_1143x23 default preset",
+   "up": 437.5,
+   "back": 344.3,
+   "category": 0.11,
+   "angle": 80,
+   "dispersion": 10,
+   "returnSpeed": 5,
+   "damping": 0.8,
+   "pathDamping": 0.43,
+   "camera": 0.01,
+   "cameraSnap": 5,
+   "stableShot": 4,
+   "stableStep": 2.5,
+   "stableAngle": 30,
+   "postVertical": [-1, 0],
+   "postHorizontal": [-2, 2],
+   "backMult": 1,
+   "curves": [
+    {
+     "target": "HandsRotation",
+     "axis": "Y",
+     "hip": 3,
+     "aim": 0,
+     "speed": 2,
+     "keys": [
+      [0, 0],
+      [0.1, 2],
+      [0.3, -0.75],
+      [1, 0]
+     ]
+    },
+    {
+     "target": "HandsPosition",
+     "axis": "Z",
+     "hip": 0.0015,
+     "aim": 0.0005,
+     "speed": 0.4,
+     "keys": [
+      [0, 0],
+      [0.1, 2],
+      [0.3, -0.75],
+      [1, 0]
+     ]
+    },
+    {
+     "target": "HandsRotation",
+     "axis": "Z",
+     "hip": 0.5,
+     "aim": 0,
+     "speed": 1,
+     "keys": [
+      [0, 0],
+      [0.08208618, 0.00424194336],
+      [0.238110363, 1.5619812],
+      [1, 0]
+     ]
+    },
+    {
+     "target": "HandsRotation",
+     "axis": "X",
+     "hip": 3,
+     "aim": 0,
+     "speed": 3,
+     "keys": [
+      [0, 0],
+      [0.117663831, -0.0116996691],
+      [0.1836389, -0.9177412],
+      [0.422360241, 0.00573349],
+      [1, 0]
+     ]
+    }
+   ]
+  },
+  "glock18": {
+   "source": "weapon_glock_glock_18c_gen3_9x19 default preset",
+   "up": 287.6,
+   "back": 268.8,
+   "category": 0.11,
+   "angle": 85,
+   "dispersion": 8,
+   "returnSpeed": 5,
+   "damping": 0.8,
+   "pathDamping": 0.43,
+   "camera": 0.01,
+   "cameraSnap": 5,
+   "stableShot": 6,
+   "stableStep": 2.5,
+   "stableAngle": 30,
+   "postVertical": [-1, 0],
+   "postHorizontal": [-2, 2],
+   "backMult": 0.6,
+   "curves": [
+    {
+     "target": "HandsRotation",
+     "axis": "Y",
+     "hip": 3,
+     "aim": 0,
+     "speed": 2,
+     "keys": [
+      [0, 0],
+      [0.1, 2],
+      [0.3, -0.75],
+      [1, 0]
+     ]
+    },
+    {
+     "target": "HandsPosition",
+     "axis": "Z",
+     "hip": 0.001,
+     "aim": 0.0005,
+     "speed": 0.4,
+     "keys": [
+      [0, 0],
+      [0.1, 2],
+      [0.3, -0.75],
+      [1, 0]
+     ]
+    },
+    {
+     "target": "HandsRotation",
+     "axis": "Z",
+     "hip": 0.5,
+     "aim": 0,
+     "speed": 1,
+     "keys": [
+      [0, 0],
+      [0.08208618, 0.00424194336],
+      [0.238110363, 1.5619812],
+      [1, 0]
+     ]
+    },
+    {
+     "target": "HandsRotation",
+     "axis": "X",
+     "hip": 1.5,
+     "aim": 0,
+     "speed": 3,
+     "keys": [
+      [0, 0],
+      [0.117663831, -0.0116996691],
+      [0.1836389, -0.9177412],
+      [0.422360241, 0.00573349],
+      [1, 0]
+     ]
+    }
+   ]
+  },
+  "m249": {
+   "source": "weapon_izhmash_rpk16_545x39 default preset",
+   "up": 76.2,
+   "back": 226.4,
+   "category": 0.19,
+   "angle": 90,
+   "dispersion": 8,
+   "returnSpeed": 2.4,
+   "damping": 0.85,
+   "pathDamping": 0.48,
+   "camera": 0.04,
+   "cameraSnap": 3.5,
+   "stableShot": 5,
+   "stableStep": 2.6,
+   "stableAngle": 30,
+   "postVertical": [-2, 0],
+   "postHorizontal": [-2.4, 2.4],
+   "backMult": 1,
+   "curves": [
+    {
+     "target": "HandsRotation",
+     "axis": "Y",
+     "hip": 0.7,
+     "aim": 0.4,
+     "speed": 2,
+     "keys": [
+      [0, 0],
+      [0.1, 2],
+      [0.3, -0.75],
+      [1, 0]
+     ]
+    },
+    {
+     "target": "HandsPosition",
+     "axis": "Y",
+     "hip": 0.003,
+     "aim": 0.002,
+     "speed": 4,
+     "keys": [
+      [0, 0],
+      [0.1, 2],
+      [0.3, -0.75],
+      [1, 0]
+     ]
+    },
+    {
+     "target": "CameraRotation",
+     "axis": "Z",
+     "hip": 0.15,
+     "aim": 0.09,
+     "speed": 1,
+     "keys": [
+      [0, 0],
+      [0.1, 2],
+      [0.3, -0.75],
+      [1, 0]
+     ]
+    }
+   ]
+  },
+  "pump_shotgun": {
+   "source": "weapon_remington_model_870_12g default preset",
+   "up": 277.9,
+   "back": 329.7,
+   "category": 0.21,
+   "angle": 90,
+   "dispersion": 10,
+   "returnSpeed": 2.5,
+   "damping": 0.85,
+   "pathDamping": 0.52,
+   "camera": 0.06,
+   "cameraSnap": 2.6,
+   "stableShot": 3,
+   "stableStep": 2.5,
+   "stableAngle": 30,
+   "postVertical": [-2, 0.1],
+   "postHorizontal": [-2.5, 2.5],
+   "backMult": 1,
+   "curves": [
+    {
+     "target": "HandsRotation",
+     "axis": "Y",
+     "hip": 2.5,
+     "aim": 1.5,
+     "speed": 1.7,
+     "keys": [
+      [0, 0],
+      [0.1, 2],
+      [0.3, -0.75],
+      [1, 0]
+     ]
+    },
+    {
+     "target": "HandsPosition",
+     "axis": "X",
+     "hip": 0.002,
+     "aim": 0.001,
+     "speed": 2,
+     "keys": [
+      [0, 0],
+      [0.1, 2],
+      [0.3, -0.75],
+      [1, 0]
+     ]
+    },
+    {
+     "target": "CameraRotation",
+     "axis": "Z",
+     "hip": 0.6,
+     "aim": 0.34,
+     "speed": 1.5,
+     "keys": [
+      [0, 0],
+      [0.1, 2],
+      [0.3, -0.75],
+      [1, 0]
+     ]
+    }
+   ]
+  },
+  "saiga12": {
+   "source": "weapon_izhmash_saiga12k_10_12g default preset",
+   "up": 226.5,
+   "back": 399.8,
+   "category": 0.21,
+   "angle": 90,
+   "dispersion": 15,
+   "returnSpeed": 2,
+   "damping": 0.85,
+   "pathDamping": 0.52,
+   "camera": 0.06,
+   "cameraSnap": 2.5,
+   "stableShot": 3,
+   "stableStep": 2.5,
+   "stableAngle": 30,
+   "postVertical": [-2, 0.1],
+   "postHorizontal": [-2.5, 2.5],
+   "backMult": 1,
+   "curves": [
+    {
+     "target": "HandsRotation",
+     "axis": "Y",
+     "hip": 1.9,
+     "aim": 1.3,
+     "speed": 1.1,
+     "keys": [
+      [0, 0],
+      [0.1, 2],
+      [0.3, -0.75],
+      [1, 0]
+     ]
+    },
+    {
+     "target": "HandsPosition",
+     "axis": "X",
+     "hip": 0.002,
+     "aim": 0.0005,
+     "speed": 2,
+     "keys": [
+      [0, 0],
+      [0.1, 2],
+      [0.3, -0.75],
+      [1, 0]
+     ]
+    },
+    {
+     "target": "CameraRotation",
+     "axis": "Z",
+     "hip": 0.7,
+     "aim": 0.4,
+     "speed": 1.3,
+     "keys": [
+      [0, 0],
+      [0.1, 2],
+      [0.3, -0.75],
+      [1, 0]
+     ]
+    }
+   ]
+  }
+ }
+}
