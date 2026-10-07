@@ -52,6 +52,7 @@ import { ScreenGrade } from '../fx/ScreenGrade';
 import { loadCharacterModels } from '../targets/CharacterModels';
 import { loadWeaponMeshes } from '../weapons/WeaponMeshes';
 import { MuzzleLights } from '../fx/MuzzleLights';
+import { ViewLight } from '../fx/ViewLight';
 import { Lighting } from '../game/Lighting';
 import { buildWeaponModel } from '../weapons/WeaponModels';
 import { WeaponLights, weaponLight } from '../fx/WeaponLights';
@@ -70,6 +71,8 @@ import type { ShowcaseDeps } from '../ui/Showcase';
 const FIXED_DT = 1 / 120;
 
 const MAX_STEPS = 6;
+/** The light (ViewLight.measure) of a lit room: there the gun in hand gets its full lighting. */
+const VIEW_LIT = 0.8;
 /** Dynamic resolution never goes below half the chosen resolution. */
 const DYN_FLOOR = 0.5;
 /** Touch aim assist as tuned (the menu's NORMAL); the recoil help scales against it. */
@@ -242,6 +245,10 @@ export class Game {
   private probe = new THREE.LightProbe(undefined, 0);
   /** The weapon's copy of the probe (phones, lighting: fast: no cube-map lookups on the gun either). */
   private vmProbe: THREE.LightProbe | null = null;
+  /** The light reaching the gun in your hands (it dims and tints with the room). */
+  private viewLight!: ViewLight;
+  private viewFwd = new THREE.Vector3();
+  private viewUp = new THREE.Vector3();
   private fpsEl: HTMLDivElement | null = null;
   private fpsText: HTMLSpanElement | null = null;
   /** Frame-time history for the FPS readout's graph (seconds). */
@@ -436,6 +443,7 @@ export class Game {
       debugDraw: this.debugDraw,
     });
     this.weapons.viewmodel.scene.environmentIntensity = 0.6;
+    this.viewLight = new ViewLight(this.scene, VIEW_LIT);
     // Hidden subtrees (the weapons not in hand, pooled squads) skip the per-frame matrix pass.
     skipHiddenMatrices(this.scene);
     skipHiddenMatrices(this.weapons.viewmodel.scene);
@@ -1967,6 +1975,11 @@ export class Game {
     }
     this.health.update(dt);
     this.muzzleLights.update(dt);
+    // The gun in hand takes the light of where you stand: dark in a blackout, red by the strips.
+    const cq = this.camera.camera.quaternion;
+    this.viewLight.update(dt, this.camera.eye, this.viewFwd.set(0, 0, -1).applyQuaternion(cq), this.viewUp.set(0, 1, 0).applyQuaternion(cq));
+    this.weapons.viewmodel.setLight(this.viewLight.level, this.viewLight.color);
+    if (this.vmProbe && !this.weapons.viewmodel.scene.environment) this.vmProbe.intensity = this.weapons.viewmodel.scene.environmentIntensity * 1.1;
     // Their lights come on in the dark: blackouts on Site-9, always in the night yard.
     // Site-9 runs at night: BD weapon lights stay on (stronger once the power dies).
     weaponLight.level = this.lighting ? Math.max(0.6, Math.min(1, this.lighting.darkness * 1.3)) : 1;

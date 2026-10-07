@@ -149,6 +149,12 @@ export class Viewmodel {
   private mirror = new THREE.Group();
   /** The arms' space for a weapon without a profile: camera space, mirrored to the shoulder. */
   private legacyArms = new THREE.Group();
+  /** The gun's own lights (setLight scales them with the light around you). */
+  private lights = {
+    fill: new THREE.HemisphereLight(0xdfe8ff, 0x4a4540, 1.35),
+    key: new THREE.DirectionalLight(0xfff2e0, 2.5),
+    rim: new THREE.DirectionalLight(0x9fc4ff, 0.9),
+  };
   private rigs = new Map<string, WeaponRig>();
   private rig: WeaponRig | null = null;
   private weapon: Weapon | null = null;
@@ -328,13 +334,24 @@ export class Viewmodel {
     this.side.reset(1);
     // Lighting tuned to roughly match the arena.
     // A touch brighter than the room: aimed, the gun reads as parts and edges, not a black mass.
-    this.scene.add(new THREE.HemisphereLight(0xdfe8ff, 0x4a4540, 1.35));
-    const key = new THREE.DirectionalLight(0xfff2e0, 2.5);
-    key.position.set(0.6, 1, 0.4);
-    this.scene.add(key);
-    const rim = new THREE.DirectionalLight(0x9fc4ff, 0.9);
-    rim.position.set(-0.8, 0.3, -0.6);
-    this.scene.add(rim);
+    this.scene.add(this.lights.fill, this.lights.key, this.lights.rim);
+    this.lights.key.position.set(0.6, 1, 0.4);
+    this.lights.rim.position.set(-0.8, 0.3, -0.6);
+  }
+
+  /**
+   * The light around you (ViewLight): `level` 1 in a lit room, less in the dark; `color`
+   * its hue. The gun's own lights and reflections follow it.
+   */
+  setLight(level: number, color: THREE.Color): void {
+    const L = this.lights;
+    L.fill.intensity = 1.35 * level;
+    L.key.intensity = 2.5 * level;
+    L.rim.intensity = 0.9 * level;
+    L.fill.color.setHex(0xdfe8ff).multiply(color);
+    L.key.color.setHex(0xfff2e0).multiply(color);
+    L.rim.color.setHex(0x9fc4ff).multiply(color);
+    this.scene.environmentIntensity = 0.6 * level;
   }
 
   /** Old automatic placement: the procedural rig dressed in the model (WeaponMeshes.dressRig). */
