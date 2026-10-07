@@ -365,7 +365,8 @@ export function runStateChecks(h: Harness): StateRow[] {
       row.settleDeg = Math.max(a.liveDeg, s.off);
       row.settleMm = a.liveMm;
     }
-    const mo = motionOffset(vm);
+    // The profiled placement's motion node (the old placement has none: it would read the last profiled gun's).
+    const mo = vm.activeRig?.view ? motionOffset(vm) : { mm: 0, deg: 0 };
     row.settleMotionMm = mo.mm;
     row.settleMotionDeg = mo.deg;
     feel.swayScale = sway;

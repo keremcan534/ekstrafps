@@ -190,6 +190,8 @@ export class FirstPersonArms {
   private trigger = 0;
   private butt = new THREE.Vector3();
   private ads = 0;
+  /** A shouldered weapon (not a pistol): aimed, the firing shoulder goes behind its butt. */
+  private shouldered = true;
   private sleeveMat = new THREE.MeshStandardMaterial({ roughness: 1, metalness: 0, side: THREE.DoubleSide });
   private t = {
     inv: new THREE.Matrix4(),
@@ -321,6 +323,7 @@ export class FirstPersonArms {
     // The butt in arm space: aimed, the firing shoulder sits behind it.
     this.butt.copy(rig.butt).applyMatrix4(t.m);
     this.ads = input.ads;
+    this.shouldered = rig.shellType !== 'pistol';
 
     // Trigger finger: ready when aimed or just fired; never sprinting or reloading.
     const ready = !input.reloading && input.sprint < 0.5 && (input.ads > 0.4 || input.sinceShot < 0.6) ? 1 : 0;
@@ -373,7 +376,7 @@ export class FirstPersonArms {
     const b = arm.foreLen;
     const W = t.w.setFromMatrixPosition(t.hand);
     const S = t.s.set(...c.shoulder);
-    if (c.aimShoulder && this.ads > 0) S.lerp(t.p.copy(this.butt).add(t.hint.set(...c.aimShoulder)), smoothstep(this.ads));
+    if (c.aimShoulder && this.ads > 0 && this.shouldered) S.lerp(t.p.copy(this.butt).add(t.hint.set(...c.aimShoulder)), smoothstep(this.ads));
     const st = this.stats[side];
     // Out of reach (a viewmodel holds its gun further out than an arm): the arm goes straight
     // and the upper arm (a plain sleeve, nothing skinned to it) takes the extra length; the

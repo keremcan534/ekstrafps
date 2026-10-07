@@ -1268,8 +1268,8 @@ export function buildWeaponModel(model: ModelKey, low = false, world = low, eyeB
   try {
     const r = BUILDERS[model]();
     dressRig(r, model, world, eyeBack);
-    // The gun in hand: the arms' grips (src/config/gunhands.json, by builder).
-    const hands = world ? undefined : proceduralHands(builderKey(model));
+    // The gun in hand: the arms' grips (src/config/gunhands.json, by model, else by builder).
+    const hands = world ? undefined : (proceduralHands(model) ?? proceduralHands(builderKey(model)));
     if (hands) attachHands(r, hands);
     r.root.traverse((o) => {
       o.frustumCulled = false;

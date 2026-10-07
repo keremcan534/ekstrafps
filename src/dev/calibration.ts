@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import GUI from 'lil-gui';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
-import { buildWeaponModel, builderKey } from '../weapons/WeaponModels';
+import { buildWeaponModel } from '../weapons/WeaponModels';
 import { gunSource, legacyFit, loadWeaponMeshes, movingBoxes } from '../weapons/WeaponMeshes';
 import { createWeaponDefs } from '../weapons/WeaponData';
 import { SPRINT_POSE, Viewmodel, type ViewmodelPlayer } from '../weapons/Viewmodel';
@@ -17,8 +17,10 @@ import { handConfig } from '../weapons/FirstPersonHands';
 import { LIMITS, coverage, runStateChecks, sightLine, sightPicture, type StateRow } from './viewChecks';
 import { handFolder, handReport, handView, seedHands, type HandEditorHost } from './handEditor';
 import gunHandsFile from '../config/gunhands.json';
-import { gripRotation, type WeaponHands } from '../weapons/HandPose';
+import { gripRotation, type HandPose, type WeaponHands } from '../weapons/HandPose';
 import { WeaponSurface, fingerGaps, fitFingers, gloveInside } from './handChecks';
+import { placeHands, templateOf, type HandTemplate, type HoldKind, type SidePlacement } from './autoHands';
+import type { WeaponData } from '../weapons/WeaponData';
 
 /**
  * Weapon calibration (dev server: /weapon-calibration.html). Pick a weapon and set its view
@@ -311,7 +313,9 @@ function buildGui(): void {
     // A procedural gun (no profile, or the model files are off): its hands
     // (src/config/gunhands.json, by builder), and the way to a profile.
     handFolder(gui, proceduralHandsHost());
+    autoFolder(gui);
     if (!p && gunSource(data.model)) top.add({ seed: () => seedFromLegacy() }, 'seed').name('Bu silaha profil oluştur');
+    gui.addFolder('İşlemler').add({ check: () => checkStates() }, 'check').name('15 durumu test et');
     return;
   }
   const o = p.model.orientation;
@@ -366,6 +370,7 @@ function buildGui(): void {
     toast,
   });
 
+  autoFolder(gui);
   const mo = gui.addFolder('Hareket çarpanları').close();
   for (const k of ['sway', 'inertia', 'bob', 'recoil'] as const) mo.add(p.motion, k, 0, 2, 0.01).name(k);
 
@@ -377,31 +382,159 @@ function buildGui(): void {
   refreshProxies();
 }
 
-// --- A procedural gun's hands (src/config/gunhands.json, one entry per builder) ---
+// --- A weapon's hands on the old placement (src/config/gunhands.json, one entry per model) ---
 const procHands = structuredClone(gunHandsFile) as unknown as Record<string, WeaponHands>;
 
+async function saveProcHands(): Promise<boolean> {
+  const text = JSON.stringify(procHands, null, 2).replace(/\[\s+([^[\]{}]*?)\s+\]/g, (_m, inner: string) => `[${inner.split(/,\s*/).join(', ')}]`) + '\n';
+  const res = await fetch('/__tuning/save', { method: 'POST', body: JSON.stringify({ file: 'gunhands', text }) });
+  const j = (await res.json().catch(() => ({ ok: false, error: res.statusText }))) as { ok: boolean; file?: string; error?: string };
+  toast(j.ok ? `Kaydedildi: ${j.file}` : `KAYDEDİLEMEDİ: ${j.error}`, !j.ok);
+  return j.ok;
+}
+
 function proceduralHandsHost(): HandEditorHost {
-  const key = builderKey(data.model);
+  const key = data.model;
   return {
     vm,
     hands: () => procHands[key] ?? null,
     toWeapon: () => new THREE.Matrix4(),
     seed: () => {
       const rig = vm.activeRig!;
-      procHands[key] = seedHands(new THREE.Matrix4(), procHands.ak47 ?? viewProfile('ak47')?.hands, rig.rightHandRest, rig.leftHandRest);
+      procHands[key] = seedHands(new THREE.Matrix4(), viewProfile('ak47')?.hands, rig.rightHandRest, rig.leftHandRest);
       vm.setHands(procHands[key]);
       buildGui();
     },
     apply: () => vm.setHands(procHands[key]),
-    save: async () => {
-      const text = JSON.stringify(procHands, null, 2).replace(/\[\s+([^[\]{}]*?)\s+\]/g, (_m, inner: string) => `[${inner.split(/,\s*/).join(', ')}]`) + '\n';
-      const res = await fetch('/__tuning/save', { method: 'POST', body: JSON.stringify({ file: 'gunhands', text }) });
-      const j = (await res.json().catch(() => ({ ok: false, error: res.statusText }))) as { ok: boolean; file?: string; error?: string };
-      toast(j.ok ? `Kaydedildi: ${j.file} (${key})` : `KAYDEDİLEMEDİ: ${j.error}`, !j.ok);
-    },
+    save: async () => void (await saveProcHands()),
     target: `gunhands.json: ${key}`,
     toast,
   };
+}
+
+// --- Hands by search (autoHands.ts): one weapon, or every rifle / SMG without hands ---
+interface AutoRow {
+  id: string;
+  name: string;
+  status: 'sırada' | 'yerleştiriliyor' | 'kontrol' | 'kaydedildi' | 'KONTROLDEN GEÇMEDİ' | 'HATA';
+  right?: SidePlacement;
+  left?: SidePlacement;
+  checks?: string;
+  fails?: string[];
+}
+const auto = { running: false, rows: [] as AutoRow[] };
+
+const hasHands = (d: WeaponData) => !!(working.get(d.id)?.hands ?? procHands[d.model]);
+/** How it is held: pistols two-handed, a pump gun by its pump, the rest by the handguard. */
+const holdKind = (d: WeaponData): HoldKind => (d.category === 'pistol' ? 'pistol' : d.category === 'shotgun' && d.reload.kind === 'shell' ? 'pump' : 'rifle');
+
+/** A pistol's support hand: wrapped over the shooting hand's fingers, the thumb forward along the frame. */
+const SUPPORT_POSE: HandPose = {
+  thumb: [[20, -10, 0], [10, 0, 0], [5, 0, 0]],
+  index: [[35, 4, 0], [60, 0, 0], [40, 0, 0]],
+  middle: [[40, 0, 0], [65, 0, 0], [45, 0, 0]],
+  ring: [[45, -4, 0], [65, 0, 0], [45, 0, 0]],
+  pinky: [[50, -8, 0], [65, 0, 0], [45, 0, 0]],
+};
+
+/**
+ * The template: bolt actions take the Kar98k's hands, everything else the AK-47's; a pistol's
+ * left hand becomes a support hand (palm on the grip's left side, knuckles forward and down).
+ */
+function handTemplate(d: WeaponData): HandTemplate | null {
+  const id = d.boltCycleTime > 0 ? 'kar98' : 'ak47';
+  const p = working.get(id) ?? viewProfile(id);
+  const tpl = p ? templateOf(p) : null;
+  if (tpl && holdKind(d) === 'pistol') {
+    tpl.hands.leftGrip.rotation = gripRotation(V(0.35, -0.35, -0.87).normalize(), V(1, 0, 0.2).normalize());
+    tpl.hands.leftPose = structuredClone(SUPPORT_POSE);
+  }
+  return tpl;
+}
+
+function autoReport(): void {
+  const el = document.getElementById('report')!;
+  const line = (r: AutoRow) =>
+    `${r.name.padEnd(22)}${r.status}${r.checks ? `  ${r.checks}` : ''}` +
+    (r.right ? `\n${''.padEnd(22)}sağ: ${r.right.summary}` : '') +
+    (r.left ? `\n${''.padEnd(22)}sol: ${r.left.summary}` : '') +
+    (r.fails?.length ? `\n${''.padEnd(22)}↳ ${r.fails.join('; ')}` : '');
+  el.innerHTML = auto.rows.map((r) => `<span class="${r.status === 'kaydedildi' ? 'ok' : r.status.startsWith('KONTROL') || r.status === 'HATA' ? 'bad' : ''}">${line(r)}</span>`).join('\n');
+  el.style.display = 'block';
+}
+
+/** Place, check (16 states) and save the hands of `ids`, one after another. */
+async function autoHands(ids: string[]): Promise<AutoRow[]> {
+  if (auto.running) return auto.rows;
+  auto.running = true;
+  auto.rows = ids.flatMap((id) => {
+    const d = defs.find((x) => x.id === id);
+    return d ? [{ id, name: d.name, status: 'sırada' as const }] : [];
+  });
+  autoReport();
+  const yieldFrame = () => new Promise<void>((r) => {
+    const ch = new MessageChannel();
+    ch.port1.onmessage = () => r();
+    ch.port2.postMessage(0);
+  });
+  for (const row of auto.rows) {
+    try {
+      row.status = 'yerleştiriliyor';
+      autoReport();
+      await yieldFrame();
+      select(row.id);
+      st.mode = 'hip';
+      st.motion = false;
+      motionMode();
+      const tpl = handTemplate(data);
+      if (!tpl) throw new Error('şablon yok');
+      const p = profile();
+      const rig = vm.activeRig!;
+      const rest = { right: rig.rightHandRest.clone() };
+      const hands = structuredClone(tpl.hands) as WeaponHands;
+      if (p && rig.view) {
+        p.hands = hands;
+        apply();
+      } else {
+        procHands[data.model] = hands;
+        vm.setHands(hands);
+      }
+      const res = placeHands({ vm, step: (n) => { for (let i = 0; i < n; i++) step(1 / 60); } }, tpl, rest, holdKind(data));
+      row.right = res.right;
+      row.left = res.left;
+      if (p && rig.view) apply();
+      else vm.setHands(procHands[data.model]);
+      row.status = 'kontrol';
+      autoReport();
+      await yieldFrame();
+      feel.swayScale = swayScale;
+      const rows = runStateChecks({ vm, data, other: defs.find((d) => d.id !== row.id)!, camera: mainCam });
+      select(row.id);
+      const bad = rows.filter((r) => !r.ok);
+      row.checks = `${rows.length - bad.length}/${rows.length}`;
+      row.fails = bad.map((r) => `${r.state}: ${r.notes.join(', ')}`);
+      if (bad.length) row.status = 'KONTROLDEN GEÇMEDİ';
+      else {
+        if (p && rig.view) await save();
+        else await saveProcHands();
+        row.status = 'kaydedildi';
+      }
+    } catch (e) {
+      row.status = 'HATA';
+      row.fails = [String(e)];
+    }
+    autoReport();
+    await yieldFrame();
+  }
+  auto.running = false;
+  buildGui();
+  return auto.rows;
+}
+
+function autoFolder(parent: GUI): void {
+  const f = parent.addFolder('Otomatik eller (arama + 16 durum + kaydet)').close();
+  f.add({ one: () => void autoHands([st.id]) }, 'one').name('Bu silaha otomatik el');
+  f.add({ all: () => void autoHands(defs.filter((d) => !hasHands(d)).map((d) => d.id)) }, 'all').name('Eli olmayan tüm silahlar');
 }
 
 // --- Save / revert / seed ---
@@ -672,6 +805,8 @@ Object.assign(window as object, {
   __calibApply: apply,
   __calibSave: save,
   __calibSeed: seedFromLegacy,
+  __calibAutoHands: autoHands,
+  __calibAuto: auto,
   __calibLib: { THREE, gunSource, orientationMatrix, handConfig },
   __calibHands: { view: handView, WeaponSurface, fingerGaps, fitFingers, gloveInside, gripRotation, report: () => handReport(vm) },
   __calibSideCam: sideCam,
