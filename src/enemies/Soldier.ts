@@ -9,6 +9,7 @@ import { feel } from '../config/Feel';
 import { Humanoid, defaultPose, type DamageInfo, strideLength, LEAN_ROLL } from '../targets/Humanoid';
 import { bakedRig, buildEnemyRifle, type WeaponRig } from '../weapons/WeaponModels';
 import { gunGrips } from './GunGrips';
+import { firingHand, supportHand } from './GripHands';
 import type { WeaponData } from '../weapons/WeaponData';
 import { getAmmo, type AmmoData } from '../weapons/AmmoData';
 import type { MuzzleLights } from '../fx/MuzzleLights';
@@ -37,7 +38,6 @@ const SLIDE = 0.14;
 const HIGH_PORT = new THREE.Vector3(-0.05, -0.27, 0.1);
 /** Model bodies: the gloves on the gun (the rig's own hand points), and a fist on each forearm when a hand is off it. */
 const GLOVE = new THREE.MeshStandardMaterial({ color: 0x1c1e21, roughness: 0.85, metalness: 0.05 });
-const FIST = new THREE.BoxGeometry(0.05, 0.085, 0.09);
 
 const PHONE_AIM = 1.2;
 /** Node budget for a soldier's path search (across the facility: ~85 m with detours). */
@@ -301,7 +301,7 @@ export class Soldier implements LightSource {
     this.gloved = !!skin.body;
     if (this.gloved) {
       for (const s of ['L', 'R'] as const) {
-        const fist = new THREE.Mesh(FIST, GLOVE);
+        const fist = new THREE.Mesh(firingHand(), GLOVE);
         fist.position.copy(this.body.handPoint);
         fist.visible = false;
         fist.castShadow = !deps.lowSpec;
@@ -386,14 +386,16 @@ export class Soldier implements LightSource {
     this.rifleRoot.updateWorldMatrix(true, true);
     this.supportAt.copy(this.rig.leftHand.getWorldPosition(this.tmp));
     this.rifleRoot.worldToLocal(this.supportAt);
-    for (const h of [this.rig.leftHand, this.rig.rightHand]) {
+    // The rig's own hand meshes (first-person boxes and sleeve tubes) give way to gloved
+    // hands closed round the grip and the handguard (GripHands), added once per rig.
+    for (const [h, shape] of [[this.rig.leftHand, supportHand], [this.rig.rightHand, firingHand]] as const) {
       h.visible = this.gloved;
-      h.traverse((o) => {
-        const m = o as THREE.Mesh;
-        if (!m.isMesh) return;
-        if ((m.geometry as THREE.BufferGeometry & { parameters?: { radiusTop?: number } }).parameters?.radiusTop !== undefined) m.visible = false;
-        else if (this.gloved) m.material = GLOVE;
-      });
+      if (!this.gloved || h.userData.gripHand) continue;
+      for (const c of h.children) if ((c as THREE.Mesh).isMesh) c.visible = false;
+      const hand = new THREE.Mesh(shape(), GLOVE);
+      hand.castShadow = !this.deps.lowSpec;
+      h.add(hand);
+      h.userData.gripHand = true;
     }
   }
 
