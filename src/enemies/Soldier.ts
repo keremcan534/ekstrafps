@@ -25,6 +25,25 @@ import { aiWorld } from '../ai/World';
 
 /** Phones (touch controls): reaction × this (+0.12 s) and aim error × PHONE_AIM. */
 const PHONE_REACTION = 1.45;
+/** The stock's place in the torso, tuned on the procedural body. */
+const POCKET = new THREE.Vector3(0.11, 0.41, 0.12);
+/** Model bodies: the stock sits this far from their own right shoulder joint (in, up, forward). */
+const MODEL_POCKET = new THREE.Vector3(-0.075, 0.035, 0.07);
+/** The support hand bends its elbow: at most this share of the arm's reach, sliding back along the handguard (up to SLIDE m). */
+const SUPPORT_REACH = 0.9;
+const SLIDE = 0.32;
+/** High port: where the stock sits, from the shoulder pocket, in the torso's frame (m). */
+const HIGH_PORT = new THREE.Vector3(-0.05, -0.27, 0.1);
+/**
+ * Model bodies have one rigid hand per forearm (no finger bones): where each palm faces in its
+ * forearm's space ([left, right]), so the wrist can turn it onto the gun (Humanoid.palm).
+ */
+const MODEL_PALM: [THREE.Vector3, THREE.Vector3] = [new THREE.Vector3(-1, 0, 0), new THREE.Vector3(1, 0, 0)];
+/** In the holder (barrel +z, up +y, the gun's left +x): the firing palm against the grip's left, the support palm up under the handguard. */
+const PALM_R = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), new THREE.Vector3(1, 0, 0));
+const PALM_L = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), new THREE.Vector3(-0.5, 0.85, 0).normalize());
+/** High port (gun upright across the chest): the support palm against the handguard's side. */
+const PALM_L_SIDE = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), new THREE.Vector3(-1, 0, 0));
 const PHONE_AIM = 1.2;
 /** Node budget for a soldier's path search (across the facility: ~85 m with detours). */
 const LONG_SEARCH = 40000;
@@ -218,6 +237,14 @@ export class Soldier implements LightSource {
   // Dropped rifle
   private rifleBody: RAPIER.RigidBody;
   private reloadHand = new THREE.Object3D();
+  /** Where the support hand holds: the rig's grip, slid back along the barrel when the arm can't reach it. */
+  private supportGrip = new THREE.Object3D();
+  /** The firing hand's grip: the rig's, with the palm's facing (model bodies turn the wrist to it). */
+  private firingGrip = new THREE.Object3D();
+  /** The rig's support grip in the holder's space (set when a rig is mounted). */
+  private supportAt = new THREE.Vector3();
+  /** How far this body's stock pocket is from the procedural one (handguns keep their place). */
+  private pocketShift = new THREE.Vector3();
 
   private tmp = v3();
   private tmp2 = v3();
@@ -247,7 +274,8 @@ export class Soldier implements LightSource {
     this.errNoise2 = new Noise1D(index * 29 + 11);
     this.ammoData = getAmmo('762x39_ps');
     this.flash = new MuzzleFlash(2.6, false);
-    this.body = new Humanoid(deps.physics, deps.scene, withModel(palette, soldierSkin(palette === 'bdboss' ? 650 : team === 'bd' ? 160 : 200, palette, index % 4)), {
+    const skin = withModel(palette, soldierSkin(palette === 'bdboss' ? 650 : team === 'bd' ? 160 : 200, palette, index % 4));
+    this.body = new Humanoid(deps.physics, deps.scene, skin, {
       onDamage: (info) => this.onDamaged(info),
       onDeath: (info) => this.onKilled(info),
       onThud: (at, s) => hooks.onThud(at, s),
@@ -256,7 +284,11 @@ export class Soldier implements LightSource {
 
     // Rifle in the right shoulder pocket; the aim node pitches/yaws it.
     const torso = this.body.part('torso').group;
-    this.aimNode.position.set(0.11, 0.41, 0.12);
+    this.aimNode.position.copy(POCKET);
+    // Model bodies (public/chars) have their own shoulders: the stock goes into their pocket,
+    // not the procedural body's (which sat it in the air above and in front of the shoulder).
+    if (skin.body) this.aimNode.position.copy(this.body.part('upperArmR').group.position).add(MODEL_POCKET);
+    this.pocketShift.subVectors(this.aimNode.position, POCKET);
     // Z first: the node takes back the torso's lean roll (Q / E), so the gun points where
     // it's aimed whatever the body does (the bore cant is the rifle's own roll).
     this.aimNode.rotation.order = 'ZYX';
@@ -265,8 +297,13 @@ export class Soldier implements LightSource {
     if (deps.lowSpec) this.body.setCastShadow(false);
     this.rig = buildEnemyRifle(!!deps.lowSpec);
     if (deps.lowSpec) this.rig.root.traverse((o) => ((o as THREE.Mesh).isMesh && ((o as THREE.Mesh).castShadow = false)));
-    this.mountRig();
     this.aimNode.add(this.rifleRoot);
+    this.rifleRoot.add(this.supportGrip, this.firingGrip);
+    this.supportGrip.quaternion.copy(PALM_L);
+    this.firingGrip.quaternion.copy(PALM_R);
+    this.supportGrip.userData.palm = this.firingGrip.userData.palm = true;
+    if (skin.body) this.body.palm = MODEL_PALM;
+    this.mountRig();
     this.flash.attachTo(this.rig.muzzle);
     this.reloadHand.position.set(-0.05, 0.2, 0.24);
     torso.add(this.reloadHand);
@@ -326,6 +363,33 @@ export class Soldier implements LightSource {
     this.rig.root.position.set(this.rig.butt.x, -this.rig.butt.y, this.rig.butt.z);
     this.rifleRoot.add(this.rig.root);
     this.flash.attachTo(this.rig.muzzle);
+    // The support grip in the holder's space (the rig is fixed in it).
+    this.rifleRoot.updateWorldMatrix(true, true);
+    this.supportAt.copy(this.rig.leftHand.getWorldPosition(this.tmp));
+    this.rifleRoot.worldToLocal(this.supportAt);
+    this.rifleRoot.worldToLocal(this.firingGrip.position.copy(this.rig.rightHand.getWorldPosition(this.tmp)));
+  }
+
+  /**
+   * Slide the support hand back along the handguard until the arm reaches it with a bent
+   * elbow (bodies with short arms or a long gun): never a locked arm short of the gun.
+   */
+  private placeSupportGrip(): THREE.Object3D {
+    const g = this.supportGrip;
+    g.position.copy(this.supportAt);
+    const shoulder = this.body.part('upperArmL').group.getWorldPosition(this.tmp2);
+    this.rifleRoot.updateWorldMatrix(true, false);
+    const w = this.tmp.copy(this.supportAt).applyMatrix4(this.rifleRoot.matrixWorld).sub(shoulder);
+    const dir = this.tmp3.set(0, 0, 1).transformDirection(this.rifleRoot.matrixWorld);
+    const r = SUPPORT_REACH * this.body.armReach;
+    const d2 = w.lengthSq();
+    if (d2 > r * r) {
+      const wd = w.dot(dir);
+      const disc = wd * wd - d2 + r * r;
+      const k = disc >= 0 ? wd - Math.sqrt(disc) : wd;
+      g.position.z -= Math.min(SLIDE, Math.max(0, k));
+    }
+    return g;
   }
 
   /** Arm with a real weapon (fire rate, magazine, ammo, sound, model). */
@@ -683,11 +747,11 @@ export class Soldier implements LightSource {
       } else this.glance *= 1 - Math.min(1, dt * 6);
     }
     this.roll += (rollWant - this.roll) * Math.min(1, dt * 5);
-    p.gripR = this.rig.rightHand;
+    p.gripR = this.firingGrip;
     const reloading = this.reloadTimer > 0;
     const rk = reloading ? 1 - this.reloadTimer / this.reloadTime : 0;
     const handOff = reloading && rk > 0.2 && rk < 0.62;
-    p.gripL = handOff ? this.reloadHand : this.rig.mag && reloading && rk > 0.1 && rk < 0.8 ? this.rig.mag : this.rig.leftHand;
+    p.gripL = handOff ? this.reloadHand : this.rig.mag && reloading && rk > 0.1 && rk < 0.8 ? this.rig.mag : this.placeSupportGrip();
     if (this.rig.mag) this.rig.mag.visible = !(reloading && rk > 0.25 && rk < 0.6);
 
     this.aim(dt, faceTarget, aimMode, player);
@@ -804,7 +868,7 @@ export class Soldier implements LightSource {
     if (mode === 'high') {
       // High port: muzzle up, gun diagonal across the chest (moving fast, ready to snap down).
       yaw = -0.85;
-      pitch = 0.88;
+      pitch = 0.7;
     } else if (mode === 'low' || !faceTarget) {
       // Patrol carry: muzzle down and across the body.
       yaw = -0.62;
@@ -850,12 +914,20 @@ export class Soldier implements LightSource {
     // (centred under the eyes), compressed at the chest at the ready, low while
     // running. Long guns stay shouldered (the holder origin is the shoulder pocket).
     if (this.pistol) {
-      if (mode === 'aim') this.holdWant.set(-0.1, 0.06, 0.34);
+      if (mode === 'aim') this.holdWant.set(-0.1, 0.06, 0.28);
       else if (mode === 'ready') this.holdWant.set(-0.08, -0.08, 0.2);
       else if (mode === 'high') this.holdWant.set(-0.1, 0.02, 0.14);
       else this.holdWant.set(-0.06, -0.2, 0.12);
-    } else if (mode === 'high') this.holdWant.set(-0.06, -0.2, 0.14);
-    else this.holdWant.set(0, 0, 0);
+      // Handguns are held out from the arms, not the stock pocket: they keep their place.
+      this.holdWant.sub(this.pocketShift);
+    } else if (mode === 'high') {
+      // High port: the stock comes down off the shoulder to the chest, the gun diagonal and
+      // muzzle up. Placed in the torso's frame (the holder is pitched up 50°: an offset in
+      // its own frame lifted the whole gun over the head).
+      this.holdWant.copy(HIGH_PORT).applyQuaternion(this.q.copy(this.aimNode.quaternion).invert());
+      this.supportGrip.quaternion.copy(PALM_L_SIDE);
+    } else this.holdWant.set(0, 0, 0);
+    if (mode !== 'high') this.supportGrip.quaternion.copy(PALM_L);
     this.hold.lerp(this.holdWant, Math.min(1, dt * 9));
     if (this.rifleRoot.parent === this.aimNode) this.rifleRoot.position.copy(this.hold);
   }

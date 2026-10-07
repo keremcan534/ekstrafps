@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Soldier Lab</title>
+<style>html,body{margin:0;height:100%;overflow:hidden;background:#1b1d20;color:#ddd;font:12px ui-monospace,monospace}#hud{position:fixed;left:8px;top:6px;z-index:2;white-space:pre}</style>
+</head>
+<!--
+  Third-person weapon holds on every character model: one soldier per faction model, each
+  with a gun, held still in a stance (?mode=aim|ready|low|high, ?gun=ak47|kar98|heavy_pistol|...).
+  window.__sl: { soldiers, set(mode, gun), view(i, 'front'|'side'|'three'|'back'|'top', dist), reach() }.
+-->
+<body><div id="hud"></div><script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
+import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
+import { Physics } from '/src/core/Physics.ts';
+import { loadCharacterModels } from '/src/targets/CharacterModels.ts';
+import { loadWeaponMeshes } from '/src/weapons/WeaponMeshes.ts';
+import { Soldier } from '/src/enemies/Soldier.ts';
+
+const q = new URLSearchParams(location.search);
+const r = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
+r.setSize(innerWidth, innerHeight);
+r.toneMapping = THREE.ACESFilmicToneMapping;
+document.body.appendChild(r.domElement);
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x2a2d31);
+scene.environment = new THREE.PMREMGenerator(r).fromScene(new RoomEnvironment(), 0.04).texture;
+scene.environmentIntensity = 0.9;
+const sun = new THREE.DirectionalLight(0xffffff, 2.4);
+sun.position.set(3, 6, 5);
+scene.add(sun, new THREE.HemisphereLight(0xdfe8f0, 0x404040, 1.1));
+const floor = new THREE.Mesh(new THREE.PlaneGeometry(60, 60), new THREE.MeshStandardMaterial({ color: 0x4a4d52, roughness: 0.9 }));
+floor.rotation.x = -Math.PI / 2;
+scene.add(floor, new THREE.GridHelper(60, 60, 0x666666, 0x555555));
+const cam = new THREE.PerspectiveCamera(35, innerWidth / innerHeight, 0.05, 200);
+cam.position.set(0, 1.6, 9);
+const orbit = new OrbitControls(cam, r.domElement);
+orbit.target.set(0, 1.2, 0);
+
+const physics = await Physics.create(1 / 60);
+await Promise.all([loadCharacterModels(false), loadWeaponMeshes(false)]);
+const nav = { walkable: () => true, clearLine: () => true, findPathFor: () => null, requestPath: () => {}, lastTruncated: false, cellAt: () => null };
+const noop = () => {};
+const stub = new Proxy({}, { get: () => noop });
+const deps = { physics, nav, projectiles: stub, impacts: stub, shells: stub, audio: stub, scene };
+const hooks = new Proxy({}, { get: () => noop });
+const target = { feet: new THREE.Vector3(0, 0, 30), head: new THREE.Vector3(0, 1.7, 30), chest: new THREE.Vector3(0, 1.35, 30), velocity: new THREE.Vector3(), sprinting: false, crouching: false, alive: false };
+const face = new THREE.Vector3(0, 1.4, 30);
+
+const looks = [['alpha', 'vanta'], ['bd', 'bd'], ['bravo', 'bravo'], ['charlie', 'charlie'], ['delta', 'delta'], ['bd', 'bdboss'], ['bd', 'salvage']];
+const weapons = {};
+const gunData = async (id) => (weapons[id] ??= await (await fetch(`/src/config/weapons/${id}.json`)).json());
+const soldiers = looks.map(([team, palette], i) => {
+  const s = new Soldier(deps, i, hooks, team, palette);
+  const x = (i - (looks.length - 1) / 2) * 1.6;
+  s.pos.set(x, 0, 0);
+  s.home = s.pos.clone();
+  s.yaw = 0;
+  s.body.root.position.copy(s.pos);
+  s.palette = palette;
+  return s;
+});
+let mode = q.get('mode') ?? 'aim';
+let gun = q.get('gun') ?? 'ak47';
+const set = async (m = mode, g = gun) => {
+  mode = m;
+  gun = g;
+  const d = await gunData(g);
+  for (const s of soldiers) s.setWeapon(d);
+  for (let i = 0; i < 90; i++) step(1 / 60);
+};
+const step = (dt) => {
+  for (const s of soldiers) {
+    // Standing still on its mark, facing down the range.
+    s.pos.copy(s.home);
+    s.vel?.set?.(0, 0, 0);
+    face.x = s.home.x;
+    s.update(dt, target, soldiers, face, mode, false);
+  }
+};
+const view = (i, name, dist = 2.2) => {
+  const s = soldiers[i];
+  const yaw = s.body.root.rotation.y + { front: 0, three: Math.PI / 4, side: Math.PI / 2, rside: -Math.PI / 2, back: Math.PI, top: 0.3 }[name];
+  const at = s.body.root.position;
+  orbit.target.set(at.x, 1.25, at.z);
+  cam.position.set(at.x + Math.sin(yaw) * dist, name === 'top' ? 2.6 : 1.45, at.z + Math.cos(yaw) * dist);
+  orbit.update();
+  r.render(scene, cam);
+};
+/** How far each hand's target is from its shoulder, as a share of the arm's length (1 = locked straight). */
+const reach = () => soldiers.map((s) => {
+  const b = s.body;
+  const out = { palette: s.palette };
+  for (const [side, grip] of [['R', s.pose.gripR], ['L', s.pose.gripL]]) {
+    if (!grip) continue;
+    const up = b.part(`upperArm${side}`).group;
+    const sh = up.getWorldPosition(new THREE.Vector3());
+    const g = grip.getWorldPosition(new THREE.Vector3());
+    const L = b.upperLen + b.gripLocal.length();
+    out[side] = +(sh.distanceTo(g) / L).toFixed(2);
+  }
+  return out;
+});
+await set();
+window.__sl = { soldiers, set, view, step, reach, cam, scene, r, render: () => r.render(scene, cam), paused: false };
+r.setAnimationLoop(() => {
+  if (!window.__sl.paused) step(1 / 60);
+  orbit.update();
+  r.render(scene, cam);
+  document.getElementById('hud').textContent = `${mode} · ${gun}  (?mode=aim|ready|low|high&gun=...)`;
+});
+addEventListener('resize', () => { r.setSize(innerWidth, innerHeight); cam.aspect = innerWidth / innerHeight; cam.updateProjectionMatrix(); });
+</script></body></html>
