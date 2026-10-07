@@ -52,6 +52,8 @@ export class Lighting {
     private lookDir: (out: THREE.Vector3) => THREE.Vector3,
     private alive: () => boolean,
     redCount = 4,
+    /** Desktop: the flashlight casts a real shadow (it isn't held to a room, core/LightClip). */
+    shadow = false,
   ) {
     for (let i = 0; i < redCount; i++) {
       const l = new THREE.PointLight(0xffffff, 0, 11, 1.8);
@@ -60,12 +62,25 @@ export class Lighting {
       this.reds.push({ l, spot: null, f: 0, keep: false, peak: 0 });
     }
     this.flashlight = new THREE.SpotLight(0xfff3e2, 0, 78, 0.36, 0.42, 1.0);
-    this.flashlight.castShadow = false;
+    this.flashlight.castShadow = shadow;
+    if (shadow) {
+      this.flashlight.shadow.mapSize.set(1024, 1024);
+      this.flashlight.shadow.camera.near = 0.3;
+      this.flashlight.shadow.camera.far = 45;
+      this.flashlight.shadow.bias = -0.0004;
+      this.flashlight.shadow.normalBias = 0.03;
+      this.flashlight.shadow.autoUpdate = false;
+    }
     scene.add(this.flashlight, this.flashlight.target);
     this.envBase = scene.environmentIntensity * 0.3;
     this.sky = scene.background as THREE.Color;
     this.skyBase = this.sky.clone();
     this.fogBase = scene.fog ? (scene.fog as THREE.Fog).color.clone() : null;
+  }
+
+  /** The player's flashlight (never held to a room: it casts its own shadow on desktop). */
+  get flashlightLight(): THREE.SpotLight {
+    return this.flashlight;
   }
 
   /** 0 = lights on … 1 = blacked out (muzzle flashes scale with this). */
@@ -144,6 +159,8 @@ export class Lighting {
     // A touch red-shifted when the power is out (the room's red bounces into it).
     fl.color.setRGB(1, 0.95 - 0.1 * k, 0.89 - 0.12 * k);
     fl.intensity = this.flashlightOn && this.alive() ? 34 : 0;
+    // Its shadow map is drawn only while it's on.
+    if (fl.castShadow) fl.shadow.autoUpdate = fl.intensity > 0;
     if (fl.intensity > 0) {
       const dir = this.lookDir(this.dir);
       fl.position.copy(this.eye).addScaledVector(dir, 0.3).y -= 0.12;

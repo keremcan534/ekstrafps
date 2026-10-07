@@ -66,6 +66,7 @@ import { DustMotes } from '../fx/DustMotes';
 import { Ambience } from '../audio/Ambience';
 import { PerfBench, benchFlagsFromUrl, glInfo, type BenchFlags } from './PerfBench';
 import { enterLandscape } from './Landscape';
+import { installLightClip, syncLightClip, clearLightClip } from './LightClip';
 import { raid } from '../game/Progress';
 import { Inhabitants } from '../game/Inhabitants';
 import type { ShowcaseDeps } from '../ui/Showcase';
@@ -73,6 +74,9 @@ import type { ShowcaseDeps } from '../ui/Showcase';
 const FIXED_DT = 1 / 120;
 
 const MAX_STEPS = 6;
+
+// Lights stop at walls: patched into three's shader chunks before anything compiles.
+installLightClip();
 /** The light (ViewLight.measure) of a lit room: there the gun in hand gets its full lighting. */
 const VIEW_LIT = 0.8;
 /** Dynamic resolution never goes below half the chosen resolution. */
@@ -687,7 +691,7 @@ export class Game {
       speed: this.player.horizontalSpeed,
       alive: !this.health.dead,
     }));
-    this.lighting = new Lighting(this.scene, map, this.camera.eye, (out) => this.camera.getAimDirection(this.player, out), () => !this.health.dead, this.mobile ? 1 : 4);
+    this.lighting = new Lighting(this.scene, map, this.camera.eye, (out) => this.camera.getAimDirection(this.player, out), () => !this.health.dead, this.mobile ? 1 : 6, !this.mobile);
     this.survival = new Survival({
       lighting: this.lighting,
       world: () => this.world,
@@ -2058,7 +2062,13 @@ export class Game {
       if (noDraw) this.renderer.setClearColor(this.clearBase);
       // Phones: the full map covers the screen, nothing behind it needs drawing.
       const covered = this.mobile && !!this.mapOverlay?.visible;
-      if (!this.benchFlags.noWorld && !noDraw && !covered) this.renderer.render(this.scene, this.camera.camera);
+      if (!this.benchFlags.noWorld && !noDraw && !covered) {
+        // Each lamp lights its own room only (the flashlight casts a real shadow instead).
+        const room = this.arena.lightRoom?.bind(this.arena);
+        if (room) syncLightClip(this.scene, room, this.lighting?.flashlightLight);
+        this.renderer.render(this.scene, this.camera.camera);
+        clearLightClip();
+      }
       this.renderer.clearDepth();
       if (!this.health.dead && !this.cinematic && !this.spectator && !noDraw && !covered) this.renderer.render(this.weapons.viewmodel.scene, this.weapons.viewmodel.camera);
       this.debugDraw.flush(realDt);

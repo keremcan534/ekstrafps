@@ -1992,6 +1992,14 @@ export class Site9 implements GameMap {
     p.stack(v(-46, 0, -84), 3, 0.5);
   }
 
+  /** The floor plan of the room at (x, z), for lights that stop at walls (GameMap.lightRoom). */
+  lightRoom(x: number, z: number, out: THREE.Vector4): boolean {
+    const r = this.layout.roomAt(x, z);
+    if (!r) return false;
+    out.set(r.rect[0], r.rect[1], r.rect[2], r.rect[3]);
+    return true;
+  }
+
   /** The room group an object at (x, z) belongs to (for visibility culling). */
   roomGroupAt(x: number, z: number): THREE.Object3D {
     const r = this.layout.roomAt(x, z);

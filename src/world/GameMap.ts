@@ -35,4 +35,9 @@ export interface GameMap {
   /** Image-based fill strength (default 0.35): low for maps that should read dark. */
   readonly envIntensity?: number;
   update(dt: number, focus?: THREE.Vector3): void;
+  /**
+   * The floor plan of the room at (x, z), world x0, z0, x1, z1 (lights stop at its walls,
+   * core/LightClip). False outside any room, or on a map without rooms.
+   */
+  lightRoom?(x: number, z: number, out: THREE.Vector4): boolean;
 }
