@@ -8,6 +8,7 @@ import { clamp, DEG } from '../core/math';
 import { feel } from '../config/Feel';
 import { Humanoid, defaultPose, type DamageInfo, strideLength, LEAN_ROLL } from '../targets/Humanoid';
 import { bakedRig, buildEnemyRifle, type WeaponRig } from '../weapons/WeaponModels';
+import { gunGrips } from './GunGrips';
 import type { WeaponData } from '../weapons/WeaponData';
 import { getAmmo, type AmmoData } from '../weapons/AmmoData';
 import type { MuzzleLights } from '../fx/MuzzleLights';
@@ -30,30 +31,14 @@ const POCKET = new THREE.Vector3(0.11, 0.41, 0.12);
 /** Model bodies: the stock sits this far from their own right shoulder joint (in, up, forward). */
 const MODEL_POCKET = new THREE.Vector3(-0.075, 0.035, 0.07);
 /** The support hand bends its elbow: at most this share of the arm's reach, sliding back along the handguard (up to SLIDE m). */
-const SUPPORT_REACH = 0.96;
-const SLIDE = 0.32;
+const SUPPORT_REACH = 0.99;
+const SLIDE = 0.14;
 /** High port: where the stock sits, from the shoulder pocket, in the torso's frame (m). */
 const HIGH_PORT = new THREE.Vector3(-0.05, -0.27, 0.1);
-/**
- * Model bodies have one rigid hand per forearm (no finger bones, curled into a grip at load:
- * ModelBody.curlHands): where each palm faces in its forearm's space ([left, right]), towards
- * the body as the arms hang, so the wrist can turn it onto the gun (Humanoid.palm).
- */
-const MODEL_PALM: [THREE.Vector3, THREE.Vector3] = [new THREE.Vector3(1, 0, 0), new THREE.Vector3(-1, 0, 0)];
-/** In the holder (barrel +z, up +y, the gun's left +x): the firing palm against the grip's left, the support palm up under the handguard. */
-const PALM_R = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), new THREE.Vector3(1, 0, 0));
-const PALM_L = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), new THREE.Vector3(-0.5, 0.85, 0).normalize());
-/** High port (gun upright across the chest): the support palm against the handguard's side. */
-/**
- * Model hands are solid (curled at load): the palm's centre can't sit on the gun's own
- * centre line or the hand goes through it. Offsets in the holder (m): the support palm
- * under the handguard (its curled fingers wrap the sides), against its side at high port;
- * the firing hand on the grip's right side.
- */
-const SUPPORT_UNDER = new THREE.Vector3(0, -0.045, 0);
-const SUPPORT_SIDE = new THREE.Vector3(0.035, -0.01, 0);
-const FIRING_SIDE = new THREE.Vector3(-0.025, -0.01, 0);
-const PALM_L_SIDE = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), new THREE.Vector3(-1, 0, 0));
+/** Model bodies: the gloves on the gun (the rig's own hand points), and a fist on each forearm when a hand is off it. */
+const GLOVE = new THREE.MeshStandardMaterial({ color: 0x1c1e21, roughness: 0.85, metalness: 0.05 });
+const FIST = new THREE.BoxGeometry(0.05, 0.085, 0.09);
+
 const PHONE_AIM = 1.2;
 /** Node budget for a soldier's path search (across the facility: ~85 m with detours). */
 const LONG_SEARCH = 40000;
@@ -249,8 +234,12 @@ export class Soldier implements LightSource {
   private reloadHand = new THREE.Object3D();
   /** Where the support hand holds: the rig's grip, slid back along the barrel when the arm can't reach it. */
   private supportGrip = new THREE.Object3D();
-  /** The firing hand's grip: the rig's, with the palm's facing (model bodies turn the wrist to it). */
-  private firingGrip = new THREE.Object3D();
+  /** Model bodies: a fist on each forearm, shown while that hand is off the gun ([left, right]). */
+  private fists: THREE.Mesh[] = [];
+  /** Model bodies wear the gun's gloves (their own hands are folded away: no finger bones). */
+  private gloved = false;
+  /** The mounted rig's model (its measured grip points are cached by it). */
+  private rigKey = 'enemyRifle';
   /** The rig's support grip in the holder's space (set when a rig is mounted). */
   private supportAt = new THREE.Vector3();
   /** How far this body's stock pocket is from the procedural one (handguns keep their place). */
@@ -308,11 +297,18 @@ export class Soldier implements LightSource {
     this.rig = buildEnemyRifle(!!deps.lowSpec);
     if (deps.lowSpec) this.rig.root.traverse((o) => ((o as THREE.Mesh).isMesh && ((o as THREE.Mesh).castShadow = false)));
     this.aimNode.add(this.rifleRoot);
-    this.rifleRoot.add(this.supportGrip, this.firingGrip);
-    this.supportGrip.quaternion.copy(PALM_L);
-    this.firingGrip.quaternion.copy(PALM_R);
-    this.supportGrip.userData.palm = this.firingGrip.userData.palm = true;
-    if (skin.body) this.body.palm = MODEL_PALM;
+    this.rifleRoot.add(this.supportGrip);
+    this.gloved = !!skin.body;
+    if (this.gloved) {
+      for (const s of ['L', 'R'] as const) {
+        const fist = new THREE.Mesh(FIST, GLOVE);
+        fist.position.copy(this.body.handPoint);
+        fist.visible = false;
+        fist.castShadow = !deps.lowSpec;
+        this.body.part(`foreArm${s}`).group.add(fist);
+        this.fists.push(fist);
+      }
+    }
     this.mountRig();
     this.flash.attachTo(this.rig.muzzle);
     this.reloadHand.position.set(-0.05, 0.2, 0.24);
@@ -373,12 +369,32 @@ export class Soldier implements LightSource {
     this.rig.root.position.set(this.rig.butt.x, -this.rig.butt.y, this.rig.butt.z);
     this.rifleRoot.add(this.rig.root);
     this.flash.attachTo(this.rig.muzzle);
+    // Model bodies: the gun's gloves are their hands (the sleeve tubes stay hidden).
+    // Where they go: the drawn gun's own grip and handguard (GunGrips), else the rig's points.
+    if (this.gloved) {
+      const { leftHand: lh, rightHand: rh, root } = this.rig;
+      lh.position.copy(this.rig.leftHandRest);
+      rh.position.copy(this.rig.rightHandRest);
+      const g = gunGrips(this.rigKey, this.rig);
+      if (g) {
+        root.updateMatrixWorld(true);
+        rh.position.copy(rh.parent!.worldToLocal(root.localToWorld(this.tmp.copy(g.firing))));
+        lh.position.copy(lh.parent!.worldToLocal(root.localToWorld(this.tmp.copy(g.support))));
+      }
+    }
     // The support grip in the holder's space (the rig is fixed in it).
     this.rifleRoot.updateWorldMatrix(true, true);
     this.supportAt.copy(this.rig.leftHand.getWorldPosition(this.tmp));
     this.rifleRoot.worldToLocal(this.supportAt);
-    this.rifleRoot.worldToLocal(this.firingGrip.position.copy(this.rig.rightHand.getWorldPosition(this.tmp)));
-    if (this.body.palm) this.firingGrip.position.add(FIRING_SIDE);
+    for (const h of [this.rig.leftHand, this.rig.rightHand]) {
+      h.visible = this.gloved;
+      h.traverse((o) => {
+        const m = o as THREE.Mesh;
+        if (!m.isMesh) return;
+        if ((m.geometry as THREE.BufferGeometry & { parameters?: { radiusTop?: number } }).parameters?.radiusTop !== undefined) m.visible = false;
+        else if (this.gloved) m.material = GLOVE;
+      });
+    }
   }
 
   /**
@@ -388,7 +404,6 @@ export class Soldier implements LightSource {
   private placeSupportGrip(): THREE.Object3D {
     const g = this.supportGrip;
     g.position.copy(this.supportAt);
-    if (this.body.palm) g.position.add(g.quaternion.equals(PALM_L_SIDE) ? SUPPORT_SIDE : SUPPORT_UNDER);
     const shoulder = this.body.part('upperArmL').group.getWorldPosition(this.tmp2);
     this.rifleRoot.updateWorldMatrix(true, false);
     const w = this.tmp.copy(this.supportAt).applyMatrix4(this.rifleRoot.matrixWorld).sub(shoulder);
@@ -401,7 +416,19 @@ export class Soldier implements LightSource {
       const k = disc >= 0 ? wd - Math.sqrt(disc) : wd;
       g.position.z -= Math.min(SLIDE, Math.max(0, k));
     }
+    // The glove goes where the hand goes.
+    const lh = this.rig.leftHand;
+    if (this.gloved && lh.parent) lh.position.copy(lh.parent.worldToLocal(this.tmp.copy(g.position).applyMatrix4(this.rifleRoot.matrixWorld)));
     return g;
+  }
+
+  /** Model bodies: each hand is the gun's glove while it holds the gun, else a fist on the forearm. */
+  private syncGloves(left: boolean, right: boolean): void {
+    if (!this.gloved) return;
+    this.rig.leftHand.visible = left;
+    this.rig.rightHand.visible = right;
+    this.fists[0].visible = !left;
+    this.fists[1].visible = !right;
   }
 
   /** Arm with a real weapon (fire rate, magazine, ammo, sound, model). */
@@ -419,6 +446,7 @@ export class Soldier implements LightSource {
     }
     if (rig.mag) rig.mag.visible = true;
     this.rig = rig;
+    this.rigKey = `${data.model}|${!!this.deps.lowSpec}`;
     this.mountRig();
     this.weaponId = data.id;
     this.pistol = data.category === 'pistol';
@@ -665,6 +693,7 @@ export class Soldier implements LightSource {
     this.time += dt;
     this.pollPath();
     if (!this.alive) {
+      this.syncGloves(false, false);
       this.body.update(dt, this.pose);
       return;
     }
@@ -679,6 +708,7 @@ export class Soldier implements LightSource {
       p.spineY = 0;
       p.gripL = null;
       p.gripR = this.rig.rightHand;
+      this.syncGloves(false, true);
       this.vel.set(0, 0, 0);
       this.aimNode.rotation.set(0.9, -0.4, 0);
       this.body.root.position.copy(this.pos);
@@ -759,11 +789,12 @@ export class Soldier implements LightSource {
       } else this.glance *= 1 - Math.min(1, dt * 6);
     }
     this.roll += (rollWant - this.roll) * Math.min(1, dt * 5);
-    p.gripR = this.firingGrip;
+    p.gripR = this.rig.rightHand;
     const reloading = this.reloadTimer > 0;
     const rk = reloading ? 1 - this.reloadTimer / this.reloadTime : 0;
     const handOff = reloading && rk > 0.2 && rk < 0.62;
     p.gripL = handOff ? this.reloadHand : this.rig.mag && reloading && rk > 0.1 && rk < 0.8 ? this.rig.mag : this.placeSupportGrip();
+    this.syncGloves(p.gripL === this.supportGrip, true);
     if (this.rig.mag) this.rig.mag.visible = !(reloading && rk > 0.25 && rk < 0.6);
 
     this.aim(dt, faceTarget, aimMode, player);
@@ -937,9 +968,7 @@ export class Soldier implements LightSource {
       // muzzle up. Placed in the torso's frame (the holder is pitched up 50°: an offset in
       // its own frame lifted the whole gun over the head).
       this.holdWant.copy(HIGH_PORT).applyQuaternion(this.q.copy(this.aimNode.quaternion).invert());
-      this.supportGrip.quaternion.copy(PALM_L_SIDE);
     } else this.holdWant.set(0, 0, 0);
-    if (mode !== 'high') this.supportGrip.quaternion.copy(PALM_L);
     this.hold.lerp(this.holdWant, Math.min(1, dt * 9));
     if (this.rifleRoot.parent === this.aimNode) this.rifleRoot.position.copy(this.hold);
   }

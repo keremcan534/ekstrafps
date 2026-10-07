@@ -80,7 +80,12 @@ export type Girth = [number, number] | [number, number, number];
  * @param rigid every vertex on one part only: a machine's plates turn at the joints
  *              instead of bending like rubber (auto-rigs blend weights across every joint).
  */
-export async function loadModelBody(url: string, height = 1.78, girth: Girth = [1, 1], rigid = false): Promise<ModelBody> {
+/**
+ * `hideHands`: the model's own hands are folded away into the wrists (for bodies that carry a
+ * gun: their hands are gloves on the gun, see Soldier). The models have no finger bones and
+ * come from a T-pose, so their hands could never close round a grip.
+ */
+export async function loadModelBody(url: string, height = 1.78, girth: Girth = [1, 1], rigid = false, hideHands = false): Promise<ModelBody> {
   const gltf = await new GLTFLoader().loadAsync(url);
   const scene = gltf.scene;
   scene.updateMatrixWorld(true);
@@ -254,7 +259,7 @@ export async function loadModelBody(url: string, height = 1.78, girth: Girth = [
     const boneMats = mesh.skeleton.bones.map((b, i) => new THREE.Matrix4().multiplyMatrices(b.matrixWorld, mesh.skeleton.boneInverses[i]));
     const toWorld = new THREE.Matrix4().multiplyMatrices(mesh.matrixWorld, mesh.bindMatrixInverse);
     const acc = new Float32Array(slots.length);
-    // How much of each vertex is hand (signed by side): the hands are curled into a grip below.
+    // How much of each vertex is hand (signed by side): folded away below for gun carriers.
     const outH = new Float32Array(count);
     const boneHand = mesh.skeleton.bones.map((b) => (kindUp(b) === 'hand' ? (sideOf(b) > 0 ? 1 : -1) : 0));
     for (let i = 0; i < count; i++) {
@@ -364,7 +369,7 @@ export async function loadModelBody(url: string, height = 1.78, girth: Girth = [
     const core: (keyof Joints)[] = ['hips', 'spine', 'neck'];
     for (const [name, j] of Object.entries(joints)) j.set(j.x * gx, j.y, j.z * (core.includes(name as keyof Joints) ? gz : limbZ));
   }
-  if (!rigid) curlHands(geometry, joints.wristL, joints.wristR);
+  if (hideHands) foldHands(geometry, joints.wristL, joints.wristR);
   geometry.deleteAttribute('handW');
   if (rigid) {
     // After the girth (which blends by the smooth weights, so the body stays in one piece).
@@ -402,88 +407,17 @@ export async function loadModelBody(url: string, height = 1.78, girth: Girth = [
   return { geometry, materials: mats, slots, joints, height };
 }
 
-/**
- * Close the hands into a grip. The models have no finger bones (and come from a T-pose with
- * flat, spread hands), so held guns showed open palms waving beside them. With the arms
- * baked hanging down, each hand runs from its wrist along a known axis: past the knuckles
- * (CURL.knuckle of the hand's length) the fingers are wrapped round a cylinder on the palm
- * side, CURL.bend radians at most, the way a hand closes round a grip or a handguard. The
- * hand's flat axis is found from its own vertices; the palm is the side facing the body.
- * Machines (rigid models) keep their hands: the walker's are claws, not a hand in a T-pose.
- */
-const CURL = { knuckle: 0.42, radius: 0.17, bend: 1.75 };
-
-function curlHands(geometry: THREE.BufferGeometry, wristL: THREE.Vector3, wristR: THREE.Vector3): void {
+/** Fold each hand (vertices mostly weighted to hand bones) into its wrist: zero-area, unseen. */
+function foldHands(geometry: THREE.BufferGeometry, wristL: THREE.Vector3, wristR: THREE.Vector3): void {
   const pos = geometry.getAttribute('position');
-  const nor = geometry.getAttribute('normal');
   const hw = geometry.getAttribute('handW');
-  const p = new THREE.Vector3();
-  const q = new THREE.Quaternion();
-  for (const [side, W] of [[-1, wristL], [1, wristR]] as const) {
-    const ids: number[] = [];
-    for (let i = 0; i < hw.count; i++) if (hw.getX(i) * side > 0.35) ids.push(i);
-    if (ids.length < 30) continue;
-    // Finger axis: wrist → the hand's centroid.
-    const c = new THREE.Vector3();
-    for (const i of ids) c.add(p.fromBufferAttribute(pos, i));
-    c.divideScalar(ids.length);
-    const d = c.clone().sub(W).normalize();
-    // The flat axis: across the axis, the direction the hand is thinnest.
-    const u = new THREE.Vector3(1, 0, 0);
-    if (Math.abs(u.dot(d)) > 0.9) u.set(0, 0, 1);
-    u.addScaledVector(d, -u.dot(d)).normalize();
-    const w = new THREE.Vector3().crossVectors(d, u);
-    let best = Infinity;
-    const n = new THREE.Vector3();
-    const e = new THREE.Vector3();
-    for (let k = 0; k < 90; k++) {
-      const f = (k / 90) * Math.PI;
-      e.copy(u).multiplyScalar(Math.cos(f)).addScaledVector(w, Math.sin(f));
-      let s = 0;
-      for (const i of ids) {
-        const t = p.fromBufferAttribute(pos, i).sub(c).dot(e);
-        s += t * t;
-      }
-      if (s < best) {
-        best = s;
-        n.copy(e);
-      }
-    }
-    let len = 0;
-    for (const i of ids) len = Math.max(len, p.fromBufferAttribute(pos, i).sub(W).dot(d));
-    // A hand that doesn't hang down the arm (a claw, a stump) is left alone.
-    if (d.y > -0.6 || Math.abs(n.x) < 0.4) continue;
-    // Palm side: the models come from a T-pose (palms down); with the arms baked hanging
-    // down the palms face the body. (The finger tips' own lean is a centimetre of noise.)
-    if (n.x * -side < 0) n.negate();
-    const l = new THREE.Vector3().crossVectors(d, n);
-    const a0 = CURL.knuckle * len;
-    const R = CURL.radius * len;
-    for (const i of ids) {
-      p.fromBufferAttribute(pos, i).sub(W);
-      const a = p.dot(d);
-      if (a <= a0) continue;
-      const along = a - a0;
-      const off = p.dot(n);
-      const lat = p.dot(l);
-      const theta = Math.min(along / R, CURL.bend);
-      const extra = Math.max(0, along - R * CURL.bend);
-      let x = (R - off) * Math.sin(theta);
-      let y = R - (R - off) * Math.cos(theta);
-      x += extra * Math.cos(theta);
-      y += extra * Math.sin(theta);
-      p.copy(W).addScaledVector(d, a0 + x).addScaledVector(n, y).addScaledVector(l, lat);
-      pos.setXYZ(i, p.x, p.y, p.z);
-      if (nor) {
-        // d turns towards n by theta: about the lateral axis.
-        q.setFromAxisAngle(l, theta);
-        p.fromBufferAttribute(nor, i).applyQuaternion(q);
-        nor.setXYZ(i, p.x, p.y, p.z);
-      }
-    }
+  for (let i = 0; i < hw.count; i++) {
+    const h = hw.getX(i);
+    if (Math.abs(h) < 0.5) continue;
+    const w = h < 0 ? wristL : wristR;
+    pos.setXYZ(i, w.x, w.y, w.z);
   }
   pos.needsUpdate = true;
-  if (nor) nor.needsUpdate = true;
 }
 
 /**

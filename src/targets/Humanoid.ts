@@ -256,7 +256,6 @@ export class Humanoid {
   private settled = false;
   private qa = new THREE.Quaternion();
   private qb = new THREE.Quaternion();
-  private qc = new THREE.Quaternion();
   private euler = new THREE.Euler();
   private info: DamageInfo = {
     hit: null as unknown as BulletHit, part: null as unknown as Part, zone: 'thorax', damage: 0, blocked: false, surface: 'robot', killed: false,
@@ -1107,13 +1106,10 @@ export class Humanoid {
     }
   }
 
-  /**
-   * The palm's normal in each forearm's own space ([left, right]), for bodies whose hand is
-   * one rigid piece with the forearm (the character models: no finger bones). With it, a grip
-   * that says where the palm should face (`userData.palm`: its +Y) turns the wrist that way;
-   * without, the forearm takes the shortest turn and the palm ends up wherever.
-   */
-  palm: [THREE.Vector3, THREE.Vector3] | null = null;
+  /** Where the hand grips, in the forearm's own space (m). */
+  get handPoint(): THREE.Vector3 {
+    return this.gripLocal;
+  }
 
   /** Shoulder to hand-grip point with the arm straight (m): how far a grip can be reached. */
   get armReach(): number {
@@ -1139,21 +1135,9 @@ export class Humanoid {
     upper.quaternion.setFromUnitVectors(this.ik.b.copy(fore.position).normalize(), upperDir);
     const foreDir = this.ik.a.copy(S).addScaledVector(dir, d).sub(elbow).normalize();
     this.qb.setFromUnitVectors(this.ik.b.copy(this.gripLocal).normalize(), foreDir);
-    // The wrist: roll the forearm about its own axis so the palm faces where the grip wants it.
-    if (this.palm && grip.userData.palm) {
-      this.tmpM.decompose(this.ik.b, this.qc, this.ik.c);
-      const want = this.ik.b.set(0, 1, 0).applyQuaternion(this.qc);
-      const now = this.ik.c.copy(this.palm[side > 0 ? 1 : 0]).applyQuaternion(this.qb);
-      want.addScaledVector(foreDir, -want.dot(foreDir));
-      now.addScaledVector(foreDir, -now.dot(foreDir));
-      if (want.lengthSq() > 1e-6 && now.lengthSq() > 1e-6) {
-        const angle = Math.atan2(foreDir.dot(this.ik.elbow.crossVectors(now, want)), now.dot(want));
-        this.qb.premultiply(this.qc.setFromAxisAngle(foreDir, angle));
-      }
-    }
     fore.quaternion.copy(this.qa.copy(upper.quaternion).invert()).multiply(this.qb);
   }
-  private ik = { target: new THREE.Vector3(), dir: new THREE.Vector3(), perp: new THREE.Vector3(), elbow: new THREE.Vector3(), a: new THREE.Vector3(), b: new THREE.Vector3(), c: new THREE.Vector3() };
+  private ik = { target: new THREE.Vector3(), dir: new THREE.Vector3(), perp: new THREE.Vector3(), elbow: new THREE.Vector3(), a: new THREE.Vector3(), b: new THREE.Vector3() };
 
   /** Kinematic hitboxes follow the animated pose; remember velocities for the ragdoll. */
   private updateHitboxes(dt: number): void {

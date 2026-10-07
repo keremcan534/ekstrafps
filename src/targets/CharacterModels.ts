@@ -28,6 +28,8 @@ const HEIGHTS: Record<string, number> = { robot_walker: 1.85, warden: 1.86 };
 const GIRTH: Record<string, Girth> = { warden: [1.3, 1.25], robot_walker: [1, 1.45, 1] };
 /** Machines: hard plates on hinges, every vertex on one part (no rubbery elbows and knees). */
 const RIGID = new Set(['robot_walker']);
+/** Factions that carry guns: their models' hands are folded away, the hands are gloves on the gun (Soldier). */
+const GUN_CARRIERS = new Set(['bd', 'bdboss', 'vanta', 'bravo', 'charlie', 'delta', 'salvage']);
 
 const bodies = new Map<string, ModelBody>();
 /** Far-away versions (public/chars/lod, same skeleton): their geometry only. */
@@ -37,14 +39,15 @@ const lods = new Map<string, ModelBody>();
 export async function loadCharacterModels(mobile: boolean): Promise<void> {
   const test = new URLSearchParams(location.search).get('charmodel');
   const byFile = new Map<string, Promise<ModelBody | null>>();
-  const load = (url: string, height?: number, girth?: Girth, rigid?: boolean) => {
-    let p = byFile.get(url);
+  const load = (url: string, height?: number, girth?: Girth, rigid?: boolean, hideHands = false) => {
+    const key = `${url}|${hideHands}`;
+    let p = byFile.get(key);
     if (!p) {
-      p = loadModelBody(url, height, girth, rigid).catch((e) => {
+      p = loadModelBody(url, height, girth, rigid, hideHands).catch((e) => {
         if (test) console.warn(`character model ${url} failed`, e);
         return null;
       });
-      byFile.set(url, p);
+      byFile.set(key, p);
     }
     return p;
   };
@@ -52,8 +55,8 @@ export async function loadCharacterModels(mobile: boolean): Promise<void> {
     Object.entries(FILES).map(async ([palette, file]) => {
       const url = test ?? `${mobile ? 'chars/m' : 'chars'}/${file}.glb`;
       const [body, lod] = await Promise.all([
-        load(url, HEIGHTS[file], GIRTH[file], RIGID.has(file)),
-        test ? null : load(`chars/lod/${file}.glb`, HEIGHTS[file], GIRTH[file], RIGID.has(file)),
+        load(url, HEIGHTS[file], GIRTH[file], RIGID.has(file), GUN_CARRIERS.has(palette)),
+        test ? null : load(`chars/lod/${file}.glb`, HEIGHTS[file], GIRTH[file], RIGID.has(file), GUN_CARRIERS.has(palette)),
       ]);
       if (body) bodies.set(palette, body);
       // Only if it weighs the same parts in the same order (a mismatched one would tear the mesh).
