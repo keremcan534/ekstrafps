@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import type { Physics } from '../core/Physics';
 import { feel } from '../config/Feel';
 import { Humanoid, defaultPose, type HumanoidSkin } from './Humanoid';
+import { withModel } from './CharacterModels';
 
 export interface RobotOptions {
   position: THREE.Vector3;
@@ -106,6 +107,8 @@ export class RobotTarget {
   private materials: { paint: THREE.MeshStandardMaterial; dark: THREE.MeshStandardMaterial; visor: THREE.MeshStandardMaterial };
   private pose = defaultPose();
   private merged: THREE.MeshStandardMaterial;
+  /** The model's materials on show (none on the procedural body): this robot's own copies. */
+  private looks: THREE.MeshStandardMaterial[] = [];
   private flash = 0;
   private critFlash = 0;
   private time = Math.random() * 10;
@@ -129,7 +132,9 @@ export class RobotTarget {
     };
     const { paint, dark, visor } = this.materials;
     this.merged = new THREE.MeshStandardMaterial({ vertexColors: true, metalness: 0.55, roughness: 0.45 });
-    this.body = new Humanoid(physics, scene, robotSkin(paint, dark, visor, opts.health ?? 200, this.merged), {
+    // The same Meshy walker as the rogue machines (public/chars); the procedural body if it's missing.
+    const skin = withModel('robot', robotSkin(paint, dark, visor, opts.health ?? 200, this.merged));
+    this.body = new Humanoid(physics, scene, skin, {
       onDamage: (info) => {
         this.flash = Math.min(1, this.flash + 0.75);
         if (info.zone === 'head') this.critFlash = 1;
@@ -144,6 +149,10 @@ export class RobotTarget {
       onThud: (at, s) => this.events.onThud?.(at, s),
       onStagger: (at, s) => this.events.onStagger?.(at, s),
     }, this);
+    if (skin.body) {
+      this.looks = skin.body.materials.map((m) => (m as THREE.MeshStandardMaterial).clone());
+      this.body.setBodyLook(null, this.looks);
+    }
     this.base.copy(opts.position);
     this.currentPos.copy(opts.position);
     this.root.position.copy(opts.position);
@@ -192,7 +201,9 @@ export class RobotTarget {
     this.critFlash = Math.max(0, this.critFlash - dt * 6);
     const f = this.flash;
     this.merged.emissive.setRGB(f * 0.7, f * 0.66, f * 0.62);
+    for (const m of this.looks) m.color.setScalar(1 + f * 1.5);
     if (!this.alive) {
+      for (const m of this.looks) m.emissive.setScalar(0);
       this.body.update(dt, this.pose);
       this.respawnTimer -= dt;
       if (this.respawnTimer <= 0) this.respawn();
@@ -207,5 +218,9 @@ export class RobotTarget {
     this.visorColor.copy(VISOR_HURT).lerp(VISOR_OK, hp).lerp(WHITE, this.critFlash);
     this.materials.visor.emissive.copy(this.visorColor);
     this.materials.visor.emissiveIntensity = (2.2 + this.critFlash * 4) * flicker;
+    // The model has no visor of its own: it glows red as it's hurt (flickering near the end)
+    // and white on a headshot.
+    const glow = (1 - hp) * 0.16 * flicker;
+    for (const m of this.looks) m.emissive.copy(VISOR_HURT).multiplyScalar(glow).lerp(WHITE, this.critFlash * 0.35);
   }
 }

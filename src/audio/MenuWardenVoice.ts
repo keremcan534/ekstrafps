@@ -1,11 +1,11 @@
 import { feel } from '../config/Feel';
 
 /**
- * The Warden in the main menu, heard: his respirator breathing while he stands in the
- * forest (cut dead the moment he's gone, so the silence is what you notice), a low sting
- * when he's back, and now and then a line over the radio, subtitled. Its own small audio
- * graph (like MenuMusic), outside the game's mix; nothing plays until the page may play
- * sound (first click or key). Lines: scripts/voice/warden_menu_lines.txt (ElevenLabs,
+ * The Warden in the main menu, heard: now and then one breath through his respirator while
+ * he stands in the forest (cut dead the moment he's gone, so the silence is what you
+ * notice), a low sting when he's back, and now and then a line over the radio, subtitled.
+ * Its own small audio graph (like MenuMusic), outside the game's mix; nothing plays until
+ * the page may play sound (first click or key). Lines: scripts/voice/warden_menu_lines.txt (ElevenLabs,
  * the commander's voice), breathing and sting: scripts/gen-menu-sfx.mjs.
  */
 
@@ -37,6 +37,9 @@ const SPEAK = 0.4;
 const GAP = 40;
 /** Breathing level while he's there (aiming: a little closer). */
 const BREATH = { stand: 0.5, aim: 0.62 };
+/** One breath out of the take (s: in, then out), and the quiet between breaths (s). */
+const ONE_BREATH = { at: 3.1, length: 3.5 };
+const BREATH_GAP = [18, 40] as const;
 
 export class MenuWardenVoice {
   private ctx: AudioContext | null = null;
@@ -51,6 +54,7 @@ export class MenuWardenVoice {
   private sub: HTMLDivElement;
   private subTimer = 0;
   private greeted = false;
+  private breathTimer = 0;
 
   constructor(
     parent: HTMLElement,
@@ -88,14 +92,7 @@ export class MenuWardenVoice {
     this.breathGain.connect(lp).connect(this.out);
     this.loading = this.load();
     await this.loading;
-    const breath = this.buffers.get('breath');
-    if (breath) {
-      const src = ctx.createBufferSource();
-      src.buffer = breath;
-      src.loop = true;
-      src.connect(this.breathGain);
-      src.start(0, Math.random() * breath.duration);
-    }
+    this.nextBreath(4 + Math.random() * 6);
     this.level();
     this.presence(this.plate, true);
     if (this.active) this.welcome();
@@ -148,6 +145,33 @@ export class MenuWardenVoice {
     g.setValueAtTime(g.value, t);
     if (p === 'gone') g.setTargetAtTime(0, t, 0.012);
     else g.setTargetAtTime(BREATH[p], t, instant ? 0.4 : 0.08);
+  }
+
+  /** Breathing is rare: one breath, then a long quiet; none while he's gone or talking. */
+  private nextBreath(inSeconds = BREATH_GAP[0] + Math.random() * (BREATH_GAP[1] - BREATH_GAP[0])): void {
+    window.clearTimeout(this.breathTimer);
+    this.breathTimer = window.setTimeout(() => {
+      this.breathe();
+      this.nextBreath();
+    }, inSeconds * 1000);
+  }
+
+  private breathe(): void {
+    const ctx = this.ctx;
+    const buf = this.buffers.get('breath');
+    if (!ctx || !buf || ctx.state !== 'running' || !this.active || this.plate === 'gone') return;
+    if (ctx.currentTime < this.lastLine) return;
+    const t = ctx.currentTime + 0.05;
+    const { at, length } = ONE_BREATH;
+    const src = ctx.createBufferSource();
+    src.buffer = buf;
+    const env = ctx.createGain();
+    env.gain.setValueAtTime(0, t);
+    env.gain.linearRampToValueAtTime(1, t + 0.15);
+    env.gain.setValueAtTime(1, t + length - 0.4);
+    env.gain.linearRampToValueAtTime(0, t + length);
+    src.connect(env).connect(this.breathGain);
+    src.start(t, Math.min(at, buf.duration - length), length);
   }
 
   /** Back from the empty field: the low sting under the cut. */
