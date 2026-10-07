@@ -136,7 +136,7 @@ export class Lighting {
     // Dark, with a red haze in the air.
     this.sky.copy(this.skyBase).multiplyScalar(1 - 0.92 * k).lerp(Lighting.RED_FOG, k * 0.8);
     // Image-based ambient is most of the indoor fill: it has to go dark too.
-    this.scene.environmentIntensity = this.envBase * (1 - 0.9 * k);
+    this.scene.environmentIntensity = this.envBase * (1 - 0.9 * k) * (1 + 1.2 * this.map.openLight);
     if (this.fogBase) (this.scene.fog as THREE.Fog).color.copy(this.fogBase).multiplyScalar(1 - 0.92 * k).lerp(Lighting.RED_FOG, k * 0.85);
     this.updateReds(dt, k);
 

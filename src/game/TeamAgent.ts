@@ -56,7 +56,7 @@ export type Order =
 
 const NAMES = [
   'Volkov', 'Reyes', 'Kato', 'Brandt', 'Okafor', 'Silva', 'Novak', 'Haas', 'Ivanova', 'Mercer', 'Duarte', 'Lindqvist', 'Moreau', 'Petrov', 'Adeyemi', 'Tanaka',
-  'Keller', 'Rossi', 'Vasquez', 'Holm', 'Sato', 'Becker', 'Nakamura', 'Ortega', 'Kowalski', 'Mensah', 'Dahl', 'Ferreira', 'Yilmaz', 'Quinn', 'Varga', 'Sokolov',
+  'Keller', 'Rossi', 'Vasquez', 'Holm', 'Sato', 'Becker', 'Nakamura', 'Ortega', 'Kowalski', 'Mensah', 'Dahl', 'Ferreira', 'Hayes', 'Quinn', 'Varga', 'Sokolov',
 ];
 const ROLES: Role[] = ['assault', 'rifleman', 'marksman', 'medic'];
 const usedNames = new Set<string>();

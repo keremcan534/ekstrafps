@@ -6,6 +6,7 @@ import { AMMO_DEFAULTS, ammoTable } from '../weapons/AmmoData';
 import { viewProfile } from '../weapons/ViewProfile';
 import { playerConfig, playerConfigDefaults } from '../player/PlayerConfig';
 import { feel, feelDefaults } from '../config/Feel';
+import { motionTuning, motionTuningDefaults } from '../weapons/motion/MotionTuning';
 import { aiMonitor } from './AIMonitor';
 
 export interface TuningHooks {
@@ -59,6 +60,7 @@ export class TuningPanel {
       saveAmmo: () => this.save('ammo', ammoTable),
       savePlayer: () => this.save('player', playerConfig),
       saveFeel: () => this.save('feel', feel),
+      saveMotion: () => this.save('weaponMotion', motionTuning),
       copyWeapon: () => this.copy(hooks.getWeapon()),
       resetWeapon: () => {
         const w = hooks.getWeapon();
@@ -83,17 +85,23 @@ export class TuningPanel {
         hooks.onWeaponTuned();
         refresh();
       },
+      resetMotion: () => {
+        deepAssign(motionTuning, structuredClone(motionTuningDefaults));
+        refresh();
+      },
       refill: () => hooks.refillAmmo(),
     };
     actions.add(a, 'saveWeapon').name('💾 Save weapon to source');
     actions.add(a, 'saveAmmo').name('💾 Save ammo to source');
     actions.add(a, 'savePlayer').name('💾 Save player to source');
     actions.add(a, 'saveFeel').name('💾 Save feel to source');
+    actions.add(a, 'saveMotion').name('💾 Save weapon motion to source');
     actions.add(a, 'copyWeapon').name('Copy weapon JSON');
     actions.add(a, 'resetWeapon').name('Reset weapon');
     actions.add(a, 'resetAmmo').name('Reset ammo');
     actions.add(a, 'resetPlayer').name('Reset player');
     actions.add(a, 'resetFeel').name('Reset feel');
+    actions.add(a, 'resetMotion').name('Reset weapon motion');
     actions.add(a, 'refill').name('Refill ammo');
     actions.add(this.status, 'message').name('Status').disable().listen();
 
@@ -190,6 +198,8 @@ export class TuningPanel {
     c.add(playerConfig, 'mouseSensitivity', 0.0003, 0.01, 0.0001);
     c.add(playerConfig, 'touchSensitivity', 0.001, 0.02, 0.0001);
     c.add(playerConfig, 'touchAimAssist', 0, 1, 0.05).name('Touch aim assist');
+
+    this.addMotionFolder();
 
     const q = this.gui.addFolder('Quality').close();
     q.add(hooks.quality, 'pixelRatio', 0.5, 2, 0.05).onFinishChange(() => hooks.setQuality(hooks.quality.pixelRatio, hooks.quality.shadows));
@@ -302,6 +312,109 @@ export class TuningPanel {
     af.add(am, 'pellets', 1, 20, 1);
     af.add(am, 'pelletSpread', 0, 10, 0.1).name('Pellet spread (deg)');
     af.add(am, 'impactBoost', 0, 10, 0.1).name('Physics impact boost');
+  }
+
+  /**
+   * First-person weapon motion (src/config/weaponMotion.json): one folder per layer, read
+   * live every frame. Most values multiply what the weapon's handling already gives.
+   */
+  private addMotionFolder(): void {
+    const M = motionTuning;
+    const root = this.gui.addFolder('Weapon motion (feel)').close();
+    const f = (name: string) => root.addFolder(name).close();
+
+    const ci = f('Camera inertia');
+    ci.add(M.cameraInertia, 'rotationLag', 0, 3, 0.05).name('Rotation lag ×');
+    ci.add(M.cameraInertia, 'positionLag', 0, 0.2, 0.005).name('Position lag (m/rad)');
+    ci.add(M.cameraInertia, 'springStrength', 0.3, 2.5, 0.05).name('Spring strength ×');
+    ci.add(M.cameraInertia, 'springDamping', 0.3, 2.5, 0.05).name('Spring damping ×');
+    ci.add(M.cameraInertia, 'overshootStrength', 0, 2, 0.05).name('Overshoot (momentum)');
+    ci.add(M.cameraInertia, 'rollFromYaw', 0, 2, 0.05).name('Roll from yaw');
+    ci.add(M.cameraInertia, 'maxRotationOffset', 0.5, 15, 0.5).name('Max rotation (°)');
+    ci.add(M.cameraInertia, 'maxPositionOffset', 0, 0.04, 0.001).name('Max position (m)');
+
+    const ac = f('Acceleration motion');
+    ac.add(M.acceleration, 'strength', 0, 3, 0.05).name('Strength ×');
+    ac.add(M.acceleration, 'lateral', 0, 0.008, 0.0001).name('Strafe lag (m per m/s)');
+    ac.add(M.acceleration, 'forward', 0, 0.008, 0.0001).name('Fwd/back lag (m per m/s)');
+    ac.add(M.acceleration, 'vertical', 0, 0.008, 0.0001).name('Vertical lag (m per m/s)');
+    ac.add(M.acceleration, 'tilt', 0, 1.5, 0.01).name('Tilt (° per m/s)');
+    ac.add(M.acceleration, 'strafeRoll', 0, 8, 0.1).name('Strafe roll (°)');
+    ac.add(M.acceleration, 'backwardPitch', 0, 4, 0.1).name('Backward pitch (°)');
+    ac.add(M.acceleration, 'springFrequency', 0.3, 2.5, 0.05).name('Spring frequency ×');
+    ac.add(M.acceleration, 'damping', 0.1, 1.5, 0.01).name('Damping ratio');
+    ac.add(M.acceleration, 'maxPositionOffset', 0, 0.08, 0.001).name('Max position (m)');
+
+    const wk = f('Walking motion');
+    wk.add(M.walking, 'amplitude', 0, 3, 0.05).name('Amplitude ×');
+    wk.add(M.walking, 'vertical', 0, 0.02, 0.0005).name('Body step (m)');
+    wk.add(M.walking, 'horizontal', 0, 0.02, 0.0005).name('Shoulder sway (m)');
+    wk.add(M.walking, 'roll', 0, 5, 0.05).name('Roll (°)');
+    wk.add(M.walking, 'pitch', 0, 3, 0.05).name('Pitch (°)');
+    wk.add(M.walking, 'yaw', 0, 3, 0.05).name('Yaw (°)');
+    wk.add(M.walking, 'stepImpulse', 0, 4, 0.05).name('Footfall impulse ×');
+    wk.add(M.walking, 'handCorrection', 0, 1.5, 0.05).name('Hand correction (°)');
+    wk.add(M.walking, 'variation', 0, 0.6, 0.01).name('Step variation');
+
+    const sp = f('Sprint motion');
+    sp.add(M.sprint, 'amplitude', 0, 4, 0.05).name('Amplitude ×');
+    sp.add(M.sprint, 'stepImpulse', 0, 6, 0.05).name('Footfall impulse ×');
+    sp.add(M.sprint, 'enterSpeed', 2, 25, 0.5).name('Pose spring (rad/s)');
+    sp.add(M.sprint, 'enterDamping', 0.2, 1.5, 0.01).name('Pose damping ratio');
+    sp.add(M.sprint, 'momentum', 0, 3, 0.05).name('Momentum ×');
+
+    const ad = f('ADS motion');
+    ad.add(M.ads, 'arcDip', 0, 0.04, 0.001).name('Path dip (m)');
+    ad.add(M.ads, 'arcRoll', 0, 8, 0.1).name('Path cant (°)');
+    ad.add(M.ads, 'leadPitch', 0, 1, 0.01).name('Muzzle trail (° per 1/s)');
+    ad.add(M.ads, 'push', 0, 0.01, 0.0005).name('Push (m per 1/s)');
+    ad.add(M.ads, 'handImpulse', 0, 3, 0.05).name('Hand start impulse ×');
+    ad.add(M.ads, 'settleImpulse', 0, 3, 0.05).name('Shoulder settle ×');
+
+    const br = f('Breathing');
+    br.add(M.breathing, 'amplitude', 0, 3, 0.05).name('Amplitude ×');
+    br.add(M.breathing, 'rate', 0.05, 0.6, 0.01).name('Rate (Hz)');
+    br.add(M.breathing, 'variation', 0, 0.6, 0.01).name('Rate/depth variation');
+    br.add(M.breathing, 'pitch', 0, 0.5, 0.01).name('Pitch (°)');
+    br.add(M.breathing, 'lift', 0, 0.003, 0.0001).name('Lift (m)');
+
+    const id = f('Idle noise');
+    id.add(M.idleNoise, 'amplitude', 0, 3, 0.05).name('Amplitude ×');
+    id.add(M.idleNoise, 'tremor', 0, 0.2, 0.005).name('Tremor (°)');
+    id.add(M.idleNoise, 'drift', 0, 0.6, 0.01).name('Drift (°)');
+    id.add(M.idleNoise, 'roll', 0, 0.6, 0.01).name('Roll (°)');
+    id.add(M.idleNoise, 'position', 0, 0.002, 0.0001).name('Position (m)');
+    id.add(M.idleNoise, 'correction', 0, 0.4, 0.01).name('Hand corrections (°)');
+
+    const rc = f('Recoil');
+    rc.add(M.recoil, 'instability', 0, 1.5, 0.05).name('Sustained-fire instability');
+    rc.add(M.recoil, 'heatDecay', 0.2, 8, 0.1).name('Instability decay (/s)');
+    rc.add(M.recoil, 'drift', 0, 1, 0.01).name('Arms recovery share');
+    rc.add(M.recoil, 'handResponse', 0, 3, 0.05).name('Hand response ×');
+
+    const ld = f('Landing / crouch');
+    ld.add(M.landing, 'strength', 0, 3, 0.05).name('Landing strength ×');
+    ld.add(M.landing, 'dip', 0, 0.1, 0.001).name('Dip (m/s per m/s fall)');
+    ld.add(M.landing, 'pitch', 0, 8, 0.1).name('Pitch ×');
+    ld.add(M.landing, 'crouchInertia', 0, 0.006, 0.0001).name('Crouch inertia (m per m/s)');
+
+    const sw = f('Weapon switching');
+    sw.add(M.switching, 'overshoot', 0, 0.3, 0.005).name('Draw overshoot');
+    sw.add(M.switching, 'settleImpulse', 0, 3, 0.05).name('Grab settle ×');
+    sw.add(M.switching, 'drop', 0.05, 0.5, 0.01).name('Holster drop (m)');
+    sw.add(M.switching, 'sweep', 0, 2, 0.05).name('Carry sweep ×');
+
+    const rl = f('Reload');
+    rl.add(M.reload, 'handReaction', 0, 3, 0.05).name('Hand reaction ×');
+    rl.add(M.reload, 'microMotion', 0, 3, 0.05).name('Arms micro-motion ×');
+
+    const cl = f('Weapon classes');
+    for (const [name, c] of Object.entries(M.classes)) {
+      const k = cl.addFolder(name).close();
+      k.add(c, 'mass', 0.2, 3, 0.05).name('Mass ×');
+      k.add(c, 'response', 0.3, 2, 0.05).name('Response ×');
+      k.add(c, 'bob', 0, 2, 0.05).name('Bob ×');
+    }
   }
 
   private async save(file: string, data: unknown): Promise<void> {

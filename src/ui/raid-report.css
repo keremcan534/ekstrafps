@@ -1,0 +1,143 @@
+/* ==========================================================================
+   After-action report (RaidReport.ts): the end of a raid, in the dossier's world.
+   Near-black desk, aged ink, one red, hairlines and dashed leaders; rows arrive
+   one after another (--i), totals count up, this raid's skill points fill in red.
+   ========================================================================== */
+
+.ar {
+  --ink: #e4e0d4; --dim: rgba(222, 216, 202, 0.55); --rule: rgba(222, 216, 202, 0.14); --red: #c8321f; --red2: #e0583a; --ok: #8fd0a4;
+  position: absolute; inset: 0; z-index: 1; display: flex; flex-direction: column; overflow-y: auto; overscroll-behavior: contain;
+  padding: 5vh max(5vw, 24px) 4vh; color: var(--ink); text-align: left; pointer-events: auto;
+  font-family: var(--g-font, 'Rajdhani', sans-serif);
+  background:
+    radial-gradient(ellipse 70% 60% at 50% 38%, rgba(60, 58, 54, 0.22), transparent 70%),
+    radial-gradient(ellipse 120% 100% at 50% 50%, transparent 55%, rgba(0, 0, 0, 0.7)),
+    #0b0c0e;
+}
+/* Dust and scratches over the report (the same sheet as the dossier). */
+.ar-dirt { position: fixed; inset: 0; pointer-events: none; z-index: 3; opacity: 0.5;
+  background: var(--dirt-light) center / 100% 100% no-repeat, var(--dirt) center / 100% 100% no-repeat; }
+
+/* ---------- head ---------- */
+.ar-head { position: relative; max-width: 1180px; width: 100%; margin: 0 auto 3.4vh; padding-bottom: 2.4vh; border-bottom: 1px solid var(--rule); }
+.ar-brand { font: 700 11px var(--g-mono, monospace); letter-spacing: 0.32em; color: var(--dim); }
+.ar-title { margin-top: 8px; font: 700 clamp(46px, 7vw, 104px)/0.86 var(--g-font); letter-spacing: 0.04em;
+  -webkit-mask-image: var(--wear); mask-image: var(--wear); -webkit-mask-size: 420px auto; mask-size: 420px auto; }
+.ar-title.win { color: var(--ink); }
+.ar-title.lose { color: var(--red); }
+.ar-sub { margin-top: 10px; font: 700 12px var(--g-mono, monospace); letter-spacing: 0.24em; color: var(--dim); text-transform: uppercase; }
+.ar-facts { display: flex; flex-wrap: wrap; gap: 6px 22px; margin-top: 12px; font: 700 12px var(--g-mono, monospace); letter-spacing: 0.18em; color: var(--ink); }
+.ar-facts span::before { content: '■'; margin-right: 8px; font-size: 7px; vertical-align: 2px; color: var(--red); }
+/* The verdict, stamped: tilted, double ruled, slams in. */
+.ar-stamp { position: absolute; right: 0; bottom: 2.6vh; padding: 8px 16px; transform: rotate(-5deg);
+  border: 2px solid currentColor; outline: 1px solid currentColor; outline-offset: 3px;
+  font: 700 clamp(16px, 2vw, 24px) var(--g-mono, monospace); letter-spacing: 0.22em;
+  -webkit-mask-image: var(--wear); mask-image: var(--wear); -webkit-mask-size: 300px auto; mask-size: 300px auto; opacity: 0; }
+.ar-stamp.ok { color: var(--ok); }
+.ar-stamp.bad { color: var(--red2); }
+.ar-stamp.mid { color: var(--ink); }
+.ar.go .ar-stamp { animation: ar-stamp 0.42s 0.35s cubic-bezier(.2, 1.6, .4, 1) forwards; }
+@keyframes ar-stamp { from { opacity: 0; transform: rotate(-12deg) scale(1.9); } to { opacity: 0.95; transform: rotate(-5deg) scale(1); } }
+
+/* ---------- body ---------- */
+.ar-body { display: grid; grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr); gap: 4vw; max-width: 1180px; width: 100%; margin: 0 auto; }
+.ar-col { display: flex; flex-direction: column; min-width: 0; }
+.ar-label { margin: 0 0 10px; font: 700 11px var(--g-mono, monospace); letter-spacing: 0.32em; color: var(--red2); }
+.ar-label:not(:first-child) { margin-top: 26px; }
+.ar-note { font: 500 13px/1.5 var(--g-font); color: var(--dim); }
+
+/* Reveal: everything with --i fades and slides in after the rows before it. */
+.ar [style*='--i'] { opacity: 0; transform: translateY(6px); }
+.ar.go [style*='--i'] { animation: ar-in 0.38s calc(var(--i) * 70ms + 200ms) ease-out forwards; }
+@keyframes ar-in { to { opacity: 1; transform: none; } }
+
+/* Standings */
+.ar-stand { border-top: 1px solid var(--rule); }
+.ar-team { display: grid; grid-template-columns: 22px 4px 1fr auto 70px; align-items: center; gap: 12px; padding: 8px 4px; border-bottom: 1px solid var(--rule); }
+.ar-team em { font: 700 12px var(--g-mono, monospace); font-style: normal; color: var(--dim); }
+.ar-team i { height: 18px; }
+.ar-team b { font: 700 16px var(--g-font); letter-spacing: 0.14em; }
+.ar-team u { text-decoration: none; font: 700 10px var(--g-mono, monospace); letter-spacing: 0.16em; }
+.ar-team u.ok { color: var(--ok); }
+.ar-team u.bad { color: var(--red2); }
+.ar-team span { text-align: right; font: 700 18px var(--g-font); font-variant-numeric: tabular-nums; }
+.ar-team.you { background: linear-gradient(90deg, rgba(200, 50, 31, 0.16), transparent 70%); }
+.ar-team.you b::after { content: 'YOU'; margin-left: 10px; font: 700 9px var(--g-mono, monospace); letter-spacing: 0.2em; color: var(--red2); }
+
+/* Ledger: label, dashed leader, amount */
+.ar-ledger { display: grid; gap: 2px; }
+.ar-line { display: grid; grid-template-columns: auto 1fr auto; align-items: baseline; gap: 10px; padding: 3px 0; font: 600 15px var(--g-font); letter-spacing: 0.03em; color: rgba(228, 224, 212, 0.86); }
+.ar-line i { border-bottom: 1px dashed rgba(222, 216, 202, 0.22); transform: translateY(-4px); }
+.ar-line b { font: 700 15px var(--g-mono, monospace); font-variant-numeric: tabular-nums; color: var(--ink); }
+.ar-line.neg b, .ar-line.neg span { color: var(--red2); }
+.ar-line.mult { margin-top: 6px; padding-top: 8px; border-top: 1px solid var(--rule); font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; }
+.ar-line.mult.ok span, .ar-line.mult.ok b { color: var(--ok); }
+.ar-line.mult.bad span, .ar-line.mult.bad b { color: var(--red2); }
+
+/* Totals: the two big numbers */
+.ar-totals { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; margin-top: 18px; padding: 14px 0 10px; border-top: 2px solid var(--ink); }
+.ar-totals div { display: grid; grid-template-columns: auto 1fr; align-items: baseline; gap: 2px 10px; }
+.ar-totals b { font: 700 clamp(40px, 5vw, 64px)/0.9 var(--g-font); font-variant-numeric: tabular-nums; color: var(--ink);
+  -webkit-mask-image: var(--wear); mask-image: var(--wear); -webkit-mask-size: 300px auto; mask-size: 300px auto; }
+.ar-totals span { font: 700 13px var(--g-mono, monospace); letter-spacing: 0.24em; color: var(--red2); }
+.ar-totals small { grid-column: 1 / -1; font: 600 11px var(--g-mono, monospace); letter-spacing: 0.08em; color: var(--dim); }
+
+/* Career level */
+.ar-level { display: grid; gap: 8px; margin-top: 8px; }
+.ar-level div { display: flex; align-items: baseline; gap: 12px; }
+.ar-level b { font: 700 14px var(--g-mono, monospace); letter-spacing: 0.24em; }
+.ar-level em { padding: 2px 8px; font: 700 10px var(--g-mono, monospace); font-style: normal; letter-spacing: 0.22em; color: #fff; background: var(--red); }
+.ar.go .ar-level.up em { animation: ar-pulse 1.4s 1.2s ease-in-out 3; }
+@keyframes ar-pulse { 50% { box-shadow: 0 0 18px rgba(200, 50, 31, 0.8); } }
+.ar-level span { margin-left: auto; font: 700 11px var(--g-mono, monospace); letter-spacing: 0.14em; color: var(--dim); }
+.ar-level i { position: relative; height: 4px; background: rgba(222, 216, 202, 0.12); overflow: hidden; }
+.ar-level i::after { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: var(--from); background: var(--red); box-shadow: 0 0 10px rgba(200, 50, 31, 0.6);
+  transition: width 1.1s 0.9s cubic-bezier(.3, .7, .2, 1); }
+.ar.go .ar-level i::after { width: var(--to); }
+.ar-level small { font: 600 11px var(--g-mono, monospace); letter-spacing: 0.08em; color: var(--dim); }
+
+/* Skills: icon, name + level, this raid's points, the ten-segment track */
+.ar-skill { display: grid; grid-template-columns: 36px 1fr auto; grid-template-areas: 'icon name gain' 'icon pips pips' 'new new new';
+  gap: 6px 14px; align-items: center; padding: 12px 0; border-bottom: 1px solid var(--rule); }
+.ar-label + .ar-skill { border-top: 1px solid var(--rule); }
+.ar-sk-icon { grid-area: icon; width: 36px; height: 36px; display: grid; place-items: center; border: 1px solid var(--rule); color: var(--dim); }
+.ar-sk-icon svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linejoin: round; stroke-linecap: round; }
+.ar-skill.grew .ar-sk-icon { color: var(--ink); }
+.ar-skill.up .ar-sk-icon { color: var(--red2); border-color: rgba(200, 50, 31, 0.6); }
+.ar-sk-name { grid-area: name; display: flex; align-items: baseline; gap: 12px; }
+.ar-sk-name b { font: 700 15px var(--g-font); letter-spacing: 0.16em; }
+.ar-sk-name em { font: 700 10px var(--g-mono, monospace); font-style: normal; letter-spacing: 0.16em; color: var(--dim); }
+.ar-skill.up .ar-sk-name em { color: var(--red2); }
+.ar-sk-gain { grid-area: gain; font: 700 16px var(--g-mono, monospace); color: var(--dim); }
+.ar-skill.grew .ar-sk-gain { color: var(--ink); }
+.ar-skill .sk-pips { grid-area: pips; }
+/* This raid's gain grows in after the row arrives. */
+.ar-skill .sk-pips i::after { width: 0; transition: width 0.7s cubic-bezier(.3, .7, .2, 1); transition-delay: calc(var(--i, 0) * 70ms + 650ms); }
+.ar.go .ar-skill .sk-pips i::after { width: calc(var(--b) - var(--a)); }
+.ar-sk-new { grid-area: new; display: flex; gap: 10px; align-items: baseline; padding: 6px 10px; margin-top: 4px;
+  background: linear-gradient(90deg, rgba(200, 50, 31, 0.2), transparent); border-left: 2px solid var(--red);
+  font: 600 13px var(--g-font); letter-spacing: 0.03em; color: var(--ink); }
+.ar-sk-new em { font: 700 10px var(--g-mono, monospace); font-style: normal; letter-spacing: 0.2em; color: var(--red2); }
+
+/* ---------- foot ---------- */
+.ar-foot { display: flex; gap: 12px; max-width: 1180px; width: 100%; margin: 4vh auto 0; padding-top: 2.4vh; border-top: 1px solid var(--rule); }
+.ar-btn { height: 50px; padding: 0 30px; border: 1px solid var(--rule); border-radius: 0; background: transparent; cursor: pointer;
+  font: 700 16px var(--g-font); letter-spacing: 0.22em; color: rgba(228, 224, 212, 0.8); transition: background 120ms, color 120ms, border-color 120ms; }
+.ar-btn:hover { color: var(--ink); border-color: rgba(222, 216, 202, 0.4); background: rgba(222, 216, 202, 0.06); }
+.ar-btn.primary { border-color: var(--red); background: linear-gradient(90deg, #b32a19, #8f2213); color: #fff; }
+.ar-btn.primary:hover { background: linear-gradient(90deg, #c8321f, #a1271a); }
+
+/* Narrow screens and phones: one column. */
+@media (max-width: 860px) {
+  .ar-body { grid-template-columns: 1fr; }
+  .ar-stamp { position: static; display: inline-block; margin-top: 16px; }
+}
+.is-touch .ar { padding: 20px max(28px, env(safe-area-inset-right)) 24px max(28px, env(safe-area-inset-left)); }
+.is-touch .ar-line, .is-touch .ar-sk-new { font-size: 17px; }
+.is-touch .ar-btn { height: 60px; font-size: 19px; }
+
+@media (prefers-reduced-motion: reduce) {
+  .ar [style*='--i'] { opacity: 1; transform: none; }
+  .ar.go [style*='--i'], .ar.go .ar-stamp { animation: none; opacity: 0.95; }
+  .ar-level i::after, .ar-skill .sk-pips i::after { transition: none; }
+}

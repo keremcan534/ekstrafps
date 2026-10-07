@@ -1,5 +1,5 @@
 import type { HumanoidSkin } from './Humanoid';
-import { loadModelBody, skinFromModel, type ModelBody } from './ModelBody';
+import { loadModelBody, skinFromModel, type Girth, type ModelBody } from './ModelBody';
 
 /**
  * Which faction wears which model (public/chars, packed by scripts/pack-character.mjs:
@@ -17,13 +17,17 @@ const FILES: Record<string, string> = {
   choir: 'choir',
   staff: 'staff',
   robot: 'robot_walker',
-  robotBrute: 'robot_loader',
 };
 
 /** Standing height per file when it isn't a person's 1.78 m. */
-const HEIGHTS: Record<string, number> = { robot_walker: 1.85, robot_loader: 1.95, warden: 1.86 };
-/** Width × depth for a model that came out too slight (the Warden's greatcoat read as a stick figure). */
-const GIRTH: Record<string, [number, number]> = { warden: [1.3, 1.25] };
+const HEIGHTS: Record<string, number> = { robot_walker: 1.85, warden: 1.86 };
+/**
+ * Width × depth (× limb depth) for a model that came out too slight: the Warden's greatcoat
+ * read as a stick figure; the box walker came out of Meshy 24 cm deep through the chest.
+ */
+const GIRTH: Record<string, Girth> = { warden: [1.3, 1.25], robot_walker: [1, 1.45, 1] };
+/** Machines: hard plates on hinges, every vertex on one part (no rubbery elbows and knees). */
+const RIGID = new Set(['robot_walker']);
 
 const bodies = new Map<string, ModelBody>();
 
@@ -31,10 +35,10 @@ const bodies = new Map<string, ModelBody>();
 export async function loadCharacterModels(mobile: boolean): Promise<void> {
   const test = new URLSearchParams(location.search).get('charmodel');
   const byFile = new Map<string, Promise<ModelBody | null>>();
-  const load = (url: string, height?: number, girth?: [number, number]) => {
+  const load = (url: string, height?: number, girth?: Girth, rigid?: boolean) => {
     let p = byFile.get(url);
     if (!p) {
-      p = loadModelBody(url, height, girth).catch((e) => {
+      p = loadModelBody(url, height, girth, rigid).catch((e) => {
         if (test) console.warn(`character model ${url} failed`, e);
         return null;
       });
@@ -45,7 +49,7 @@ export async function loadCharacterModels(mobile: boolean): Promise<void> {
   await Promise.all(
     Object.entries(FILES).map(async ([palette, file]) => {
       const url = test ?? `${mobile ? 'chars/m' : 'chars'}/${file}.glb`;
-      const body = await load(url, HEIGHTS[file], GIRTH[file]);
+      const body = await load(url, HEIGHTS[file], GIRTH[file], RIGID.has(file));
       if (body) bodies.set(palette, body);
     }),
   );

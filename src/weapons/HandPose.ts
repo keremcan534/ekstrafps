@@ -4,8 +4,10 @@ import { poseQuaternion } from './ViewProfile';
 type V3 = [number, number, number];
 
 /**
- * How the first-person hands hold a weapon: the data. A weapon's view profile carries its
- * `hands` (WeaponHands); the arms (FirstPersonHands.ts) put the glove's skeleton on it.
+ * How the first-person hands hold a weapon, SCHEMA 1 (the weapons not yet moved to schema 2,
+ * hands/HandProfile.ts: wrist targets + library poses). It still loads: resolveHands turns it
+ * into the same runtime data. A weapon's view profile (or src/config/gunhands.json) carries its
+ * `hands`; the arms (FirstPersonHands.ts) put the glove's skeleton on it.
  *
  *   rightGrip / leftGrip   RightHandGrip / LeftHandGrip: where each hand holds the weapon.
  *                          `position` (model space, like the profile's other points) is the
@@ -53,6 +55,12 @@ const BASE = new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().ma
 /** A grip's rotation (deg) as the hand's orientation in weapon space. */
 export function gripQuaternion(rotation: readonly number[], out: THREE.Quaternion): THREE.Quaternion {
   return poseQuaternion(rotation, out).multiply(BASE);
+}
+
+/** A hand orientation (weapon space) as a grip's rotation (deg): gripQuaternion's inverse. */
+export function rotationOfGrip(q: THREE.Quaternion): V3 {
+  const e = new THREE.Euler().setFromQuaternion(q.clone().multiply(BASE.clone().invert()), 'YXZ');
+  return [e.x, e.y, e.z].map((v) => +THREE.MathUtils.radToDeg(v).toFixed(2)) as V3;
 }
 
 /** The rotation (deg) that points the knuckles along `forward` and the palm along `palm` (weapon space). */

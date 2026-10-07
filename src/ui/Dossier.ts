@@ -136,7 +136,6 @@ export class Dossier {
     this.root.style.setProperty('--grime-desk', `url(${grime.desk})`);
     this.root.style.setProperty('--grime-paper', `url(${grime.paper})`);
     this.root.style.setProperty('--grime-photo', `url(${grime.photo})`);
-    this.root.style.setProperty('--grime-screen', `url(${grime.screen})`);
     this.q<HTMLElement>('.dos-paper').style.clipPath = raggedEdge(26, 3.5);
     this.buildList();
     this.buildStrip();

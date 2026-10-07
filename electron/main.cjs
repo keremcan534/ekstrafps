@@ -13,8 +13,16 @@ protocol.registerSchemesAsPrivileged([
 const DIST = path.join(__dirname, '..', 'dist');
 
 function createWindow() {
+  // Dev: --url=<address> loads that instead, in a window that is never shown (trailer
+  // capture against the dev server: no focus stealing, no taskbar entry, still renders).
+  const devUrl = process.argv.find((a) => a.startsWith('--url='));
   const win = new BrowserWindow({
-    fullscreen: true,
+    fullscreen: !devUrl,
+    width: 1280,
+    height: 720,
+    skipTaskbar: !!devUrl,
+    focusable: !devUrl,
+    paintWhenInitiallyHidden: true,
     autoHideMenuBar: true,
     backgroundColor: '#05070a',
     title: 'SITE-9',
@@ -26,8 +34,8 @@ function createWindow() {
     },
   });
   win.removeMenu();
-  win.once('ready-to-show', () => win.show());
-  win.loadURL('app://game/index.html?mouse');
+  if (!devUrl) win.once('ready-to-show', () => win.show());
+  win.loadURL(devUrl ? devUrl.slice(6) : 'app://game/index.html?mouse');
   // F11: fullscreen on/off. The game handles Esc (pause menu).
   win.webContents.on('before-input-event', (event, input) => {
     if (input.type === 'keyDown' && input.key === 'F11') {

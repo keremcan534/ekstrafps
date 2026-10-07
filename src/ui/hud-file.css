@@ -1,0 +1,142 @@
+/* ==========================================================================
+   SITE-9 — in-game HUD, in the main menu's world
+   No glass: flat, square, aged off-white on the scene, one red. Readable over the
+   moving 3D view through dark shadows and soft gradient scrims, never panels. Big
+   numerals worn like the menu title (--wear, DossierGrime.wearMask()).
+   Loaded after glass.css and menu-file.css.
+   ========================================================================== */
+
+.ui-layer, .sv-over, .match-end, .death-screen, .downed {
+  --g-accent: #c8321f;
+  --g-accent-2: #e0583a;
+  --g-fg: #e4e0d4;
+  --g-dim: rgba(222, 216, 202, 0.58);
+  --h-ink: #e4e0d4;
+  --h-rule: rgba(222, 216, 202, 0.16);
+  --h-scrim: rgba(5, 6, 8, 0.62);
+  --h-shadow: 0 1px 2px rgba(0, 0, 0, 0.9), 0 0 12px rgba(0, 0, 0, 0.55);
+}
+/* Shared: no blur, no radius, no rim. */
+.ui-layer :is(.ammo, .hp, .toast, .sv-points, .sv-round, .sv-prompt, .sb-chip, .kf-line, .sq-row, .squad-line, .revive-bar, .minimap) {
+  -webkit-backdrop-filter: none; backdrop-filter: none; border-radius: 0; box-shadow: none; border: 0;
+  color: var(--h-ink); text-shadow: var(--h-shadow);
+}
+/* The worn print on the big numbers. */
+.ui-layer :is(.ammo-count, .hp-text, .sv-round) {
+  -webkit-mask-image: var(--wear); mask-image: var(--wear); -webkit-mask-size: 300px auto; mask-size: 300px auto;
+}
+
+/* ---------- health + armor (bottom left) ---------- */
+.ui-layer .hp {
+  left: 28px; bottom: 24px; display: grid; grid-template-columns: auto 1fr; align-items: end; gap: 0 14px;
+  min-width: 250px; padding: 10px 26px 8px 4px;
+  background: linear-gradient(90deg, var(--h-scrim), rgba(5, 6, 8, 0.35) 70%, transparent);
+}
+.ui-layer .hp-text { grid-row: 1 / 3; min-width: 62px; font: 700 46px/0.9 var(--g-font); letter-spacing: 0.01em; color: var(--h-ink); }
+.ui-layer .hp-text::after { content: 'HEALTH'; display: block; margin-top: 4px; font: 700 9px var(--g-mono); letter-spacing: 0.3em; color: var(--g-dim); }
+.ui-layer .hp-bar { width: 100%; height: 3px; margin-bottom: 6px; border-radius: 0; background: var(--h-rule); box-shadow: none; overflow: hidden; }
+.ui-layer .hp-fill { background: var(--h-ink); box-shadow: 0 0 8px rgba(228, 224, 212, 0.35); border-radius: 0; }
+.ui-layer .hp.low .hp-text { color: #e8483a; }
+.ui-layer .hp.low .hp-fill { background: var(--g-accent); box-shadow: 0 0 10px rgba(200, 50, 31, 0.7); }
+.ui-layer .armor-bar { position: static; width: 100%; height: 2px; margin: 0 0 15px; border-radius: 0; background: var(--h-rule); }
+.ui-layer .armor-fill { background: #9fb2c2; box-shadow: none; border-radius: 0; }
+
+/* ---------- ammo (bottom right) ---------- */
+.ui-layer .ammo {
+  right: 28px; bottom: 24px; min-width: 230px; padding: 10px 4px 8px 30px; text-align: right;
+  background: linear-gradient(270deg, var(--h-scrim), rgba(5, 6, 8, 0.35) 70%, transparent);
+}
+.ui-layer .ammo-weapon { font: 700 13px var(--g-font); letter-spacing: 0.3em; text-transform: uppercase; color: var(--h-ink); opacity: 1; }
+.ui-layer .ammo-mode {
+  display: block; margin-top: 2px; padding: 0; border: 0; border-radius: 0; background: none;
+  font: 700 10px var(--g-mono); letter-spacing: 0.2em; text-transform: uppercase; color: #e0583a;
+}
+.ui-layer .ammo-row { margin-top: 2px; }
+.ui-layer .ammo-count { font: 700 58px/0.95 var(--g-font); letter-spacing: 0.01em; color: var(--h-ink); text-shadow: var(--h-shadow); }
+.ui-layer .ammo-count.low { color: #e8483a; }
+.ui-layer .ammo-mag { margin-left: 4px; font: 600 20px var(--g-font); color: var(--g-dim); opacity: 1; }
+.ui-layer .reload-bar { width: 100%; height: 2px; margin-top: 6px; border-radius: 0; background: var(--h-rule); }
+.ui-layer .reload-fill { background: var(--g-accent); box-shadow: 0 0 8px rgba(200, 50, 31, 0.8); }
+
+/* ---------- money, threat, squad (left) ---------- */
+.ui-layer .sv-points { left: 30px; bottom: 120px; padding: 0; background: none; font: 700 24px var(--g-font); letter-spacing: 0.04em; color: var(--h-ink); }
+.ui-layer .sv-points::first-letter { color: var(--g-accent); }
+.ui-layer .sv-round {
+  left: 26px; top: 18px; padding: 0 0 0 12px; background: none; border-left: 2px solid var(--g-accent);
+  font: 700 54px/0.9 var(--g-font); color: var(--g-accent); text-shadow: 0 0 18px rgba(200, 50, 31, 0.35), var(--h-shadow);
+}
+.ui-layer .sv-round::before { font: 700 9px var(--g-mono); letter-spacing: 0.34em; color: var(--g-dim); margin-bottom: 6px; text-shadow: none; }
+.ui-layer .sv-remain { left: 40px; top: 96px; font: 700 10px var(--g-mono); letter-spacing: 0.24em; color: var(--g-dim); text-shadow: var(--h-shadow); }
+.ui-layer .squad-panel { left: 28px; bottom: 170px; gap: 0; border-top: 1px solid var(--h-rule); }
+.ui-layer .sq-row {
+  position: relative; padding: 4px 14px 4px 10px; border-bottom: 1px solid var(--h-rule);
+  background: linear-gradient(90deg, rgba(5, 6, 8, 0.55), transparent);
+  font: 600 12px var(--g-font); letter-spacing: 0.06em;
+}
+.ui-layer .sq-row::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 2px; background: var(--h-ink); box-shadow: none; border-radius: 0; }
+.ui-layer .sq-row b { color: var(--h-ink); }
+.ui-layer .sq-row i { color: var(--g-dim); }
+.ui-layer .sq-row em { color: var(--h-ink); }
+.ui-layer .sq-row u { color: #e0583a; font: 700 9px var(--g-mono); letter-spacing: 0.16em; }
+.ui-layer .sq-row.dead { opacity: 0.4; }
+.ui-layer .sq-row.dead::before { background: var(--g-accent); }
+
+/* ---------- match chrome (top) ---------- */
+.ui-layer .scoreboard { top: 14px; gap: 2px; }
+.ui-layer .sb-chip {
+  position: relative; padding: 5px 14px 6px; background: rgba(5, 6, 8, 0.58); border-bottom: 2px solid #888;
+  font: 600 14px var(--g-font); letter-spacing: 0.06em; text-shadow: none;
+}
+.ui-layer .sb-chip b { font: 700 10px var(--g-mono); letter-spacing: 0.2em; }
+.ui-layer .sb-chip.lead { background: linear-gradient(0deg, rgba(200, 50, 31, 0.28), rgba(5, 6, 8, 0.58) 70%); }
+.ui-layer .sb-note { top: 52px; font: 700 11px var(--g-mono); letter-spacing: 0.26em; color: var(--h-ink); text-shadow: var(--h-shadow); }
+.ui-layer .squad-line { right: 28px; padding: 0; background: none; font: 700 11px var(--g-mono); letter-spacing: 0.16em; }
+.ui-layer .killfeed { gap: 2px; }
+.ui-layer .kf-line {
+  position: relative; padding: 4px 12px 4px 26px; background: linear-gradient(270deg, rgba(5, 6, 8, 0.62), transparent);
+  font: 600 13px var(--g-font); letter-spacing: 0.06em; text-shadow: none;
+}
+.ui-layer .kills { font: 700 24px var(--g-font); color: var(--h-ink); text-shadow: 0 0 14px rgba(200, 50, 31, 0.55), var(--h-shadow); }
+/* The minimap canvas paints its own disc: just a hairline ring and a shadow under it. */
+.ui-layer .minimap { padding: 0; overflow: hidden; border-radius: 50%; background: transparent; box-shadow: 0 0 0 1px var(--h-rule), 0 8px 26px rgba(0, 0, 0, 0.55); }
+
+/* ---------- prompts and notices (centre) ---------- */
+.ui-layer .toast {
+  bottom: 22%; max-width: min(80vw, 760px); padding: 8px 40px; white-space: normal; text-align: center;
+  background: linear-gradient(90deg, transparent, var(--h-scrim) 22%, var(--h-scrim) 78%, transparent);
+  font: 600 16px var(--g-font); letter-spacing: 0.1em;
+}
+.ui-layer .sv-prompt {
+  bottom: 30%; display: flex; align-items: center; gap: 8px; padding: 8px 36px;
+  background: linear-gradient(90deg, transparent, var(--h-scrim) 22%, var(--h-scrim) 78%, transparent);
+  font: 600 17px var(--g-font); letter-spacing: 0.08em;
+}
+.ui-layer .sv-key { margin-right: 4px; padding: 1px 7px; border: 1px solid rgba(228, 224, 212, 0.7); border-radius: 0; font: 700 12px var(--g-mono); color: var(--h-ink); text-shadow: none; }
+.ui-layer .sv-cost { color: var(--h-ink); }
+.ui-layer .sv-cost.no { color: #e8483a; }
+.ui-layer .revive-bar { padding: 6px 12px 12px; background: rgba(5, 6, 8, 0.66); border: 1px solid var(--h-rule); font: 700 11px var(--g-mono); letter-spacing: 0.2em; }
+.ui-layer .revive-bar i { height: 2px; background: var(--h-ink); }
+.ui-layer .sv-banner, .ui-layer .sv-banner.raid { font: 700 56px var(--g-font); letter-spacing: 0.3em; color: var(--h-ink); text-shadow: 0 0 26px rgba(200, 50, 31, 0.6), 0 4px 18px rgba(0, 0, 0, 0.85); }
+.ui-layer .sv-banner.raid { color: #e8483a; }
+
+/* ---------- full-screen states ---------- */
+.death-screen { background: radial-gradient(ellipse at center, rgba(34, 6, 4, 0.72), rgba(3, 3, 4, 0.96)); }
+.death-title { color: var(--g-accent); text-shadow: 0 0 34px rgba(200, 50, 31, 0.45);
+  -webkit-mask-image: var(--wear); mask-image: var(--wear); -webkit-mask-size: 420px auto; mask-size: 420px auto; }
+.death-sub, .death-hint, .downed-sub { color: var(--g-dim); }
+.downed-title { color: var(--g-accent); }
+:is(.sv-over, .match-end) { -webkit-backdrop-filter: none; backdrop-filter: none; background: rgba(5, 6, 8, 0.88) !important; }
+
+/* Phones: lighter scrims and smaller numerals (the touch controls carry their own layout). */
+.is-touch .ui-layer .ammo { min-width: 0; padding: 6px 4px 6px 22px; }
+.is-touch .ui-layer .ammo-count { font-size: 36px; }
+.is-touch .ui-layer .hp { min-width: 170px; padding: 6px 22px 6px 4px; }
+.is-touch .ui-layer .hp-text { font-size: 30px; }
+
+/* ---------- full map (M) ---------- */
+.map-full { -webkit-backdrop-filter: none; backdrop-filter: none; background: rgba(5, 6, 8, 0.9); }
+.map-full canvas { border-radius: 0; box-shadow: 0 0 0 1px rgba(222, 216, 202, 0.18), 0 30px 60px rgba(0, 0, 0, 0.6); }
+.map-legend { position: static; margin-top: 14px; padding: 8px 4px !important; border: 0; border-top: 1px solid rgba(222, 216, 202, 0.16);
+  border-radius: 0 !important; background: none !important; font: 600 13px var(--g-font) !important; letter-spacing: 0.06em; color: rgba(228, 224, 212, 0.8); }
+.map-legend .lg-key { font: 700 11px var(--g-mono); letter-spacing: 0.2em; color: rgba(228, 224, 212, 0.45); }
+

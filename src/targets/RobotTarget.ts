@@ -31,6 +31,7 @@ export function robotSkin(paint: THREE.Material, dark: THREE.Material, visor: TH
   return {
     health,
     merge,
+    gait: 'machine',
     shinLength: 0.44,
     handGrip: [0, -0.33, 0.05],
     zoneDamage: { head: 1, thorax: 1, stomach: 0.9, arm: 0.6, leg: 0.7 },

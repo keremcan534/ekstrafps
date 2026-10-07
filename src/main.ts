@@ -4,11 +4,21 @@ import { loadGraphics, noGlass } from './config/Graphics';
 import { MainMenu } from './ui/MainMenu';
 import { applyHudLayout, loadHudLayout } from './ui/HudLayout';
 import { LoadScreen, afterFrames } from './ui/LoadScreen';
+import { wearMask } from './ui/DossierGrime';
 import './ui/glass.css';
 import './ui/touch-hud.css';
 import './ui/menu-file.css';
+import './ui/hud-file.css';
+import './ui/subtitles.css';
 
 const app = document.getElementById('app')!;
+// The worn print texture (spoken lines, dossier): relative to the page, like every public
+// file the desktop and Android builds load from a file / app origin.
+document.documentElement.style.setProperty('--dirt', 'url(ui/dirt.webp)');
+document.documentElement.style.setProperty('--dirt-text', 'url(ui/dirt_text.webp)');
+document.documentElement.style.setProperty('--dirt-light', 'url(ui/dirt_light.webp)');
+// Worn type for the HUD's big numerals (the menu title's mask, painted once).
+document.documentElement.style.setProperty('--wear', `url(${wearMask()})`);
 const params = new URLSearchParams(location.search);
 
 const rotateHint = document.createElement('div');
@@ -102,6 +112,8 @@ const begin = () => {
 };
 const menu = new MainMenu(app, { map, mode, controls, mobile: game.mobile, onPlay: begin });
 const loader = new LoadScreen(document.body);
+// ?terminal opens the tape list; ?minigame=<id> runs one tape.
+if (urlParams.has('terminal') || urlParams.has('minigame')) menu.openTerminal(urlParams.get('minigame') ?? undefined);
 if (trailerMode) {
   menu.close();
   loader.hide();
@@ -115,6 +127,8 @@ window.addEventListener('popstate', () => {
     return;
   }
   history.pushState({ site9: true }, '');
+  // Already paused: back closes the terminal, the dossier or the open panel first.
+  if (menu.visible && menu.back()) return;
   pause();
 });
 

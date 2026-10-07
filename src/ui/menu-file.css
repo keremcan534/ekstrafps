@@ -92,6 +92,15 @@
 .menu .menu-panel.enter { animation: none; }
 .menu .panel-head { font: 700 24px var(--g-font); letter-spacing: 0.3em; color: var(--f-ink); }
 .menu .panel-head i { height: 0; border-top: 1px dashed rgba(222, 216, 202, 0.28); background: none; }
+/* The way back out of a panel (Esc does the same). */
+.menu .panel-x { flex: none; width: 36px; height: 36px; padding: 0; border: 1px solid var(--f-rule); background: transparent;
+  font: 400 18px/1 var(--g-font); letter-spacing: 0; color: var(--g-dim); cursor: pointer; transition: color 120ms, border-color 120ms, background 120ms; }
+.menu .panel-x:hover { color: var(--f-ink); border-color: rgba(222, 216, 202, 0.4); background: rgba(222, 216, 202, 0.06); }
+.is-touch .menu .panel-x { width: 52px; height: 52px; font-size: 26px; }
+/* Asking before it does it (MAIN MENU, QUIT, buy…): red until the second click or 3 s. */
+.menu .armed, .menu .armed .gbtn-label { color: #ff6a52 !important; }
+.menu .gbtn.armed, .menu .gseg-btn.armed, .menu .gcard.armed { border-color: var(--g-accent) !important; background: rgba(200, 50, 31, 0.16) !important; }
+.menu .gcard.arm.armed .arm-tag { background: var(--g-accent); color: #fff !important; }
 .menu .panel-label { font: 600 11px var(--g-mono); letter-spacing: 0.26em; color: var(--g-dim); }
 .menu .panel-note { font: 500 14px/1.5 var(--g-font); letter-spacing: 0.04em; }
 
@@ -146,19 +155,20 @@ body .menu .menu-nav .gbtn:not(.primary) { background-color: transparent; }
 .is-touch .menu .menu-nav .gbtn.primary { height: 54px; }
 @media (max-height: 420px) { body:not(.is-touch) .menu .menu-foot { display: none; } }
 
-/* ---------- the stage: night steppe, a SABLE operator, snow and mist ---------- */
+/* ---------- the stage: the Warden in the forest, snow and mist ---------- */
 .menu-scene { position: absolute; inset: 0; z-index: 0; overflow: hidden; background: #080b11; pointer-events: none; }
 .menu.paused .menu-scene { display: none; }
-.ms-bg { position: absolute; inset: -3%; background: center 72% / cover no-repeat; animation: ms-push 80s ease-in-out infinite alternate; }
-.ms-bg.forest { background-position: center 60%; opacity: 0; transition: opacity 0.25s steps(3); }
-.ms-bg.forest.on { opacity: 1; }
+/* Three aligned plates of one frame (standing, aiming, empty), stacked; one is on. Framed a
+   little high so his cap stays in on wide screens (the coat's hem goes first). */
+.ms-plates { position: absolute; inset: -3%; animation: ms-push 80s ease-in-out infinite alternate; }
+.ms-plate { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; object-position: center 40%;
+  visibility: hidden; user-select: none; }
+.ms-plate.on { visibility: visible; }
+.ms-plate.in { z-index: 1; }
 @keyframes ms-push { from { transform: scale(1); } to { transform: scale(1.06) translateX(-1%); } }
-/* Sized in % of the stage, not vh: phones zoom the whole menu. */
-.ms-op { position: absolute; right: 1.5%; bottom: -1%; height: 95%; transform-origin: 50% 100%;
-  animation: ms-breathe 6.5s ease-in-out infinite alternate; }
-.ms-op img { display: block; width: auto; height: 100%; user-select: none; }
-/* The cut between poses: slices jump, the picture dips dark, a torn band rolls through. */
-.ms-op.cut img { animation: ms-cut 0.55s steps(1); }
+/* The cut between plates: slices of the next jump in over this one, dipping dark, and a
+   torn band rolls through. */
+.ms-plates.cut .ms-plate.in { animation: ms-cut 0.55s steps(1); }
 @keyframes ms-cut {
   0% { clip-path: inset(0 0 62% 0); transform: translateX(-14px); filter: brightness(0.5); }
   14% { clip-path: inset(28% 0 24% 0); transform: translateX(11px); filter: brightness(0.45) contrast(1.4); }
@@ -168,11 +178,13 @@ body .menu .menu-nav .gbtn:not(.primary) { background-color: transparent; }
   76% { clip-path: inset(0); transform: translateX(1px); filter: none; }
   100% { clip-path: none; transform: none; filter: none; }
 }
-.ms-tear { position: absolute; left: -6%; right: -6%; top: 0; height: 18%; opacity: 0; pointer-events: none;
+/* His return from the empty field: a hard cut, the picture all but black, then back up. */
+.ms-plates.dip .ms-plate.on { animation: ms-dip 0.5s steps(1); }
+@keyframes ms-dip { 0% { filter: brightness(0.06); } 30% { filter: brightness(0.2); } 60% { filter: brightness(0.55); } 100% { filter: none; } }
+.ms-tear { position: absolute; left: -6%; right: -6%; top: 0; height: 18%; z-index: 2; opacity: 0; pointer-events: none;
   background: repeating-linear-gradient(0deg, rgba(160, 175, 200, 0.16) 0 2px, rgba(0, 0, 0, 0.35) 2px 5px); mix-blend-mode: screen; }
-.ms-op.cut .ms-tear { animation: ms-tear 0.5s steps(1); }
+.ms-plates.cut .ms-tear { animation: ms-tear 0.5s steps(1); }
 @keyframes ms-tear { 0% { opacity: 1; top: 12%; } 25% { opacity: 0.7; top: 46%; } 50% { opacity: 0.9; top: 24%; } 75% { opacity: 0.4; top: 70%; } 100% { opacity: 0; } }
-@keyframes ms-breathe { from { transform: scale(1); } to { transform: scale(1.007) translateY(-0.15%); } }
 .ms-snow { position: absolute; inset: 0; width: 100%; height: 100%; }
 .ms-mist { position: absolute; left: -25%; right: -25%; bottom: -4%; height: 52%;
   background:
@@ -182,7 +194,7 @@ body .menu .menu-nav .gbtn:not(.primary) { background-color: transparent; }
   animation: ms-drift 70s ease-in-out infinite alternate; }
 .ms-mist.near { height: 30%; opacity: 0.9; animation-duration: 46s; animation-direction: alternate-reverse; }
 @keyframes ms-drift { from { transform: translateX(-7%); } to { transform: translateX(7%); } }
-body.perf-lite .ms-bg, body.perf-lite .ms-op, body.perf-lite .ms-mist { animation: none; }
+body.perf-lite .ms-plates, body.perf-lite .ms-mist { animation: none; }
 
 /* ==========================================================================
    PHONES (.is-touch). style.css zooms the whole menu so it lays out ~640 px tall
@@ -235,9 +247,9 @@ body.perf-lite .ms-bg, body.perf-lite .ms-op, body.perf-lite .ms-mist { animatio
 body.menu-stage #app > canvas { visibility: hidden; }
 
 /* Phones: fewer full-screen layers and no layer animations on the stage (the snow and
-   the pose cuts carry the motion); the dust overlay goes. */
+   the plate cuts carry the motion); the dust overlay goes. */
 .is-touch .menu-dirt { display: none; }
-.is-touch :is(.ms-bg, .ms-op, .ms-mist) { animation: none; }
+.is-touch :is(.ms-plates, .ms-mist) { animation: none; }
 .is-touch .ms-mist.far { display: none; }
 
 /* ---------- loading screen ---------- */
@@ -254,3 +266,4 @@ body.menu-stage #app > canvas { visibility: hidden; }
 .ld-bar i { position: absolute; top: 0; bottom: 0; left: 0; width: 34%; background: #c8321f; will-change: transform; animation: ld-run 1.15s cubic-bezier(.5, 0, .5, 1) infinite; }
 @keyframes ld-run { from { transform: translateX(-100%); } to { transform: translateX(300%); } }
 .ld-msg { margin-top: 12px; font: 600 clamp(10px, 1.9vh, 13px) var(--g-mono); letter-spacing: 0.24em; text-transform: uppercase; color: rgba(222, 216, 202, 0.6); }
+

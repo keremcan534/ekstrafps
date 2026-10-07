@@ -3,6 +3,7 @@ import type { Viewmodel } from '../weapons/Viewmodel';
 import type { WeaponRig } from '../weapons/WeaponModels';
 import { FINGER_NAMES, type WeaponHands } from '../weapons/HandPose';
 import { layoutHands } from '../weapons/HandGrips';
+import { isV2, legacyHands, type WeaponHandsV2 } from '../weapons/hands/HandProfile';
 import { orientationMatrix, widenModel, type ViewProfile } from '../weapons/ViewProfile';
 import { WeaponSurface, fingerGaps, gloveInside } from './handChecks';
 
@@ -35,14 +36,21 @@ export interface HandTemplate {
   boreY: number;
 }
 
-/** A tuned weapon's hands as a template (its view profile, positions into weapon space). */
+/**
+ * A tuned weapon's hands as a template (its view profile, positions into weapon space). The
+ * search works on schema-1 hands: a schema-2 profile is converted (the same hands, the palm on
+ * the grip, its library poses as degrees).
+ */
 export function templateOf(p: Readonly<ViewProfile>): HandTemplate | null {
   if (!p.hands) return null;
   const O = orientationMatrix(p, new THREE.Matrix4());
-  const at = new Float32Array([...p.hands.rightGrip.position, ...p.hands.leftGrip.position, ...p.points.muzzle]);
-  widenModel(p, at, null);
+  const v2 = isV2(p.hands);
+  const hands: WeaponHands = v2 ? legacyHands(p.hands as WeaponHandsV2, O) : (structuredClone(p.hands) as WeaponHands);
+  const at = new Float32Array([...hands.rightGrip.position, ...hands.leftGrip.position, ...p.points.muzzle]);
+  // Schema-2 targets are set on the model as drawn; schema-1 grips get its widening.
+  if (!v2) widenModel(p, at, null);
   const W = (i: number) => new THREE.Vector3(at[i], at[i + 1], at[i + 2]).applyMatrix4(O);
-  return { hands: structuredClone(p.hands) as WeaponHands, right: W(0), left: W(3), boreY: W(6).y };
+  return { hands, right: W(0), left: W(3), boreY: W(6).y };
 }
 
 export interface AutoHandsHost {
@@ -96,8 +104,9 @@ class Placer {
     this.surf = new WeaponSurface(host.vm);
   }
 
+  /** The hands being placed (always schema 1 here: placeHands puts the template's on first). */
   get def(): WeaponHands {
-    return this.rig.hands!.def;
+    return this.rig.hands!.def as WeaponHands;
   }
 
   /** A grip's place in weapon space. */
@@ -126,7 +135,9 @@ class Placer {
     // Over a grid cell away the quick lookup has nothing: measure against every triangle, so
     // a hand that started off the gun still feels where the surface is.
     const palm = near ? near.d : this.farDistance(w.applyMatrix4(this.rig.root.matrixWorld.clone().invert()));
-    let s = ins.count * 0.3 + ins.maxMm * 3 + st.reachM * 100 + Math.max(0, st.reachM - 0.1) * 300 + Math.max(0, st.wristBendDeg - 70) * 2 + Math.abs(palm - PALM_GAP[side]) * 1500;
+    // A hand over the sight line covers the front sight (a thumb on a thin handguard).
+    const over = this.overSights(side);
+    let s = over * 6 + ins.count * 0.3 + ins.maxMm * 3 + st.reachM * 100 + Math.max(0, st.reachM - 0.1) * 300 + Math.max(0, st.wristBendDeg - 70) * 2 + Math.abs(palm - PALM_GAP[side]) * 1500;
     for (const [f, g] of Object.entries(gaps)) {
       for (const x of g) if (x * 1000 < -1) s += (-1 - x * 1000) * 2;
       if (WRAP[this.kind][side].includes(f)) {
@@ -135,7 +146,7 @@ class Placer {
       }
     }
     const summary =
-      `bilek ${st.wristBendDeg.toFixed(0)}°, kol +${(st.reachM * 100).toFixed(0)} cm, içeride ${ins.count} nokta / ${ins.maxMm.toFixed(1)} mm, avuç ${(palm * 1000).toFixed(0)} mm, parmak ` +
+      `${over > 0 ? `nişan hattının ${over.toFixed(0)} mm üstünde, ` : ''}bilek ${st.wristBendDeg.toFixed(0)}°, kol +${(st.reachM * 100).toFixed(0)} cm, içeride ${ins.count} nokta / ${ins.maxMm.toFixed(1)} mm, avuç ${(palm * 1000).toFixed(0)} mm, parmak ` +
       FINGER_NAMES.map((f) => `${f[0].toUpperCase()}${(Math.min(...gaps[f]) * 1000).toFixed(0)}`).join(' ');
     return { s, summary };
   }
@@ -191,6 +202,27 @@ class Placer {
     }
     apply(x);
     return { score: +best.s.toFixed(1), tries, summary: best.summary };
+  }
+
+  /**
+   * How far (mm) the hand's joints rise above a line 15 mm under the sight line, ahead of the
+   * rear sight: aimed, anything up there sits in the sight picture.
+   */
+  private overSights(side: Side): number {
+    const b = this.host.vm.arms.bonesOf(side);
+    if (!b) return 0;
+    const m = this.rig.root.matrixWorld;
+    const o = this.rig.sight.getWorldPosition(new THREE.Vector3());
+    const up = new THREE.Vector3(0, 1, 0).transformDirection(m);
+    const fwd = new THREE.Vector3(0, 0, -1).transformDirection(m);
+    const p = new THREE.Vector3();
+    let over = 0;
+    for (const bone of [b.hand, ...Object.values(b.fingers).flat()]) {
+      bone.getWorldPosition(p).sub(o);
+      if (p.dot(fwd) < 0.03) continue;
+      over = Math.max(over, p.dot(up) + 0.015);
+    }
+    return over * 1000;
   }
 
   /** Distance (m) from `p` (weapon space) to the nearest point of the weapon. */

@@ -14,7 +14,9 @@ from scipy import signal
 from scipy.ndimage import uniform_filter1d, maximum_filter1d
 
 ROOT = Path(__file__).resolve().parents[1]
-WAV = ROOT / "music" / "escaping.wav"
+import os
+WAV = ROOT / "music" / os.environ.get("TRACK", "escaping.wav")
+TAG = os.environ.get("TAG", "analysis")
 
 x, sr = sf.read(WAV)
 mono = x.mean(axis=1) if x.ndim > 1 else x
@@ -185,7 +187,7 @@ out = {
     "hats": [round(float(times[i]), 3) for i in hi_idx],
     "per_sec": per_sec,
 }
-(ROOT / "music" / "analysis.json").write_text(json.dumps(out, indent=1))
+(ROOT / "music" / f"{TAG}.json").write_text(json.dumps(out, indent=1))
 
 # ---- plot ----
 import matplotlib
@@ -231,9 +233,9 @@ def plot(t0, t1, path):
     plt.savefig(path, dpi=60)
     plt.close()
 
-plot(0, dur, ROOT / "music" / "analysis_full.png")
-for i, (a, b) in enumerate([(0, 45), (40, 90), (85, 135), (130, dur)]):
-    plot(a, b, ROOT / "music" / f"analysis_{i}.png")
+plot(0, dur, ROOT / "music" / f"{TAG}_full.png")
+for i, (a, b) in enumerate([(0, 55), (50, 105), (100, 155), (150, dur)]):
+    plot(a, b, ROOT / "music" / f"{TAG}_{i}.png")
 
 print(f"duration {dur:.2f}s  global bpm {bpm:.2f}")
 print("boundaries", boundaries)

@@ -1,3 +1,4 @@
+import { skillFx } from '../game/Skills';
 import { feel } from '../config/Feel';
 
 /**
@@ -48,7 +49,7 @@ export class PlayerHealth {
       this.health = 0;
       if (this.canGoDown?.()) {
         this.downed = true;
-        this.bleed = 30;
+        this.bleed = 30 * skillFx.bleedOut;
         this.onDowned?.();
       } else this.kill();
     }

@@ -1,0 +1,94 @@
+{
+  "cameraInertia": {
+    "rotationLag": 1,
+    "positionLag": 0.06,
+    "springStrength": 1,
+    "springDamping": 1,
+    "overshootStrength": 0.5,
+    "rollFromYaw": 0.6,
+    "maxRotationOffset": 6,
+    "maxPositionOffset": 0.012
+  },
+  "acceleration": {
+    "strength": 1,
+    "lateral": 0.0022,
+    "forward": 0.0018,
+    "vertical": 0.0014,
+    "tilt": 0.3,
+    "strafeRoll": 2.5,
+    "backwardPitch": 0.8,
+    "springFrequency": 1,
+    "damping": 0.55,
+    "maxPositionOffset": 0.03
+  },
+  "walking": {
+    "amplitude": 1,
+    "vertical": 0.0045,
+    "horizontal": 0.006,
+    "roll": 1.2,
+    "pitch": 0.35,
+    "yaw": 0.6,
+    "stepImpulse": 1,
+    "handCorrection": 0.25,
+    "variation": 0.22
+  },
+  "sprint": {
+    "amplitude": 1.6,
+    "stepImpulse": 2.4,
+    "enterSpeed": 9,
+    "enterDamping": 0.72,
+    "momentum": 1
+  },
+  "ads": {
+    "arcDip": 0.012,
+    "arcRoll": 2,
+    "leadPitch": 0.18,
+    "push": 0.003,
+    "handImpulse": 1,
+    "settleImpulse": 1
+  },
+  "breathing": {
+    "amplitude": 1,
+    "rate": 0.22,
+    "variation": 0.18,
+    "pitch": 0.1,
+    "lift": 0.0005
+  },
+  "idleNoise": {
+    "amplitude": 1,
+    "tremor": 0.035,
+    "drift": 0.18,
+    "roll": 0.12,
+    "position": 0.0004,
+    "correction": 0.08
+  },
+  "recoil": {
+    "instability": 0.35,
+    "heatDecay": 2.2,
+    "drift": 0.25,
+    "handResponse": 1
+  },
+  "landing": {
+    "strength": 1,
+    "dip": 0.035,
+    "pitch": 3,
+    "crouchInertia": 0.0016
+  },
+  "switching": {
+    "overshoot": 0.06,
+    "settleImpulse": 1,
+    "drop": 0.28,
+    "sweep": 1
+  },
+  "reload": {
+    "handReaction": 1,
+    "microMotion": 1
+  },
+  "classes": {
+    "pistol": { "mass": 0.6, "response": 1.25, "bob": 0.8 },
+    "smg": { "mass": 0.8, "response": 1.12, "bob": 0.95 },
+    "rifle": { "mass": 1, "response": 1, "bob": 1 },
+    "shotgun": { "mass": 1.1, "response": 0.95, "bob": 1 },
+    "heavy": { "mass": 1.45, "response": 0.8, "bob": 1.15 }
+  }
+}

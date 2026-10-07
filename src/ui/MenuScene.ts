@@ -1,9 +1,12 @@
 /**
  * The main menu's stage: a photograph instead of a live 3D render (the GPU idles in the
- * menu). A night steppe, a SABLE operator graded into it, and what keeps it alive for
- * almost nothing: snow in two depths (one behind him, one in front) on 2D canvases,
- * and ground mist drifting.
+ * menu). The Warden in a misty night forest, three aligned plates of the same frame
+ * (standing, aiming, and the field without him), and what keeps it alive for almost
+ * nothing: snow in two depths on 2D canvases, and ground mist drifting. Every so often
+ * he is simply not there any more, and later he is back.
  */
+
+import type { MenuWardenVoice } from '../audio/MenuWardenVoice';
 
 interface Flake {
   x: number;
@@ -91,23 +94,15 @@ class Snow {
   }
 }
 
-/** The Warden's poses (public/menu), each with its height on the stage (close-ups smaller). */
-/** The Warden himself (greatcoat, respirator): opens the menu and returns every third cut. */
-const WARDEN: [string, number] = ['warden_mask', 0.97];
-const POSES: [string, number][] = [
-  ['operator', 1],
-  ['warden2', 0.93],
-  ['warden4', 0.95],
-  ['warden6', 0.93],
-  ['warden7', 0.8],
-  ['warden1', 0.93],
-  ['warden5', 0.9],
-  ['warden8', 0.93],
-  ['warden3', 0.93],
-];
-/** Seconds each pose holds before the next cuts in (the Warden stays longer). */
-const POSE_HOLD = 8;
-const WARDEN_HOLD = 12;
+type Plate = 'stand' | 'aim' | 'gone';
+/** Same frame, same forest (public/menu): only the Warden changes. */
+const PLATES: Record<Plate, string> = { stand: 'warden_stand', aim: 'warden_aim', gone: 'forest' };
+/** Seconds of menu time a plate holds: him, then the empty field. */
+const HOLD: Record<'here' | 'gone', [number, number]> = { here: [7, 12], gone: [4, 9] };
+/** Chance a beat takes him away rather than changing his pose. */
+const VANISH = 0.42;
+
+const rand = (a: number, b: number): number => a + Math.random() * (b - a);
 
 export class MenuScene {
   readonly root: HTMLDivElement;
@@ -117,38 +112,49 @@ export class MenuScene {
   private last = 0;
   private next = 0;
   private t0 = performance.now();
-  private op: HTMLDivElement;
-  private img: HTMLImageElement;
-  private pose = -1;
-  /** Seconds of menu time on the current pose (only counts while the menu is up). */
-  private held = 0;
+  private stage: HTMLDivElement;
+  private plates = {} as Record<Plate, HTMLImageElement>;
+  private state: Plate = 'stand';
+  /** Menu seconds until the next beat (only counts while the menu is up). */
+  private wait = rand(...HOLD.here);
+  private beats = 0;
   private staged = false;
-  private cuts = 0;
-  private onWarden = true;
+  /** Bumped by every transition; pending timers of an older one drop out. */
+  private seq = 0;
+  /** When the player looked away (window blurred, tab hidden, a match), or 0. */
+  private away = 0;
+  /** The stage has been up before (so coming back to it is a return from a match). */
+  private seen = false;
 
-  constructor(parent: HTMLElement, mobile: boolean, private active: () => boolean) {
+  constructor(
+    parent: HTMLElement,
+    mobile: boolean,
+    private active: () => boolean,
+    /** His breathing, his lines and the subtitles (optional: the stage works silent). */
+    private voice?: MenuWardenVoice,
+  ) {
     this.root = document.createElement('div');
     this.root.className = 'menu-scene';
+    const imgs = (Object.keys(PLATES) as Plate[])
+      .map((k) => `<img class="ms-plate" data-p="${k}" alt="" draggable="false" />`)
+      .join('');
     this.root.innerHTML = `
-      <div class="ms-bg steppe"></div>
-      <div class="ms-bg forest on"></div>
+      <div class="ms-plates">${imgs}<div class="ms-tear"></div></div>
       <div class="ms-mist far"></div>
       <canvas class="ms-snow back"></canvas>
-      <div class="ms-op">
-        <img src="menu/${WARDEN[0]}.webp" alt="" draggable="false" /><div class="ms-tear"></div>
-      </div>
       <div class="ms-mist near"></div>
       <canvas class="ms-snow front"></canvas>`;
     parent.prepend(this.root);
-    // Relative to the page (the desktop and Android builds load from a file / app origin).
-    this.root.querySelector<HTMLElement>('.ms-bg.steppe')!.style.backgroundImage = 'url(menu/steppe.webp)';
-    // The Warden stands in the misty forest; the SABLE poses on the steppe.
-    this.root.querySelector<HTMLElement>('.ms-bg.forest')!.style.backgroundImage = 'url(menu/forest.webp)';
-    this.op = this.root.querySelector<HTMLDivElement>('.ms-op')!;
-    this.img = this.op.querySelector('img')!;
-    // Warm the cache so each cut swaps instantly (~30 KB each).
-    for (const [id] of POSES) new Image().src = `menu/${id}.webp`;
-    this.op.style.height = `${95 * WARDEN[1]}%`;
+    this.stage = this.root.querySelector<HTMLDivElement>('.ms-plates')!;
+    for (const img of this.stage.querySelectorAll<HTMLImageElement>('.ms-plate')) {
+      const k = img.dataset.p as Plate;
+      this.plates[k] = img;
+      // Relative to the page (the desktop and Android builds load from a file / app origin).
+      img.src = `menu/${PLATES[k]}.webp`;
+      // Decoded up front so every cut, and every flicker, lands on the frame it's asked for.
+      img.decode?.().catch(() => {});
+    }
+    this.show('stand');
     const dpr = Math.min(mobile ? 1 : 1.5, window.devicePixelRatio || 1);
     const [b, f] = [...this.root.querySelectorAll<HTMLCanvasElement>('.ms-snow')];
     this.back = new Snow(b, mobile ? 90 : 220, [1, 2.6], [14, 46], [0.35, 0.85], dpr);
@@ -157,6 +163,12 @@ export class MenuScene {
       this.back.resize();
       this.front.resize();
     });
+    // Look away and, when you look back, he may have moved, or gone.
+    window.addEventListener('blur', () => this.lookAway());
+    window.addEventListener('focus', () => this.lookBack());
+    document.addEventListener('visibilitychange', () =>
+      document.visibilityState === 'hidden' ? this.lookAway() : this.lookBack(),
+    );
     this.raf = requestAnimationFrame(this.tick);
   }
 
@@ -167,6 +179,15 @@ export class MenuScene {
     if (on !== this.staged) {
       this.staged = on;
       document.body.classList.toggle('menu-stage', on);
+      this.voice?.setActive(on);
+      if (on) {
+        if (this.seen) this.voice?.backFromMatch();
+        else this.voice?.welcome();
+        this.seen = true;
+      }
+      // A match or the pause screen in between counts as having looked away.
+      if (on) this.lookBack();
+      else this.lookAway();
     }
     // Nothing to draw while a match runs or the pause screen is up.
     if (!on || document.visibilityState === 'hidden') {
@@ -183,29 +204,115 @@ export class MenuScene {
     const wind = -0.35 - 0.25 * Math.sin(t * 0.13) - 0.12 * Math.sin(t * 0.37);
     this.back.step(dt, t, wind);
     this.front.step(dt, t, wind * 1.3);
-    this.held += dt;
-    if (this.held > (this.onWarden ? WARDEN_HOLD : POSE_HOLD)) {
-      this.held = 0;
-      this.cut();
-    }
+    this.wait -= dt;
+    if (this.wait <= 0) this.beat();
   };
 
-  /** Next pose, through a short dark signal glitch (no flash). */
-  private cut(): void {
-    // Warden, two SABLE poses, Warden, two more…
-    this.cuts++;
-    this.onWarden = this.cuts % 3 === 0;
-    if (!this.onWarden) this.pose = (this.pose + 1) % POSES.length;
-    const [id, h] = this.onWarden ? WARDEN : POSES[this.pose];
-    this.op.classList.remove('cut');
-    void this.op.offsetWidth;
-    this.op.classList.add('cut');
+  /** He changes pose, or he's gone; from the empty field he comes back. */
+  private beat(): void {
+    const was = this.state;
+    this.step();
+    this.voice?.presence(this.state);
+    if (was === 'gone' && this.state !== 'gone') this.voice?.returned();
+    this.voice?.beat();
+  }
+
+  private step(): void {
+    this.beats++;
+    if (this.state === 'gone') {
+      const to: Plate = Math.random() < 0.5 ? 'stand' : 'aim';
+      // Back without warning: a hard cut through a dark dip, or the signal glitch.
+      if (Math.random() < 0.6) this.dipTo(to);
+      else this.cutTo(to);
+      this.wait = rand(...HOLD.here);
+      return;
+    }
+    // The first beat only moves him: the player should have seen him before he can be missed.
+    if (this.beats > 1 && Math.random() < VANISH) {
+      const r = Math.random();
+      if (r < 0.4) this.flickerTo('gone');
+      else if (r < 0.7) this.show('gone'); // no effect at all: noticed only afterwards
+      else this.cutTo('gone');
+      this.wait = rand(...HOLD.gone);
+      // Sometimes the empty field shows him again for a blink, mid-hold.
+      if (Math.random() < 0.35) this.glimpse(rand(1.2, this.wait - 1.2));
+      return;
+    }
+    this.cutTo(this.state === 'stand' ? 'aim' : 'stand');
+    this.wait = rand(...HOLD.here);
+  }
+
+  /** Instant swap, cancelling anything in flight. Returns the new transition's id. */
+  private show(p: Plate): number {
+    const s = ++this.seq;
+    this.state = p;
+    this.stage.classList.remove('cut', 'dip');
+    for (const k of Object.keys(this.plates) as Plate[]) {
+      this.plates[k].classList.toggle('on', k === p);
+      this.plates[k].classList.remove('in');
+    }
+    return s;
+  }
+
+  /** The signal glitch: torn slices of the next plate over this one, then it settles. */
+  private cutTo(p: Plate): void {
+    const s = this.show(this.state);
+    this.state = p;
+    void this.stage.offsetWidth;
+    this.plates[p].classList.add('on', 'in');
+    this.stage.classList.add('cut');
+    window.setTimeout(() => s === this.seq && this.show(p), 560);
+  }
+
+  /** A hard cut, the picture dropping nearly black for a moment. */
+  private dipTo(p: Plate): void {
+    this.show(p);
+    void this.stage.offsetWidth;
+    this.stage.classList.add('dip');
+  }
+
+  /** Like a failing light: gone, back, gone, back… gone. */
+  private flickerTo(p: Plate): void {
+    const from = this.state;
+    const steps: [Plate, number][] = [
+      [p, 0],
+      [from, 70],
+      [p, 170],
+      [from, 220],
+      [p, 380],
+    ];
+    const s = this.show(from);
+    this.state = p;
+    for (const [q, ms] of steps)
+      window.setTimeout(() => {
+        if (s !== this.seq) return;
+        for (const k of Object.keys(this.plates) as Plate[]) this.plates[k].classList.toggle('on', k === q);
+      }, ms);
+  }
+
+  /** While he's gone: him, aiming, for ~90 ms, then the empty field again. */
+  private glimpse(after: number): void {
+    const s = this.seq;
     window.setTimeout(() => {
-      this.img.src = `menu/${id}.webp`;
-      this.op.style.height = `${95 * h}%`;
-      this.root.querySelector('.ms-bg.forest')!.classList.toggle('on', this.onWarden);
-    }, 180);
-    window.setTimeout(() => this.op.classList.remove('cut'), 600);
+      if (s !== this.seq || !this.active()) return;
+      this.plates.aim.classList.add('on', 'in');
+      window.setTimeout(() => s === this.seq && this.plates.aim.classList.remove('on', 'in'), 90);
+    }, after * 1000);
+  }
+
+  private lookAway(): void {
+    if (!this.away) this.away = performance.now();
+  }
+
+  private lookBack(): void {
+    const away = this.away ? performance.now() - this.away : 0;
+    this.away = 0;
+    if (away < 1500 || !this.active() || Math.random() < 0.4) return;
+    // No transition: things were simply like this when you looked back.
+    if (this.state === 'gone') this.show(Math.random() < 0.5 ? 'stand' : 'aim');
+    else this.show(Math.random() < 0.65 ? 'gone' : this.state === 'stand' ? 'aim' : 'stand');
+    this.wait = rand(...(this.state === 'gone' ? HOLD.gone : HOLD.here));
+    this.voice?.presence(this.state, true);
   }
 
   dispose(): void {

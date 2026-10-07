@@ -3,7 +3,7 @@
  * the browser. A raid tracks what *you* did (not your AI squad); the end screen
  * turns it into XP and credits:
  *
- *   XP   kills (robot 15, brute 45, salvager 50, rival operator 60, SABLE 90,
+ *   XP   kills (robot 15, salvager 50, rival operator 60, SABLE 90,
  *        The Choir 120, The Warden 400, +10 per headshot kill) + 10 per minute alive
  *        − 100 per civilian you killed
  *        + placement (4 Teams: 600 / 350 / 200 / 100)
@@ -11,8 +11,11 @@
  *   VC   XP / 5, plus 10 % of the cash you carry out (extracted only)
  *
  * Credits buy permanent unlocks in the ARMORY (main menu): a starting sidearm
- * and perks. Levels gate them.
+ * and perks. Levels gate them. Skills grow alongside (Skills.ts); the end screen is
+ * src/ui/RaidReport.ts.
  */
+
+import { applySkills, settleSkills, skillRaid, type SkillGain, type SkillId } from './Skills';
 
 export type PerkId = 'pockets' | 'plates' | 'scavenger';
 
@@ -44,12 +47,16 @@ export interface Profile {
   sidearm: string;
   /** Equipped perks (one slot, two from level 8). */
   perks: PerkId[];
+  /** Banked skill points (Skills.ts). */
+  skills: Partial<Record<SkillId, number>>;
+  /** What the last raid added to each skill (the SKILLS panel shows it). */
+  lastSkills?: { id: SkillId; gained: number }[];
 }
 
 const KEY = 'site9.profile';
 
 export function loadProfile(): Profile {
-  const d: Profile = { xp: 0, credits: 0, raids: 0, extractions: 0, kills: 0, owned: ['heavy_pistol'], sidearm: 'heavy_pistol', perks: [] };
+  const d: Profile = { xp: 0, credits: 0, raids: 0, extractions: 0, kills: 0, owned: ['heavy_pistol'], sidearm: 'heavy_pistol', perks: [], skills: {} };
   try {
     return { ...d, ...(JSON.parse(localStorage.getItem(KEY) ?? '{}') as Partial<Profile>) };
   } catch {
@@ -83,7 +90,6 @@ export const perkSlots = (level: number): number => (level >= 8 ? 2 : 1);
 /** What you did this raid (only your own hits count). */
 export const raid = {
   robots: 0,
-  brutes: 0,
   soldiers: 0,
   bd: 0,
   warden: 0,
@@ -94,8 +100,11 @@ export const raid = {
   /** Seconds you were alive (and not in the menu). */
   alive: 0,
   reset(): void {
-    this.robots = this.brutes = this.soldiers = this.bd = this.warden = this.salvage = this.choir = this.civilians = this.headshots = 0;
+    this.robots = this.soldiers = this.bd = this.warden = this.salvage = this.choir = this.civilians = this.headshots = 0;
     this.alive = 0;
+    skillRaid.reset();
+    // This raid plays with the skills banked so far.
+    applySkills(loadProfile().skills);
   },
 };
 
@@ -113,23 +122,31 @@ export interface RaidResult {
 }
 
 export interface Payout {
+  /** XP lines (label, amount); negative for penalties. */
   lines: [string, number][];
   mult: number;
   xp: number;
   credits: number;
+  /** VC from the cash you carried out (extracted only; part of `credits`). */
+  carried: number;
+  fate: RaidResult['fate'];
+  mode: RaidResult['mode'];
+  place?: number;
+  cash: number;
   before: { level: number; into: number; need: number };
   after: { level: number; into: number; need: number };
   profile: Profile;
+  /** Skill points banked this raid. */
+  skills: SkillGain[];
 }
 
-/** Turn the raid into XP and credits, bank them, and return the breakdown. */
+/** Turn the raid into XP and credits, bank them, and return the breakdown (RaidReport shows it). */
 export function settleRaid(r: RaidResult): Payout {
   const lines: [string, number][] = [];
   const add = (label: string, n: number) => {
     if (n > 0) lines.push([label, Math.round(n)]);
   };
   add(`Robots destroyed ×${raid.robots}`, raid.robots * 15);
-  add(`Brutes destroyed ×${raid.brutes}`, raid.brutes * 45);
   add(`Rival operators ×${raid.soldiers}`, raid.soldiers * 60);
   add(`Salvagers ×${raid.salvage}`, raid.salvage * 50);
   add(`SABLE ×${raid.bd}`, raid.bd * 90);
@@ -144,7 +161,6 @@ export function settleRaid(r: RaidResult): Payout {
   const xp = Math.round(base * mult);
   const carried = r.fate === 'extracted' ? Math.round(r.cash * 0.1) : 0;
   const credits = Math.round(xp / 5) + carried;
-  if (carried) lines.push([`Cash carried out ($${r.cash} → 10 %)`, carried]);
 
   const p = loadProfile();
   const before = levelOf(p.xp);
@@ -152,22 +168,9 @@ export function settleRaid(r: RaidResult): Payout {
   p.credits += credits;
   p.raids++;
   if (r.fate === 'extracted') p.extractions++;
-  p.kills += raid.robots + raid.brutes + raid.soldiers + raid.bd + raid.warden + raid.salvage + raid.choir;
+  p.kills += raid.robots + raid.soldiers + raid.bd + raid.warden + raid.salvage + raid.choir;
+  const skills = settleSkills(p.skills, r.fate);
+  p.lastSkills = skills.map((g) => ({ id: g.id, gained: g.gained }));
   saveProfile(p);
-  return { lines, mult, xp, credits, before, after: levelOf(p.xp), profile: p };
-}
-
-/** End-screen block for a payout (HTML). */
-export function payoutHtml(pay: Payout): string {
-  const rows = pay.lines.map(([l, n]) => `<div class="pr-row${n < 0 ? ' neg' : ''}"><span>${l}</span><b>${l.startsWith('Cash') ? `+${n} VC` : n < 0 ? `${n}` : `+${n}`}</b></div>`).join('');
-  const multTxt = pay.mult === 1.5 ? '×1.5 EXTRACTED' : pay.mult === 0.75 ? '×0.75 KILLED IN ACTION' : '';
-  const up = pay.after.level > pay.before.level;
-  const pct = (pay.after.into / pay.after.need) * 100;
-  return `<div class="pr">
-    <div class="pr-head">OPERATION REPORT</div>
-    ${rows}
-    ${multTxt ? `<div class="pr-row mult"><span>${multTxt}</span><b></b></div>` : ''}
-    <div class="pr-total"><span>+${pay.xp} XP</span><span>+${pay.credits} VC</span></div>
-    <div class="pr-level ${up ? 'up' : ''}"><b>LEVEL ${pay.after.level}${up ? ' · LEVEL UP' : ''}</b><i style="--p:${pct.toFixed(1)}%"></i><em>${pay.after.into} / ${pay.after.need} XP · ${pay.profile.credits} VC banked</em></div>
-  </div>`;
+  return { lines, mult, xp, credits, carried, fate: r.fate, mode: r.mode, place: r.place, cash: r.cash, before, after: levelOf(p.xp), profile: p, skills };
 }

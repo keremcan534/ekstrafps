@@ -77,3 +77,50 @@ export class Spring3 {
     this.target.set(0, 0, 0);
   }
 }
+
+/** Stiffness / damping from a natural frequency (rad/s) and a damping ratio (< 1 overshoots). */
+export function tuneSpring(s: Spring | Spring3, omega: number, zeta: number): void {
+  s.stiffness = omega * omega;
+  s.damping = 2 * zeta * omega;
+}
+
+/**
+ * A position spring and a rotation spring (small angles: x pitch, y yaw, z roll, rad) that
+ * settle a pose offset back to its target. Impulses are velocities (m/s, rad/s): to get a
+ * peak of roughly `p`, push `p · omega`.
+ */
+export class PoseSpring {
+  readonly pos: Spring3;
+  readonly rot: Spring3;
+  omega = 0;
+  rotOmega = 0;
+
+  constructor(omega: number, zeta: number, rotOmega = omega, rotZeta = zeta) {
+    this.pos = new Spring3();
+    this.rot = new Spring3();
+    this.tune(omega, zeta, rotOmega, rotZeta);
+  }
+
+  tune(omega: number, zeta: number, rotOmega = omega, rotZeta = zeta): void {
+    this.omega = omega;
+    this.rotOmega = rotOmega;
+    tuneSpring(this.pos, omega, zeta);
+    tuneSpring(this.rot, rotOmega, rotZeta);
+  }
+
+  /** Kick toward an offset of about (px, py, pz) m and (rx, ry, rz) rad at its peak. */
+  kick(px: number, py: number, pz: number, rx: number, ry: number, rz: number): void {
+    this.pos.impulse(px * this.omega, py * this.omega, pz * this.omega);
+    this.rot.impulse(rx * this.rotOmega, ry * this.rotOmega, rz * this.rotOmega);
+  }
+
+  update(dt: number): void {
+    this.pos.update(dt);
+    this.rot.update(dt);
+  }
+
+  reset(): void {
+    this.pos.reset();
+    this.rot.reset();
+  }
+}

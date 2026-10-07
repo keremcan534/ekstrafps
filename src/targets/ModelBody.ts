@@ -69,12 +69,18 @@ function kindOf(raw: string): Kind {
 
 const v = () => new THREE.Vector3();
 
+/** Width × depth (× limb depth) scale for a model that came out too slight. */
+export type Girth = [number, number] | [number, number, number];
+
 /**
  * Load a rigged character and convert it.
  * @param height standing height to scale it to (metres).
- * @param girth extra width (x) and depth (z) for a model that came out too slight.
+ * @param girth extra width (x) and depth (z) for a model that came out too slight; an
+ *              optional third value gives the arms and legs their own depth.
+ * @param rigid every vertex on one part only: a machine's plates turn at the joints
+ *              instead of bending like rubber (auto-rigs blend weights across every joint).
  */
-export async function loadModelBody(url: string, height = 1.78, girth: [number, number] = [1, 1]): Promise<ModelBody> {
+export async function loadModelBody(url: string, height = 1.78, girth: Girth = [1, 1], rigid = false): Promise<ModelBody> {
   const gltf = await new GLTFLoader().loadAsync(url);
   const scene = gltf.scene;
   scene.updateMatrixWorld(true);
@@ -331,10 +337,55 @@ export async function loadModelBody(url: string, height = 1.78, girth: [number, 
     ankleL: J(limb.footL, new THREE.Vector3(-0.1, height * 0.05, 0)),
     ankleR: J(limb.footR, new THREE.Vector3(0.1, height * 0.05, 0)),
   };
-  if (girth[0] !== 1 || girth[1] !== 1) {
+  const [gx, gz, limbZ = gz] = girth;
+  if (gx !== 1 || gz !== 1 || limbZ !== 1) {
     // Around the body's centre line (the hips sit on x = z = 0): joints move with it.
-    geometry.applyMatrix4(new THREE.Matrix4().makeScale(girth[0], 1, girth[1]));
-    for (const j of Object.values(joints)) j.set(j.x * girth[0], j.y, j.z * girth[1]);
+    // Depth per vertex by its weights: the core (pelvis, torso, head) takes `gz`, arms and
+    // legs `limbZ`, blending across the shoulders and hips.
+    const pos = geometry.getAttribute('position');
+    const nor = geometry.getAttribute('normal');
+    const si = geometry.getAttribute('skinIndex');
+    const sw = geometry.getAttribute('skinWeight');
+    const slotZ = slots.map((s) => (s === 'pelvis' || s === 'torso' || s === 'head' ? gz : limbZ));
+    for (let i = 0; i < pos.count; i++) {
+      let z = 0;
+      for (let c = 0; c < 4; c++) z += sw.getComponent(i, c) * slotZ[si.getComponent(i, c)];
+      pos.setXYZ(i, pos.getX(i) * gx, pos.getY(i), pos.getZ(i) * z);
+      // Normals take the inverse scale (a stretched face turns towards the short axis).
+      n.set(nor.getX(i) / gx, nor.getY(i), nor.getZ(i) / z).normalize();
+      nor.setXYZ(i, n.x, n.y, n.z);
+    }
+    pos.needsUpdate = nor.needsUpdate = true;
+    const core: (keyof Joints)[] = ['hips', 'spine', 'neck'];
+    for (const [name, j] of Object.entries(joints)) j.set(j.x * gx, j.y, j.z * (core.includes(name as keyof Joints) ? gz : limbZ));
+  }
+  if (rigid) {
+    // After the girth (which blends by the smooth weights, so the body stays in one piece).
+    // A knee pad wrapping the joint is split between thigh and shin and shears as the knee
+    // bends: the thigh's last few centimetres above the knee go to the shin, pad and all
+    // (the thigh's bottom edge it takes along sits inside the pad). Boots stay on the shin
+    // too, as the procedural robot's did: a fused mesh has no edge loop at the ankle, so a
+    // separate foot would skew the whole shin.
+    const pos = geometry.getAttribute('position');
+    const si = geometry.getAttribute('skinIndex');
+    const sw = geometry.getAttribute('skinWeight');
+    const shinL = slots.indexOf('shinL');
+    const shinR = slots.indexOf('shinR');
+    const thighL = slots.indexOf('thighL');
+    const thighR = slots.indexOf('thighR');
+    const footL = slots.indexOf('footL');
+    const footR = slots.indexOf('footR');
+    for (let i = 0; i < si.count; i++) {
+      let best = 0;
+      for (let c = 1; c < 4; c++) if (sw.getComponent(i, c) > sw.getComponent(i, best)) best = c;
+      let slot = si.getComponent(i, best);
+      const y = pos.getY(i);
+      if ((slot === thighL && y < joints.kneeL.y + 0.042) || slot === footL) slot = shinL;
+      else if ((slot === thighR && y < joints.kneeR.y + 0.042) || slot === footR) slot = shinR;
+      si.setXYZW(i, slot, 0, 0, 0);
+      sw.setXYZW(i, 1, 0, 0, 0);
+    }
+    si.needsUpdate = sw.needsUpdate = true;
   }
   geometry.boundingSphere = new THREE.Sphere(new THREE.Vector3(0, 1, 0), 3.5);
   for (const m of mats) {
@@ -342,52 +393,6 @@ export async function loadModelBody(url: string, height = 1.78, girth: [number, 
     s.vertexColors = false;
   }
   return { geometry, materials: mats, slots, joints, height };
-}
-
-/** The joint each slot turns about. */
-const SLOT_JOINT: Record<Slot, keyof Joints> = {
-  pelvis: 'hips',
-  torso: 'spine',
-  head: 'neck',
-  upperArmL: 'shoulderL',
-  upperArmR: 'shoulderR',
-  foreArmL: 'elbowL',
-  foreArmR: 'elbowR',
-  thighL: 'hipL',
-  thighR: 'hipR',
-  shinL: 'kneeL',
-  shinR: 'kneeR',
-  footL: 'ankleL',
-  footR: 'ankleR',
-};
-
-/**
- * `body`'s geometry moved onto `onto`'s joints, so it can be worn by a Humanoid built
- * for `onto` (a variant model swapped onto a pooled body): every vertex follows its
- * bones' joints by their weights. Exact at the joints, close in between when the two
- * builds are alike.
- */
-export function retargetBody(body: ModelBody, onto: ModelBody): THREE.BufferGeometry {
-  const g = body.geometry.clone();
-  const pos = g.getAttribute('position');
-  const si = g.getAttribute('skinIndex');
-  const sw = g.getAttribute('skinWeight');
-  const delta = body.slots.map((slot) => {
-    const j = SLOT_JOINT[slot];
-    return onto.joints[j].clone().sub(body.joints[j]);
-  });
-  const d = new THREE.Vector3();
-  for (let i = 0; i < pos.count; i++) {
-    d.set(0, 0, 0);
-    for (let c = 0; c < 4; c++) {
-      const w = sw.getComponent(i, c);
-      if (w > 0) d.addScaledVector(delta[si.getComponent(i, c)], w);
-    }
-    pos.setXYZ(i, pos.getX(i) + d.x, pos.getY(i) + d.y, pos.getZ(i) + d.z);
-  }
-  pos.needsUpdate = true;
-  g.boundingSphere = body.geometry.boundingSphere?.clone() ?? null;
-  return g;
 }
 
 /**

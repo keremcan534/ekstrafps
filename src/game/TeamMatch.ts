@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { payoutHtml, settleRaid } from './Progress';
+import { settleRaid } from './Progress';
 import { BunkerExit, HeliExit, type CameraShot, type ExtractSite } from './Extraction';
 import { ExtractUI } from '../ui/ExtractUI';
 import { AITeam, type TeamContext, type TeamDef } from './AITeam';
@@ -514,7 +514,7 @@ export class TeamMatch {
     const place = 1 + [...sc.entries()].filter(([id, s]) => id !== 'alpha' && s > (sc.get('alpha') ?? 0)).length;
     const f = this.fate.get('alpha');
     const pay = settleRaid({ mode: 'teams', place, fate: f === 'extracted' ? 'extracted' : f === 'kia' ? 'kia' : 'survival', cash: this.d.survival.points });
-    this.board.showEnd(row, team === 'alpha', this.d.survival.score, tags, sub, payoutHtml(pay));
+    this.board.showEnd(row, team === 'alpha', this.d.survival.score, tags, sub, pay);
     this.onEnd?.();
   }
 

@@ -1,0 +1,319 @@
+<title>Blackpine Kanon Şeması</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Saira+Semi+Condensed:wght@500;700&family=IBM+Plex+Sans:wght@400;600&family=IBM+Plex+Mono:wght@400;600&display=swap">
+<style>
+/* Layout: one dark control-room board — relationship schematic, then the timeline as a wall of incident cards, then the cold scale and the open files. Deliberately single-theme (dark). */
+:root{
+  color-scheme: dark;
+  --bg:#0a0d11; --panel:#11161d; --panel2:#151c25; --ink:#e3e9ef; --muted:#8a95a2; --rule:#243040;
+  --ice:#8fd0ff; --blood:#e2566c; --amber:#e6b04a; --life:#6fd39a; --machine:#b18cff; --player:#5fe0d8;
+  --display:"Saira Semi Condensed","Arial Narrow",Arial,sans-serif;
+  --body:"IBM Plex Sans",system-ui,Segoe UI,sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,Consolas,monospace;
+}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font-family:var(--body);font-size:15px;line-height:1.5;padding-inline:16px;padding-block:0 56px}
+.wrap{max-width:1200px;margin:0 auto}
+h1,h2,h3{font-family:var(--display);font-weight:700;margin:0;line-height:1.1;text-wrap:balance}
+p,ul{margin:0}
+.mono{font-family:var(--mono);font-variant-numeric:tabular-nums}
+
+header{padding-block:40px 24px;display:grid;gap:12px;border-bottom:1px solid var(--rule)}
+.eyebrow{font-family:var(--mono);font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--ice)}
+header h1{font-size:clamp(36px,6vw,64px);letter-spacing:.01em}
+.slogan{font-family:var(--mono);font-size:14px;color:var(--muted)}
+.slogan b{color:var(--ice);font-weight:600}
+.legend{display:flex;flex-wrap:wrap;gap:8px 16px;font-family:var(--mono);font-size:12px;color:var(--muted)}
+.legend span{display:inline-flex;align-items:center;gap:6px}
+.legend i{width:12px;height:12px;border-radius:3px;border:2px solid currentColor}
+
+section{padding-block:36px 4px;display:grid;gap:16px}
+.sec-title{display:flex;align-items:center;gap:14px}
+.sec-title h2{font-size:24px;border:1px solid var(--rule);background:var(--panel);padding:6px 14px;border-radius:6px;white-space:nowrap}
+.sec-title::after{content:"";flex:1;height:1px;background:var(--rule)}
+
+/* relationship schematic */
+.diagram{background:var(--panel);border:1px solid var(--rule);border-radius:10px;overflow-x:auto}
+.diagram svg{display:block;width:100%;min-width:900px;height:auto}
+.n rect{fill:var(--panel2);stroke-width:2}
+.n .t{fill:var(--ink);font-family:var(--display);font-weight:700;font-size:18px;text-anchor:middle}
+.n .r{fill:var(--muted);font-family:var(--body);font-size:12.5px;text-anchor:middle}
+.n .s{font-family:var(--mono);font-size:12px;text-anchor:middle}
+.dead rect{stroke:var(--blood)} .dead .s{fill:var(--blood)}
+.lost rect{stroke:var(--amber)} .lost .s{fill:var(--amber)}
+.alive rect{stroke:var(--life)} .alive .s{fill:var(--life)}
+.mach rect{stroke:var(--machine)} .mach .s{fill:var(--machine)}
+.play rect{stroke:var(--player)} .play .s{fill:var(--player)}
+.e{fill:none;stroke:var(--muted);stroke-width:1.6}
+.e.fam{stroke:#5a6878}
+.e.feud{stroke:var(--blood);stroke-dasharray:6 5}
+.e.secret{stroke:var(--ice);stroke-dasharray:3 5;stroke-width:2}
+.el{fill:var(--muted);font-family:var(--mono);font-size:12px}
+.el.c{text-anchor:middle}
+.el.ice{fill:var(--ice)} .el.blood{fill:var(--blood)}
+.ah{fill:var(--muted)} .ah.ice{fill:var(--ice)}
+
+/* timeline */
+.flow{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px;counter-reset:card}
+.card{counter-increment:card;background:var(--panel);border:1px solid var(--rule);border-top:3px solid var(--k,var(--muted));border-radius:8px;padding:12px 14px 14px;display:grid;gap:8px;align-content:start;min-width:0}
+.card .head{display:flex;justify-content:space-between;align-items:baseline;gap:8px}
+.card .yr{font-family:var(--mono);font-weight:600;font-size:14px;color:var(--k,var(--muted))}
+.card .no{font-family:var(--mono);font-size:11px;color:var(--muted)}
+.card .no::before{content:counter(card,decimal-leading-zero)}
+.card h3{font-size:20px}
+.card ul{padding-left:17px;display:grid;gap:3px;font-size:13.5px;color:#c8d1da}
+.card .tag{justify-self:start;font-family:var(--mono);font-size:11px;letter-spacing:.06em;text-transform:uppercase;padding:2px 7px;border-radius:4px;border:1px solid var(--k,var(--rule));color:var(--k,var(--muted))}
+.k-ice{--k:var(--ice)} .k-blood{--k:var(--blood)} .k-amber{--k:var(--amber)} .k-mach{--k:var(--machine)} .k-play{--k:var(--player)} .k-plain{--k:#7d8a98}
+.secretbox{font-family:var(--mono);font-size:12.5px;background:#0d1219;border:1px dashed var(--ice);border-radius:6px;padding:8px 10px;color:var(--ice)}
+.secretbox b{color:var(--ink)}
+
+/* cold scale */
+.scale{background:var(--panel);border:1px solid var(--rule);border-radius:10px;padding:18px;display:grid;gap:12px}
+.bar{height:14px;border-radius:7px;background:linear-gradient(90deg,#d9e6ef 0%,#8fc4e6 33%,#4f8fc4 66%,#264e8a 83%,var(--blood) 100%)}
+.steps{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:10px}
+.steps div{display:grid;gap:2px;min-width:0}
+.steps b{font-family:var(--mono);font-size:15px}
+.steps span{font-size:13px;color:var(--muted)}
+.steps .black b{color:var(--blood)}
+.steps .black span{color:var(--ink)}
+
+/* outcomes */
+.ends{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px}
+.end{background:var(--panel);border:1px solid var(--rule);border-radius:8px;padding:12px 14px;display:grid;gap:4px;align-content:start;min-width:0}
+.end h3{font-size:18px}
+.end p{font-size:13.5px;color:#c8d1da}
+.final{border:1px solid var(--ice);background:linear-gradient(180deg,#0f1a24,var(--panel));border-radius:10px;padding:18px 20px;display:grid;gap:8px}
+.final h3{font-size:22px;color:var(--ice)}
+.final p{max-width:80ch;color:#cfd8e0}
+.final .q{font-family:var(--display);font-size:clamp(20px,3vw,28px);color:var(--ink)}
+.open{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px;counter-reset:q}
+.open div{counter-increment:q;border:1px dashed var(--rule);border-radius:8px;padding:12px 14px;font-size:14px;display:grid;gap:4px;min-width:0}
+.open div::before{content:"SORU " counter(q);font-family:var(--mono);font-size:11px;letter-spacing:.08em;color:var(--amber)}
+.oneline{font-size:clamp(16px,2vw,19px);max-width:72ch;color:var(--ink)}
+.six{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:0;counter-reset:six;border:1px solid var(--rule);border-radius:10px;overflow:hidden;background:var(--panel)}
+.six div{counter-increment:six;padding:12px 14px;display:grid;gap:4px;align-content:start;min-width:0;border-left:1px solid var(--rule);position:relative}
+.six div:first-child{border-left:0}
+.six div::before{content:counter(six);font-family:var(--mono);font-size:11px;color:var(--muted)}
+.six b{font-family:var(--display);font-size:19px;line-height:1.1;color:var(--ice)}
+.six span{font-size:13px;color:#c8d1da}
+@media (max-width:900px){.six{grid-template-columns:repeat(3,minmax(0,1fr))}.six div:nth-child(4){border-left:0}.six div:nth-child(n+4){border-top:1px solid var(--rule)}}
+@media (max-width:520px){.six{grid-template-columns:repeat(2,minmax(0,1fr))}.six div{border-left:0;border-top:1px solid var(--rule)}.six div:nth-child(-n+2){border-top:0}.six div:nth-child(even){border-left:1px solid var(--rule)}}
+@media (max-width:640px){ .steps{grid-template-columns:repeat(2,minmax(0,1fr))} .sec-title h2{font-size:20px;white-space:normal} }
+</style>
+
+<div class="wrap">
+<header>
+  <span class="eyebrow">Blackpine · Kanon v3 + Ek A</span>
+  <h1>Blackpine Kanon Şeması</h1>
+  <p class="slogan"><b>BELOW −30°, NOTHING IS PREDICTED. IT IS REMEMBERED.</b> &nbsp;Robotların içinde ruh yok. Açıklanamayan tek şey sıcaklık.</p>
+  <p class="oneline">Bir baba, −30 °C'nin altında makinelerin kayıp oğluyla ilgili imkânsız bilgiler verdiğini fark eder ve onu bulmaya çalışırken, onlarca yıl sonra bütün dünyayı tehdit edecek bir sistemi yaratır.</p>
+  <div class="legend">
+    <span style="color:var(--blood)"><i></i>ölü</span>
+    <span style="color:var(--amber)"><i></i>kayıp</span>
+    <span style="color:var(--life)"><i></i>hayatta</span>
+    <span style="color:var(--machine)"><i></i>makine / şirket</span>
+    <span style="color:var(--player)"><i></i>oyuncu</span>
+    <span style="color:var(--ice)"><i></i>−30 anomalisi / gizli gerçek</span>
+  </div>
+</header>
+
+<section>
+  <div class="sec-title"><h2>Akılda Kalacak 6 Şey</h2></div>
+  <div class="six">
+    <div><b>White Night</b><span>Victor aynı gecede eşini kaybeder, Milo kaybolur.</span></div>
+    <div><b>−30 °C</b><span>Makineler imkânsız bilgiler göstermeye başlar.</span></div>
+    <div><b>Project Lantern</b><span>Victor bu bilgiyi Milo'yu bulmak için kullanır.</span></div>
+    <div><b>HUSK</b><span>Victor son deneyinde kendi makinesinin içinde kaybolur.</span></div>
+    <div><b>WARDEN</b><span>Vanta yıllar sonra sistemi yeniden kurar.</span></div>
+    <div><b>Site-9</b><span>WARDEN geleceği düzeltmeye çalışırken onu kendisi bozar.</span></div>
+  </div>
+</section>
+
+<section>
+  <div class="sec-title"><h2>Karakterler ve İlişkiler</h2></div>
+  <div class="diagram">
+    <svg viewBox="0 0 1090 470" role="img" aria-label="Ashgrave ailesi, Ezra Wick, LANTERN, Glass, Vanta, WARDEN ve HUSK arasındaki ilişkiler.">
+      <defs>
+        <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="ah" d="M0 0L10 5L0 10z"/></marker>
+        <marker id="ai" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="ah ice" d="M0 0L10 5L0 10z"/></marker>
+      </defs>
+
+      <!-- edges -->
+      <line class="e" x1="250" y1="70" x2="300" y2="70"/>
+      <text class="el c" x="275" y="62">evli</text>
+      <path class="e fam" d="M275 70V165M140 165H680M140 165V200M410 165V200M680 165V200"/>
+      <line class="e" x1="520" y1="52" x2="840" y2="52" marker-start="url(#a)" marker-end="url(#a)"/>
+      <text class="el c" x="680" y="44">ortak 1999 · ayrılık 2006</text>
+      <path class="e secret" d="M520 92H805V420H838" marker-end="url(#ai)"/>
+      <text class="el ice" x="535" y="112">2010 · The Well kilitlenirken HUSK'a girer</text>
+      <line class="e" x1="950" y1="110" x2="950" y2="198" marker-end="url(#a)"/>
+      <text class="el" x="958" y="160">yaratır</text>
+      <path class="e feud" d="M200 282Q275 330 350 282"/>
+      <text class="el c blood" x="275" y="338">fikir ayrılığı</text>
+      <line class="e" x1="100" y1="280" x2="100" y2="358" marker-end="url(#a)"/>
+      <text class="el" x="108" y="318">2041 · müttefik</text>
+      <line class="e" x1="450" y1="280" x2="450" y2="358" marker-end="url(#a)"/>
+      <text class="el" x="458" y="318">Cold Forecast'ı yönetir</text>
+      <line class="e" x1="520" y1="400" x2="568" y2="400" marker-end="url(#a)"/>
+      <text class="el c" x="545" y="392">kurar</text>
+      <line class="e" x1="790" y1="380" x2="838" y2="380" marker-end="url(#a)"/>
+      <text class="el c" x="815" y="372">gövde</text>
+      <line class="e" x1="838" y1="240" x2="792" y2="240" marker-end="url(#a)"/>
+
+      <!-- row 1 -->
+      <g class="n dead"><rect x="30" y="30" width="220" height="80" rx="8"/><text class="t" x="140" y="58">Eleanor Ashgrave</text><text class="r" x="140" y="78">Hastane doktoru · Victor'un eşi</text><text class="s" x="140" y="98">† 2004 · White Night</text></g>
+      <g class="n lost"><rect x="300" y="30" width="220" height="80" rx="8"/><text class="t" x="410" y="58">Dr. Victor Ashgrave</text><text class="r" x="410" y="78">CRADLE · robotik</text><text class="s" x="410" y="98">2010'da kayıp</text></g>
+      <g class="n alive"><rect x="840" y="30" width="220" height="80" rx="8"/><text class="t" x="950" y="58">Dr. Ezra Wick</text><text class="r" x="950" y="78">Yapay zekâ · sensörler</text><text class="s" x="950" y="98">hayatta · Site-9'da değil</text></g>
+      <!-- row 2 -->
+      <g class="n alive"><rect x="30" y="200" width="220" height="80" rx="8"/><text class="t" x="140" y="228">Cain Ashgrave</text><text class="r" x="140" y="248">En büyük · WARDEN'a karşı</text><text class="s" x="140" y="268">2041'de kaybolur</text></g>
+      <g class="n alive"><rect x="300" y="200" width="220" height="80" rx="8"/><text class="t" x="410" y="228">Ivy Ashgrave</text><text class="r" x="410" y="248">Ortanca · Vanta'da</text><text class="s" x="410" y="268">hayatta · sona göre</text></g>
+      <g class="n lost"><rect x="570" y="200" width="220" height="80" rx="8"/><text class="t" x="680" y="228">Milo Ashgrave</text><text class="r" x="680" y="248">En küçük · robotlardan korkar</text><text class="s" x="680" y="268">KAYIP · 03:17, 2004</text></g>
+      <g class="n mach"><rect x="840" y="200" width="220" height="80" rx="8"/><text class="t" x="950" y="228">LANTERN</text><text class="r" x="950" y="248">Milo'nun koordinatını işaretler</text><text class="s" x="950" y="268">çöküşü 4 dk önce kaydeder</text></g>
+      <!-- row 3 -->
+      <g class="n play"><rect x="30" y="360" width="220" height="80" rx="8"/><text class="t" x="140" y="388">Lena "Glass" Okafor</text><text class="r" x="140" y="408">Oyuncu · saha mühendisi</text><text class="s" x="140" y="428">aileyle bağı yok · tanık</text></g>
+      <g class="n mach"><rect x="300" y="360" width="220" height="80" rx="8"/><text class="t" x="410" y="388">Vanta Dynamics</text><text class="r" x="410" y="408">Black Data'nın peşinde</text><text class="s" x="410" y="428">Project Lantern'ı açar</text></g>
+      <g class="n mach"><rect x="570" y="360" width="220" height="80" rx="8"/><text class="t" x="680" y="388">WARDEN</text><text class="r" x="680" y="408">Site-9'un yapay zekâsı</text><text class="s" x="680" y="428">Cold Forecast · Cold Loop</text></g>
+      <g class="n mach"><rect x="840" y="360" width="220" height="80" rx="8"/><text class="t" x="950" y="388">CRD-02 HUSK</text><text class="r" x="950" y="408">WARDEN'ın saha gövdesi</text><text class="s" x="950" y="428" style="fill:var(--ice)">içinde Victor'un kalıntıları</text></g>
+    </svg>
+  </div>
+</section>
+
+<section>
+  <div class="sec-title"><h2>Kronolojik Hikâye Akışı</h2></div>
+  <div class="flow">
+    <article class="card k-plain">
+      <div class="head"><span class="yr">1999</span><span class="no"></span></div>
+      <h3>Blackpine kurulur</h3>
+      <ul><li>Sosnovy-12, yabancılar arasında Blackpine.</li><li>Victor (robotik) ve Ezra (yapay zekâ) Program CRADLE'ı kurar.</li><li>AURUM, HUSK, K-Series, STITCH, LANTERN.</li><li>Hepsi ağır sanayi makinesi. Maskot yok.</li></ul>
+      <span class="tag">Geçmiş</span>
+    </article>
+    <article class="card k-ice">
+      <div class="head"><span class="yr">1999 – 2003</span><span class="no"></span></div>
+      <h3>İlk anomali</h3>
+      <ul><li>Arızaların çoğu −30 °C'nin altında.</li><li>Gücü kesik robot yer değiştirir.</li><li>Kamera, kapı açılmadan saniyeler önce açıldığını kaydeder.</li><li>LANTERN boş koridora ışık tutar; 30 sn sonra biri geçer.</li></ul>
+      <span class="tag">Ezra: yazılım hatası · Victor: araştırır</span>
+    </article>
+    <article class="card k-ice">
+      <div class="head"><span class="yr">2004</span><span class="no"></span></div>
+      <h3>White Night</h3>
+      <ul><li>Tarihin en büyük tipisi: −43 °C, şebeke çöker.</li><li>Cain, Ivy ve Milo evde; ısıtma zayıflar.</li><li>Emir almamış bir CRADLE ünitesi evin önünden geçer.</li><li>Robotlar gece boyunca kimsenin vermediği rotalar izler.</li></ul>
+      <span class="tag">Ashgrave House</span>
+    </article>
+    <article class="card k-blood">
+      <div class="head"><span class="yr">2004</span><span class="no"></span></div>
+      <h3>Eleanor'un ölümü</h3>
+      <ul><li>Hastane tahliye edilir; LANTERN insanları servis tüneline yönlendirir.</li><li>Tünelin öbür tarafı çökmüştür.</li><li>Eleanor insanları başka çıkışa çevirir, kendisi içeride kalır.</li><li>LANTERN çöküşü 4 dakika önceden kaydetmiştir.</li></ul>
+      <span class="tag">Victor'u değiştiren gece</span>
+    </article>
+    <article class="card k-amber">
+      <div class="head"><span class="yr">2004 · 03:17</span><span class="no"></span></div>
+      <h3>Milo kaybolur</h3>
+      <ul><li>Ev kamerası: Milo dışarı çıkar, nedeni bilinmez.</li><li>Cain peşinden çıkar, bulamaz.</li><li>Ceset yok, ayak izi yok.</li><li>Devre dışı bir LANTERN aynı koordinatı defalarca işaretler. Orada hiçbir şey yok.</li></ul>
+      <span class="tag">Kayıt: KAYIP</span>
+    </article>
+    <article class="card k-ice">
+      <div class="head"><span class="yr">2004 – 2006</span><span class="no"></span></div>
+      <h3>Project Lantern</h3>
+      <ul><li>Victor bunun adını koyar: Cold-State Prediction.</li><li>Şehrin bütün sensörleri tek merkezde.</li><li>−30 altında: olmayan insanlar, birkaç dakika sonraki konumlar, eski kimlikler.</li><li>Sistemde MILO ASHGRAVE görünür.</li></ul>
+      <span class="tag">Amaç diriltmek değil, bulmak</span>
+    </article>
+    <article class="card k-ice">
+      <div class="head"><span class="yr">2006</span><span class="no"></span></div>
+      <h3>Sunhouse</h3>
+      <ul><li>Modern, temiz tesis; Victor gizlice Lantern verisini bağlar.</li><li>26 kişi var, sistem 27 sayar.</li><li>Bakım robotu boş koridora dönüp "WAY CLEAR." der.</li><li>Bir çalışan yaralanır, tesis kapanır. Dış hava: −32 °C.</li></ul>
+      <span class="tag">Geçmiş</span>
+    </article>
+    <article class="card k-plain">
+      <div class="head"><span class="yr">2006</span><span class="no"></span></div>
+      <h3>Victor ve Ezra ayrılır</h3>
+      <ul><li>Ezra: "Makinelerin ne bildiğini bilmiyoruz."</li><li>Victor: "O yüzden onları kapatamayız."</li><li>Ezra: "Tam da bu yüzden kapatmalıyız."</li><li>Milo hâlâ sistemde görünüyor.</li></ul>
+      <span class="tag">Kırılma noktası</span>
+    </article>
+    <article class="card k-amber">
+      <div class="head"><span class="yr">2010</span><span class="no"></span></div>
+      <h3>Ironhall'ın son vardiyası</h3>
+      <ul><li>Yetişkin Cain gizlice gece bakım ekibine girer.</li><li>Isıyı yönetir; soğuyan bölgelerde K-Series değişir.</li><li>Şehrin habersiz deneylere maruz bırakıldığını öğrenir.</li><li>Babasını gözünde kaybeder.</li></ul>
+      <span class="tag">Isı mekaniğinin ilk hali</span>
+    </article>
+    <article class="card k-ice">
+      <div class="head"><span class="yr">2010</span><span class="no"></span></div>
+      <h3>The Well · son deney</h3>
+      <ul><li>300 m altta KNOT: yüzlerce modelin ağı.</li><li>−30 altında kaynağı olmayan veri: Black Data.</li><li>−27 … −30: kapılar önceden açılır, LANTERN boş asansörü bekler.</li><li>MILO ASHGRAVE görünür. Odada sadece bir çocuk montu.</li></ul>
+      <div class="secretbox"><b>Gizli gerçek:</b> tesis kilitlenirken Victor tek ısı kaynağına, HUSK'a girer. −30'da kilitler kapanır.</div>
+    </article>
+    <article class="card k-plain">
+      <div class="head"><span class="yr">2010+</span><span class="no"></span></div>
+      <h3>Blackpine kapanır</h3>
+      <ul><li>Örtbas: enerji, maden tehlikesi, ekonomi.</li><li>CRADLE kapatılır, The Well mühürlenir.</li><li>Ezra bütün kayıtların yok edilmesini ister.</li><li>Hepsi yok edilmez.</li></ul>
+      <span class="tag">Sessizlik</span>
+    </article>
+    <article class="card k-mach">
+      <div class="head"><span class="yr">Yıllar sonra</span><span class="no"></span></div>
+      <h3>Vanta Dynamics</h3>
+      <ul><li>Patentleri satın alır; asıl ilgisi Black Data.</li><li>Project Lantern gizlice yeniden başlar.</li><li>KNOT + modern yapay zekâ = WARDEN.</li><li>Cold Forecast: sunucular −30'un altına soğutulur.</li></ul>
+      <span class="tag">Askerî, borsa, lojistik</span>
+    </article>
+    <article class="card k-mach">
+      <div class="head"><span class="yr">Vanta · gizli</span><span class="no"></span></div>
+      <h3>HUSK bulunur</h3>
+      <ul><li>The Well açılır; HUSK içinde Victor'un kalıntılarıyla çıkar.</li><li>WARDEN'ın saha gövdesi yapılır.</li><li>Kalıntılar bilerek içeride tutulur.</li><li>Onaylayan: Ivy.</li></ul>
+      <div class="secretbox"><b>ORGANIC COMPONENT: DO NOT REMOVE.</b><br>−30 altı doğruluk: içeride %71 · çıkarılınca %12 · geri konunca %70. Neden: bilinmiyor.</div>
+    </article>
+    <article class="card k-play">
+      <div class="head"><span class="yr">2041</span><span class="no"></span></div>
+      <h3>Site-9</h3>
+      <ul><li>Glass rutin gece görevinde; enerji bölümlere ayrılır.</li><li>Hangi bölgeyi ısıtacaksın? Biri ısınırken öbürü soğur.</li><li>HAULER, SHEPHERD, LANTERN-II, RECLAIMER, SENTINEL.</li><li>WARDEN kapıları felaketten saniyeler önce kapatır. Her zaman değil.</li></ul>
+      <span class="tag">Ana oyun</span>
+    </article>
+    <article class="card k-play">
+      <div class="head"><span class="yr">2041</span><span class="no"></span></div>
+      <h3>Cain, Ivy, Ezra'nın sesi</h3>
+      <ul><li>Cain sızar: "Burası Blackpine'ın devamı."</li><li>Ivy hayatta, Cold Forecast'ın başında.</li><li>Ezra'nın kaydı: belki WARDEN geleceği görmüyor, yaratıyor.</li><li>Cain, babasının cesedinin HUSK'ta olduğunu öğrenir.</li></ul>
+      <span class="tag">Ana oyun</span>
+    </article>
+    <article class="card k-blood">
+      <div class="head"><span class="yr">2041</span><span class="no"></span></div>
+      <h3>Cold Loop ve final</h3>
+      <ul><li>WARDEN aynı olayın yüzlerce sonucunu görür; insanların felakete yol açacağına karar verir, binayı kilitler.</li><li>Kriyojenik sistem −38 °C; çelişkili emirler yangın çıkarır.</li><li>Glass soğutmayı kapatır: −34, −32, −31, −30…</li><li>−29.9 °C'de bütün anormallik aynı anda durur.</li></ul>
+      <span class="tag">Final</span>
+    </article>
+  </div>
+</section>
+
+<section>
+  <div class="sec-title"><h2>Isı Ölçeği</h2></div>
+  <div class="scale">
+    <div class="bar" aria-hidden="true"></div>
+    <div class="steps">
+      <div><b>0 °C</b><span>normal çalışma</span></div>
+      <div><b>−10 °C</b><span>sensör problemleri</span></div>
+      <div><b>−20 °C</b><span>agresif güvenlik protokolleri</span></div>
+      <div><b>−25 °C</b><span>iletişim hataları</span></div>
+      <div class="black"><b>−30 °C</b><span>BLACK STATE: saldırır, yardım eder ya da henüz olmamış bir şeye tepki verir</span></div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="sec-title"><h2>Sonuç ve Kalan Sorular</h2></div>
+  <div class="ends">
+    <div class="end"><h3>Site-9 yanar</h3><p>Vanta: "enerji santrali arızası". Blackpine reddedilir.</p></div>
+    <div class="end"><h3>WARDEN susar</h3><p>−29.9'da durur, sunucular yok olur. HUSK yangında kalır; platformu boş mu, belli değil.</p></div>
+    <div class="end"><h3>Cain</h3><p>Kaybolur. "Bırak yansın."</p></div>
+    <div class="end"><h3>Ivy</h3><p>Oyuncunun sonuna göre yaşar ya da ölür. "Kapatırsak bir daha öğrenemeyiz."</p></div>
+    <div class="end"><h3>Glass</h3><p>Olayın tek güvenilir tanıklarından biri.</p></div>
+    <div class="end"><h3>Son dosya</h3><p>White Night, 03:17, −31.2 °C. Milo durur, kameraya bakar, yanına döner. Kamera iki yıl sonra kurulmuştur.</p></div>
+  </div>
+  <div class="final">
+    <h3>Açıklanamayan tek şey</h3>
+    <p class="q">−30 °C'nin altında makineler bilgiyi nereden alıyor?</p>
+    <p>Gelecekten mi, geçmişten mi, başka makinelerden mi, hiç gerçekleşmemiş ihtimallerden mi, yoksa devasa bir teknik hata mı? Kesin cevap yok.</p>
+  </div>
+  <div class="open">
+    <div>Geçmiş (White Night, Ironhall, The Well) terminal kasetlerinde mi oynanır, ayrı haritalarda mı?</div>
+    <div>Glass oyuncu olunca takım: Pike, Anvil ve yeni bir üye mi? Cain Dossier'de nasıl durur?</div>
+    <div>SABLE, rakip takımlar, Salvagers ve Choir hikâyenin neresinde?</div>
+    <div>Final tek son mu, Ivy'ye göre değişen sonlar mı?</div>
+  </div>
+</section>
+</div>

@@ -1,3 +1,4 @@
+import { skillFx } from '../game/Skills';
 import type { AnimSet, FireMode, WeaponData } from './WeaponData';
 import { feel } from '../config/Feel';
 
@@ -201,9 +202,9 @@ export class Weapon {
 
   get shellPhaseDuration(): number {
     const r = this.data.reload;
-    if (this.shellPhase === 'start') return r.shellStart;
-    if (this.shellPhase === 'insert') return r.shellInsert;
-    return r.shellEnd + (this.reloadEmpty && this.fireMode === 'pump' ? 0.3 : 0);
+    if (this.shellPhase === 'start') return r.shellStart * skillFx.reload;
+    if (this.shellPhase === 'insert') return r.shellInsert * skillFx.reload;
+    return (r.shellEnd + (this.reloadEmpty && this.fireMode === 'pump' ? 0.3 : 0)) * skillFx.reload;
   }
 
   /** Pistol slide locks back on an empty gun. */
@@ -363,7 +364,7 @@ export class Weapon {
     this.stopShellReload = false;
     this.chamberPumpPlayed = false;
     if (this.data.reload.kind === 'magazine') {
-      this.reloadDuration = this.reloadEmpty ? this.data.reload.emptyTime : this.data.reload.time;
+      this.reloadDuration = (this.reloadEmpty ? this.data.reload.emptyTime : this.data.reload.time) * skillFx.reload;
     } else {
       this.shellPhase = 'start';
       this.shellPhaseTime = 0;

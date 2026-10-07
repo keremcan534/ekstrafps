@@ -1,3 +1,4 @@
+import { skillFx, skillRaid } from '../game/Skills';
 import * as THREE from 'three';
 import { DEG, clamp } from '../core/math';
 import type { Input } from '../core/Input';
@@ -264,8 +265,8 @@ export class WeaponController implements WeaponListener {
 
     // --- Arm stamina: holding a weapon up on target is tiring ---
     if (!feel.armStamina) this.stamina = 1;
-    else if (this.adsAmount > 0.5) this.stamina = Math.max(0, this.stamina - this.handling.staminaDrain * dt * (player.crouching ? 0.75 : 1));
-    else this.stamina = Math.min(1, this.stamina + this.handling.staminaRecover * dt);
+    else if (this.adsAmount > 0.5) this.stamina = Math.max(0, this.stamina - this.handling.staminaDrain * skillFx.staminaDrain * dt * (player.crouching ? 0.75 : 1));
+    else this.stamina = Math.min(1, this.stamina + this.handling.staminaRecover * skillFx.staminaRecover * dt);
 
     this.sprintRecover = player.sprinting ? w.data.sprintToFireTime : this.sprintRecover - dt;
   }
@@ -491,6 +492,8 @@ export class WeaponController implements WeaponListener {
     const { hud, audio } = this.deps;
     const kind: HitKind = this.frameHitRank === 3 ? 'kill' : this.frameHitRank === 2 ? 'crit' : 'hit';
     hud.showHit(kind);
+    // RECOIL CONTROL grows with hits that land (a crit or a kill counts double).
+    skillRaid.add('recoil', kind === 'hit' ? 1 : 2);
     hud.damageNumber(this.frameHitPoint, this.frameDamage, kind);
     this.lastDamage = `${this.frameDamage.toFixed(0)}${kind === 'crit' ? ' (crit)' : kind === 'kill' ? ' (kill)' : ''}`;
     if (kind === 'kill') {

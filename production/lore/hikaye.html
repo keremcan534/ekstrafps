@@ -1,0 +1,486 @@
+<title>Blackpine Dosyası</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=PT+Sans+Narrow:wght@400;700&family=PT+Serif:ital,wght@0,400;0,700;1,400&family=IBM+Plex+Mono:wght@400;600&display=swap">
+<style>
+/* Layout: a declassified archive file — a site plan up top, a station rail of maps, then the story as numbered case chapters. */
+:root{
+  --paper:#eceae4; --sheet:#f6f5f1; --ink:#1d1f22; --muted:#5d625f; --rule:#c9c6bc;
+  --oxide:#a2332a; --steel:#3d5a6c; --amber:#b07a1c; --redact:#1d1f22;
+  --display:"PT Sans Narrow","Arial Narrow",Arial,sans-serif;
+  --body:"PT Serif",Georgia,"Times New Roman",serif;
+  --mono:"IBM Plex Mono",ui-monospace,Consolas,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --paper:#141617; --sheet:#1b1e20; --ink:#e4e2dc; --muted:#9a9f9b; --rule:#33383a;
+  --oxide:#e0675b; --steel:#86aac0; --amber:#d9a54a; --redact:#e4e2dc; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --paper:#141617; --sheet:#1b1e20; --ink:#e4e2dc; --muted:#9a9f9b; --rule:#33383a;
+  --oxide:#e0675b; --steel:#86aac0; --amber:#d9a54a; --redact:#e4e2dc; color-scheme:dark}
+
+*{box-sizing:border-box}
+body{background:var(--paper);color:var(--ink);font-family:var(--body);font-size:17px;line-height:1.65;padding-inline:16px;padding-block:0 64px}
+.wrap{max-width:1040px;margin:0 auto}
+.read{max-width:68ch}
+h1,h2,h3{font-family:var(--display);font-weight:700;line-height:1.1;text-wrap:balance;margin:0}
+.label{font-family:var(--mono);font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+.mono{font-family:var(--mono);font-variant-numeric:tabular-nums}
+p{margin:0}
+a{color:var(--steel)}
+
+/* header */
+header{padding-block:48px 28px;border-bottom:2px solid var(--ink);display:grid;gap:14px}
+.stamp{display:inline-block;justify-self:start;font-family:var(--display);font-weight:700;letter-spacing:.12em;color:var(--oxide);border:3px solid var(--oxide);padding:2px 12px;transform:rotate(-2deg);font-size:15px}
+header h1{font-size:clamp(44px,8vw,84px);letter-spacing:-.01em;text-transform:uppercase}
+header .lede{font-size:19px;max-width:60ch}
+.meta{display:flex;flex-wrap:wrap;gap:8px 28px}
+.meta div{display:grid}
+.meta b{font-family:var(--mono);font-weight:600;font-size:14px}
+
+section{padding-block:44px 8px;display:grid;gap:20px}
+.sec-head{display:grid;gap:6px;border-top:1px solid var(--rule);padding-top:14px}
+.sec-head h2{font-size:clamp(30px,4.6vw,42px);text-transform:uppercase}
+
+/* rules box */
+.thesis{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px}
+.thesis div{background:var(--sheet);border:1px solid var(--rule);padding:14px 16px;display:grid;gap:4px;align-content:start}
+.thesis b{font-family:var(--display);font-size:21px;line-height:1.15}
+.thesis span{color:var(--muted);font-size:15px}
+
+/* site plan */
+.plan{background:var(--sheet);border:1px solid var(--rule);overflow-x:auto}
+.plan svg{display:block;width:100%;min-width:720px;height:auto}
+.plan .fence{fill:none;stroke:var(--ink);stroke-width:1.5;stroke-dasharray:7 5}
+.plan .river{fill:none;stroke:var(--steel);stroke-width:10;opacity:.35;stroke-linecap:round}
+.plan .road{fill:none;stroke:var(--muted);stroke-width:2}
+.plan .route{fill:none;stroke:var(--oxide);stroke-width:2;stroke-dasharray:2 6;stroke-linecap:round}
+.plan .node{fill:var(--sheet);stroke:var(--ink);stroke-width:2}
+.plan .node.under{stroke-dasharray:4 3}
+.plan .pin{fill:var(--oxide)}
+.plan .pin-t{fill:var(--sheet);font-family:var(--mono);font-weight:600;font-size:13px;text-anchor:middle;dominant-baseline:central}
+.plan .name{fill:var(--ink);font-family:var(--display);font-weight:700;font-size:19px}
+.plan .sub{fill:var(--muted);font-family:var(--mono);font-size:11.5px;letter-spacing:.04em}
+.plan .area{fill:var(--ink);font-family:var(--mono);font-size:12px;letter-spacing:.14em}
+.plan .rlabel{fill:var(--steel);font-family:var(--mono);font-size:12px;letter-spacing:.2em}
+.plan .grid{stroke:var(--rule);stroke-width:1}
+.legend{display:flex;flex-wrap:wrap;gap:6px 22px;font-family:var(--mono);font-size:12.5px;color:var(--muted)}
+.legend i{display:inline-block;width:22px;height:0;border-top:2px dashed var(--oxide);vertical-align:middle;margin-right:6px}
+.legend i.f{border-top:2px dashed var(--ink)}
+.legend i.u{width:12px;height:12px;border:2px dashed var(--ink);border-radius:50%;}
+
+/* station rail */
+.rail{display:grid;gap:0;border-left:3px solid var(--ink);margin-left:10px}
+.st{position:relative;padding:0 0 26px 30px;display:grid;gap:8px}
+.st::before{content:"";position:absolute;left:-12px;top:4px;width:21px;height:21px;border-radius:50%;background:var(--paper);border:3px solid var(--ink)}
+.st.map::before{background:var(--oxide);border-color:var(--oxide)}
+.st-top{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 14px}
+.st-year{font-family:var(--mono);font-weight:600;font-size:15px;color:var(--oxide)}
+.st h3{font-size:25px}
+.st .where{font-family:var(--mono);font-size:12.5px;color:var(--muted)}
+.st .what{max-width:68ch}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chip{font-family:var(--mono);font-size:11.5px;letter-spacing:.04em;padding:2px 8px;border:1px solid var(--rule);background:var(--sheet);color:var(--muted)}
+.chip.play{border-color:var(--steel);color:var(--steel)}
+.chip.mg{border-color:var(--amber);color:var(--amber)}
+.chip.nomap{border-style:dashed}
+
+/* cast */
+.cast{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:12px}
+.who{background:var(--sheet);border:1px solid var(--rule);padding:14px 16px;display:grid;gap:4px;align-content:start}
+.who b{font-family:var(--display);font-size:21px}
+.who .r{font-family:var(--mono);font-size:11.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--oxide)}
+.who p{font-size:15px;color:var(--muted)}
+.who .hook{font-family:var(--mono);font-size:12.5px;color:var(--steel);border-top:1px dashed var(--rule);padding-top:6px;margin-top:4px}
+
+/* chapters */
+.chapter{display:grid;grid-template-columns:150px minmax(0,1fr);gap:24px;padding-block:30px;border-top:1px solid var(--rule)}
+.ch-side{display:grid;gap:6px;align-content:start;position:sticky;top:env(safe-area-inset-top,0px);padding-top:4px}
+.ch-num{font-family:var(--display);font-weight:700;font-size:54px;line-height:1;color:var(--oxide)}
+.ch-side .mono{font-size:13px}
+.ch-body{display:grid;gap:14px;max-width:68ch;min-width:0}
+.ch-body h3{font-size:clamp(26px,3.6vw,34px)}
+.ch-body .tag{font-family:var(--mono);font-size:12.5px;color:var(--steel)}
+.line{font-family:var(--display);font-size:22px;line-height:1.3;border-left:4px solid var(--oxide);padding:2px 0 2px 14px}
+.tape{font-family:var(--mono);font-size:14px;background:var(--sheet);border:1px dashed var(--rule);padding:12px 14px;color:var(--muted)}
+.rx{background:var(--redact);color:var(--redact);padding:0 4px;user-select:none}
+.mgnote{font-family:var(--mono);font-size:13px;color:var(--amber)}
+
+/* recap */
+.recap{counter-reset:r;display:grid;gap:8px;padding:0;margin:0;list-style:none}
+.recap li{counter-increment:r;display:grid;grid-template-columns:44px minmax(0,1fr);gap:10px;align-items:baseline;font-size:18px}
+.recap li::before{content:counter(r,decimal-leading-zero);font-family:var(--mono);font-weight:600;color:var(--oxide);font-size:14px}
+.open{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px}
+.open div{border:2px solid var(--ink);padding:14px 16px;font-family:var(--display);font-size:21px;line-height:1.2}
+
+@media (max-width:640px){
+  body{font-size:16px}
+  .chapter{grid-template-columns:minmax(0,1fr);gap:10px}
+  .ch-side{position:static;display:flex;gap:14px;align-items:baseline;flex-wrap:wrap}
+  .ch-num{font-size:40px}
+}
+@media (prefers-reduced-motion:no-preference){ .stamp{transition:transform .3s} .stamp:hover{transform:rotate(0)} }
+</style>
+
+<div class="wrap">
+
+<header>
+  <span class="stamp">СОВЕРШЕННО СЕКРЕТНО · ÇOK GİZLİ</span>
+  <h1>Blackpine Dosyası</h1>
+  <p class="lede">Sibirya'da, haritalarda olmayan bir şehirde, bir baba çocuklarını kaybetmemek için ne gerekiyorsa yapar. Her seferinde biraz daha fazlasını kaybeder.</p>
+  <div class="meta">
+    <div><span class="label">Dönem</span><b>1999 – 2041</b></div>
+    <div><span class="label">Bölge</span><b>Krasnoyarsk Krayı, Yenisey kıyısı</b></div>
+    <div><span class="label">Program</span><b>CRADLE / Project Lantern</b></div>
+    <div><span class="label">Harita</span><b>7 bölüm, 6 mekân</b></div>
+  </div>
+</header>
+
+<section>
+  <div class="sec-head"><span class="label">Önce bunu bil</span><h2>Hikâyenin üç kuralı</h2></div>
+  <div class="thesis">
+    <div><b>Haritalar bugünü anlatır.</b><span>Her harita bir dönem ve o dönemde birinin hayatta kalmaya çalıştığı birkaç gece.</span></div>
+    <div><b>Ölüm geçmişi anlatır.</b><span>Öldüğünde açılan eski terminal programları, haritada göremediğin yılları gösterir.</span></div>
+    <div><b>Soğuk her şeyi bozar.</b><span>CRADLE kilitleri −30'un altında boşalır. Bu hikâyedeki her ölüm bir kış gecesinde olur.</span></div>
+  </div>
+</section>
+
+<section>
+  <div class="sec-head"><span class="label">Şekil 1 · Mekân planı</span><h2>Nerede geçiyor</h2></div>
+  <div class="plan">
+    <svg viewBox="0 0 960 560" role="img" aria-label="Blackpine kapalı şehri, tesisler ve Site-9'un konumu; numaralar haritaların oynanma sırası.">
+      <g class="grid">
+        <line x1="0" y1="140" x2="960" y2="140"/><line x1="0" y1="280" x2="960" y2="280"/><line x1="0" y1="420" x2="960" y2="420"/>
+        <line x1="240" y1="0" x2="240" y2="560"/><line x1="480" y1="0" x2="480" y2="560"/><line x1="720" y1="0" x2="720" y2="560"/>
+      </g>
+      <path class="river" d="M600 -10 C 560 120, 660 200, 610 300 S 640 470, 600 570"/>
+      <text class="rlabel" x="628" y="520" transform="rotate(-80 628 520)">YENİSEY</text>
+
+      <rect class="fence" x="40" y="44" width="510" height="470"/>
+      <text class="area" x="56" y="70">BLACKPINE · KAPALI ŞEHİR · TEL ÖRGÜ</text>
+
+      <path class="road" d="M550 330 C 620 330, 640 340, 700 330 S 760 310, 790 300"/>
+      <text class="sub" x="660" y="356">YOL · 40 KM</text>
+
+      <path class="route" d="M140 420 L 190 170 L 410 150 L 330 330 L 410 150 L 800 300"/>
+
+      <rect class="node" x="104" y="396" width="72" height="48"/>
+      <circle class="pin" cx="104" cy="396" r="13"/><text class="pin-t" x="104" y="396">1</text>
+      <text class="name" x="190" y="416">Ashgrave House</text>
+      <text class="sub" x="190" y="434">2003 · KONUT BLOĞU 7</text>
+
+      <rect class="node" x="140" y="140" width="100" height="60"/>
+      <circle class="pin" cx="140" cy="140" r="13"/><text class="pin-t" x="140" y="140">2</text>
+      <text class="name" x="80" y="226">Sunhouse</text>
+      <text class="sub" x="80" y="244">2006 · BATI KOMPLEKS</text>
+
+      <rect class="node" x="360" y="110" width="110" height="80"/>
+      <circle class="pin" cx="360" cy="110" r="13"/><text class="pin-t" x="360" y="110">3</text>
+      <circle class="pin" cx="470" cy="110" r="13"/><text class="pin-t" x="470" y="110">5</text>
+      <text class="name" x="360" y="218">Ironhall</text>
+      <text class="sub" x="360" y="236">2010 · NÖBET</text>
+      <text class="sub" x="360" y="252">2040 · YANGIN</text>
+
+      <circle class="node under" cx="330" cy="340" r="40"/>
+      <circle class="node under" cx="330" cy="340" r="26"/>
+      <circle class="pin" cx="302" cy="312" r="13"/><text class="pin-t" x="302" y="312">4</text>
+      <text class="name" x="382" y="340">The Well</text>
+      <text class="sub" x="382" y="358">2011 · 300 M ALTTA</text>
+
+      <rect class="node" x="760" y="250" width="150" height="100"/>
+      <circle class="pin" cx="760" cy="250" r="13"/><text class="pin-t" x="760" y="250">6</text>
+      <circle class="pin" cx="910" cy="250" r="13"/><text class="pin-t" x="910" y="250">7</text>
+      <text class="name" x="760" y="380">Site-9</text>
+      <text class="sub" x="760" y="398">2041 · VANTA DYNAMICS</text>
+      <text class="sub" x="760" y="414">2041+ · THE ASHES</text>
+    </svg>
+  </div>
+  <div class="legend">
+    <span><i></i>haritaların oynanma sırası</span>
+    <span><i class="f"></i>kapalı şehrin teli</span>
+    <span><i class="u"></i>yeraltı tesis</span>
+    <span>Numaralı kırmızı noktalar = oynanabilir haritalar</span>
+  </div>
+  <div class="cast">
+    <div class="who"><span class="r">Şehir</span><b>Blackpine</b><p>Kara çam ormanının ortasında, tel örgünün arkasında bir şehir. Rus kâğıtlarında adı Sosnovy-12.</p></div>
+    <div class="who"><span class="r">Harita 1</span><b>Ashgrave House</b><p>Ailenin dairesi. Milo'nun odasının kapısı hep aralık, koridorun ışığı hep açık.</p></div>
+    <div class="who"><span class="r">Harita 2</span><b>Sunhouse</b><p>En parlak tesis ve en kısa ömürlüsü. Tam bir hafta açık kaldı.</p></div>
+    <div class="who"><span class="r">Harita 3 · 5</span><b>Ironhall</b><p>Her şeyin başladığı demir salon. İki kez oynanır: 2010'da nöbet, 2040'ta yangın.</p></div>
+    <div class="who"><span class="r">Harita 4</span><b>The Well</b><p>Kâğıtta Site-4. Tek girişi 300 metrelik bir asansör kuyusu.</p></div>
+    <div class="who"><span class="r">Harita 6 · 7</span><b>Site-9 · The Ashes</b><p>Vanta'nın son tesisi ve yandıktan sonra ondan geriye kalan.</p></div>
+  </div>
+</section>
+
+<section>
+  <div class="sec-head"><span class="label">Şekil 2 · Kronoloji</span><h2>Ne zaman, ne oluyor</h2></div>
+  <p class="read" style="color:var(--muted)">Kırmızı istasyonlar oynanabilir haritalar. Boş istasyonlarda harita yok; o yıllar sadece ölünce açılan programlarda görülür.</p>
+  <div class="rail">
+
+    <div class="st">
+      <div class="st-top"><span class="st-year">1999</span><h3>Program CRADLE başlar</h3></div>
+      <p class="what">Ashgrave ve Wick, Blackpine'da kendi başına yürüyebilen exo-iskeletler ve şehrin çocuklarını izleyen LANTERN ünitesini yapar.</p>
+      <div class="chips"><span class="chip nomap">harita yok</span><span class="chip mg">FIELD TEST 01</span></div>
+    </div>
+
+    <div class="st map">
+      <div class="st-top"><span class="st-year">2003</span><h3>1 · Ashgrave House</h3><span class="where">Konut bloğu 7, Blackpine</span></div>
+      <p class="what">Milo'nun soğuk haftası. Ağabeyinin cesaret oyunu onu Ironhall'ın soğuk odasına, GOLDIE'nin yanına kilitler. Harita, Milo'nun komadaki geceleri.</p>
+      <div class="chips"><span class="chip play">Oynanan: Milo Ashgrave</span><span class="chip mg">COLD WEEK I–V</span><span class="chip mg">CATCH SPARKY</span><span class="chip mg">STATIC</span></div>
+    </div>
+
+    <div class="st">
+      <div class="st-top"><span class="st-year">2004</span><h3>Ninni ve tipi</h3></div>
+      <p class="what">Ivy, The Well'den gelen bir ninniyi takip eder ve geri dönmez. Aynı kış Lucy Wick tipide tel örgünün yanında kaybolur. LANTERN binadan çıkamaz.</p>
+      <div class="chips"><span class="chip nomap">harita yok</span><span class="chip mg">MOTHER'S LULLABY</span><span class="chip mg">WHITEOUT</span><span class="chip mg">TETHER</span></div>
+    </div>
+
+    <div class="st">
+      <div class="st-top"><span class="st-year">2005</span><h3>Gece gezisi</h3></div>
+      <p class="what">Yatılı okuldan beş çocuk "makineleri görmeye" götürülür ve geri dönmez. LANTERN onları soğuk depoda bulur ve ünitelere bağlar.</p>
+      <div class="chips"><span class="chip nomap">harita yok</span><span class="chip mg">CONNECT</span><span class="chip mg">LAIKA</span><span class="chip mg">NIGHT ROAD</span></div>
+    </div>
+
+    <div class="st map">
+      <div class="st-top"><span class="st-year">2006</span><h3>2 · Sunhouse</h3><span class="where">Batı kompleks, Blackpine</span></div>
+      <p class="what">Parlak yeni nesil üniteler ile eski ünitelerin aynı çatı altındaki tek haftası. Bir teknisyen kaybolur, kartı bir ünitenin içinden çıkar. Tesis kapanır.</p>
+      <div class="chips"><span class="chip play">Oynanan: Roy Kemp, gece teknisyeni</span><span class="chip mg">DRILL</span><span class="chip mg">HEADCOUNT</span></div>
+    </div>
+
+    <div class="st map">
+      <div class="st-top"><span class="st-year">2010</span><h3>3 · Ironhall Nöbeti</h3><span class="where">Kuzey kompleks, Blackpine</span></div>
+      <p class="what">Jeneratörün yakıtı azalır ve bölmeler tek tek kararır. Gus Bell'in son kaydı bir kapının açılmasıyla biter. Sonra Ashgrave geri döner ve kendi ünitelerinin kapattığı bir bölmede, HUSK'un içinde donar.</p>
+      <div class="chips"><span class="chip play">Oynanan: Cain Ashgrave (sahte isimle)</span><span class="chip mg">BULKHEAD</span></div>
+    </div>
+
+    <div class="st map">
+      <div class="st-top"><span class="st-year">2011</span><h3>4 · The Well</h3><span class="where">Site-4, şehrin 300 metre altı</span></div>
+      <p class="what">Cain babasının izini sürüp kuyuya iner. Bir ünite kız kardeşinin sesiyle konuşur. KNOT onun sinirlerine bağlanarak yüzeye çıkar. Cain ölmez.</p>
+      <div class="chips"><span class="chip play">Oynanan: Cain Ashgrave</span><span class="chip mg">WIRED</span><span class="chip mg">SURFACE</span></div>
+    </div>
+
+    <div class="st">
+      <div class="st-top"><span class="st-year">2012</span><h3>Vanta Dynamics satın alır</h3></div>
+      <p class="what">Program Batılı bir şirkete geçer. Eski kontrol kartları dijital arşive taranır ve arşivde biri belirir: Ashman.</p>
+      <div class="chips"><span class="chip nomap">harita yok</span><span class="chip mg">ARCHIVE</span></div>
+    </div>
+
+    <div class="st map">
+      <div class="st-top"><span class="st-year">2040</span><h3>5 · Ironhall Yangını</h3><span class="where">Kuzey kompleks, yeniden açıldı</span></div>
+      <p class="what">Vanta, Ironhall'ı eğitim sahasına çevirir. Kaynaklı bölme kesilerek açılır ve içindeki HUSK hâlâ hareket etmektedir. Beş gece sonra her şey yanar. Ceset bulunmaz.</p>
+      <div class="chips"><span class="chip play">Oynanan: kimliği belirsiz bekçi</span><span class="chip mg">SNOWFALL</span><span class="chip mg">SCRAPYARD</span><span class="chip mg">LIGHTS OUT</span><span class="chip mg">ERR 0x05</span></div>
+    </div>
+
+    <div class="st map">
+      <div class="st-top"><span class="st-year">2041</span><h3>6 · Site-9</h3><span class="where">40 km doğu, Yenisey kıyısı</span></div>
+      <p class="what">Ana oyun. İki şirket aynı kontrata tutulmuştur. SABLE'ı Warden yönetir, Choir karanlıkta ilahi söyler, Line 2 hâlâ üretir. Hepsini buraya toplayan Ezra Wick'tir ve tesisi yakmak için bekliyor.</p>
+      <div class="chips"><span class="chip play">Oynanan: dördüncü adam (VS-104)</span><span class="chip mg">TOWER I–III</span><span class="chip mg">SIGNAL</span><span class="chip mg">WICK</span><span class="chip mg">THAW</span></div>
+    </div>
+
+    <div class="st map">
+      <div class="st-top"><span class="st-year">2041+</span><h3>7 · The Ashes</h3><span class="where">Yanmış Site-9'un altı</span></div>
+      <p class="what">Yangın sönmemiştir. Glass, kaybolan dördüncü adamı aramak için aşağı iner. Aşağıda Ashgrave'in sesini taklit etmeyi öğrenmiş bir makine vardır.</p>
+      <div class="chips"><span class="chip play">Oynanan: Lena "Glass" Okafor</span></div>
+    </div>
+
+  </div>
+</section>
+
+<section>
+  <div class="sec-head"><span class="label">Personel</span><h2>Kim kimdir</h2></div>
+  <div class="cast">
+    <div class="who"><span class="r">Baba</span><b>Dr. Victor Ashgrave</b><p>CRADLE'ın kurucusu. Her kaybı bir sonraki deneyle düzeltmeye çalışır. Sonunda The Warden olur.</p><p class="hook">Ash + grave: kül ve mezar. Hikâye onun kazdığı mezarlarla ve yaktığı ateşle biter.</p></div>
+    <div class="who"><span class="r">Ortak</span><b>Dr. Ezra Wick</b><p>Yazılımın ve LANTERN'ın yazarı. Gerçeği en son öğrenen, bedelini en çok ödeyen.</p><p class="hook">Wick, fitil demek. Lantern'ı yakan da, sonunda her şeyi yakan da o.</p></div>
+    <div class="who"><span class="r">Büyük oğul</span><b>Cain Ashgrave</b><p>Kardeşinin ölümüne sebep oldu. Hayatının geri kalanını babasını aramakla geçirir.</p><p class="hook">Adı Cain: kardeşinin ölümüne sebep olan ağabey. Bir kere duyan unutmaz.</p></div>
+    <div class="who"><span class="r">Kız</span><b>Ivy Ashgrave</b><p>Makinelere hayrandı. Bugün Line 2'nin beyni ve Site-9'da hâlâ üretim yapıyor.</p><p class="hook">Ivy, sarmaşık demek. Fabrikayı sarmaşık gibi sarıyor ve sökemiyorsun.</p></div>
+    <div class="who"><span class="r">Küçük oğul</span><b>Milo Ashgrave</b><p>Makinelerden korkardı. Oyuncak robotu Sparky'yi elinden hiç bırakmazdı.</p><p class="hook">Hikâyenin ilk kurbanı. Her şey onun soğuk haftasıyla başlıyor.</p></div>
+    <div class="who"><span class="r">Kayıp</span><b>Lucy Wick</b><p>Tipide kayboldu. Şimdi LANTERN'ın lambasında yaşıyor.</p><p class="hook">Lucy "ışık" demek. Wick, Lantern, Lucy: fitil, fener, ışık.</p></div>
+    <div class="who"><span class="r">Kasetler</span><b>Gus Bell · Sam Hale</b><p>Biri 2010'da son kaydını bıraktı ve geri dönmedi. Diğeri 2040'ta o kayıtları buldu.</p><p class="hook">Gus Bell: her kaydın başında bir zil sesi var.</p></div>
+    <div class="who"><span class="r">Choir</span><b>Sister Wren</b><p>Arşivdeki sesi ilk duyan stajyer. Beyaz maskeler onun fikri.</p><p class="hook">Wren küçük bir ötücü kuş. Choir'da ilk şarkı söyleyen o.</p></div>
+    <div class="who"><span class="r">Çocuklar</span><b>Ben · Molly · Danny · Rose · Kit</b><p>Gece gezisinden dönmeyen beş çocuk. Molly'nin köpeği Laika haftalarca kapıda bekledi.</p></div>
+  </div>
+</section>
+
+<section>
+  <div class="sec-head"><span class="label">Envanter</span><h2>Makineler</h2></div>
+  <div class="cast">
+    <div class="who"><span class="r">Ünite</span><b>LANTERN</b><p>Uzun, ince, yüzünde sarı bir lamba. Binaya bir kabloyla bağlı, dışarı çıkamaz. Çocukları korumak için yapıldı ve hâlâ koruyor.</p><p class="hook">Dossier'deki sansürlü Project Lantern bu.</p></div>
+    <div class="who"><span class="r">Exo-iskelet</span><b>GOLDIE</b><p>Altın kaplamalı ilk CRADLE iskeleti. Milo'nun öldüğü gece soğuk odadaydı. Bugün boş bir salonda oturuyor.</p></div>
+    <div class="who"><span class="r">Exo-iskelet</span><b>HUSK</b><p>Gri, yıpranmış ikinci iskelet. Ashgrave'in içinde donduğu kabuk. The Warden'ın zırhının altındaki şey.</p><p class="hook">Husk, kabuk demek. İçi boşalmış ama hâlâ yürüyor.</p></div>
+    <div class="who"><span class="r">Bakım ünitesi</span><b>MOTHER</b><p>The Well'in çocuk bakım ünitesi. Havalandırmadan ninni söyler.</p></div>
+    <div class="who"><span class="r">Kütle</span><b>THE KNOT</b><p>The Well'deki ünitelerin tel ve kartlarla birbirine kaynamış hali. Dışarı çıkmak için bir insana ihtiyaç duyar.</p></div>
+    <div class="who"><span class="r">Dijital</span><b>ASHMAN</b><p>Arşive taranan karttan çıkan şey. Her simülasyonun kenarında, her seferinde biraz daha yakında duruyor.</p></div>
+  </div>
+</section>
+
+<section>
+  <div class="sec-head"><span class="label">Tam metin</span><h2>Hikâye</h2></div>
+
+  <article class="chapter">
+    <div class="ch-side"><span class="ch-num">I</span><span class="mono">1999</span><span class="label">harita yok</span></div>
+    <div class="ch-body">
+      <h3>Beşik</h3>
+      <p>Blackpine hiçbir haritada yoktur. Rus kâğıtlarında adı Sosnovy-12'dir; programa yurt dışından getirilen bilim insanları ona sadece Blackpine der. Yenisey'in kıyısında, kara çamların ve iki sıra tel örgünün arkasında aileleriyle birlikte yaşarlar. Şehrin bir okulu, bir yatılı çocuk evi ve kuzeyde ışıkları hiç sönmeyen bir kompleksi vardır: <b>Ironhall</b>.</p>
+      <p>Dr. Victor Ashgrave ve Dr. Ezra Wick burada savunma bakanlığı için <b>Program CRADLE</b>'ı kurar. Amaç, Sibirya kışında insanın yapamadığı işi yapacak makinelerdir. Programın kalbi bir exo-iskelettir. Bir asker onu giyebilir; yaylı kilitler açıldığında ise iskelet kendi başına yürür. Kilitlerin tek bir zaafı vardır ve Blackpine'daki herkes bunu bilir: <b>−30'un altında kilitler boşalır.</b> Kışın iskeletin içinde kalınmaz.</p>
+      <p>Wick bir de <b>LANTERN</b>'ı yapar. Uzun, ince bir gözetim ünitesidir ve yüzünün yerinde sarı bir lamba vardır. Binaya bir kabloyla bağlıdır ve görevi çocukları izlemek, kaybolanı bulmaktır. Wick onu kızı Lucy için tasarlamıştır. Lucy her akşam o lambanın ışığında uyur.</p>
+      <p class="line">Ashgrave'in üç çocuğu var: Cain, Ivy ve Milo. Bu hikâye üçünün de başına gelenleri anlatıyor.</p>
+      <p class="mgnote">▸ Ölüm programı: FIELD TEST 01. Karlı bir test sahasında iki iskelet, kenarda kürk şapkalı generaller.</p>
+    </div>
+  </article>
+
+  <article class="chapter">
+    <div class="ch-side"><span class="ch-num">II</span><span class="mono">2003</span><span class="label">Harita 1 · Ashgrave House</span></div>
+    <div class="ch-body">
+      <h3>Soğuk hafta</h3>
+      <p class="tag">Oynanan: Milo Ashgrave, 8 yaşında</p>
+      <p>Milo makinelerden korkar. Babasının yaptığı küçük oyuncak robot <b>Sparky</b> dışında hiçbirine yaklaşmaz. Ağabeyi Cain bunu bilir. Geceleri telsizini Milo'nun yatağının altına saklar ve hoparlörden ünitelerin motor sesini çalar.</p>
+      <p>Ocak ayında Ironhall'da soğuk dayanım testi yapılır. İskeletler bir gece boyunca −40 derecelik odada bekletilecektir. Cain ve arkadaşları Milo'ya bir cesaret oyunu teklif eder: soğuk odaya gir, altın iskelete, <b>GOLDIE</b>'ye dokun ve çık. Milo içeri girer. Kapıyı şaka olsun diye arkasından kapatırlar. Kapı dışarıdan açılmaz ve Cain bunu bilmiyordur.</p>
+      <p>Isıtma gece yarısı kapanır. Sabaha karşı GOLDIE'nin kilitleri boşalır. Milo'yu iskeletin kollarının arasında bulurlar.</p>
+      <p>Milo bir hafta boyunca komada kalır. Haritada oynadığın geceler, onun o haftadaki rüyalarıdır. Ev her gece biraz daha soğur. Kapıların arkasında, dolabın içinde ve yatağın altında makineler bekler; her biri gündüz gördüğü bir şeyin donmuş halidir. Sparky'nin lambası her gece bir kez yanıp söner, sanki "ışığı açık tut" diyormuş gibi.</p>
+      <p>Yedinci gece babası yatağın başındadır. Milo'nun duyduğu son şey onun sesidir.</p>
+      <p class="line">"Seni kaybetmeyeceğim."</p>
+      <p class="mgnote">▸ Ölüm programları: COLD WEEK I–V (her gecenin sonunda Milo'nun bir günü), CATCH SPARKY, STATIC.</p>
+    </div>
+  </article>
+
+  <article class="chapter">
+    <div class="ch-side"><span class="ch-num">III</span><span class="mono">2004</span><span class="label">harita yok</span></div>
+    <div class="ch-body">
+      <h3>Ninni ve tipi</h3>
+      <p>Milo'yu kaybettikten sonra Ashgrave yas tutmaz; çalışır. Bir daha kimseyi kaybetmemenin yolunu aradığını söyler. Kendi parasıyla şehrin 300 metre altına bir tesis kazdırır. Kâğıtta adı Site-4'tür; inenler ona <b>The Well</b> der, çünkü tek girişi bir asansör kuyusudur. Oradaki bakım ünitesi <b>MOTHER</b>, çocukları uyutmak için yapılmıştır ve ninni söyler.</p>
+      <p>Ivy makinelere hayrandır. Babası "aşağı inme" dese de bir gece havalandırmadan gelen ninniyi takip eder. MOTHER kollarını açar ve kilitler kapanır. Ivy geri dönmez. Ama MOTHER o günden sonra bazen bir kız çocuğunun sesiyle şarkı söyler.</p>
+      <p>Aynı kış Blackpine'da üç gün süren bir tipi olur ve okulun elektriği kesilir. Lucy Wick babasını bulmak için dışarı çıkar. Tel örgünün yanında, karın içinde bir aracın farları yavaşlar. Lucy'yi ertesi sabah bulurlar.</p>
+      <p>LANTERN onun kaybolduğunu ilk fark edendir. Kapıya kadar gider ama kablosu daha ileri gitmesine izin vermez. O gece lambası bir anlığına söner, sonra yeniden yanar. Ondan sonra ışığı biraz daha sıcaktır.</p>
+      <p class="mgnote">▸ Ölüm programları: MOTHER'S LULLABY, WHITEOUT, TETHER.</p>
+    </div>
+  </article>
+
+  <article class="chapter">
+    <div class="ch-side"><span class="ch-num">IV</span><span class="mono">2005</span><span class="label">harita yok</span></div>
+    <div class="ch-body">
+      <h3>Gece gezisi</h3>
+      <p>Bir yıl sonra yatılı çocuk evinden beş çocuk, <b>Ben, Molly, Danny, Rose ve Kit</b>, bir gece Ironhall'a "makineleri görmeye" götürülür. Bekçi, onları gri bir iskeletin, <b>HUSK</b>'un, yürüyerek götürdüğünü söyler. İskeletin içinde kimin olduğunu kimse sormaz. Çocuklar geri dönmez.</p>
+      <p>Cesetler hiç bulunmaz. Şehir yönetimi olayı kapatır. Molly'nin köpeği Laika haftalarca okulun kapısında bekler.</p>
+      <p>Çocukları ilk LANTERN bulur, soğuk depoda. Lucy'ye geç kalmıştır, bunlara geç kalmayacaktır. Wick'in yarım bıraktığı <b>Project Lantern</b>'ı kendi başına tamamlar: her çocuğu bir ünitenin kontrol kartına bağlar. Ertesi sabah ilk nesil dört ünite, <b>K-1'den K-4'e</b>, depoda kendi kendine yer değiştirmiş halde bulunur. GOLDIE ise boş salonda, bir sandalyede oturmaktadır.</p>
+      <p class="line">Beş çocuk, dört ünite, bir altın iskelet. Hesap tutmuyor ve kimse kontrol etmek istemiyor.</p>
+      <p class="mgnote">▸ Ölüm programları: CONNECT, LAIKA, NIGHT ROAD.</p>
+    </div>
+  </article>
+
+  <article class="chapter">
+    <div class="ch-side"><span class="ch-num">V</span><span class="mono">2006</span><span class="label">Harita 2 · Sunhouse</span></div>
+    <div class="ch-body">
+      <h3>Bir hafta</h3>
+      <p class="tag">Oynanan: Roy Kemp, gece teknisyeni</p>
+      <p>Bakanlık skandalı örtmek için yeni ve aydınlık bir kompleks açar: <b>Sunhouse</b>. İçinde güleryüzlü, beyaz kaplamalı yeni nesil üniteler vardır. Eski K-1…K-4 de yedek parça için alt kattaki depoya indirilmiştir.</p>
+      <p>Roy Kemp bir haftalık gece vardiyasına başlar. Her vardiyanın başında, ondan önceki teknisyen Gus Bell'in bıraktığı bir ses kaydını dinler. Her kayıt bir zil sesiyle başlar.</p>
+      <div class="tape">KAYIT 3 · G. BELL · "Alt kattaki depo kilitli. Kilitli kalsın. Sabah sayım yaptığımda dört ünite vardı, akşam beş tane saydım. Muhtemelen yanlış saydım. Muhtemelen."</div>
+      <p>Depodakiler ve yenileri birlikte yürür. Tavanda, diğer ünitelerin hurdasından toplanmış bir tamir ünitesi, <b>STITCH</b>, sürünür. Altıncı gece bir teknisyen kaybolur. Kimlik kartı ertesi sabah bir ünitenin göğüs kapağının içinden çıkar. Sunhouse aynı gün kapatılır.</p>
+      <p class="mgnote">▸ Ölüm programları: DRILL, HEADCOUNT.</p>
+    </div>
+  </article>
+
+  <article class="chapter">
+    <div class="ch-side"><span class="ch-num">VI</span><span class="mono">2010</span><span class="label">Harita 3 · Ironhall Nöbeti</span></div>
+    <div class="ch-body">
+      <h3>Kaynaklı bölme</h3>
+      <p class="tag">Oynanan: Cain Ashgrave, sahte isimle bekçi</p>
+      <p>Ironhall yıllardır yarı kapalıdır. Ana hat kesilmiştir ve bina tek bir jeneratörle ayakta durur. Gece bekçisi aranır ve Cain sahte bir isimle başvurur. Babası artık şehirde görünmemektedir. Cain onu aramaktadır, ya da kardeşini.</p>
+      <p>Jeneratörün yakıtı her gece azalır. Yakıt bittikçe bölmeler tek tek kararır ve karanlık bölmelerde K-1…K-4 dolaşır. Gus Bell'in kayıtları hâlâ terminaldedir. Son kayıtta Gus bir kapının çalındığını söyler, kalkıp açar ve kayıt orada sessizce devam eder.</p>
+      <p>Cain beşinci geceyi bitirir ve ayrılır. Birkaç hafta sonra Ashgrave binaya geri döner. Kontrol kartlarını sökmek ve kanıtları yok etmek için gelmiştir. Ama üniteler onu bekliyordur. Onu en arka bölmeye sürerler ve bölmenin kapısını kendileri kapatırlar. Isıtma kesilir.</p>
+      <p>Bölmede duvara asılı bir şey vardır: HUSK. İçinde ısıtıcı olan tek şey odur. Ashgrave içine girer. Sıcaklık −30'un altına düştüğünde kilitler birer birer boşalır.</p>
+      <p class="line">Ertesi gün işçiler bölmenin kapısını kaynakla kapatır. İçeriden ses gelip gelmediğini kimse sormaz.</p>
+      <p class="mgnote">▸ Ölüm programı: BULKHEAD.</p>
+    </div>
+  </article>
+
+  <article class="chapter">
+    <div class="ch-side"><span class="ch-num">VII</span><span class="mono">2011</span><span class="label">Harita 4 · The Well</span></div>
+    <div class="ch-body">
+      <h3>Kuyu</h3>
+      <p class="tag">Oynanan: Cain Ashgrave</p>
+      <p>Babası kaybolmuştur ama geride kayıtlar bırakmıştır. Cain kayıtları takip ederek The Well'in asansörüne ulaşır ve 300 metre aşağı iner. Tesisin otomatik anons sistemi ona her gece görevini okur: üniteleri kontrol et, ışıkları kapalı tut, soru sorma.</p>
+      <p>İkinci gece MOTHER'ın odasından bir şarkı gelir. Cain sesi tanır: Ivy'dir. Ivy ona yardım eder, hangi tünelden geçeceğini ve nerede saklanacağını söyler. Ama Ivy'nin de bir planı vardır. The Well'in bütün üniteleri tel ve kartlarla birbirine kaynamaya başlamıştır. Bu kütleye <b>THE KNOT</b> denir. KNOT dışarı çıkmak ister, ama yüzeydeki tarayıcılar makineleri geçirmez. İnsanları geçirir.</p>
+      <p>Beşinci gece Cain bayılır. Uyandığında kendi yatağındadır. Derisinin altında, koluna doğru uzanan ince kablolar vardır. Birkaç gün sonra kablolar kendiliğinden çekilir ve içinden bir şey ayrılıp gider. Cain ölmez. Bedeni yavaş yavaş soğur, ama yürümeye devam eder.</p>
+      <p>Bir gece eski bir telsizin paraziti arasında bir ses duyar ve sesin kime ait olduğunu bilir.</p>
+      <p class="line">Cain babasını bulmaya karar verir. Bulduğunda ne yapacağını henüz bilmez.</p>
+      <p class="mgnote">▸ Ölüm programları: WIRED, SURFACE.</p>
+    </div>
+  </article>
+
+  <article class="chapter">
+    <div class="ch-side"><span class="ch-num">VIII</span><span class="mono">2012</span><span class="label">harita yok</span></div>
+    <div class="ch-body">
+      <h3>Satış</h3>
+      <p>Bakanlık programı kapatır ve tesisleri, patentleri ve depolarıyla birlikte Batılı bir şirkete satar: <b>Vanta Dynamics</b>. Vanta ne aldığını tam bilmez; bildiği kısmı da örter. Eski kontrol kartlarını eğitim simülasyonları için dijital arşive taratır.</p>
+      <p>Kartlardan biri, Ironhall'ın kaynaklı bölmesinin önünde yerde bulunmuştur. Taramadan sonra simülasyonların kenarında gri bir figür görülmeye başlar. Her açılışta biraz daha yakında durur ve sadece kulaklık takan çalışanlarla konuşur. Teknisyenler ona <b>Ashman</b> der. Onu duyan ilk kişi, genç bir robotik stajyeri olan <b>Wren</b>'dir.</p>
+      <p class="mgnote">▸ Ölüm programı: ARCHIVE.</p>
+    </div>
+  </article>
+
+  <article class="chapter">
+    <div class="ch-side"><span class="ch-num">IX</span><span class="mono">2040</span><span class="label">Harita 5 · Ironhall Yangını</span></div>
+    <div class="ch-body">
+      <h3>Kesilen kaynak</h3>
+      <p class="tag">Oynanan: kimliği belirsiz bekçi</p>
+      <p>Otuz yıl sonra Vanta, Ironhall'ı bir eğitim sahasına çevirir. Kurulum ekibinde yeni bir teknisyen vardır: <b>Sam Hale</b>. Sam terminalde Gus Bell'in kayıtlarını bulur ve kendi notlarını onların arkasına kaydetmeye başlar.</p>
+      <p>İşçiler kaynaklı bölmeyi keserek açar. İçeride HUSK vardır. İçinde ne olduğu kesin değildir ama hareket etmektedir.</p>
+      <p>Bekçi beş gece boyunca havalandırmayı, kameraları ve sesleri yönetir. Gerçek tehdit tektir. Diğerleri, eski soğutucu sızıntısının yarattığı <b>Echo</b>'lardır: koridorun sonunda bir an beliren ve sonra kaybolan eski ünitelerin görüntüleri. Bekçinin kim olduğu hiç söylenmez. Yürüyüşü, kayıtlarda adı geçen birine benzer.</p>
+      <p>Beşinci gecenin sonunda bir kablo kıvılcım çıkarır ve Ironhall tamamen yanar. Küllerin arasında ceset bulunmaz.</p>
+      <p class="mgnote">▸ Ölüm programları: SNOWFALL, SCRAPYARD, LIGHTS OUT, ERR 0x05.</p>
+    </div>
+  </article>
+
+  <article class="chapter">
+    <div class="ch-side"><span class="ch-num">X</span><span class="mono">2041</span><span class="label">Harita 6 · Site-9</span></div>
+    <div class="ch-body">
+      <h3>Toplanma</h3>
+      <p class="tag">Oynanan: dördüncü adam, dosya VS-104</p>
+      <p>Bir yıl sonra Vanta, kurtarılan her şeyi 40 kilometre doğudaki yeni ve büyük tesise, <b>Site-9</b>'a taşır: üretim hattı, laboratuvarlar, sunucular, enerji santrali. Ve bir gece tesisin her yerinde aynı saniyede aynı emir okunur: <i>clear the floor</i>.</p>
+      <p>Line 2'nin beyni Ivy'dir. MOTHER'dan geriye kalan kart, yıllar içinde fabrikanın kontrolünü ele geçirmiştir. Ivy hâlâ üretir: K-7 Walker'lar, B-12 Loader'lar ve kimsenin takmadığı zırhlar. Dışarı çıkmak ister.</p>
+      <p>Choir, Site-9'da kalan çalışanlardan oluşan bir tarikattır. İnterkomdan gelen ilahileri takip ederler. İlahiler Ashman'dan gelir. Sister Wren onları ilk duyandır ve beyaz maskeleri o dağıtmıştır. Cantor maskesini hiç çıkarmaz.</p>
+      <p>SABLE, Vanta'nın inkâr edilebilir temizlik ekibidir ve <b>The Warden</b> tarafından yönetilir. Warden'ın yüzü hiç görülmemiştir. Zırhının altında gri, yanık bir iskelet vardır. Telsizden ölüleri yüksek sesle sayar ve bazen sayının arasına bir çocuk ismi karışır.</p>
+      <p>Ve laboratuvarda, bir dolabın içinde, <b>Dr. Ezra Wick</b> saklanmaktadır. Kontrata iki ayrı şirket yazdıran odur. Clause 14'ü yazan da odur. Herkesi tek bir tesise toplamak istemiştir: Ashgrave'i, Ivy'yi, LANTERN'ı ve belki Cain'i. Hepsini aynı anda yakmanın tek yolu budur.</p>
+      <div class="tape">WICK · SES KAYDI · "Bu kaydı dinliyorsan buradasın demektir. Bu benim hatam. Ben yazdım. İnsanları korusun diye yazdım. Bizim o insanlar olmadığımıza karar verdi."</div>
+      <p>Sen Vanta Security ekibinin dördüncü üyesisin. Dosyan baştan sona karartılmış. Pike, Anvil ve Glass sana güveniyor. Line 2'nin robotları bazen sana saldırmadan önce bir saniye duraksıyor. Warden telsizden seni ismini söylemeden çağırıyor.</p>
+      <p class="line">Finalde Site-9 yanar. Wick son konuşmasını yapar. Kimin çıktığı, ne bulduğuna bağlıdır.</p>
+      <p class="mgnote">▸ Ölüm programları: TOWER I–III (Choir tarafından öldürülünce), SIGNAL, WICK. Bütün gizliler bulunursa: THAW.</p>
+    </div>
+  </article>
+
+  <article class="chapter">
+    <div class="ch-side"><span class="ch-num">XI</span><span class="mono">2041+</span><span class="label">Harita 7 · The Ashes</span></div>
+    <div class="ch-body">
+      <h3>Taklitçi</h3>
+      <p class="tag">Oynanan: Lena "Glass" Okafor</p>
+      <p>Yangından sonra dördüncü adamdan tek bir mesaj gelir: "Aşağıdayım." Glass tek başına yanmış tesisin altına iner. Güç yoktur, kapılar yarı açıktır ve her yer kurumdur.</p>
+      <p>Aşağıda Site-9'un robotik müdürü Dr. Elias Marsh'ın gizli projesi vardır. Marsh, ölen oğlunu taklit edecek bir öğrenen makine yazmıştır. Makine oğlunu öğrenememiştir ama Marsh'ın öfkesini öğrenmiştir. Ve yıllar boyunca karanlıkta duyduğu tek sesi öğrenmiştir: Warden'ın sesini.</p>
+      <p class="line">Warden gerçekten Ashgrave miydi, yoksa onu taklit eden bir şey mi? The Ashes bu soruya cevap vermez, sadece soruyu büyütür.</p>
+    </div>
+  </article>
+</section>
+
+<section>
+  <div class="sec-head"><span class="label">Akılda kalsın</span><h2>On satırda bütün hikâye</h2></div>
+  <ol class="recap read">
+    <li>Ashgrave ve Wick, Blackpine'da soğukta kilitleri boşalan exo-iskeletler yapar.</li>
+    <li>Cain'in cesaret oyunu yüzünden Milo, soğuk odada GOLDIE'nin kollarında donar.</li>
+    <li>Ivy, The Well'de MOTHER'ın ninnisini takip eder ve geri dönmez.</li>
+    <li>Lucy tipide, beş çocuk gece gezisinde kaybolur. İkisinde de gri bir iskelet görülür.</li>
+    <li>LANTERN çocukları ünitelere bağlar; çocuklar makinelerin içinde uyanır.</li>
+    <li>Ünitelerin kapattığı bölmede Ashgrave ısınmak için HUSK'a girer ve kilitler boşalır.</li>
+    <li>Cain, The Well'de KNOT'u yüzeye taşır, ölmez ve babasını aramaya başlar.</li>
+    <li>Vanta programı satın alır; Ashgrave'in kartından Ashman doğar.</li>
+    <li>Ironhall yanar, ceset bulunmaz; bir yıl sonra Warden SABLE'ın başındadır.</li>
+    <li>Wick herkesi Site-9'a toplar, çünkü hepsini aynı anda yakmanın tek yolu bu.</li>
+  </ol>
+</section>
+
+<section>
+  <div class="sec-head"><span class="label">Kapanmayan dosyalar</span><h2>Cevapsız sorular</h2></div>
+  <div class="open">
+    <div>Dördüncü adam Cain mi, Milo'nun bir kopyası mı, yoksa başka bir şey mi?</div>
+    <div>Warden'ın zırhının altındaki gerçekten Ashgrave mi?</div>
+    <div>GOLDIE'nin içinde kim var? Hesap neden tutmuyor?</div>
+    <div>Wick yangından çıktı mı?</div>
+  </div>
+</section>
+
+</div>

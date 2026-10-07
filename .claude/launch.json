@@ -8,7 +8,8 @@
         "run",
         "dev"
       ],
-      "port": 5173
+      "port": 5173,
+      "autoPort": true
     },
     {
       "name": "trailer-capture",
@@ -20,6 +21,17 @@
         "--strictPort"
       ],
       "port": 5180
+    },
+    {
+      "name": "weapon-lab-alt",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": [
+        "vite",
+        "--port",
+        "5182",
+        "--strictPort"
+      ],
+      "port": 5182
     }
   ]
 }

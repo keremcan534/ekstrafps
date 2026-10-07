@@ -4,12 +4,13 @@ import { surface, weathered, type SurfaceId, type SurfaceOptions } from '../fx/S
 import * as THREE from 'three';
 import type { HitReceiver, Physics } from '../core/Physics';
 import { PhysicsProps } from './PhysicsProps';
-import { MOBILE_ANISOTROPY } from '../config/Graphics';
 import { glowTexture, grimeRoughness, gridTexture, gridTint, neutralGridTexture, screenTexture, woodTexture } from '../fx/Textures';
 import type { RobotOptions } from '../targets/RobotTarget';
 import type { GameMap, SquadSpawn, Station } from './GameMap';
 import { LayoutBuilder, type BuiltRoom, type DoorSlot, type LinkDef, type RoomDef, type RoomStyle, type Rect } from './LayoutBuilder';
 import type { MeshBuilder } from './MeshBuilder';
+import { Site9Atlas } from './Site9Atlas';
+import { Site9Dressing } from './Site9Dressing';
 
 type V3 = [number, number, number];
 
@@ -203,6 +204,9 @@ for (const l of LINKS) {
   const vertical = da[2] === db[0] || da[0] === db[2];
   const ax = vertical ? 1 : 0;
   l.at = Math.round((axisMap(l.a, ax, l.at) + axisMap(l.b, ax, l.at)) / 2);
+  // Doors into the 5 m rooms are 3.5 m: the room-name box then sits on the lintel under the
+  // ceiling pipe run instead of behind it.
+  if (l.height === undefined && Math.min(ROOM_OF.get(l.a)!.h, ROOM_OF.get(l.b)!.h) <= 5) l.height = 3.5;
 }
 for (const st of Object.values(TEAM_STARTS)) st.pos = W(st.room, st.pos[0], st.pos[1]);
 
@@ -270,6 +274,8 @@ export class Site9 implements GameMap {
   private emergency = new THREE.MeshStandardMaterial({ color: 0x200000, emissive: 0xff1a0a, emissiveIntensity: 0.01 }); // non-zero: keeps it out of the vertex-colour merge
   private lampBase = new Map<THREE.MeshStandardMaterial, number>();
   private blackout = 0;
+  /** 0..1: how far you are into a room open to the sky (the atrium's skylight days the fill up). */
+  private openBoost = 0;
   /** Floor footprints of everything standing on the floor (clutter keeps clear of them). */
   private footprints: [number, number, number, number][] = [];
   /** Broken, flickering lamp fixtures (one shared flicker) and their light pools. */
@@ -282,6 +288,10 @@ export class Site9 implements GameMap {
   private coreGlow: THREE.MeshStandardMaterial;
   private time = 0;
   private mobile: boolean;
+  /** Printed matter (signs, plates, decals), built with the dressing pass. */
+  private printAtlas!: Site9Atlas;
+  /** Wall fixtures from the dressing pass (x, z, radius): the random fixture passes keep off them. */
+  private fixtures: [number, number, number][] = [];
   /** Real (glTF) props, placed while the rooms are built. */
   private kit!: PropKit;
   /** Resolves once the prop models are in (never rejects). */
@@ -364,12 +374,13 @@ export class Site9 implements GameMap {
       dark: S('ceiling_interior', '#2a2d31', { metalness: 0 }),
     };
     const styles: Record<string, RoomStyle> = {
-      lobby: { floor: S('dirty_tiles', '#c9c2b6', { roughness: 0.8 }), wall: S('concrete_wall_004', '#d9dbdc'), ceiling: ceil.white, lamp: m.lampWarm, lampSpacing: 6, glow: 0xffe8c8 },
+      lobby: { floor: (() => { const f = std({ color: 0x80603f, map: wood, roughness: 0.4 }); applyGrime(f, mobile); return f; })(), wall: S('concrete_wall_004', '#d9dbdc'), ceiling: ceil.white, lamp: m.lampWarm, lampSpacing: 6, glow: 0xffe8c8 },
       cafe: { floor: std({ color: 0xa87a4f, map: wood, roughness: 0.55 }), wall: S('plastered_wall_04', '#efe7da'), ceiling: ceil.offwhite, lamp: m.lampWarm, lampSpacing: 6, glow: 0xffd9a8 },
       security: { floor: S('garage_floor', '#9aa0a7'), wall: S('plastered_wall_04', '#d2d7dc'), ceiling: ceil.offwhite, lamp: m.lampCool, lampSpacing: 5, glow: 0xeef4ff },
       garden: { floor: grid('#5c8a45', '#557f40', '#598643', 1), wall: S('concrete_wall_004', '#8a877f'), ceiling: ceil.offwhite, lamp: null, lampSpacing: 0, glow: 0 },
       medical: { floor: S('dirty_tiles', '#d3dcdb', { roughness: 0.75 }), wall: S('peeling_painted_wall', '#e2e9e8', { metalness: 0 }), ceiling: ceil.white, lamp: m.lampCool, lampSpacing: 5, glow: 0xeafff8 },
-      atrium: { floor: S('dirty_tiles', '#bdb7ad', { roughness: 0.8 }), wall: S('concrete_wall_004', '#d2d4d6'), ceiling: ceil.white, lamp: null, lampSpacing: 0, glow: 0 },
+      // Polished wood (the dark seams are laid by the dressing pass).
+      atrium: { floor: (() => { const f = std({ color: 0x8a6848, map: wood, roughness: 0.38 }); applyGrime(f, mobile); return f; })(), wall: S('concrete_wall_004', '#d2d4d6'), ceiling: ceil.white, lamp: null, lampSpacing: 0, glow: 0 },
       factory: { floor: S('garage_floor', '#7c8086'), wall: S('concrete_wall_004', '#a2a6ac'), ceiling: ceil.grey, lamp: m.lampWarm, lampSpacing: 10, glow: 0xffe2b8 },
       hangar: { floor: S('hangar_concrete_floor', '#8a8d90'), wall: S('rusty_corrugated_iron', '#b5b9bd', { mode: 'photo' }), ceiling: ceil.grey, lamp: m.lampCool, lampSpacing: 11, glow: 0xeef4ff },
       labs: { floor: S('dirty_tiles', '#dfe3e6', { roughness: 0.75 }), wall: S('peeling_painted_wall', '#e6e9eb', { metalness: 0 }), ceiling: ceil.white, lamp: m.lampCool, lampSpacing: 5, glow: 0xf0f6ff },
@@ -408,6 +419,7 @@ export class Site9 implements GameMap {
     this.buildPower();
     this.buildDressing();
     this.buildRandomSlots();
+    this.buildStories();
     this.collectWallSpots();
     this.buildDetails();
     this.buildServices();
@@ -435,7 +447,7 @@ export class Site9 implements GameMap {
     this.ambient = mobile ? MOBILE_FILL_NO_SUN : 0.24;
     this.hemi = new THREE.HemisphereLight(0xc4d0e0, 0x3a3631, this.ambient);
     this.group.add(this.hemi);
-    for (const k of ['lampCool', 'lampWarm', 'lampBlue', 'screen', 'screenWarm', 'reactor']) {
+    for (const k of ['lampCool', 'lampWarm', 'lampBlue', 'screen', 'screenWarm', 'reactor', 'a_lit']) {
       const m = this.mats[k] as THREE.MeshStandardMaterial;
       this.lampBase.set(m, m.emissiveIntensity);
     }
@@ -468,6 +480,69 @@ export class Site9 implements GameMap {
       point(0xffb060, 70, 30, [0, 8, -76]); // reactor
       point(0xff4030, 30, 18, [100, 4, 50]); // barracks
     }
+  }
+
+  // ---------------------------------------------------------------- stories
+
+  /**
+   * Room-by-room set dressing, printed signs and lore plates, grime (Site9Dressing):
+   * runs before the random fixture and clutter passes, which then keep off it.
+   */
+  private buildStories(): void {
+    const atlas = (this.printAtlas = new Site9Atlas(this.mobile, ROOMS));
+    const doorPts = new Map<string, [number, number, number][]>();
+    const doorsOf = (R: string) => {
+      let d = doorPts.get(R);
+      if (!d) {
+        const room = ROOM_OF.get(R)!;
+        d = [];
+        for (const l of LINKS) {
+          if (l.a !== R && l.b !== R) continue;
+          const o = ROOM_OF.get(l.a === R ? l.b : l.a)!;
+          const vertical = room.rect[2] === o.rect[0] || room.rect[0] === o.rect[2];
+          if (vertical) d.push([room.rect[2] === o.rect[0] ? room.rect[2] : room.rect[0], l.at, l.width]);
+          else d.push([l.at, room.rect[3] === o.rect[1] ? room.rect[3] : room.rect[1], l.width]);
+        }
+        doorPts.set(R, d);
+      }
+      return d;
+    };
+    const starts = Object.values(TEAM_STARTS).map((s) => Wp(s.pos[0], s.pos[1]));
+    const free = (R: string, x: number, z: number, hx: number, hz: number, pad = 0.15): boolean => {
+      const r = ROOM_OF.get(R)!.rect;
+      if (x - hx < r[0] + 0.2 || x + hx > r[2] - 0.2 || z - hz < r[1] + 0.2 || z + hz > r[3] - 0.2) return false;
+      const e = Math.max(hx, hz);
+      // Gameplay spots of the room next door (just through the wall) don't count.
+      const here = (px: number, pz: number) => px > r[0] && px < r[2] && pz > r[1] && pz < r[3];
+      for (const [dx, dz, w] of doorsOf(R)) if (Math.hypot(dx - x, dz - z) < w / 2 + 2.2 + e) return false;
+      for (const p of this.reserved) if (here(p.x, p.z) && Math.hypot(p.x - x, p.z - z) < 1.6 + e) return false;
+      for (const sp of this.spawnPoints) if (here(sp.pos.x, sp.pos.z) && Math.hypot(sp.pos.x - x, sp.pos.z - z) < 2.2 + e) return false;
+      for (const [sx, sz] of starts) if (Math.hypot(sx - x, sz - z) < 4 + e) return false;
+      for (const h of this.hazardSpots) if (x + hx + 0.3 > h.rect[0] && x - hx - 0.3 < h.rect[2] && z + hz + 0.3 > h.rect[1] && z - hz - 0.3 < h.rect[3]) return false;
+      for (const f of this.footprints) if (x + hx + pad > f[0] && x - hx - pad < f[2] && z + hz + pad > f[1] && z - hz - pad < f[3]) return false;
+      return true;
+    };
+    new Site9Dressing(
+      {
+        mobile: this.mobile,
+        rooms: ROOMS,
+        links: LINKS,
+        mats: this.mats,
+        physics: this.physics,
+        reserved: this.reserved,
+        spawns: this.spawnPoints,
+        fixtures: this.fixtures,
+        room: (id) => this.room(id),
+        W,
+        box: (R, mat, size, pos, solid, rot, receiver) => this.boxW(R, mat, size, pos, solid, rot, receiver),
+        cyl: (R, mat, r, h, pos, solid, rot, seg) => this.cylW(R, mat, r, h, pos, solid, rot, seg),
+        prop: (R, id, pos, yaw, o) => this.prop(R, id, pos, yaw, o),
+        free,
+        claim: (x0, z0, x1, z1) => this.footprints.push([x0, z0, x1, z1]),
+        lampSpot: (pos, color, h) => this.lampSpots.push({ pos, color, h }),
+      },
+      atlas,
+    ).build();
   }
 
   // ---------------------------------------------------------------- clutter
@@ -511,6 +586,7 @@ export class Site9 implements GameMap {
       for (const p of this.reserved) keep.push([p.x, p.z, 1.9]);
       for (const sp of this.spawnPoints) keep.push([sp.pos.x, sp.pos.z, 3]);
       for (const [sx, sz] of starts) keep.push([sx, sz, 5]);
+      for (const [fx, fz, fr] of this.fixtures) keep.push([fx, fz, fr + 0.3]);
       const clearOf = (x: number, z: number, hx: number, hz: number, pad: number) => {
         if (x - hx < x0 + 0.05 || x + hx > x1 - 0.05 || z - hz < z0 + 0.05 || z + hz > z1 - 0.05) return false;
         for (const [kx, kz, r] of keep) if (Math.hypot(kx - x, kz - z) < r + Math.max(hx, hz)) return false;
@@ -1023,7 +1099,7 @@ export class Site9 implements GameMap {
   }
 
   /**
-   * Up to four free spots per room along its walls, clear of doors, lifts and
+   * Up to five free spots per room along its walls, clear of doors, lifts and
    * everything already placed. Reserved, so the decoration pass leaves them bare.
    */
   private collectWallSpots(): void {
@@ -1042,6 +1118,7 @@ export class Site9 implements GameMap {
         for (const p of doorPts) if (Math.hypot(p.x - x, p.z - z) < 4) return false;
         for (const p of this.reserved) if (Math.hypot(p.x - x, p.z - z) < 3) return false;
         for (const sp of this.spawnPoints) if (Math.hypot(sp.pos.x - x, sp.pos.z - z) < 3) return false;
+        for (const [fx, fz, fr] of this.fixtures) if (Math.hypot(fx - x, fz - z) < fr + 0.9) return false;
         return true;
       };
       const walls: [number, number, number, number, number, number][] = [
@@ -1056,11 +1133,15 @@ export class Site9 implements GameMap {
           const x = ax + dx * s + nx * 0.18;
           const z = az + dz * s + nz * 0.18;
           if (!clear(x, z)) continue;
+          // Room to stand in front (furniture from the dressing pass would block it).
+          const fx = x + nx * 1.4;
+          const fz = z + nz * 1.4;
+          if (this.footprints.some((f) => fx + 0.9 > f[0] && fx - 0.9 < f[2] && fz + 0.9 > f[1] && fz - 0.9 < f[3])) continue;
           found.push({ pos: new THREE.Vector3(x, 0, z), yaw: Math.atan2(nx, nz), room: R, zone: room.zone });
         }
       }
       found.sort(() => Math.random() - 0.5);
-      for (const sp of found.slice(0, 4)) {
+      for (const sp of found.slice(0, 5)) {
         this.wallSpots.push(sp);
         this.reserved.push(sp.pos.clone());
       }
@@ -1345,7 +1426,7 @@ export class Site9 implements GameMap {
     // The transport that came down on the pad: a wreck nose to tail along the hangar,
     // solid along the fuselage (the rotor blades overhead are not).
     this.box(R, 'yellow', [18, 0.05, 18], [-88, 0.03, 50], false);
-    this.prop(R, 'helicopter', [-88, 0, 50], Math.PI / 2, { collider: [12.5, 3.6, 3.6] });
+    this.prop(R, 'helicopter', this.at(R, [-88, 0, 50]), Math.PI / 2, { collider: [12.5, 3.6, 3.6] });
     // Cargo truck, containers, fuel tanks, the giant hangar door (west wall).
     this.box(R, 'gunmetal', [2.6, 3.0, 9], [-72, 1.9, 28], true, undefined, METAL);
     this.box(R, 'vanta', [2.6, 2.4, 2.6], [-72, 1.6, 34.2], true, undefined, METAL);
@@ -1636,6 +1717,7 @@ export class Site9 implements GameMap {
         for (const p of doorPts) if (Math.hypot(p.x - x, p.z - z) < r + 2.6) return false;
         for (const p of this.reserved) if (Math.hypot(p.x - x, p.z - z) < r + 1.8) return false;
         for (const sp of this.spawnPoints) if (Math.hypot(sp.pos.x - x, sp.pos.z - z) < r + 1.6) return false;
+        for (const [fx, fz, fr] of this.fixtures) if (Math.hypot(fx - x, fz - z) < r + fr + 0.2) return false;
         return true;
       };
       // Walls: (start, end, inward normal).
@@ -1770,57 +1852,63 @@ export class Site9 implements GameMap {
     }
   }
 
-  /** Room name signs above every opening, on both sides. */
+  /**
+   * Door furniture on both sides of every opening. Shutters get a coil housing over the
+   * opening with the room plate set in its face (code + name, like "B-01 SECURITY"), guide
+   * rails striped at the foot, red status lamps, a keypad and a hazard-striped threshold;
+   * open archways just get the plate, seated on the lintel.
+   */
   private buildSigns(): void {
-    const tex = new Map<string, THREE.Texture>();
-    const signTex = (text: string) => {
-      let t = tex.get(text);
-      if (!t) {
-        const c = document.createElement('canvas');
-        c.width = 512;
-        c.height = 96;
-        const g = c.getContext('2d')!;
-        g.fillStyle = '#16181b';
-        g.fillRect(0, 0, 512, 96);
-        g.fillStyle = '#a3171a';
-        g.fillRect(0, 0, 10, 96);
-        g.fillStyle = '#f0f0f0';
-        g.font = '600 46px system-ui, sans-serif';
-        g.textBaseline = 'middle';
-        g.fillText(text.toUpperCase(), 30, 50);
-        t = new THREE.CanvasTexture(c);
-        t.colorSpace = THREE.SRGBColorSpace;
-        t.anisotropy = 4;
-        if (this.mobile) {
-          // Phones: no mip chain (a third more memory per sign, and the upload builds it),
-          // anisotropy at the phone cap (signs aren't in the Textures cache setTextureAnisotropy walks).
-          t.anisotropy = MOBILE_ANISOTROPY;
-          t.generateMipmaps = false;
-          t.minFilter = THREE.LinearFilter;
-        }
-        tex.set(text, t);
-      }
-      return t;
-    };
+    // The plates are atlas cells (one draw call per room for all of a room's plates).
+    const atlas = this.printAtlas;
+    const M = this.mats;
     for (const l of LINKS) {
-      const a = ROOMS.find((r) => r.id === l.a)!;
-      const b = ROOMS.find((r) => r.id === l.b)!;
+      const a = ROOM_OF.get(l.a)!;
+      const b = ROOM_OF.get(l.b)!;
       const vertical = a.rect[2] === b.rect[0] || a.rect[0] === b.rect[2];
       const line = vertical ? (a.rect[2] === b.rect[0] ? a.rect[2] : a.rect[0]) : a.rect[3] === b.rect[1] ? a.rect[3] : a.rect[1];
-      const h = Math.min(l.height ?? 4, Math.min(a.h, b.h) - 0.4) + 0.75;
+      const oh = Math.min(l.height ?? 4, Math.min(a.h, b.h) - 0.4);
+      const w = l.width;
+      const shutter = l.kind === 'buy';
       for (const [from, to] of [[a, b], [b, a]] as const) {
-        // Sign on `from`'s side, naming the room you walk into.
+        // `from`'s side, naming the room you walk into. Wall face 0.15 m off the boundary.
         const dir = vertical ? (to.rect[0] >= from.rect[2] ? 1 : -1) : to.rect[1] >= from.rect[3] ? 1 : -1;
-        const off = -dir * 0.17;
-        const m = new THREE.Mesh(new THREE.PlaneGeometry(2.6, 0.49), new THREE.MeshBasicMaterial({ map: signTex(to.name), toneMapped: false }));
-        if (vertical) {
-          m.position.set(line + off, h, l.at);
-          m.rotation.y = dir > 0 ? -Math.PI / 2 : Math.PI / 2;
+        const at = (o: number, y: number, s = 0): [number, number, number] => (vertical ? [line - dir * o, y, l.at + s] : [l.at + s, y, line - dir * o]);
+        const size = (sw: number, sh: number, d: number): [number, number, number] => (vertical ? [d, sh, sw] : [sw, sh, d]);
+        const yaw = vertical ? (dir > 0 ? -Math.PI / 2 : Math.PI / 2) : dir > 0 ? Math.PI : 0;
+        const rb = this.room(from.id).b;
+        let plateY: number;
+        let plateOff: number;
+        if (shutter) {
+          // Coil housing over the opening; the plate is set in its face.
+          const hy = oh + 0.38;
+          rb.box(M.gunmetal, size(w + 0.5, 0.62, 0.28), at(0.29, hy));
+          rb.box(M.dark, size(w + 0.58, 0.05, 0.32), at(0.31, hy + 0.33));
+          rb.box(M.dark, size(w + 0.5, 0.05, 0.3), at(0.3, hy - 0.33));
+          for (const s of [-1, 1]) {
+            rb.box(M.dark, size(0.04, 0.6, 0.29), at(0.295, hy, s * (w / 2 + 0.23)));
+            rb.box(M.lampRed, size(0.12, 0.12, 0.05), at(0.45, hy, s * (w / 2 + 0.08)));
+            // Guide rails down the sides, striped at the foot.
+            rb.box(M.gunmetal, size(0.16, oh, 0.16), at(0.23, oh / 2, s * (w / 2 + 0.08)));
+            for (let k = 0; k < 6; k++) rb.box(k % 2 ? M.dark : M.yellow, size(0.17, 0.2, 0.17), at(0.23, 0.1 + k * 0.2, s * (w / 2 + 0.08)));
+          }
+          // Keypad beside the right-hand rail.
+          rb.box(M.dark, size(0.18, 0.28, 0.06), at(0.18, 1.35, w / 2 + 0.6));
+          rb.box(M.screen, size(0.12, 0.07, 0.005), at(0.213, 1.42, w / 2 + 0.6));
+          rb.box(M.lampRed, size(0.03, 0.03, 0.01), at(0.215, 1.27, w / 2 + 0.6));
+          // Hazard-striped threshold.
+          const n = Math.max(2, Math.round(w / 0.3));
+          for (let k = 0; k < n; k++) rb.box(k % 2 ? M.dark : M.yellow, size(w / n, 0.006, 0.5), at(0.15 + 0.3, 0.024, -w / 2 + (k + 0.5) * (w / n)));
+          plateY = hy;
+          plateOff = 0.433;
         } else {
-          m.position.set(l.at, h, line + off);
-          m.rotation.y = dir > 0 ? Math.PI : 0;
+          // Archway: a plate box seated on the lintel trim.
+          plateY = oh + 0.47;
+          rb.box(M.gunmetal, size(2.95, 0.66, 0.09), at(0.195, plateY));
+          rb.box(M.dark, size(3.05, 0.05, 0.13), at(0.215, plateY + 0.355));
+          plateOff = 0.243;
         }
-        this.room(from.id).group.add(m);
+        this.room(from.id).clear.add(atlas.mats.plate, atlas.plane(`plate_${to.id}`, 2.7, 0.54), at(plateOff, plateY), [0, yaw, 0]);
       }
     }
     // Big lobby logo over the lifts.
@@ -1845,6 +1933,47 @@ export class Site9 implements GameMap {
     logo.position.set(...this.at('lobby', [0, 5.1, 83.82]));
     logo.rotation.y = Math.PI;
     this.room('lobby').group.add(logo);
+    // Either side of the lifts: the outside-air board and the standing order about the Blackpine hardware.
+    const board = (x: number, draw: (g: CanvasRenderingContext2D) => void) => {
+      const bc = document.createElement('canvas');
+      bc.width = 512;
+      bc.height = 256;
+      const bg = bc.getContext('2d')!;
+      bg.fillStyle = '#16191c';
+      bg.fillRect(0, 0, 512, 256);
+      bg.textBaseline = 'middle';
+      draw(bg);
+      const bt = new THREE.CanvasTexture(bc);
+      bt.colorSpace = THREE.SRGBColorSpace;
+      const m = new THREE.Mesh(new THREE.PlaneGeometry(4, 2), new THREE.MeshStandardMaterial({ map: bt, roughness: 0.5, emissive: 0xffffff, emissiveMap: bt, emissiveIntensity: 0.35 }));
+      m.position.set(...this.at('lobby', [x, 3.2, 83.82]));
+      m.rotation.y = Math.PI;
+      this.room('lobby').group.add(m);
+    };
+    board(13.5, (bg) => {
+      bg.fillStyle = '#8a9096';
+      bg.font = '500 30px system-ui, sans-serif';
+      bg.fillText('OUTSIDE AIR  ·  YENISEI SITE', 32, 46);
+      bg.fillStyle = '#9fd3ff';
+      bg.font = '700 120px system-ui, sans-serif';
+      bg.fillText('−27 °C', 32, 140);
+      bg.fillStyle = '#5a6066';
+      bg.font = '400 26px system-ui, sans-serif';
+      bg.fillText('SITE-9 ENVIRONMENTAL', 32, 222);
+    });
+    board(-13.5, (bg) => {
+      bg.fillStyle = '#ffd25a';
+      bg.fillRect(0, 0, 512, 14);
+      bg.font = '700 40px system-ui, sans-serif';
+      bg.fillText('STANDING ORDER 30', 32, 62);
+      bg.fillStyle = '#e6e8ea';
+      bg.font = '400 28px system-ui, sans-serif';
+      bg.fillText('Do not power Blackpine assets', 32, 120);
+      bg.fillText('when outside air is below −30 °C.', 32, 158);
+      bg.fillStyle = '#8a9096';
+      bg.font = '400 22px system-ui, sans-serif';
+      bg.fillText('— Consolidation Office, E. Wick', 32, 216);
+    });
   }
 
   private placeProps(): void {
@@ -1926,12 +2055,16 @@ export class Site9 implements GameMap {
    */
   setBlackout(k: number): void {
     this.blackout = k;
-    this.hemi.intensity = this.ambient + (0.1 - this.ambient) * k;
+    // Under the skylight the fill comes up (and the moonlight through it, see Site9Dressing.skyLights).
+    const fill = this.ambient + 0.2 * this.openBoost;
+    this.hemi.intensity = fill + (0.1 - fill) * k;
     // Blacked out: the last of the fill is a faint red (the emergency strips).
     this.hemi.color.setRGB(0.77 + 0.2 * k, 0.82 - 0.65 * k, 0.88 - 0.72 * k);
     this.hemi.groundColor.setRGB(0.23 - 0.13 * k, 0.21 - 0.18 * k, 0.19 - 0.17 * k);
-    this.sun.intensity = SUN * (1 - 0.8 * k);
+    this.sun.intensity = SUN * (1 + 2.4 * this.openBoost) * (1 - 0.8 * k);
     for (const [m, base] of this.lampBase) m.emissiveIntensity = base * (1 - 0.97 * k);
+    const beamPool = this.mats.d_beamPool as THREE.MeshBasicMaterial | undefined;
+    if (beamPool) beamPool.opacity = 0.5 * (1 - 0.6 * k);
     for (const p of this.pools.values()) (p as THREE.MeshBasicMaterial).opacity = 0.42 * (1 - k);
     // The reactor and the data core run on their own supply: dimmed, not dead.
     for (const [l, base] of this.accents) l.intensity = base * (1 - 0.7 * k);
@@ -1947,6 +2080,11 @@ export class Site9 implements GameMap {
     else this.group.remove(this.sun, this.sun.target);
     this.ambient = this.sun.castShadow ? MOBILE_FILL : MOBILE_FILL_NO_SUN;
     this.setBlackout(this.blackout);
+  }
+
+  /** 0..1: you are under the open sky / the skylight (Lighting lifts the image-based fill with it). */
+  get openLight(): number {
+    return this.openBoost;
   }
 
   /** Emergency lamp pulse 0.06..1 (strips and their lights beat together). */
@@ -1978,6 +2116,12 @@ export class Site9 implements GameMap {
     this.brokenLevel = on * (1 - this.blackout);
     this.brokenLampMat.emissiveIntensity = 0.02 + 2.6 * this.brokenLevel;
     this.brokenPool.opacity = 0.42 * this.brokenLevel;
+    // Skylight rooms day up while you're in them (eased, so a doorway isn't a light switch).
+    if (focus) {
+      const here = this.layout.roomAt(focus.x, focus.z);
+      const target = here?.skylight ? 1 : here?.sky ? 0.5 : 0;
+      this.openBoost += (target - this.openBoost) * Math.min(1, dt * 1.2);
+    }
     if (this.mobile && this.sun.castShadow !== !!this.sun.parent) this.syncSun();
     // Shadow camera follows the player (texel-snapped so shadows don't swim).
     if (focus) {

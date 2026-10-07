@@ -1,0 +1,46 @@
+/* ==========================================================================
+   Skills: the ten-segment track and the main menu's SKILLS panel.
+   Same look as the menu / dossier: aged ink on near-black, one red, hairlines.
+   ========================================================================== */
+
+/* The level track: one segment per level; --a old fill, --b new fill (this raid in red). */
+.sk-pips { display: grid; grid-template-columns: repeat(10, 1fr); gap: 3px; }
+.sk-pips i { position: relative; height: 6px; background: rgba(222, 216, 202, 0.1); overflow: hidden; }
+.sk-pips i::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: var(--a); background: #e4e0d4; }
+.sk-pips i::after { content: ''; position: absolute; top: 0; bottom: 0; left: var(--a); width: calc(var(--b) - var(--a)); background: #c8321f; box-shadow: 0 0 8px rgba(200, 50, 31, 0.6); }
+
+/* ---------- SKILLS panel (main menu) ---------- */
+.menu .sk-top { display: grid; gap: 8px; margin-bottom: 18px; }
+.menu .sk-top div { display: flex; align-items: baseline; gap: 8px; }
+.menu .sk-top b { font: 700 13px var(--g-mono); letter-spacing: 0.26em; color: var(--g-accent-2); }
+.menu .sk-top span { font: 700 11px var(--g-mono); letter-spacing: 0.2em; color: var(--g-dim); }
+.menu .sk-top p { margin: 0; font: 500 13px/1.5 var(--g-font); letter-spacing: 0.02em; color: rgba(228, 224, 212, 0.66); }
+.menu .sk-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 12px; }
+.menu .sk-card {
+  position: relative; display: grid; grid-template-columns: 34px 1fr auto; grid-template-areas:
+    'icon name lv' 'pips pips pips' 'prog prog prog' 'fx fx fx' 'next next next' 'how how how';
+  gap: 8px 12px; align-items: center; padding: 14px 16px 14px;
+  border: 1px solid var(--f-rule); background: linear-gradient(180deg, rgba(222, 216, 202, 0.045), rgba(222, 216, 202, 0.01));
+}
+.menu .sk-card::before { content: ''; position: absolute; left: -1px; top: -1px; width: 22px; height: 2px; background: var(--g-accent); }
+.menu .sk-card.max { border-color: rgba(200, 50, 31, 0.5); }
+.menu .sk-icon { grid-area: icon; width: 34px; height: 34px; display: grid; place-items: center; border: 1px solid var(--f-rule); color: var(--f-ink); }
+.menu .sk-icon svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linejoin: round; stroke-linecap: round; }
+.menu .sk-name { grid-area: name; font: 700 15px var(--g-font); letter-spacing: 0.16em; color: var(--f-ink); }
+.menu .sk-lv { grid-area: lv; display: flex; align-items: baseline; gap: 4px; }
+.menu .sk-lv b { font: 700 32px/0.9 var(--g-font); color: var(--f-ink);
+  -webkit-mask-image: var(--wear); mask-image: var(--wear); -webkit-mask-size: 260px auto; mask-size: 260px auto; }
+.menu .sk-lv span { font: 700 10px var(--g-mono); letter-spacing: 0.14em; color: var(--g-dim); }
+.menu .sk-card .sk-pips { grid-area: pips; }
+.menu .sk-prog { grid-area: prog; display: flex; justify-content: space-between; gap: 10px; font: 700 10px var(--g-mono); letter-spacing: 0.14em; color: var(--g-dim); }
+.menu .sk-prog em { font-style: normal; color: var(--g-accent-2); }
+.menu .sk-fx { grid-area: fx; display: grid; grid-template-columns: 44px 1fr; gap: 8px; align-items: baseline; font: 600 13px/1.35 var(--g-font); letter-spacing: 0.03em; color: rgba(228, 224, 212, 0.9); }
+.menu .sk-fx.next { grid-area: next; color: rgba(228, 224, 212, 0.5); }
+.menu .sk-fx em { font: 700 9px var(--g-mono); font-style: normal; letter-spacing: 0.18em; color: var(--g-accent-2); }
+.menu .sk-fx.next em { color: var(--g-dim); }
+.menu .sk-how { grid-area: how; padding-top: 8px; border-top: 1px dashed rgba(222, 216, 202, 0.16); font: 700 9.5px var(--g-mono); letter-spacing: 0.14em; text-transform: uppercase; color: var(--g-dim); }
+.is-touch .menu .sk-grid { grid-template-columns: 1fr 1fr; }
+.is-touch .menu .sk-name { font-size: 20px; }
+.is-touch .menu .sk-fx { font-size: 17px; grid-template-columns: 60px 1fr; }
+.is-touch .menu .sk-fx em, .is-touch .menu .sk-prog, .is-touch .menu .sk-how { font-size: 12px; }
+.is-touch .menu .sk-top p { font-size: 16px; }

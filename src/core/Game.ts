@@ -1,3 +1,4 @@
+import { skillFx, skillHurt, skillRaid, skillReload, skillShot, tickSkills } from '../game/Skills';
 import * as THREE from 'three';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import { LightProbeGenerator } from 'three/examples/jsm/lights/LightProbeGenerator.js';
@@ -583,6 +584,7 @@ export class Game {
       this.squads.push(squad);
     }
     this.weapons.onPlayerShot = (pos, suppressed) => {
+      skillShot();
       aiWorld.emit(suppressed ? 'gunshot_sup' : 'gunshot', pos, 'alpha', this.player);
       if (feel.enemyAI && !this.health.dead) for (const s of this.squads) s.hearShot(pos, suppressed);
       this.survival?.hearShot(pos, suppressed);
@@ -657,6 +659,7 @@ export class Game {
   /** Damage the player with all the feedback (vignette, direction, aim punch, sound). */
   hurtPlayer(damage: number, from: THREE.Vector3): number {
     const dealt = this.health.damage(damage);
+    if (dealt > 0) skillHurt();
     if (dealt <= 0) return 0;
     this.status.damaged(dealt, from);
     this.audio.play('player.hurt', { volume: 0.6 + dealt / 60 });
@@ -1078,15 +1081,16 @@ export class Game {
     if (rvg && (!rvg.a.alive || !rvg.a.downed || rvg.a.distTo(this.player.feet) > 2.6 || this.health.downed || this.health.dead)) this.reviving = null;
     if (this.reviving) {
       this.reviving.t += dt;
-      if (this.reviving.t >= 3) {
+      if (this.reviving.t >= 3 * skillFx.reviveTime) {
         this.reviving.a.soldier.body.revive();
+        skillRaid.add('medic', 25);
         this.hud.toast(`${this.reviving.a.personality.name} is back up`, 1.5);
         this.reviving = null;
       }
     }
     if (this.reviveBar) {
       this.reviveBar.classList.toggle('show', !!this.reviving);
-      if (this.reviving) this.reviveBar.innerHTML = `REVIVING ${this.reviving.a.personality.name.toUpperCase()}<i style="transform:scaleX(${(this.reviving.t / 3).toFixed(3)})"></i>`;
+      if (this.reviving) this.reviveBar.innerHTML = `REVIVING ${this.reviving.a.personality.name.toUpperCase()}<i style="transform:scaleX(${Math.min(1, this.reviving.t / (3 * skillFx.reviveTime)).toFixed(3)})"></i>`;
     }
     const near = !this.reviving && !this.health.downed ? this.downedAllyNear() : null;
     sv.overridePrompt = near ? `Revive ${near.personality.name}` : null;
@@ -1381,7 +1385,13 @@ export class Game {
   /** Weapon Lab observer (G): god mode, and the AI doesn't see you. */
   private observer = false;
 
+  /** Last frame's weapon state (a reload starting trains RELOADING). */
+  private lastWeaponState = '';
+
   private onKey(code: string): void {
+    // Nothing reaches the game while the menu (pause, dossier, HUD editor) or the terminal is
+    // up: M, K, Z and the rest used to fire there unseen.
+    if (document.body.classList.contains('in-menu') || document.body.classList.contains('term-open')) return;
     const w = this.weapons;
     const devOnly = ['KeyH', 'Tab', 'KeyP', 'F1', 'Slash', 'KeyG', 'KeyJ', 'KeyO', 'KeyU', 'F2', 'F4', 'F8'];
     // J is build mode on Site-9 (a player key there), the debug crosshair elsewhere.
@@ -1905,7 +1915,14 @@ export class Game {
     }
     if (this.ambienceOn && !this.ambience && this.ambienceOk && this.audio.ready && !this.trailer) this.ambience = new Ambience(this.audio);
     this.ambience?.update(dt, this.arena instanceof Site9 ? this.arena.ambienceAt(this.player.feet.x, this.player.feet.z) : null, darkness, this.camera.eye);
-    if (this.survival && !this.health.dead && !this.ended) raid.alive += dt;
+    if (this.survival && !this.health.dead && !this.ended) {
+      raid.alive += dt;
+      tickSkills(dt, this.weapons.adsAmount > 0.5);
+      // RELOADING: each reload that starts.
+      const ws = this.weapons.current.state;
+      if (ws === 'reloading' && this.lastWeaponState !== 'reloading') skillReload();
+      this.lastWeaponState = ws;
+    }
     // Broken lamps spark when they stutter back on (only the ones near you).
     if (this.arena instanceof Site9) {
       const lvl = this.arena.brokenLevel;

@@ -127,26 +127,25 @@ export class Showcase {
     };
 
     const bd = squad('bd', ['bd', 'bdboss', 'bd'], ['mk47', 'scarh', 'm4a1'], 70);
-    this.lineups.push({ name: 'SABLE', tag: 'THE WARDEN AND HIS CLEANUP CREW', text: 'Corporate wet-work. Night vision, suppressors, rifle lights, no witnesses. When the power dies, they are already inside.', rim: 0xff1a0a, key: 0xffd6cc, ...bd });
+    this.lineups.push({ name: 'SABLE', tag: 'THE WARDEN AND ITS CLEANUP CREW', text: 'Corporate wet-work, led by a machine that talks in a dead man’s voice. Night vision, suppressors, no witnesses. When the power dies, they are already inside.', rim: 0xff1a0a, key: 0xffd6cc, ...bd });
     const vanta = squad('alpha', ['vanta', 'vanta', 'vanta'], ['m4a1', 'ak47', 'svd'], 74);
     this.lineups.push({ name: 'VANTA SECURITY', tag: 'YOUR SQUAD', text: 'Four contractors, one wallet each, and a facility gone dark. Buy, hire, extract — or don’t come back.', rim: 0x3a8bff, key: 0xe6f0ff, ...vanta });
     const rivals = squad('bravo', ['bravo', 'charlie', 'delta'], ['ak47', 'mp5', 'saiga12'], 78);
     this.lineups.push({ name: 'RIVAL SQUADS', tag: 'BRAVO · CHARLIE · DELTA', text: 'Three other crews on the same contract. They hear you, they flank you, and they want your cash.', rim: 0xffa21a, key: 0xfff0dc, ...rivals });
 
-    // Robots: a brute between two walkers, visors lit.
+    // Robots: three walkers, visors lit.
     const robots: RogueRobot[] = [];
     const rhooks = { onDamage() {}, onDeath() {}, onAttack() {}, onThud() {}, onWake() {} };
     [-1.5, 0, 1.5].forEach((x, i) => {
       const r = new RogueRobot(d.physics, S, d.nav, rhooks);
       r.spawn(STAGE.clone().add(new THREE.Vector3(x, 0, i === 1 ? 0.3 : -0.3)), 300, 1, 0, 'idle', 0);
       r.wanders = false;
-      r.setVariant(i === 1 ? 'brute' : 'normal');
-      if (i === 1) r.body.root.scale.setScalar(1.18);
+      r.setVariant('normal');
       robots.push(r);
       this.bodies.push(r.body);
     });
     this.lineups.push({
-      name: 'ROGUE MACHINES', tag: 'SITE-9 ASSEMBLY LINE', text: 'The robots built to run the facility. Now they run it. More every wave; brutes shrug off a magazine.', rim: 0xff0a2a, key: 0xffe0e0,
+      name: 'ROGUE MACHINES', tag: 'SITE-9 ASSEMBLY LINE', text: 'Line 2 keeps building them with no night shift. More every wave; the fast ones cross a corridor in seconds.', rim: 0xff0a2a, key: 0xffe0e0,
       members: robots.map((r) => r.body.root),
       update: (dt) => robots.forEach((r) => r.update(dt, [], robots)),
     });
@@ -188,7 +187,7 @@ export class Showcase {
       p.elbows = i === 1 ? 0.6 : 0.9;
       choirEyes.emissiveIntensity = 1.4 + Math.sin(t * 3.1) * 0.4;
     });
-    this.lineups.push({ name: 'THE CHOIR', tag: 'WHEN THE LIGHTS DIE', text: 'They worship the machines. In a blackout they creep up in the dark and rush you with a blade. Keep your flashlight on them.', rim: 0xff1424, key: 0x8a6464, ...choir });
+    this.lineups.push({ name: 'THE CHOIR', tag: 'WHEN THE LIGHTS DIE', text: 'They believe the machines remember. In a blackout they creep up in the dark and rush you with a blade. Keep your flashlight on them.', rim: 0xff1424, key: 0x8a6464, ...choir });
     const staff = posed([labSkin(0), labSkin(1), labSkin(4)], (i, t, p) => {
       p.idle = false;
       const cower = i === 0;

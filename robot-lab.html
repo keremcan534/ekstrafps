@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="tr"><head><meta charset="utf-8"><title>Robot Lab</title>
+<!-- Rogue robots on their own: one chasing a target round a circle, one swinging at a
+     post, one dormant that wakes every few seconds. Orbit with the mouse.
+     ?only=chase|march|attack|idle for one of them (march: walks a straight 12 m line and back); ?slow=0.25 for slow motion. -->
+<style>body{margin:0;background:#1b1d20;overflow:hidden}canvas{display:block}#hud{position:fixed;left:10px;top:8px;color:#ccc;font:12px monospace}</style></head>
+<body><div id="hud"></div><script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
+import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
+import { Physics } from '/src/core/Physics.ts';
+import { loadCharacterModels } from '/src/targets/CharacterModels.ts';
+import { RogueRobot } from '/src/enemies/RogueRobot.ts';
+
+const q = new URLSearchParams(location.search);
+const only = q.get('only');
+const slow = Number(q.get('slow') ?? 1);
+const r = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
+r.setSize(innerWidth, innerHeight);
+r.toneMapping = THREE.ACESFilmicToneMapping;
+document.body.appendChild(r.domElement);
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x1b1d20);
+scene.environment = new THREE.PMREMGenerator(r).fromScene(new RoomEnvironment(), 0.04).texture;
+scene.environmentIntensity = 0.6;
+const sun = new THREE.DirectionalLight(0xffffff, 2.2);
+sun.position.set(3, 6, 4);
+scene.add(sun, new THREE.HemisphereLight(0xbfd0e0, 0x303030, 0.8));
+const floor = new THREE.Mesh(new THREE.PlaneGeometry(40, 40), new THREE.MeshStandardMaterial({ color: 0x3a3d42, roughness: 0.9 }));
+floor.rotation.x = -Math.PI / 2;
+scene.add(floor, new THREE.GridHelper(40, 40, 0x555555, 0x444444));
+const cam = new THREE.PerspectiveCamera(40, innerWidth / innerHeight, 0.05, 200);
+cam.position.set(0, 2.2, 7);
+const orbit = new OrbitControls(cam, r.domElement);
+orbit.target.set(0, 1, 0);
+
+const physics = await Physics.create(1 / 60);
+await loadCharacterModels(false);
+const nav = { walkable: () => true, clearLine: () => true, findPathFor: () => null, lastTruncated: false };
+const hooks = { onDamage() {}, onDeath() {}, onAttack() {}, onThud() {}, onWake() {} };
+const marker = (c) => { const m = new THREE.Mesh(new THREE.SphereGeometry(0.12), new THREE.MeshBasicMaterial({ color: c })); m.position.y = 1.2; scene.add(m); return m; };
+
+const runner = { pos: new THREE.Vector3(), alive: true, hit() {} };
+const post = { pos: new THREE.Vector3(2.5, 0, 0), alive: true, hit() {} };
+if (!only || only === 'attack') marker(0xffaa00).position.copy(post.pos).setY(1.6);
+const runMark = marker(0x33ccff);
+runMark.visible = !only || only === 'chase';
+const robots = [];
+const add = (kind, at, yaw) => {
+  if (only && only !== kind) return;
+  const rb = new RogueRobot(physics, scene, nav, hooks);
+  rb.spawn(at, 1e6, kind === 'chase' || kind === 'march' ? 1.6 : 1, 0, kind === 'idle' ? 'idle' : 'step', yaw);
+  rb.wanders = false;
+  robots.push({ kind, rb });
+};
+add('chase', new THREE.Vector3(-3, 0, 0), 0);
+add('march', new THREE.Vector3(-6, 0, 4), Math.PI / 2);
+const ends = [new THREE.Vector3(6, 0, 4), new THREE.Vector3(-6, 0, 4)];
+const goal = { pos: ends[0].clone(), alive: true, hit() {} };
+let leg = 0;
+add('attack', new THREE.Vector3(2.5, 0, -1.3), 0);
+add('idle', new THREE.Vector3(0, 0, -2), 0);
+
+let t = 0, wakeAt = 3;
+const step = (dt) => {
+  t += dt;
+  const a = t * 0.35;
+  runner.pos.set(Math.cos(a) * 4, 0, Math.sin(a) * 4);
+  runMark.position.set(runner.pos.x, 1.2, runner.pos.z);
+  for (const { kind, rb } of robots) {
+    if (kind === 'idle' && t > wakeAt) {
+      if (rb.dormant) rb.wake();
+      if (t > wakeAt + 3) { rb.spawn(new THREE.Vector3(0, 0, -2), 1e6, 1, 0, 'idle', 0); rb.wanders = false; wakeAt = t + 3; }
+    }
+    if (kind === 'march' && rb.pos.distanceTo(goal.pos) < 2) goal.pos.copy(ends[++leg % 2]);
+    rb.update(dt, kind === 'chase' ? [runner] : kind === 'march' ? [goal] : kind === 'attack' ? [post] : [], robots.map((x) => x.rb));
+  }
+  physics.step();
+};
+/** Camera on robot `i` from 'front' | 'side' | 'three' | 'back' (yaw relative to the robot). */
+const view = (i, name, dist = 3.6) => {
+  const rb = robots[i].rb;
+  const yaw = rb.body.root.rotation.y + { front: 0, three: Math.PI / 4, side: Math.PI / 2, back: Math.PI }[name];
+  const at = rb.body.root.position;
+  orbit.target.set(at.x, 1, at.z);
+  cam.position.set(at.x + Math.sin(yaw) * dist, 1.25, at.z + Math.cos(yaw) * dist);
+  orbit.update();
+  r.render(scene, cam);
+};
+/** Contact sheet over the page: `frames` shots of robot `i`, `every` 60 Hz steps apart (pauses the loop). */
+const sheet = (i, name, frames = 8, every = 4, cols = 4, dist = 3.6) => {
+  window.__rl.paused = true;
+  const W = 320, H = Math.round((320 * r.domElement.height) / r.domElement.width);
+  let c = document.getElementById('sheet');
+  if (!c) {
+    c = document.createElement('canvas');
+    c.id = 'sheet';
+    c.style.cssText = 'position:fixed;left:0;top:0;width:100vw;z-index:9;background:#000';
+    document.body.appendChild(c);
+  }
+  c.width = W * cols;
+  c.height = H * Math.ceil(frames / cols);
+  const g = c.getContext('2d');
+  g.fillStyle = '#fff';
+  for (let f = 0; f < frames; f++) {
+    for (let s = 0; s < every; s++) step(1 / 60);
+    view(i, name, dist);
+    g.drawImage(r.domElement, (f % cols) * W, Math.floor(f / cols) * H, W, H);
+    g.fillText(`+${f * every}f  ${robots[i].rb.state}`, (f % cols) * W + 4, Math.floor(f / cols) * H + 12);
+  }
+};
+window.__rl = { step, robots, cam, orbit, view, sheet, render: () => r.render(scene, cam), paused: false };
+let last = performance.now();
+r.setAnimationLoop((now) => {
+  const dt = Math.min(0.05, (now - last) / 1000) * slow;
+  last = now;
+  if (!window.__rl.paused) step(dt);
+  orbit.update();
+  r.render(scene, cam);
+  document.getElementById('hud').textContent = robots.map(({ kind, rb }) => `${kind}: ${rb.state}`).join('  ·  ');
+});
+addEventListener('resize', () => { r.setSize(innerWidth, innerHeight); cam.aspect = innerWidth / innerHeight; cam.updateProjectionMatrix(); });
+</script></body></html>

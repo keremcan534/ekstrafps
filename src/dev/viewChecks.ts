@@ -53,6 +53,10 @@ export const LIMITS = {
   wristDeg: 80,
   fingerInMm: 16,
   gloveInMm: 15,
+  /** An arm out of reach stretches its sleeve (m). */
+  reachM: 0.12,
+  /** Aimed, no hand joint this close to the aim axis (deg): it would sit in the sight picture. */
+  handClearDeg: 2.5,
 };
 
 /** The solid meshes of the weapon in hand that draw (not glass, glow or the muzzle flash). */
@@ -95,7 +99,9 @@ export function sightPicture(vm: Viewmodel): { runs: string; postTopDeg: number 
   const rig = vm.activeRig;
   if (!rig) return { runs: '', postTopDeg: null, clearAboveDeg: null };
   vm.scene.updateMatrixWorld(true);
-  const meshes = drawnMeshes(vm);
+  // The sights' own picture: not the skinned glove (every ray would skin its 86k vertices,
+  // seconds per call; a hand in the sight picture is the state checks' handAxisDeg).
+  const meshes = drawnMeshes(vm).filter((m) => !(m as THREE.SkinnedMesh).isSkinnedMesh);
   // Rays may start inside a part (a stock under the cheek): every face counts.
   const sides = new Map<THREE.Material, THREE.Side>();
   for (const m of meshes) {
@@ -247,6 +253,10 @@ export interface StateRow {
   wristDeg: number;
   fingerGapMm: number;
   gloveInMm: number;
+  /** Arm out of reach (m), most over the state. */
+  reachM: number;
+  /** Aimed: the hand joint nearest the aim axis (deg). */
+  handAxisDeg: number;
   /** After the state, 2.5 s still with sway off. */
   settleDeg: number;
   settleMm: number;
@@ -318,7 +328,7 @@ export function runStateChecks(h: Harness): StateRow[] {
   const rows: StateRow[] = [];
   const run = (state: string, aimedState: boolean, body: (track: () => void) => void) => {
     reset();
-    const row: StateRow = { state, ok: true, notes: [], offDeg: 0, splitDeg: 0, rollDeg: 0, nearestM: Infinity, screenPct: 0, centrePct: 0, wristDeg: 0, fingerGapMm: Infinity, gloveInMm: 0, settleDeg: 0, settleMm: 0, settleMotionMm: 0, settleMotionDeg: 0 };
+    const row: StateRow = { state, ok: true, notes: [], offDeg: 0, splitDeg: 0, rollDeg: 0, nearestM: Infinity, screenPct: 0, centrePct: 0, wristDeg: 0, fingerGapMm: Infinity, gloveInMm: 0, reachM: 0, handAxisDeg: Infinity, settleDeg: 0, settleMm: 0, settleMotionMm: 0, settleMotionDeg: 0 };
     let n = 0;
     const track = () => {
       // Hands on their grips (not while an animation has them): wrist, fingers, glove.
@@ -332,6 +342,16 @@ export function runStateChecks(h: Harness): StateRow[] {
           // The thumb's metacarpal is the ball of the thumb (the palm): the glove measure has it.
           for (const [name, f] of Object.entries(g)) row.fingerGapMm = Math.min(row.fingerGapMm, ...f.slice(name === 'thumb' ? 1 : 0).map((x) => x * 1000));
           row.gloveInMm = Math.max(row.gloveInMm, gloveInside(vm, side, surf, 8).maxMm);
+          row.reachM = Math.max(row.reachM, s.reachM);
+          // Aimed: how close the hand's joints come to the aim axis (camera space: -Z), ahead of the eye.
+          const b = vm.adsAmount > 0.99 ? vm.arms.bonesOf(side) : null;
+          if (b) {
+            const p = new THREE.Vector3();
+            for (const bone of [b.hand, ...Object.values(b.fingers).flat()]) {
+              bone.getWorldPosition(p);
+              if (-p.z > 0.15) row.handAxisDeg = Math.min(row.handAxisDeg, Math.atan2(Math.hypot(p.x, p.y), -p.z) / DEG);
+            }
+          }
         }
       }
       if (n++ % 3 === 0) {
@@ -400,6 +420,8 @@ export function runStateChecks(h: Harness): StateRow[] {
     if (row.wristDeg > LIMITS.wristDeg) fail(`wrist bent ${row.wristDeg.toFixed(0)}° (> ${LIMITS.wristDeg})`);
     if (row.fingerGapMm < -LIMITS.fingerInMm) fail(`a finger ${(-row.fingerGapMm).toFixed(0)} mm into the weapon`);
     if (row.gloveInMm > LIMITS.gloveInMm) fail(`glove ${row.gloveInMm.toFixed(0)} mm inside the weapon`);
+    if (row.reachM > LIMITS.reachM) fail(`arm out of reach by ${(row.reachM * 100).toFixed(0)} cm`);
+    if (row.handAxisDeg < LIMITS.handClearDeg) fail(`a hand in the sight picture (${row.handAxisDeg.toFixed(1)}° from the aim axis)`);
     rows.push(row);
   };
 

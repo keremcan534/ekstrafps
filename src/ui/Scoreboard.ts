@@ -1,3 +1,6 @@
+import type { Payout } from '../game/Progress';
+import { showReport } from './RaidReport';
+
 export interface TeamRow {
   id: string;
   name: string;
@@ -88,17 +91,18 @@ export class Scoreboard {
     while (this.feed.children.length > 5) this.feed.firstChild?.remove();
   }
 
-  showEnd(winner: TeamRow, youWon: boolean, scores: Map<string, number>, tags?: Map<string, string>, sub = '', report = ''): void {
+  /** The match is over: the after-action report (standings, earnings, skills). */
+  showEnd(winner: TeamRow, youWon: boolean, scores: Map<string, number>, tags: Map<string, string> | undefined, sub: string, pay: Payout): void {
     this.setHold(null);
-    const rows = [...this.teams]
+    const standings = [...this.teams]
       .sort((a, b) => (scores.get(b.id) ?? 0) - (scores.get(a.id) ?? 0))
-      .map((t) => {
-        const tag = tags?.get(t.id);
-        return `<div class="me-row"><b style="color:${t.color}">${t.name}</b>${tag ? `<em class="${tag === 'EXTRACTED' ? 'ok' : 'bad'}">${tag}</em>` : ''}<span>${scores.get(t.id) ?? 0}</span></div>`;
-      })
-      .join('');
-    this.end.innerHTML = `<div class="me-title ${youWon ? 'win' : 'lose'}">${youWon ? 'VICTORY' : `${winner.name.toUpperCase()} WINS`}</div>${sub ? `<div class="me-sub">${sub}</div>` : ''}${rows}${report}<button class="sv-restart">PLAY AGAIN</button>`;
-    this.end.classList.add('show');
-    this.end.querySelector('button')!.addEventListener('click', () => location.reload());
+      .map((t) => ({ name: t.name, color: t.color, score: scores.get(t.id) ?? 0, tag: tags?.get(t.id), you: t.id === 'alpha' }));
+    showReport(this.end, {
+      title: youWon ? 'VICTORY' : `${winner.name.toUpperCase()} WINS`,
+      tone: youWon ? 'win' : 'lose',
+      sub,
+      standings,
+      pay,
+    });
   }
 }

@@ -28,9 +28,12 @@
     #101012; }
 .dos-desk::before { content: ''; position: absolute; inset: 0; background: var(--grime-desk) 0 0 / 1024px 1024px repeat; opacity: 0.95; }
 .dos-desk::after { content: ''; position: absolute; inset: 0; background: var(--noise); opacity: 0.5; mix-blend-mode: overlay; }
-/* Over everything: a whisper of dust and a few long scratches (still). */
-.dos-dirt { position: absolute; inset: 0; z-index: 10; pointer-events: none; background: var(--grime-screen) center / cover no-repeat; opacity: 0.9;
-  box-shadow: inset 0 0 160px rgba(0, 0, 0, 0.55); }
+/* Over everything, like a scanned print: the dirt sheet (public/ui/dirt.webp) twice. Its own
+   marks dark (they show on the paper and photos; the grimy edges frame the screen), and a
+   mirrored copy in light (dirt_light.webp: hairlines and specks over the dark desk). */
+.dos-dirt { position: absolute; inset: 0; z-index: 10; pointer-events: none;
+  background: var(--dirt-light) center / 100% 100% no-repeat, var(--dirt) center / 100% 100% no-repeat;
+  opacity: 0.9; box-shadow: inset 0 0 160px rgba(0, 0, 0, 0.55); }
 
 /* ---------------------------------------------------------------- header */
 .dos-head { position: absolute; left: 4vw; top: 4.4vh; z-index: 3; }

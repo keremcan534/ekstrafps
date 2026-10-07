@@ -9,6 +9,9 @@
  *   node scripts/gen-commander-voice.mjs              # the 3 pilot lines only
  *   node scripts/gen-commander-voice.mjs --all        # every line
  *   node scripts/gen-commander-voice.mjs id1 id2 ...  # just these
+ *   node scripts/gen-commander-voice.mjs --lines scripts/voice/warden_menu_lines.txt
+ *                                       # another lines file, same voice (all its lines,
+ *                                       # or the ids given after it)
  *
  * Needs .env (copy .env.example) with ELEVENLABS_API_KEY and COMMANDER_VOICE_ID.
  */
@@ -33,16 +36,18 @@ const voice = process.env.COMMANDER_VOICE_ID || env.COMMANDER_VOICE_ID;
 if (!key || key === 'PUT_YOUR_API_KEY_HERE') throw new Error('Set ELEVENLABS_API_KEY in .env (copy .env.example)');
 if (!voice) throw new Error('Set COMMANDER_VOICE_ID in .env');
 
+const args = process.argv.slice(2);
+const li = args.indexOf('--lines');
+const linesFile = li >= 0 ? args.splice(li, 2)[1] : 'scripts/voice/commander_lines.txt';
 const lines = [];
-for (const raw of readFileSync(join(root, 'scripts/voice/commander_lines.txt'), 'utf8').split(/\r?\n/)) {
+for (const raw of readFileSync(join(root, linesFile), 'utf8').split(/\r?\n/)) {
   if (!raw.trim()) continue;
   const i = raw.indexOf('|');
   if (i < 0) throw new Error(`No | in line: ${raw}`);
   lines.push({ id: raw.slice(0, i).trim(), text: raw.slice(i + 1) });
 }
 
-const args = process.argv.slice(2);
-const wanted = args.includes('--all') ? null : new Set(args.length ? args : PILOT);
+const wanted = args.includes('--all') || (li >= 0 && !args.length) ? null : new Set(args.length ? args : PILOT);
 const todo = wanted ? lines.filter((l) => wanted.has(l.id)) : lines;
 if (wanted && todo.length !== wanted.size) {
   const known = new Set(lines.map((l) => l.id));

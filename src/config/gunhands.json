@@ -83,11 +83,11 @@
   "asval": {
     "rightGrip": {
       "position": [-0.0085, -0.1125, 0.0191],
-      "rotation": [-4, 22, -94]
+      "rotation": [-4, 21, -94]
     },
     "leftGrip": {
-      "position": [0.0261, 0.0254, -0.322],
-      "rotation": [4.53, -86, 185]
+      "position": [0.0256, 0.0007, -0.228],
+      "rotation": [8.53, -89, 178]
     },
     "rightPose": {
       "thumb": [
@@ -163,12 +163,12 @@
   },
   "cz805": {
     "rightGrip": {
-      "position": [-0.0085, -0.075, 0.03],
-      "rotation": [-4, 26, -98]
+      "position": [-0.0085, -0.049, 0.022],
+      "rotation": [-4, 10, -94]
     },
     "leftGrip": {
-      "position": [0.0193, 0.0432, -0.3711],
-      "rotation": [16.53, -86, 176]
+      "position": [0.0113, 0.0524, -0.3851],
+      "rotation": [4.53, -90, 178]
     },
     "rightPose": {
       "thumb": [
@@ -244,12 +244,12 @@
   },
   "g36c": {
     "rightGrip": {
-      "position": [-0.0085, -0.084, 0.01],
+      "position": [-0.0085, -0.082, 0.01],
       "rotation": [-8, 14, -98]
     },
     "leftGrip": {
-      "position": [0.0135, 0.0158, -0.3791],
-      "rotation": [13.53, -84, 183]
+      "position": [0.0175, 0.0198, -0.3791],
+      "rotation": [16.53, -86, 172]
     },
     "rightPose": {
       "thumb": [
@@ -488,11 +488,11 @@
   "ppsh": {
     "rightGrip": {
       "position": [-0.0005, -0.0225, -0.0249],
-      "rotation": [-4, 24, -95]
+      "rotation": [-4, 24, -94]
     },
     "leftGrip": {
-      "position": [0.0234, 0.0646, -0.332],
-      "rotation": [7.53, -85, 180]
+      "position": [0.0234, 0.0486, -0.31],
+      "rotation": [14.53, -94, 184]
     },
     "rightPose": {
       "thumb": [
@@ -650,11 +650,11 @@
   "scarh": {
     "rightGrip": {
       "position": [-0.0005, -0.0475, 0.0611],
-      "rotation": [-5, 25, -94]
+      "rotation": [-8, 15, -85]
     },
     "leftGrip": {
-      "position": [0.0288, 0.0664, -0.2],
-      "rotation": [4.53, -90, 180]
+      "position": [0.0208, 0.0504, -0.192],
+      "rotation": [16.53, -96, 184]
     },
     "rightPose": {
       "thumb": [

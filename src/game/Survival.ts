@@ -1,5 +1,6 @@
 import * as THREE from 'three';
-import { SIDEARMS, byPlayer, loadProfile, payoutHtml, raid, settleRaid } from './Progress';
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+import { SIDEARMS, byPlayer, loadProfile, raid, settleRaid } from './Progress';
 import type { Physics, RAPIER } from '../core/Physics';
 import type { Site9, SpawnPoint, WallBuy, AmmoSpot, HazardSpot } from '../world/Site9';
 import type { ImpactSystem } from '../fx/ImpactSystem';
@@ -304,13 +305,11 @@ export class Survival {
           onDeath: (r, info) => {
             if (info.hit.team === 'alpha' || !info.hit.team) this.kills++;
             if (byPlayer(info.hit)) {
-              if (r.variant === 'brute') raid.brutes++;
-              else raid.robots++;
+              raid.robots++;
               if (info.zone === 'head') raid.headshots++;
             }
             if (r.pos.distanceTo(deps.player.feet) < 12) this.intensity = Math.min(1, this.intensity + 0.04);
-            const bonus = r.variant === 'brute' ? 3 : 1;
-            this.award(info.hit.team || 'alpha', (info.zone === 'head' ? POINTS.headKill : POINTS.kill) * bonus, info.hit.owner);
+            this.award(info.hit.team || 'alpha', info.zone === 'head' ? POINTS.headKill : POINTS.kill, info.hit.owner);
           },
           onAttack: (r) => {
             deps.audio.play('robot.stagger', { position: r.pos, volume: 0.6 });
@@ -399,19 +398,27 @@ export class Survival {
     shutter.position.copy(slot.center);
     if (!slot.alongX) shutter.rotation.y = Math.PI / 2;
     // Roll-up security shutter: ribbed steel, hazard stripe base, price signs both sides.
-    const steel = new THREE.MeshStandardMaterial({ map: shutterTexture(), color: 0xc9ced4, metalness: 0.6, roughness: 0.45 });
-    const panel = new THREE.Mesh(new THREE.BoxGeometry(w, h, 0.14), steel);
-    panel.position.y = h / 2;
+    // Painted, worn steel: dark enough to sit in a night-time room (bright bare metal glowed off the fill light).
+    const steel = new THREE.MeshStandardMaterial({ map: shutterTexture(), color: 0x8a8f95, metalness: 0.35, roughness: 0.6 });
+    // Slats, a heavy bottom bar and a pull handle each side, one mesh (shutters aren't culled
+    // with the rooms: every extra part was a draw call per door in view). The bar and the
+    // handles sample the texture's dark band.
+    const dark = (g: THREE.BufferGeometry) => {
+      const uv = g.getAttribute('uv') as THREE.BufferAttribute;
+      for (let i = 0; i < uv.count; i++) uv.setXY(i, 0.5, 0.125);
+      return g;
+    };
+    const parts = [new THREE.BoxGeometry(w, h, 0.14).translate(0, h / 2, 0), dark(new THREE.BoxGeometry(w, 0.16, 0.24).translate(0, 0.08, 0))];
+    for (const s of [-1, 1]) parts.push(dark(new THREE.BoxGeometry(0.34, 0.05, 0.06).translate(w * 0.22, 0.42, s * 0.11)));
+    const panel = new THREE.Mesh(mergeGeometries(parts)!, steel);
     panel.castShadow = true;
     panel.receiveShadow = true;
     shutter.add(panel);
-    const sign = new THREE.MeshBasicMaterial({ map: priceTexture(link.cost ?? 0), toneMapped: false });
-    for (const s of [-1, 1]) {
-      const m = new THREE.Mesh(new THREE.PlaneGeometry(1.6, 0.5), sign);
-      m.position.set(0, Math.min(h - 0.5, 1.9), s * 0.08);
-      m.rotation.y = s > 0 ? 0 : Math.PI;
-      shutter.add(m);
-    }
+    // Price signs on both faces, one mesh.
+    const sy = Math.min(h - 0.5, 1.9);
+    const front = new THREE.PlaneGeometry(1.6, 0.5).translate(0, sy, 0.08);
+    const back = new THREE.PlaneGeometry(1.6, 0.5).rotateY(Math.PI).translate(0, sy, -0.08);
+    shutter.add(new THREE.Mesh(mergeGeometries([front, back])!, printedSign(priceTexture(link.cost ?? 0), 0.4)));
     map.group.add(shutter);
     const half = slot.alongX ? new THREE.Vector3(w / 2, h / 2, 0.12) : new THREE.Vector3(0.12, h / 2, w / 2);
     const collider = physics.addStaticBox(this.tmp.copy(slot.center).setY(h / 2), half);
@@ -504,7 +511,7 @@ export class Survival {
     const board = new THREE.Mesh(new THREE.PlaneGeometry(1.5, 0.75), new THREE.MeshStandardMaterial({ color: 0x1b1d20, roughness: 0.8 }));
     board.position.copy(wb.pos).addScaledVector(n, 0.02);
     board.rotation.y = wb.yaw;
-    const label = new THREE.Mesh(new THREE.PlaneGeometry(1.5, 0.28), new THREE.MeshBasicMaterial({ map: buyTexture(data.name, wb.cost), toneMapped: false }));
+    const label = new THREE.Mesh(new THREE.PlaneGeometry(1.5, 0.28), printedSign(buyTexture(data.name, wb.cost), 0.4));
     label.position.copy(wb.pos).addScaledVector(n, 0.025).setY(wb.pos.y - 0.55);
     label.rotation.y = wb.yaw;
     const model = this.wallModel(data.model);
@@ -579,7 +586,7 @@ export class Survival {
     crate.position.y = 0.31;
     const lid = new THREE.Mesh(new THREE.BoxGeometry(1.14, 0.08, 0.66), dark);
     lid.position.y = 0.64;
-    const label = new THREE.Mesh(new THREE.PlaneGeometry(0.8, 0.22), new THREE.MeshBasicMaterial({ map: stencilTexture('AMMO $400'), toneMapped: false }));
+    const label = new THREE.Mesh(new THREE.PlaneGeometry(0.8, 0.22), printedSign(stencilTexture('AMMO $400'), 0.3));
     label.position.set(0, 0.36, 0.315);
     for (const m of [crate, lid]) {
       m.castShadow = true;
@@ -810,10 +817,6 @@ export class Survival {
   private robotStats(): { health: number; speed: number; variant: RobotVariant; damage: number } {
     const t = this.threat;
     const health = (85 + 30 * (t - 1)) * (0.85 + 0.15 * this.skill);
-    // Rare brute (team games, after the first couple of minutes): triple health, slow, hits hard.
-    if (this.deps.mode === 'teams' && this.elapsed > 120 && Math.random() < 0.02 + 0.06 * this.heat) {
-      return { health: health * 3.2, speed: 1.25 + Math.random() * 0.25, variant: 'brute', damage: 100 };
-    }
     const sprint = Math.random() < Math.min(0.55, Math.max(0, (t - 2.5) * 0.12 * this.skill));
     const speed = sprint ? 3.4 + Math.random() * 0.6 : Math.min(2.7, 1.35 + 0.12 * t) * (0.85 + Math.random() * 0.3);
     return { health, speed, variant: sprint ? 'runner' : 'normal', damage: 60 };
@@ -848,9 +851,9 @@ export class Survival {
       if (!this.hidden(this.tmp, 12)) continue;
       const robot = this.robots.find((o) => !o.active);
       if (!robot) return;
-      const { health, variant, damage } = this.robotStats();
-      robot.setVariant(variant === 'runner' ? 'normal' : variant);
-      robot.spawn(this.tmp, health, variant === 'brute' ? 1.3 : Math.min(2.6, 1.4 + 0.12 * this.threat), damage, 'idle');
+      const { health, damage } = this.robotStats();
+      robot.setVariant('normal');
+      robot.spawn(this.tmp, health, Math.min(2.6, 1.4 + 0.12 * this.threat), damage, 'idle');
       placed++;
     }
   }
@@ -972,7 +975,7 @@ export class Survival {
     if (this.over || this.deps.mode === 'teams') return;
     this.over = true;
     const pay = settleRaid({ mode: 'solo', fate: 'survival', cash: this.points });
-    this.deps.hud.gameOver(this.elapsed, this.kills, this.points, payoutHtml(pay));
+    this.deps.hud.gameOver(this.elapsed, this.kills, this.points, pay);
   }
 
   get activeRobots(): number {
@@ -1072,10 +1075,18 @@ function canvas(w: number, h: number, draw: (g: CanvasRenderingContext2D) => voi
 }
 
 let shutterTex: THREE.Texture | null = null;
+/**
+ * A printed / backlit label: lit by the room like everything else, plus a faint glow of
+ * its own so it still reads in the dark (unlit, untonemapped labels glared at night).
+ */
+function printedSign(map: THREE.Texture, glow: number): THREE.MeshStandardMaterial {
+  return new THREE.MeshStandardMaterial({ map, emissiveMap: map, emissive: 0xffffff, emissiveIntensity: glow, roughness: 0.55 });
+}
+
 function shutterTexture(): THREE.Texture {
   if (shutterTex) return shutterTex;
   shutterTex = canvas(128, 256, (g) => {
-    g.fillStyle = '#c4c9cf';
+    g.fillStyle = '#9ea3a8';
     g.fillRect(0, 0, 128, 256);
     for (let y = 0; y < 256; y += 16) {
       g.fillStyle = 'rgba(0,0,0,0.22)';

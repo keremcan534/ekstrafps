@@ -111,7 +111,8 @@ export default defineConfig(({ command }) => ({
   plugins: [tuningSavePlugin(), trailerFramesPlugin()],
   server: {
     host: true, // expose on LAN so phones on the same Wi-Fi can open the lab
-    port: 5173,
+    // PORT: a port assigned by the launcher (another dev server may hold 5173).
+    port: Number(process.env.PORT) || 5173,
     // The trailer capture server (port 5180) must never reload a page mid-capture.
     hmr: process.argv.includes('5180') ? false : undefined,
     // Trailer production files (frames, renders, music, tools) are not game source;

@@ -1,0 +1,129 @@
+/* ELEKTRON-30: a CRT over everything. */
+.term {
+  position: fixed;
+  inset: 0;
+  z-index: 400;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  background: #000;
+  cursor: none;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+/* Phone held upright: the tube centred above the pad's strip. */
+.term.portrait {
+  padding-bottom: var(--below);
+}
+.term.in {
+  display: flex;
+}
+.term-tube {
+  position: relative;
+  width: var(--tw, 768px);
+  height: var(--th, 576px);
+  border-radius: 14px / 10px;
+  overflow: hidden;
+  box-shadow: 0 0 80px rgba(80, 255, 140, 0.08);
+  animation: term-on 0.45s ease-out;
+}
+.term-tube canvas {
+  width: 100%;
+  height: 100%;
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
+  display: block;
+  filter: saturate(1.1) contrast(1.08) brightness(1.06);
+  animation: term-flicker 0.12s steps(2) infinite;
+}
+.term-glow {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: radial-gradient(ellipse at center, rgba(255, 255, 255, 0.06), transparent 65%);
+  mix-blend-mode: screen;
+}
+.term-scan {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: repeating-linear-gradient(to bottom, rgba(0, 0, 0, 0.32) 0, rgba(0, 0, 0, 0.32) 1px, transparent 1px, transparent 3px);
+}
+.term-vig {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  box-shadow: inset 0 0 90px rgba(0, 0, 0, 0.85), inset 0 0 18px rgba(0, 0, 0, 0.9);
+}
+@keyframes term-flicker {
+  0% { opacity: 1; }
+  100% { opacity: 0.965; }
+}
+@keyframes term-on {
+  0% { transform: scale(1, 0.004); filter: brightness(4); }
+  60% { transform: scale(1, 1); filter: brightness(1.6); }
+  100% { transform: scale(1, 1); filter: brightness(1); }
+}
+
+/* Touch: the d-pad left of the tube and A right of it (landscape), or both under it (portrait).
+   --b is the button size, set by Terminal.fit(). */
+.term-pad {
+  display: none;
+}
+body.is-touch .term-pad {
+  display: block;
+}
+.term-btn {
+  --x: calc(10px + env(safe-area-inset-left));
+  --y: calc(12px + env(safe-area-inset-bottom));
+  position: absolute;
+  width: var(--b, 58px);
+  height: var(--b, 58px);
+  border-radius: 50%;
+  border: 2px solid #2e5a3a;
+  background: rgba(20, 40, 26, 0.7);
+  color: #9cf0b0;
+  font: 700 calc(var(--b, 58px) * 0.32) ui-monospace, Consolas, monospace;
+  touch-action: none;
+  -webkit-tap-highlight-color: transparent;
+}
+.term-btn:active {
+  background: #2e5a3a;
+}
+.term-btn.l { left: var(--x); bottom: calc(var(--y) + var(--b) * 1.05); }
+.term-btn.r { left: calc(var(--x) + var(--b) * 2.1); bottom: calc(var(--y) + var(--b) * 1.05); }
+.term-btn.u { left: calc(var(--x) + var(--b) * 1.05); bottom: calc(var(--y) + var(--b) * 2.1); }
+.term-btn.d { left: calc(var(--x) + var(--b) * 1.05); bottom: var(--y); }
+.term-btn.a {
+  right: calc(14px + env(safe-area-inset-right));
+  bottom: calc(var(--y) + var(--b) * 0.85);
+  width: calc(var(--b) * 1.35);
+  height: calc(var(--b) * 1.35);
+  font-size: calc(var(--b) * 0.42);
+}
+.term-btn.x {
+  right: calc(10px + env(safe-area-inset-right));
+  top: calc(10px + env(safe-area-inset-top));
+  width: 58px;
+  height: 30px;
+  border-radius: 6px;
+  font-size: 12px;
+  opacity: 0.7;
+}
+/* Upright: ESC goes under the tube too, so it never covers the picture. */
+.term.portrait .term-btn.x { top: auto; bottom: calc(var(--below) - 40px); }
+@media (prefers-reduced-motion: reduce) {
+  .term-tube, .term-tube canvas { animation: none; }
+}
+
+/* Desktop: a way out you can click (phones have the ESC pad button). */
+.term-exit {
+  position: absolute; top: 14px; right: 16px; z-index: 3; opacity: 0.55;
+  padding: 6px 12px; border: 1px solid #2e5a3a; border-radius: 0; background: rgba(8, 16, 10, 0.75);
+  color: #9cf0b0; font: 700 13px ui-monospace, Consolas, monospace; letter-spacing: 0.16em; cursor: pointer;
+}
+.term-exit:hover { background: rgba(30, 60, 38, 0.85); opacity: 1; }
+.term-exit kbd { margin-right: 6px; padding: 0 5px; border: 1px solid #2e5a3a; font: inherit; }
+body.is-touch .term-exit { display: none; }

@@ -1,3 +1,4 @@
+import { skillFx } from '../game/Skills';
 import { DEG, damp } from '../core/math';
 import { feel } from '../config/Feel';
 import type { WeaponData } from './WeaponData';
@@ -48,7 +49,7 @@ export class RecoilSystem {
     // the climb. Overall difficulty stays similar; what you see is the world moving,
     // not the sights jumping off the screen.
     const rw = rearwardShare(adsAmount);
-    const t = (r.cameraTransfer + 0.42 * rw) * feel.cameraRecoilScale * soft * this.viewScale;
+    const t = (r.cameraTransfer + 0.42 * rw) * feel.cameraRecoilScale * soft * this.viewScale * skillFx.recoil;
     const v = kick.vertical * t * DEG;
     const h = kick.horizontal * t * 0.6 * DEG;
     // Like Tarkov's re-levelling, most of the climb comes back on its own: only part of

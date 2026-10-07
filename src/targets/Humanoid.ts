@@ -53,7 +53,15 @@ export interface HumanoidSkin {
    */
   body?: { geometry: THREE.BufferGeometry; materials: THREE.Material[]; slots: string[] };
   idleKnee?: number;
+  /**
+   * 'machine': a robot's walk. Legs sweep at a constant rate and lift sharply, every
+   * footfall lands with a hard drop, no hip twist, no idle breathing, stiff piston arms.
+   */
+  gait?: 'human' | 'machine';
 }
+
+/** Triangle wave in -1..1 on the same phase as sin: a constant-rate sweep. */
+const tri = (a: number): number => (2 / Math.PI) * Math.asin(Math.sin(a));
 
 export interface Part {
   name: PartName;
@@ -179,6 +187,7 @@ export class Humanoid {
   private hipHalf: number;
   private hipOffset: number;
   private idleKnee: number;
+  private machine: boolean;
   private upperLen: number;
   private gripLocal: THREE.Vector3;
 
@@ -258,6 +267,7 @@ export class Humanoid {
     this.thigh = -this.part('shinR').group.position.y;
     this.shin = skin.shinLength;
     this.idleKnee = skin.idleKnee ?? 0.1;
+    this.machine = skin.gait === 'machine';
     this.upperLen = this.part('foreArmR').group.position.length();
     this.gripLocal = new THREE.Vector3(...skin.handGrip);
     this.root.updateMatrixWorld(true);
@@ -944,7 +954,8 @@ export class Humanoid {
     this.stagger = Math.max(0, this.stagger - dt * 0.65);
     const wobble = Math.min(1, this.stagger);
     const hurt = 1 - this.health.health / this.health.maxHealth;
-    const idle = pose.idle ? 1 : 0;
+    const idle = pose.idle && !this.machine ? 1 : 0;
+    const machine = this.machine;
 
     // Targets: idle breathing, a hunch when hurt, unsteady sway while staggered,
     // a limp toward a wounded leg.
@@ -1000,15 +1011,18 @@ export class Humanoid {
     }
     const roll = clamp(Math.atan2(height[1] - height[0], this.hipHalf * 2), -0.25, 0.25);
     const pelvis = this.part('pelvis').group;
-    const bob = stride * 0.035 * (1 - Math.abs(Math.cos(pose.stridePhase)));
+    // A machine drops onto each footfall (|sin| = 1 as a swing ends) instead of rolling over it.
+    const clunk = machine ? stride * Math.pow(Math.abs(Math.sin(pose.stridePhase)), 12) : 0;
+    const bob = machine ? clunk * 0.045 : stride * 0.035 * (1 - Math.abs(Math.cos(pose.stridePhase)));
     pelvis.position.y = (height[0] + height[1]) * 0.5 + this.hipOffset - bob;
-    pelvis.rotation.set(0, Math.sin(pose.stridePhase) * 0.08 * stride, roll);
+    pelvis.rotation.set(0, machine ? 0 : Math.sin(pose.stridePhase) * 0.08 * stride, roll);
     const fwd = 1 - Math.abs(pose.strideSide);
     for (let i = 0; i < 2; i++) {
       const s = i === 1 ? 'R' : 'L';
       const ph = pose.stridePhase + i * Math.PI;
-      const swing = Math.sin(ph) * 0.42 * stride;
-      const lift = Math.max(0, Math.cos(ph)) * 0.75 * stride;
+      const swing = (machine ? tri(ph) : Math.sin(ph)) * 0.42 * stride;
+      // Machine: the knee snaps up at the start of the swing and holds, a short high step.
+      const lift = (machine ? Math.sqrt(Math.max(0, Math.cos(ph))) * 0.6 : Math.max(0, Math.cos(ph)) * 0.75) * stride;
       const abduct = Math.sin(ph) * 0.3 * stride * pose.strideSide;
       const thigh = this.part(`thigh${s}`).group;
       // Feet apart (outward is away from the body's centre) and staggered: left ahead.
@@ -1026,7 +1040,7 @@ export class Humanoid {
 
     const torso = this.part('torso').group;
     // Leaning into the run; a slight forward lean over the gun when standing to shoot.
-    torso.rotation.set(spineX + pose.spineX + pose.crouch * 0.18 + stride * 0.1 + stance * 0.05, spineY + pose.spineY - pelvis.rotation.y, spineZ - roll * 0.6 + (pose.lean ?? 0) * LEAN_ROLL);
+    torso.rotation.set(spineX + pose.spineX + pose.crouch * 0.18 + stride * (machine ? 0.03 : 0.1) + clunk * 0.04 + stance * 0.05, spineY + pose.spineY - pelvis.rotation.y, spineZ - roll * 0.6 + (pose.lean ?? 0) * LEAN_ROLL);
     this.part('head').group.rotation.set(headX + pose.headX, headY + pose.headY, headZ);
     // Grip targets are read in torso space: one matrix pass serves both arms.
     if (pose.gripL || pose.gripR) torso.updateMatrixWorld(true);
@@ -1048,9 +1062,11 @@ export class Humanoid {
       } else {
         // Walking arms swing opposite the legs (this arm forward with the other leg),
         // elbows bending more as the pace picks up.
-        const armSwing = -Math.sin(pose.stridePhase + (1 - i) * Math.PI) * 0.38 * stride;
+        // A machine's arms pump short and level, like pistons.
+        const armPh = pose.stridePhase + (1 - i) * Math.PI;
+        const armSwing = machine ? -tri(armPh) * 0.16 * stride : -Math.sin(armPh) * 0.38 * stride;
         upper.rotation.set(ax + (i === 1 ? pose.armR : pose.armL) + armSwing, 0, az + side * (0.06 + hurt * 0.04));
-        fore.rotation.set(-(0.15 + el + pose.elbows + stride * 0.35), 0, 0);
+        fore.rotation.set(-(0.15 + el + pose.elbows + stride * (machine ? 0.08 : 0.35)), 0, 0);
       }
     }
   }

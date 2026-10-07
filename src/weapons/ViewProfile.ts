@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import type { WeaponHands } from './HandPose';
+import type { AnyWeaponHands } from './hands/HandProfile';
 
 type V3 = [number, number, number];
 
@@ -75,8 +75,11 @@ export interface ViewProfile {
   sprint: ViewPose;
   /** This weapon's taste on the shared motion layers (1 = as its handling gives). */
   motion: { sway: number; inertia: number; bob: number; recoil: number };
-  /** How the hands hold it: grips, finger poses, trigger finger (HandPose.ts). No arms without. */
-  hands?: WeaponHands;
+  /**
+   * How the hands hold it: wrist targets + library grip poses (schema 2, hands/HandProfile.ts),
+   * or a schema-1 definition not moved over yet (HandPose.ts). No arms without.
+   */
+  hands?: AnyWeaponHands;
 }
 
 export type AimMode = 'TrueADS' | 'FocusAim';
@@ -144,6 +147,11 @@ export interface ViewPart {
   pivot?: V3;
   /** A bolt handle's knob (model space): the firing hand reaches for it to work the bolt. */
   knob?: V3;
+  /**
+   * Extra scale across the weapon for this piece alone (×, about the centre line, on top of
+   * `widthAlong`): a magazine modelled thinner than the real one, the receiver beside it right.
+   */
+  width?: number;
 }
 
 export interface ViewPose {
@@ -205,14 +213,14 @@ export function orientMatrix(o: Readonly<ViewOrientation>, out: THREE.Matrix4): 
 }
 
 /**
- * Model-space positions / normals (xyz triples) widened by the profile's `widthAlong`: each
- * point moved across the weapon, about its centre line, by the scale where it lies along
- * it; normals kept square to the widened surface. In place; nothing without `widthAlong`.
+ * Model-space positions / normals (xyz triples) widened by the profile's `widthAlong` (times
+ * `extra`, a piece's own width): each point moved across the weapon, about its centre line, by
+ * the scale where it lies along it; normals kept square to the widened surface. In place.
  */
-export function widenModel(p: Readonly<ViewProfile>, positions: Float32Array, normals: Float32Array | null): void {
+export function widenModel(p: Readonly<ViewProfile>, positions: Float32Array, normals: Float32Array | null, extra = 1): void {
   const o = p.model.orientation;
-  const w = o.widthAlong;
-  if (!w?.length) return;
+  const w = o.widthAlong?.length ? o.widthAlong : [[0, 1]] as [number, number][];
+  if (!o.widthAlong?.length && extra === 1) return;
   const f = AXIS[o.forward];
   const u = AXIS[o.up];
   // Across the weapon (either sign: the scale is about the centre line).
@@ -225,7 +233,7 @@ export function widenModel(p: Readonly<ViewProfile>, positions: Float32Array, no
     return w[w.length - 1][1];
   };
   for (let i = 0; i < positions.length; i += 3) {
-    const k = at(positions[i] * f[0] + positions[i + 1] * f[1] + positions[i + 2] * f[2]);
+    const k = at(positions[i] * f[0] + positions[i + 1] * f[1] + positions[i + 2] * f[2]) * extra;
     if (k === 1) continue;
     const across = positions[i] * s[0] + positions[i + 1] * s[1] + positions[i + 2] * s[2] - centre;
     for (let c = 0; c < 3; c++) positions[i + c] += s[c] * across * (k - 1);

@@ -3,8 +3,7 @@ import type { Physics } from '../core/Physics';
 import { clamp } from '../core/math';
 import { Humanoid, defaultPose, type DamageInfo, strideLength } from '../targets/Humanoid';
 import { robotSkin } from '../targets/RobotTarget';
-import { modelBody, withModel } from '../targets/CharacterModels';
-import { retargetBody } from '../targets/ModelBody';
+import { withModel } from '../targets/CharacterModels';
 import { skinDetail } from './SoldierSkin';
 import type { NavGrid } from '../ai/NavGrid';
 import { OBSTACLES, obstacleAt, type Obstacle } from '../game/Obstacles';
@@ -31,9 +30,14 @@ export interface RogueHooks {
 type State = 'pooled' | 'rising' | 'idle' | 'waking' | 'chase' | 'dead';
 
 const VISOR = new THREE.Color(0xff3a22);
-/** Visor colour per variant: runners read amber, brutes deep red. */
-const VISORS = { normal: VISOR, runner: new THREE.Color(0xffb21a), brute: new THREE.Color(0xff0a2a) };
+/** Visor colour per variant: runners read amber. */
+const VISORS = { normal: VISOR, runner: new THREE.Color(0xffb21a) };
 export type RobotVariant = keyof typeof VISORS;
+
+/** Servo: travel to `to` at a constant `rate` (rad/s) and stop dead, no easing either end. */
+const servo = (from: number, to: number, rate: number, dt: number): number => from + clamp(to - from, -rate * dt, rate * dt);
+/** The robot's control loop: joint goals are re-read this often (Hz), so motion steps and holds. */
+const CONTROL_HZ = 8;
 
 /**
  * Rogue production robot (the "zombie" of Site-9). Either a powered-down
@@ -44,9 +48,6 @@ export type RobotVariant = keyof typeof VISORS;
  * Humanoid body as the target dummies (zoned hitboxes, reactions, ragdoll).
  * Pooled: robots are created once and recycled between spawns.
  */
-/** Dark gunmetal with a red edge: the brute's bolted-on plating. */
-const ARMOR_MAT = new THREE.MeshStandardMaterial({ color: 0x3a2a2a, metalness: 0.75, roughness: 0.35, emissive: 0x200000 });
-
 export class RogueRobot {
   readonly body: Humanoid;
   state: State = 'pooled';
@@ -68,9 +69,25 @@ export class RogueRobot {
   private merged: THREE.MeshStandardMaterial;
   private materials: { paint: THREE.MeshStandardMaterial; dark: THREE.MeshStandardMaterial; visor: THREE.MeshStandardMaterial };
   private tmp = new THREE.Vector3();
-  /** Rare heavy variant (armour plates, triple health) or the fast runner. */
+  /**
+   * Servo-driven joints (the robot's motion): `goal` is latched by the control loop,
+   * `at` travels to it at a fixed rate. Arms, elbows, head and torso move like motors.
+   */
+  private joint = {
+    goal: { armL: 0, armR: 0, elbows: 0, headX: 0, headY: 0, spineX: 0, spineY: 0 },
+    at: { armL: 0, armR: 0, elbows: 0, headX: 0, headY: 0, spineX: 0, spineY: 0 },
+  };
+  private control = Math.random() / CONTROL_HZ;
+  /** Turning: holds its heading until off by a margin, then pivots square in one go. */
+  private turning = false;
+  /** Dormant twitch: seconds to the next one, time left on this one, where the head jerks to. */
+  private twitchIn = 2 + Math.random() * 4;
+  private twitch = 0;
+  private twitchHead = 0;
+  /** The fast runner (amber visor) or the normal walker. */
   variant: RobotVariant = 'normal';
-  private armor: THREE.Object3D[] = [];
+  /** The model's materials on show (none on the procedural body). */
+  private looks: THREE.MeshStandardMaterial[] = [];
 
   constructor(physics: Physics, scene: THREE.Object3D, private nav: NavGrid, private hooks: RogueHooks) {
     this.materials = {
@@ -96,31 +113,13 @@ export class RogueRobot {
       onThud: (at, s) => hooks.onThud(at, s),
     }, this);
     this.pose.idle = false;
-    if (skin.body) this.dressModel(skin.body.geometry, skin.body.materials);
-    else this.buildArmor();
+    // Model robots (public/chars: the box walker) get their own copies of the
+    // materials, so each robot's visor glow and hit flash are its own.
+    if (skin.body) {
+      this.looks = skin.body.materials.map((m) => (m as THREE.MeshStandardMaterial).clone());
+      this.body.setBodyLook(null, this.looks);
+    }
     this.body.setActive(false);
-  }
-
-  /**
-   * Model robots (public/chars: K-7 Walker, the Loader for brutes): own copies of the
-   * materials, so each robot's visor glow and hit flash are its own.
-   */
-  private model: { walker: [THREE.BufferGeometry, THREE.MeshStandardMaterial[]]; brute: [THREE.BufferGeometry, THREE.MeshStandardMaterial[]] | null } | null = null;
-  private dressModel(geometry: THREE.BufferGeometry, materials: THREE.Material[]): void {
-    const own = (list: THREE.Material[]) => list.map((m) => (m as THREE.MeshStandardMaterial).clone());
-    const walker = modelBody('robot');
-    const loader = modelBody('robotBrute');
-    this.model = {
-      walker: [geometry, own(materials)],
-      brute: walker && loader ? [retargetBody(loader, walker), own(loader.materials)] : null,
-    };
-    this.body.setBodyLook(null, this.model.walker[1]);
-  }
-
-  /** The materials on show (model robots). */
-  private get looks(): THREE.MeshStandardMaterial[] {
-    if (!this.model) return [];
-    return this.variant === 'brute' && this.model.brute ? this.model.brute[1] : this.model.walker[1];
   }
 
   /** Visor glow, 2.6 = fully awake. */
@@ -129,33 +128,9 @@ export class RogueRobot {
     for (const m of this.looks) m.emissiveIntensity = Math.min(1.6, intensity / 1.6);
   }
 
-  /** Brute plating: chest slab, shoulder pauldrons, a head crest (hidden unless brute). */
-  private buildArmor(): void {
-    const plate = ARMOR_MAT;
-    const add = (part: 'torso' | 'head' | 'upperArmL' | 'upperArmR', size: [number, number, number], pos: [number, number, number], rx = 0) => {
-      const m = new THREE.Mesh(new THREE.BoxGeometry(...size), plate);
-      m.position.set(...pos);
-      m.rotation.x = rx;
-      m.castShadow = true;
-      m.visible = false;
-      this.body.part(part).group.add(m);
-      this.armor.push(m);
-    };
-    add('torso', [0.62, 0.42, 0.1], [0, 0.36, 0.2]);
-    add('torso', [0.66, 0.1, 0.4], [0, 0.6, 0]);
-    add('upperArmL', [0.24, 0.12, 0.26], [0, 0.02, 0]);
-    add('upperArmR', [0.24, 0.12, 0.26], [0, 0.02, 0]);
-    add('head', [0.06, 0.1, 0.34], [0, 0.32, 0]);
-  }
-
   setVariant(v: RobotVariant): void {
     this.variant = v;
     this.materials.visor.emissive.copy(VISORS[v]);
-    for (const m of this.armor) m.visible = v === 'brute';
-    if (this.model) {
-      const [geo, mats] = v === 'brute' && this.model.brute ? this.model.brute : this.model.walker;
-      this.body.setBodyLook(geo, mats);
-    }
   }
 
   get active(): boolean {
@@ -230,6 +205,12 @@ export class RogueRobot {
     this.body.setActive(true);
     this.body.reset(mode === 'rise');
     this.setVisor(mode === 'idle' ? 0.35 : 2.6);
+    const slump = mode === 'idle';
+    const start = { armL: slump ? 0.1 : -0.55, armR: slump ? 0.1 : -0.55, elbows: slump ? 0.1 : 0.9, headX: slump ? 0.6 : 0, headY: 0, spineX: slump ? 0.55 : 0.06, spineY: 0 };
+    Object.assign(this.joint.goal, start);
+    Object.assign(this.joint.at, start);
+    this.turning = false;
+    this.twitch = 0;
   }
 
   recycle(): void {
@@ -239,6 +220,36 @@ export class RogueRobot {
 
   /** Barricade being torn at. */
   private chew: Obstacle | null = null;
+
+  /**
+   * Run the servos: `latch` sets the goals (on the control loop's tick, or this frame when
+   * `now`), then every joint moves to its goal at `rate` and the pose takes the result.
+   */
+  private drive(dt: number, rate: number, latch: (g: RogueRobot['joint']['goal']) => void, now = false): void {
+    this.control -= dt;
+    if (now || this.control <= 0) {
+      this.control = now ? 1 / CONTROL_HZ : Math.max(this.control + 1 / CONTROL_HZ, 0.25 / CONTROL_HZ);
+      latch(this.joint.goal);
+    }
+    const { goal, at } = this.joint;
+    for (const k of Object.keys(goal) as (keyof typeof goal)[]) at[k] = servo(at[k], goal[k], rate, dt);
+    const p = this.pose;
+    p.armL = at.armL;
+    p.armR = at.armR;
+    p.elbows = at.elbows;
+    p.headX = at.headX;
+    p.headY = at.headY;
+    p.spineX = at.spineX;
+    p.spineY = at.spineY;
+  }
+
+  /** Turn towards `want`: nothing inside the dead band, else a constant-rate pivot until square. */
+  private pivot(want: number, band: number, rate: number, dt: number): void {
+    const da = Math.atan2(Math.sin(want - this.yaw), Math.cos(want - this.yaw));
+    if (Math.abs(da) > band) this.turning = true;
+    else if (Math.abs(da) < 0.03) this.turning = false;
+    if (this.turning) this.yaw += clamp(da, -rate * dt, rate * dt);
+  }
 
   update(dt: number, targets: MeleeTarget[], others: RogueRobot[]): void {
     if (this.state === 'pooled') return;
@@ -271,13 +282,15 @@ export class RogueRobot {
     if (this.state === 'idle' || this.state === 'waking') {
       // Powered down: slumped, head hanging, arms limp, a slow sway. Waking straightens up.
       const p = this.pose;
-      let k = 1;
+      // Boot sequence: the head comes up, then the torso, then the arms, each its own servo move.
+      let stage = 0;
       if (this.state === 'waking') {
         this.wakeTime += dt;
-        k = Math.max(0, 1 - this.wakeTime / 0.7);
-        this.setVisor(0.35 + (1 - k) * 2.6 + (this.wakeTime < 0.3 ? Math.random() * 2 : 0));
+        stage = Math.min(3, Math.floor(this.wakeTime / 0.17) + 1);
+        this.setVisor(0.35 + (stage / 3) * 2.6 + (this.wakeTime < 0.3 ? Math.random() * 2 : 0));
         if (this.wakeTime >= 0.7) this.state = 'chase';
       }
+      const k = stage > 0 ? 0 : 1;
       // Wanderers drift around at a slumped shuffle.
       let shuffle = 0;
       if (this.state === 'idle' && this.wanders) {
@@ -300,8 +313,7 @@ export class RogueRobot {
           } else {
             this.pos.x += (dx / d) * 0.55 * dt;
             this.pos.z += (dz / d) * 0.55 * dt;
-            const want = Math.atan2(dx, dz);
-            this.yaw += clamp(Math.atan2(Math.sin(want - this.yaw), Math.cos(want - this.yaw)), -2 * dt, 2 * dt);
+            this.pivot(Math.atan2(dx, dz), 0.25, 2.5, dt);
             shuffle = 0.55;
             this.stride += (0.55 * dt * Math.PI * 2) / 1.1;
           }
@@ -309,15 +321,31 @@ export class RogueRobot {
       }
       // Phones: a hidden dormant robot standing still skips posing (Humanoid LOD), so no sway either.
       const still = this.state === 'idle' && shuffle === 0;
-      const sway = still && skinDetail.low && !this.body.root.visible ? 0 : Math.sin(performance.now() * 0.0007 + this.pos.x) * 0.03 * k;
+      // Powered down, a machine doesn't sway: now and then a servo twitches (the head jerks
+      // round and back). Not on hidden phone bodies (they skip posing while still).
+      if (this.state === 'idle' && this.stunned <= 0 && !(skinDetail.low && !this.body.root.visible)) {
+        this.twitchIn -= dt;
+        if (this.twitchIn <= 0) {
+          this.twitchIn = 3 + Math.random() * 6;
+          this.twitch = 0.25 + Math.random() * 0.3;
+          this.twitchHead = (Math.random() < 0.5 ? -1 : 1) * (0.2 + Math.random() * 0.35);
+        }
+      }
+      this.twitch = Math.max(0, this.twitch - dt);
+      const kHead = stage >= 1 ? 0 : 1;
+      const kSpine = stage >= 2 ? 0 : 1;
+      const kArms = stage >= 3 ? 0 : 1;
+      this.drive(dt, stage > 0 ? 7 : 9, (g) => {
+        g.spineX = 0.55 * kSpine + 0.06 * (1 - kSpine);
+        g.headX = 0.6 * kHead;
+        g.headY = this.twitch > 0 ? this.twitchHead : 0;
+        g.armL = g.armR = 0.1 * kArms - 0.55 * (1 - kArms);
+        g.elbows = 0.1 + 0.8 * (1 - kArms);
+        g.spineY = 0;
+      }, stage > 0);
       p.stridePhase = this.stride;
       p.strideAmount = shuffle * k;
-      p.spineX = 0.55 * k + 0.12 * (1 - k) + sway;
-      p.headX = 0.6 * k;
-      p.armL = 0.1 * k - 0.9 * (1 - k);
-      p.armR = 0.1 * k - 0.9 * (1 - k);
-      p.elbows = 0.1 + 0.3 * (1 - k);
-      p.crouch = 0.15 * k;
+      p.crouch = 0.15 * kSpine;
       this.body.root.position.copy(this.pos);
       this.body.root.rotation.y = this.yaw;
       this.body.update(dt, p, still);
@@ -414,27 +442,57 @@ export class RogueRobot {
     if (this.chew) want = Math.atan2(this.chew.x - this.pos.x, this.chew.z - this.pos.z);
     else if (best && dist < 4) want = Math.atan2(best.pos.x - this.pos.x, best.pos.z - this.pos.z);
     else if (v > 0.2) want = Math.atan2(this.vel.x, this.vel.z);
-    const da = Math.atan2(Math.sin(want - this.yaw), Math.cos(want - this.yaw));
-    this.yaw += clamp(da, -6 * dt, 6 * dt);
+    // Holds its heading while near enough, then squares up to the new one in a single pivot.
+    this.pivot(want, v > 0.2 ? 0.14 : 0.3, 7, dt);
 
-    // Animation: heavy stomping walk, arms reaching forward; swing on attack.
+    // Animation: a machine's march (the Humanoid 'machine' gait), arms up in a guard, the
+    // head tracking its target in servo steps; a piston blow on attack.
     this.stride += (v * dt * Math.PI * 2) / strideLength(this.strideAmount);
     this.strideAmount += (clamp(v / 1.6, 0, 1.2) - this.strideAmount) * Math.min(1, dt * 8);
     const p = this.pose;
-    p.headX = 0;
     p.crouch = 0;
     p.stridePhase = this.stride;
     p.strideAmount = this.strideAmount;
-    p.spineX = 0.12 + Math.min(0.2, this.speed * 0.04);
-    p.armL = -0.9 + Math.sin(this.stride) * 0.25;
-    p.armR = -0.9 - Math.sin(this.stride) * 0.25;
-    p.elbows = 0.4;
+    // Swing clock this frame (-1: none): wind up to 0.38 s, the blow lands at 0.44, done at 0.7.
+    const raw = this.attackTime >= 0 ? this.attackTime + dt : -1;
+    const t = raw < 0.7 ? raw : -1;
+    let look = 0;
+    if (best && dist < 25) {
+      const bearing = Math.atan2(best.pos.x - this.pos.x, best.pos.z - this.pos.z) - this.yaw;
+      look = Math.atan2(Math.sin(bearing), Math.cos(bearing));
+    }
+    const lean = Math.min(0.12, this.speed * 0.03);
+    // The blow drives down far faster than anything else moves.
+    const striking = t >= 0.38 && t < 0.5;
+    this.drive(dt, striking ? 32 : 9, (g) => {
+      g.headX = 0;
+      g.headY = Math.round(clamp(look, -0.7, 0.7) / 0.15) * 0.15;
+      g.spineX = 0.06 + lean;
+      g.spineY = 0;
+      g.armL = g.armR = -0.55;
+      g.elbows = 0.9;
+      if (t >= 0 && t < 0.38) {
+        // Wind up: the right arm cranks up and back, the torso turns into it, and holds.
+        g.armR = -2.6;
+        g.spineY = -0.3;
+        g.elbows = 0.5;
+      } else if (t >= 0.38) {
+        g.armR = -0.25;
+        g.spineY = 0.2;
+        g.spineX = 0.18 + lean;
+        g.elbows = 0.5;
+      }
+    }, raw >= 0 && (this.attackTime === 0 || (this.attackTime < 0.38 && raw >= 0.38) || raw >= 0.7)); // each phase of a swing starts at once
+    if (t >= 0.46 && t < 0.62) {
+      // Hard stop: the arm chatters as the servo holds against the blow.
+      const k = 1 - (t - 0.46) / 0.16;
+      p.armR += Math.sin(t * 90) * 0.06 * k;
+      p.spineX += Math.sin(t * 70 + 1) * 0.02 * k;
+    }
     if (this.attackTime >= 0) {
       this.attackTime += dt;
       const t = this.attackTime;
-      if (t < 0.38) p.armR = -0.9 - 1.6 * (t / 0.38); // wind up
-      else {
-        p.armR = -2.5 + Math.min(1, (t - 0.38) / 0.12) * 2.4; // swing down
+      if (t >= 0.38) {
         if (t - dt < 0.44 && t >= 0.44) {
           this.hooks.onAttack(this);
           if (this.chew?.alive) this.chew.damage(this.damage * 1.2);

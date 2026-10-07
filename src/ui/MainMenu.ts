@@ -2,12 +2,14 @@ import { matchClock } from '../game/TeamMatch';
 import type { Game } from '../core/Game';
 import { feel } from '../config/Feel';
 import { MenuMusic } from '../audio/MenuMusic';
+import { MenuWardenVoice } from '../audio/MenuWardenVoice';
 import { playerConfig } from '../player/PlayerConfig';
 import { MenuScene } from './MenuScene';
 import { Dossier } from './Dossier';
 import { Terminal } from '../minigames/Terminal';
 import { makeGrime, wearMask } from './DossierGrime';
 import { PERKS, SIDEARMS, levelOf, loadProfile, perkSlots, saveProfile, type PerkId } from '../game/Progress';
+import { skillsPanelHtml } from './SkillsUI';
 import { FPS_CAPS, loadGraphics, maxResolution, presetSettings, type GraphicsSettings } from '../config/Graphics';
 import { isTouchDevice } from '../core/math';
 import { HUD_PRESETS, applyHudLayout, editHudLayout, loadHudLayout, saveHudLayout, type HudPreset } from './HudLayout';
@@ -40,12 +42,14 @@ interface Prefs {
   ambience: boolean;
   /** Menu soundtrack level (× master). */
   music: number;
+  /** The corner minimap (the full map on M stays either way). */
+  minimap: boolean;
 }
 
 const PREFS_KEY = 'site9.prefs';
 
 export function loadPrefs(mobile: boolean): Prefs {
-  const d: Prefs = { volume: feel.masterVolume, sensitivity: 1, fov: playerConfig.baseFov, gfx: loadGraphics(mobile), matchMinutes: 15, aimAssist: 1, ambience: false, music: 0.6 };
+  const d: Prefs = { volume: feel.masterVolume, sensitivity: 1, fov: playerConfig.baseFov, gfx: loadGraphics(mobile), matchMinutes: 15, aimAssist: 1, ambience: false, music: 0.6, minimap: true };
   try {
     const saved = JSON.parse(localStorage.getItem(PREFS_KEY) ?? '{}') as Partial<Prefs>;
     return { ...d, ...saved, gfx: d.gfx };
@@ -75,6 +79,40 @@ function reload(q: URLSearchParams): void {
   location.replace(`?${q.toString()}`);
 }
 
+/**
+ * Two steps for anything that throws work away or spends: the first click arms it (its label
+ * asks), a second within 3 s does it. `label` is where the question is written.
+ */
+function confirmTwice(b: HTMLElement, ask: string, act: () => void, label: HTMLElement = b.querySelector<HTMLElement>('.gbtn-label') ?? b): void {
+  if (b.classList.contains('armed')) {
+    b.classList.remove('armed');
+    label.innerHTML = b.dataset.was ?? label.innerHTML;
+    act();
+    return;
+  }
+  b.dataset.was = label.innerHTML;
+  b.classList.add('armed');
+  label.textContent = ask;
+  window.setTimeout(() => {
+    if (!b.classList.contains('armed')) return;
+    b.classList.remove('armed');
+    label.innerHTML = b.dataset.was!;
+  }, 3000);
+}
+
+/** A short word on a control that can't do what was asked ("NEED 500 MORE VC"), then its label back. */
+function refuse(label: HTMLElement, text: string): void {
+  if (label.dataset.was === undefined) label.dataset.was = label.innerHTML;
+  label.textContent = text;
+  window.setTimeout(() => {
+    label.innerHTML = label.dataset.was!;
+    delete label.dataset.was;
+  }, 1400);
+}
+
+/** Panel heads: the way back. */
+const PANEL_X = '<button class="panel-x" aria-label="Back" title="Back (Esc)">✕</button>';
+
 const BASE_SENS = playerConfig.mouseSensitivity;
 const BASE_TOUCH_SENS = playerConfig.touchSensitivity;
 const BASE_ASSIST = playerConfig.touchAimAssist;
@@ -90,6 +128,7 @@ export function applyPrefs(game: Game, p: Prefs): void {
   playerConfig.baseFov = p.fov;
   game.applyGraphics(p.gfx);
   game.ambienceOn = p.ambience;
+  game.mapOverlay?.setMinimap(p.minimap);
 }
 
 const MAPS = {
@@ -143,6 +182,7 @@ export class MainMenu {
   private prefs: Prefs;
   private game: Game | null = null;
   private music = new MenuMusic();
+  private warden: MenuWardenVoice;
 
   constructor(parent: HTMLElement, private opts: MenuOptions) {
     this.prefs = loadPrefs(opts.mobile);
@@ -151,7 +191,9 @@ export class MainMenu {
     this.root = el('div', 'menu', parent);
     document.body.classList.add('in-menu');
     // The stage: a photograph with snow and mist (no 3D render in the menu).
-    new MenuScene(this.root, opts.mobile, () => this.ready && this.visible && !this.paused);
+    // He breathes and, now and then, speaks; not over the dossier or the terminal.
+    this.warden = new MenuWardenVoice(this.root, opts.mobile, () => !this.root.classList.contains('dossier-open') && !this.terminal?.isOpen);
+    new MenuScene(this.root, opts.mobile, () => this.ready && this.visible && !this.paused, this.warden);
     el('div', 'menu-shade', this.root);
     el('div', 'menu-grain', this.root);
     const left = el('div', 'menu-left', this.root);
@@ -166,21 +208,32 @@ export class MainMenu {
     this.playBtn.disabled = true;
     this.button('OPERATIONS', '', () => this.show('operations'), 'operations');
     this.button('ARMORY', '', () => this.show('armory'), 'armory');
+    this.button('SKILLS', '', () => this.show('skills'), 'skills');
     this.button('DOSSIER', '', () => this.openDossier(), 'dossier');
     this.button('TERMINAL', '', () => this.openTerminal(), 'terminal');
     this.button('SETTINGS', '', () => this.show('settings'), 'settings');
     this.button('CONTROLS', '', () => this.show('controls'), 'controls');
-    this.button('MAIN MENU', 'tomenu', () => {
-      const q = new URLSearchParams(location.search);
-      q.set('menu', '1');
-      reload(q);
-    });
+    // Leaving a raid throws it away: ask first.
+    const toMenu = this.button('MAIN MENU', 'tomenu', () =>
+      confirmTwice(toMenu, 'ABANDON RAID? CLICK AGAIN', () => {
+        const q = new URLSearchParams(location.search);
+        q.set('menu', '1');
+        reload(q);
+      }),
+    );
     // Desktop build (Electron): a real quit.
-    if (navigator.userAgent.includes('Electron')) this.button('QUIT', 'quit', () => window.close());
+    if (navigator.userAgent.includes('Electron')) {
+      const quit = this.button('QUIT', 'quit', () => confirmTwice(quit, this.paused ? 'QUIT MID-RAID? CLICK AGAIN' : 'QUIT? CLICK AGAIN', () => window.close()));
+    }
     this.status = el('div', 'menu-status', left, 'Loading…');
     this.profileEl = el('div', 'menu-profile', left);
     this.paintProfile();
     this.panel = el('div', 'menu-panel glass', this.root);
+    this.panel.addEventListener('click', (e) => {
+      if (!(e.target as HTMLElement).closest('.panel-x')) return;
+      e.stopPropagation();
+      this.closePanel();
+    });
     el('div', 'menu-foot', this.root, '<span></span><span>BUILD 0.3</span>');
     // Dust, scratches and a vignette over everything, as on the dossier's desk.
     const grime = makeGrime();
@@ -210,8 +263,17 @@ export class MainMenu {
       });
     }
     window.addEventListener('keydown', (e) => {
-      if (this.dossier?.open) return;
-      if (this.visible && this.ready && (e.code === 'Enter' || (e.code === 'Space' && this.paused))) this.play();
+      if (this.dossier?.open || this.terminal?.isOpen || !this.visible) return;
+      const t = e.target as HTMLElement | null;
+      // Esc / Backspace: back out of the open panel.
+      if ((e.code === 'Escape' || (e.code === 'Backspace' && !t?.closest?.('input, textarea'))) && this.section) {
+        e.preventDefault();
+        this.closePanel();
+        return;
+      }
+      // A focused control takes its own Enter / Space (a card, a slider): no deploying on top of it.
+      if (t?.closest?.('button, input, select, textarea') && t !== this.playBtn) return;
+      if (this.ready && (e.code === 'Enter' || (e.code === 'Space' && this.paused))) this.play();
     });
   }
 
@@ -247,6 +309,8 @@ export class MainMenu {
     this.paused = p;
     this.root.classList.toggle('paused', p);
     if (p) document.body.classList.remove('menu-stage');
+    // The full map (M) closes with the pause, so it isn't still over the view on resume.
+    if (p && this.game?.mapOverlay?.visible) this.game.mapOverlay.toggle();
     this.playBtn.querySelector('.gbtn-label')!.textContent = p ? 'RESUME' : 'PLAY';
     // The soundtrack is for the front door only, not the pause screen mid-raid.
     if (p) this.music.stop();
@@ -274,6 +338,7 @@ export class MainMenu {
     if (!this.ready) return;
     this.setStatus(this.paused ? 'Resuming…' : 'Deploying…');
     this.music.stop();
+    if (!this.paused) this.warden.proceed();
     this.opts.onPlay();
   }
 
@@ -303,14 +368,25 @@ export class MainMenu {
     this.profileEl.innerHTML = `<b>LV ${l.level}</b><i style="--p:${((l.into / l.need) * 100).toFixed(1)}%"></i><span>${p.credits} VC</span>`;
   }
 
-  private show(section: 'operations' | 'settings' | 'controls' | 'armory'): void {
+  /** Back to the stage: the side panel closes (✕, Esc, or its nav button again). */
+  /** Phones' back gesture inside the menu: close what's on top (terminal, dossier, panel). True if something closed. */
+  back(): boolean {
+    if (this.terminal?.isOpen) this.terminal.close();
+    else if (this.dossier?.open) this.dossier.close();
+    else if (this.section) this.closePanel();
+    else return false;
+    return true;
+  }
+
+  private closePanel(): void {
+    this.panel.classList.add('closed');
+    this.section = null;
+    this.nav.querySelectorAll<HTMLElement>('.gbtn').forEach((b) => b.classList.remove('active'));
+  }
+
+  private show(section: 'operations' | 'settings' | 'controls' | 'armory' | 'skills'): void {
     // The same button again closes the panel (back to the showcase).
-    if (this.section === section && !this.panel.classList.contains('closed') && !this.paused) {
-      this.panel.classList.add('closed');
-      this.section = null;
-      this.nav.querySelectorAll<HTMLElement>('.gbtn').forEach((b) => b.classList.remove('active'));
-      return;
-    }
+    if (this.section === section && !this.panel.classList.contains('closed')) return this.closePanel();
     this.section = section;
     this.panel.classList.remove('closed');
     this.nav.querySelectorAll<HTMLElement>('.gbtn').forEach((b) => b.classList.toggle('active', b.dataset.key === section));
@@ -320,12 +396,13 @@ export class MainMenu {
     if (section === 'operations') this.renderOperations();
     else if (section === 'settings') this.renderSettings();
     else if (section === 'armory') this.renderArmory();
+    else if (section === 'skills') this.renderSkills();
     else this.renderControls();
   }
 
   private renderOperations(): void {
     const o = this.opts;
-    this.panel.innerHTML = '<div class="panel-head">OPERATIONS<i></i></div><div class="panel-label">AREA</div>';
+    this.panel.innerHTML = `<div class="panel-head">OPERATIONS<i></i>${PANEL_X}</div><div class="panel-label">AREA</div>`;
     const maps = el('div', 'gcards', this.panel);
     // In an AI watch scenario the map / mode cards lead back to the normal game.
     const here = new URLSearchParams(location.search);
@@ -396,7 +473,7 @@ export class MainMenu {
 
   private renderSettings(): void {
     const p = this.prefs;
-    this.panel.innerHTML = '<div class="panel-head">SETTINGS<i></i></div>';
+    this.panel.innerHTML = `<div class="panel-head">SETTINGS<i></i>${PANEL_X}</div>`;
     const slider = (label: string, min: number, max: number, step: number, value: number, fmt: (v: number) => string, set: (v: number) => void) => {
       const row = el('label', 'gslider', this.panel, `<span>${label}</span><output>${fmt(value)}</output>`);
       const input = el('input', '', row) as HTMLInputElement;
@@ -420,14 +497,19 @@ export class MainMenu {
     slider('MUSIC VOLUME', 0, 1, 0.01, p.music, (v) => `${Math.round(v * 100)}`, (v) => (p.music = this.music.volume = v));
     slider(this.opts.mobile ? 'LOOK SENSITIVITY' : 'MOUSE SENSITIVITY', 0.3, 2.5, 0.05, p.sensitivity, (v) => v.toFixed(2), (v) => (p.sensitivity = v));
     slider('FIELD OF VIEW', 70, 110, 1, p.fov, (v) => `${v}°`, (v) => (p.fov = v));
-    const amb = el('button', `gtoggle ${p.ambience ? 'on' : ''}`, el('div', 'gtoggles', this.panel), '<span>BACKGROUND AMBIENCE</span><i></i>');
-    amb.addEventListener('click', (e) => {
-      e.stopPropagation();
-      p.ambience = !p.ambience;
-      amb.classList.toggle('on', p.ambience);
-      savePrefs(p);
-      if (this.game) applyPrefs(this.game, p);
-    });
+    const toggles = el('div', 'gtoggles', this.panel);
+    const pref = (label: string, key: 'ambience' | 'minimap') => {
+      const t = el('button', `gtoggle ${p[key] ? 'on' : ''}`, toggles, `<span>${label}</span><i></i>`);
+      t.addEventListener('click', (e) => {
+        e.stopPropagation();
+        p[key] = !p[key];
+        t.classList.toggle('on', p[key]);
+        savePrefs(p);
+        if (this.game) applyPrefs(this.game, p);
+      });
+    };
+    pref('BACKGROUND AMBIENCE', 'ambience');
+    pref('MINIMAP', 'minimap');
     this.renderGraphics(el('div', 'gfx', this.panel));
     el('div', 'panel-label', this.panel, 'CONTROL SCHEME');
     const seg = el('div', 'gseg', this.panel);
@@ -438,14 +520,20 @@ export class MainMenu {
       b.addEventListener('click', (e) => {
         e.stopPropagation();
         if (id === this.opts.controls) return;
-        store('weaponlab.controls', id);
-        const q = new URLSearchParams(location.search);
-        q.delete('touch');
-        q.delete('mouse');
-        q.set('menu', '1');
-        reload(q);
+        const go = () => {
+          store('weaponlab.controls', id);
+          const q = new URLSearchParams(location.search);
+          q.delete('touch');
+          q.delete('mouse');
+          q.set('menu', '1');
+          reload(q);
+        };
+        // It reloads the game: mid-raid, that ends the raid.
+        if (this.paused) confirmTwice(b, 'ENDS THE RAID · AGAIN', go);
+        else go();
       });
     }
+    el('div', 'panel-note', this.panel, this.paused ? 'Changing the control scheme restarts the game: the raid is lost.' : 'Changing the control scheme reloads the game.');
   }
 
   /** Graphics block of the settings panel (refilled in place when a preset is picked). */
@@ -540,11 +628,19 @@ export class MainMenu {
     // On-device benchmark: ~30 s in game, then a chart of what costs how much (with COPY).
     const bench = el('button', 'gbtn bench-btn', box, '<span class="gbtn-label">RUN BENCHMARK</span><span class="gbtn-shine"></span>');
     el('div', 'panel-note', box, 'Starts the game and measures for ~30 s: what each part (HUD, resolution, 3D, AI, effects, characters, audio) costs in FPS. Don’t touch the screen while it runs.');
+    // It plays the game for ~30 s: not from the pause menu (it would run over the raid), and asked first.
+    if (this.paused) {
+      bench.nextElementSibling?.remove();
+      bench.remove();
+      return;
+    }
     bench.addEventListener('click', (e) => {
       e.stopPropagation();
       if (!this.game) return;
-      this.game.runBenchmark();
-      this.play();
+      confirmTwice(bench, 'START ~30 s BENCHMARK? CLICK AGAIN', () => {
+        this.game!.runBenchmark();
+        this.play();
+      });
     });
   }
 
@@ -552,15 +648,15 @@ export class MainMenu {
   private renderArmory(): void {
     const p = loadProfile();
     const lv = levelOf(p.xp);
-    this.panel.innerHTML = `<div class="panel-head">ARMORY<i></i></div>
+    this.panel.innerHTML = `<div class="panel-head">ARMORY<i></i>${PANEL_X}</div>
       <div class="arm-top"><b>LEVEL ${lv.level}</b><i style="--p:${((lv.into / lv.need) * 100).toFixed(1)}%"></i><em>${lv.into} / ${lv.need} XP</em><span>${p.credits} VC</span></div>
       <div class="panel-note">Earn XP and Vanta Credits (VC) from every raid: kills, time alive, placement. Extract for ×1.5 and to carry 10 % of your cash out. Changes apply from your next raid.</div>`;
-    const card = (parent: HTMLElement, u: { id: string; name: string; text: string; level: number; cost: number }, state: 'equipped' | 'owned' | 'buy' | 'locked', onClick: () => void) => {
+    const card = (parent: HTMLElement, u: { id: string; name: string; text: string; level: number; cost: number }, state: 'equipped' | 'owned' | 'buy' | 'locked', onClick: (c: HTMLButtonElement, tag: HTMLElement) => void) => {
       const tag = state === 'equipped' ? 'EQUIPPED' : state === 'owned' ? 'EQUIP' : state === 'buy' ? `${u.cost} VC` : `LEVEL ${u.level}`;
       const c = el('button', `gcard small arm ${state}`, parent, `<b>${u.name}</b><p>${u.text}</p><span class="arm-tag">${tag}</span><span class="gbtn-shine"></span>`);
       c.addEventListener('click', (e) => {
         e.stopPropagation();
-        onClick();
+        onClick(c, c.querySelector<HTMLElement>('.arm-tag')!);
       });
     };
     const redraw = () => {
@@ -573,12 +669,18 @@ export class MainMenu {
     for (const w of SIDEARMS) {
       const owned = p.owned.includes(w.id);
       const state = p.sidearm === w.id ? 'equipped' : owned ? 'owned' : lv.level < w.level ? 'locked' : 'buy';
-      card(side, w, state, () => {
-        if (state === 'locked' || state === 'equipped') return;
+      card(side, w, state, (c, tag) => {
+        if (state === 'equipped') return;
+        if (state === 'locked') return refuse(tag, `UNLOCKS AT LEVEL ${w.level}`);
         if (state === 'buy') {
-          if (p.credits < w.cost) return;
-          p.credits -= w.cost;
-          p.owned.push(w.id);
+          if (p.credits < w.cost) return refuse(tag, `NEED ${w.cost - p.credits} MORE VC`);
+          // Spending is asked once more, on the card itself.
+          return confirmTwice(c, `BUY · ${w.cost} VC?`, () => {
+            p.credits -= w.cost;
+            p.owned.push(w.id);
+            p.sidearm = w.id;
+            redraw();
+          }, tag);
         }
         p.sidearm = w.id;
         redraw();
@@ -591,32 +693,47 @@ export class MainMenu {
       const owned = p.owned.includes(k.id);
       const on = p.perks.includes(k.id);
       const state = on ? 'equipped' : owned ? 'owned' : lv.level < k.level ? 'locked' : 'buy';
-      card(perks, k, state, () => {
-        if (state === 'locked') return;
+      card(perks, k, state, (c, tag) => {
+        if (state === 'locked') return refuse(tag, `UNLOCKS AT LEVEL ${k.level}`);
+        const equip = () => {
+          if (on) p.perks = p.perks.filter((x) => x !== k.id);
+          else {
+            p.perks = [...p.perks, k.id as PerkId];
+            while (p.perks.length > slots) p.perks.shift();
+          }
+          redraw();
+        };
         if (state === 'buy') {
-          if (p.credits < k.cost) return;
-          p.credits -= k.cost;
-          p.owned.push(k.id);
+          if (p.credits < k.cost) return refuse(tag, `NEED ${k.cost - p.credits} MORE VC`);
+          return confirmTwice(c, `BUY · ${k.cost} VC?`, () => {
+            p.credits -= k.cost;
+            p.owned.push(k.id);
+            equip();
+          }, tag);
         }
-        if (on) p.perks = p.perks.filter((x) => x !== k.id);
-        else {
-          p.perks = [...p.perks, k.id as PerkId];
-          while (p.perks.length > slots) p.perks.shift();
+        // Slots full: equipping this one takes off the oldest; say which first.
+        if (!on && p.perks.length >= slots) {
+          const out = PERKS.find((x) => x.id === p.perks[0]);
+          return confirmTwice(c, `REPLACES ${out?.name.toUpperCase() ?? 'A PERK'}?`, equip, tag);
         }
-        redraw();
+        equip();
       });
     }
   }
 
+  /** Skills: grown in raids (Skills.ts), shown with what each gives now and at the next level. */
+  private renderSkills(): void {
+    this.panel.innerHTML = `<div class="panel-head">SKILLS<i></i>${PANEL_X}</div>${skillsPanelHtml()}`;
+  }
+
   private renderControls(): void {
-    this.panel.innerHTML = '<div class="panel-head">CONTROLS<i></i></div>';
+    this.panel.innerHTML = `<div class="panel-head">CONTROLS<i></i>${PANEL_X}</div>`;
     if (this.opts.mobile) return this.renderTouchControls();
     const grid = el('div', 'keys', this.panel);
     for (const [k, what] of KEYS) {
       const caps = k.split(' / ').map((c) => `<kbd>${c}</kbd>`).join('<em>/</em>');
       el('div', 'key-row', grid, `<span class="caps">${caps}</span><span>${what}</span>`);
     }
-    if (this.opts.mobile) el('div', 'panel-note', this.panel, 'Touch: left side moves, right side looks. FIRE also aims while held.');
   }
 
   /** Phones: what the buttons do, their size / opacity / layout, aim assist. */

@@ -1,0 +1,11 @@
+warden_menu_early|[low, calm voice] [muffled through a respirator] You're early.
+warden_menu_still|[whispering] [muffled through a respirator] Still here.
+warden_menu_ends|[low, calm voice] [muffled through a respirator] I have seen how this ends.
+warden_menu_notyet|[quietly] [muffled through a respirator] Don't go in there. [pause] Not yet.
+warden_menu_warm|[low, calm voice] [muffled through a respirator] Stay where it's warm.
+warden_menu_minus30|[slowly] [muffled through a respirator] Minus thirty... [pause] Now we can talk.
+warden_menu_seventyone|[flat, mechanical voice] [muffled through a respirator] Seventy-one percent.
+warden_menu_door|[quietly] [muffled through a respirator] I closed that door for you.
+warden_menu_standing|[whispering] [muffled through a respirator] I know where you will be standing.
+warden_menu_back|[low, calm voice] [muffled through a respirator] You came back. [pause] I knew you would.
+warden_menu_proceed|[cold, commanding voice] [muffled through a respirator] Proceed.

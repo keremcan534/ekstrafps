@@ -1,0 +1,33 @@
+/* ---------- spoken lines: menu Warden and in-game radio ----------
+   No box. The speaker's name in red, the line in white, both printed through a
+   wear texture (public/ui/dirt_text.webp: the dirt sheet, marks boosted, plus print speckle)
+   and glowing softly. */
+.subline, .comms {
+  position: absolute; left: 50%; bottom: 13%; top: auto; z-index: 40; transform: translateX(-50%);
+  width: max-content; max-width: min(72vw, 980px); margin: 0; padding: 0;
+  text-align: center; white-space: normal; pointer-events: none;
+  font: 600 clamp(18px, 2.4vh, 27px)/1.3 var(--g-font, 'Rajdhani', 'Bahnschrift', sans-serif); letter-spacing: 0.03em;
+  /* the glass recipe and the old pill: off */
+  background: none; border: 0; border-radius: 0; box-shadow: none;
+  -webkit-backdrop-filter: none; backdrop-filter: none;
+  color: transparent; text-shadow: none;
+  opacity: 0; transition: opacity 0.25s;
+  /* glow and a dark lift off bright scenes, drawn around the textured glyphs */
+  filter: drop-shadow(0 0 10px rgba(255, 240, 225, 0.42)) drop-shadow(0 0 2px rgba(255, 236, 220, 0.25)) drop-shadow(0 1px 1.5px rgba(0, 0, 0, 0.9));
+}
+.subline.show, .comms.show { opacity: 1; }
+/* The text itself: white through the dirt. Each line samples another part of the sheet. */
+.subline, .comms {
+  background: var(--dirt-text) var(--dirt-at, 30% 40%) / 460px auto, #f2efe8;
+  -webkit-background-clip: text; background-clip: text;
+}
+.subline b, .comms .comms-tag {
+  margin: 0 0.18em 0 0; padding: 0; border: 0; border-radius: 0; font: inherit; font-weight: 700; letter-spacing: 0.06em;
+  text-transform: uppercase;
+  background: var(--dirt-text) var(--dirt-at, 30% 40%) / 460px auto, #e3392b;
+  -webkit-background-clip: text; background-clip: text; color: transparent;
+}
+.comms .comms-tag.friendly { background: var(--dirt-text) var(--dirt-at, 30% 40%) / 460px auto, #7cc4ef; -webkit-background-clip: text; background-clip: text; }
+/* Phones: the menu is zoomed (--ui-zoom); keep it readable on glass. */
+.is-touch .subline { font-size: 30px; bottom: 9%; }
+.is-touch .comms { font-size: 18px; bottom: 26%; }

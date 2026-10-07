@@ -1,3 +1,4 @@
+import { skillRaid } from './Skills';
 import * as THREE from 'three';
 import { GROUPS } from '../core/Physics';
 import { getAmmo } from '../weapons/AmmoData';
@@ -174,6 +175,7 @@ export class Utilities {
         if (h.health >= h.max || h.dead || h.downed) return false;
         if (!this.sv.spend(PRICES.med)) return false;
         h.health = h.max;
+        skillRaid.add('medic', 10);
         this.deps.audio.play('reload.rifle.magin', { volume: 0.6 });
         this.deps.toast?.('Patched up: full health');
         return true;

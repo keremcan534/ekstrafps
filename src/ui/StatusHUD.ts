@@ -79,9 +79,12 @@ export class StatusHUD {
 
   /** Enemy radio line as a subtitle. */
   radio(text: string, tag = 'SABLE', friendly = false): void {
-    this.comms.innerHTML = `<span class="comms-tag${friendly ? ' friendly' : ''}">${tag}</span> ${text}`;
+    this.comms.innerHTML = `<span class="comms-tag${friendly ? ' friendly' : ''}">${tag}:</span> ${text}`;
+    // Each line printed through another patch of the worn texture.
+    this.comms.style.setProperty('--dirt-at', `${Math.round(Math.random() * 100)}% ${Math.round(Math.random() * 100)}%`);
     this.comms.classList.add('show');
-    this.commsTime = 2.8;
+    // Long enough to read: ~0.3 s a word, never under the old 2.8 s.
+    this.commsTime = Math.max(2.8, 1.2 + text.split(/\s+/).length * 0.3);
   }
 
   setSquadLine(text: string): void {

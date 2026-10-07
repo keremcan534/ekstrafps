@@ -1,7 +1,6 @@
 import * as THREE from 'three';
-import { Spring, Spring3 } from '../core/Spring';
-import { Noise1D } from '../core/Noise';
-import { DEG, clamp, damp, hfovToVfov, randSign, smoothstep } from '../core/math';
+import { Spring } from '../core/Spring';
+import { DEG, clamp, damp, hfovToVfov, smoothstep } from '../core/math';
 import { playerConfig } from '../player/PlayerConfig';
 import { feel } from '../config/Feel';
 import { MuzzleFlash } from '../fx/MuzzleFlash';
@@ -9,10 +8,15 @@ import { buildWeaponModel, compactViewRig, type WeaponRig } from './WeaponModels
 import { buildProfiledRig, type ProfiledView } from './ProfiledRig';
 import { FirstPersonArms } from './FirstPersonHands';
 import { attachHands, layoutHands } from './HandGrips';
-import type { WeaponHands } from './HandPose';
+import type { AnyWeaponHands } from './hands/HandProfile';
 import { FOCUS_DEFAULTS, adsTarget, aimMode, poseQuaternion, solveAdsPose, viewProfile, type AimSettings, type ViewProfile } from './ViewProfile';
 import { updateVisibleMatrices } from '../core/VisibleMatrices';
-import { WeaponAnimator, type PoseOffset } from './WeaponAnimator';
+import { WeaponAnimator, type PoseOffset, type ReloadEvent } from './WeaponAnimator';
+import { WeaponMotionStack } from './motion/WeaponMotionStack';
+import { LEGACY_CUT, MotionOffset, NEUTRAL_TASTE, PROFILED_CUT, type AdsCut } from './motion/MotionTypes';
+import { rearwardShare, type RecoilKick } from './motion/RecoilLayer';
+import type { MechanicalEvent } from './motion/Interaction';
+import { motionTuning } from './motion/MotionTuning';
 import type { Weapon } from './Weapon';
 import type { WeaponData } from './WeaponData';
 import type { AmmoData } from './AmmoData';
@@ -31,7 +35,8 @@ export const SPRINT_POSE = {
 } as const;
 
 /** What the viewmodel reads off the player (the calibration page passes a stand-in). */
-export type ViewmodelPlayer = Pick<PlayerController, 'yaw' | 'velocity' | 'crouching' | 'sprinting' | 'grounded' | 'bobPhase'>;
+export type ViewmodelPlayer = Pick<PlayerController, 'yaw' | 'velocity' | 'crouching' | 'sprinting' | 'grounded' | 'bobPhase'> &
+  Partial<Pick<PlayerController, 'eyeHeight'>>;
 
 export interface ViewmodelInput {
   player: ViewmodelPlayer;
@@ -54,46 +59,11 @@ export interface ViewmodelInput {
   shoulder: number;
 }
 
-export interface RecoilKick {
-  /** Effective vertical / horizontal kick this shot (deg), for camera transfer. */
-  vertical: number;
-  horizontal: number;
-}
-
-/** How much of the aimed recoil goes rearward instead of flipping the muzzle (0..1). */
-export const rearwardShare = (ads: number): number => feel.adsRecoilRearward * ads * ads;
+export type { RecoilKick };
+export { rearwardShare };
 
 /** Roll of the weapon at the hip (rad) for weapons without a view profile: canted toward the centre. */
 const HIP_CANT = 0.12;
-
-/**
- * Share of each motion layer taken away at full ADS (0 keeps all of it, 1 none).
- * LEGACY is the old behaviour, kept for weapons without a view profile.
- * PROFILED: aimed, the gun turns about the eye (rear and front sight stay lined up, the
- * whole picture moves a little) and hardly shifts sideways (a shift splits rear from
- * front sight), so the sight stays usable on every weapon. Global on purpose: a weapon's
- * own taste is its profile's motion multipliers, not a different aimed behaviour.
- */
-interface AdsCut {
-  inertia: number;
-  inertiaRoll: number;
-  inertiaShift: number;
-  strafeRoll: number;
-  linear: number;
-  sway: number;
-  bobTurn: number;
-  bobShift: number;
-  landing: number;
-  jolt: number;
-  recoilShift: number;
-  recoilRoll: number;
-  /** The weapon's own animation pose (bolt work, reloads): its turn and its shift. */
-  poseTurn: number;
-  poseShift: number;
-  air: number;
-}
-const LEGACY_CUT: AdsCut = { inertia: 0.35, inertiaRoll: 0, inertiaShift: 0, strafeRoll: 0.8, linear: 0, sway: 0.55, bobTurn: 0.8, bobShift: 0.8, landing: 0, jolt: 0, recoilShift: 0, recoilRoll: 0, poseTurn: 0, poseShift: 0, air: 0 };
-const PROFILED_CUT: AdsCut = { inertia: 0.85, inertiaRoll: 0.9, inertiaShift: 0.95, strafeRoll: 0.95, linear: 0.97, sway: 0.6, bobTurn: 0.85, bobShift: 0.95, landing: 0.7, jolt: 0.6, recoilShift: 0.8, recoilRoll: 0.7, poseTurn: 0.95, poseShift: 0.95, air: 0.9 };
 
 /** Near plane of the weapon pass for profiled weapons (m). Fixed: nothing is hidden by moving it. */
 const VIEW_NEAR = 0.01;
@@ -105,6 +75,8 @@ const VIEW_NEAR = 0.01;
 const ADS_TOL = { solveMm: 0.05, solveDeg: 0.005, restMm: 0.2, restDeg: 0.02 };
 
 const FORWARD = new THREE.Vector3(0, 0, -1);
+/** Stand-in for the sway layer when it is left out (the aimed rest check). */
+const NO_MOTION = new MotionOffset();
 const UP = new THREE.Vector3(0, 1, 0);
 const IDENTITY = new THREE.Quaternion();
 
@@ -120,9 +92,10 @@ const IDENTITY = new THREE.Quaternion();
  *   └ weaponRig         shoulder side (a mirror)
  *     └ basePoseRoot    hip ↔ aimed ↔ sprint. Aimed is SOLVED from the ADSPoint onto the
  *                       aim axis, never stored. Calibration only: no motion goes in here.
- *       └ proceduralRoot  inertia, linear inertia, sway, bob, landing, recoil, jolts,
- *                         reload, equip, wall: offsets only. They turn about the grip at the
- *                         hip and about the eye aimed, and all settle back to nothing.
+ *       └ proceduralRoot  the motion layers (motion/WeaponMotionStack.ts: camera and body
+ *                         inertia, walk / sprint, breathing, transitions, impacts, reload)
+ *                         plus recoil and wall: offsets only. They turn about the grip at the
+ *                         hip and about the eye aimed, and all but breathing settle to nothing.
  *         └ WeaponInstance (rig.root) → OrientationRoot → model, ADSPoint, MuzzlePoint...
  *
  * Weapons without one still use the old automatic placement (pivot > recoilPivot >
@@ -137,7 +110,7 @@ export class Viewmodel {
 
   // Profiled weapons (see above).
   readonly aimReference = new THREE.Group();
-  /** The player's arms on a profiled weapon's grips (FirstPersonHands.ts). */
+  /** The player's arms, solved onto a profiled weapon's grip points (FirstPersonHands.ts). */
   readonly arms = new FirstPersonArms();
   private weaponRig = new THREE.Group();
   private basePoseRoot = new THREE.Group();
@@ -162,33 +135,18 @@ export class Viewmodel {
   private animator = new WeaponAnimator();
   private pose: PoseOffset = { pos: new THREE.Vector3(), rot: new THREE.Vector3() };
 
-  // Springs
+  // Base pose drivers. The motion layers live in `stack`.
   private ads = new Spring(120, 18);
-  private inertia = new Spring3(100, 12);
-  private linear = new Spring3(120, 14);
-  private recoilRot = new Spring3(170, 16);
-  private recoilPos = new Spring3(270, 22);
-  private jolt = new Spring3(220, 16);
-  private land = new Spring(160, 13);
-  private landRot = new Spring(140, 12);
   private wall = new Spring(90, 16);
   private side = new Spring(70, 15);
+  /** Every procedural motion layer (motion/WeaponMotionStack.ts). */
+  readonly stack = new WeaponMotionStack();
+  /** Reload stages as they pass (WeaponAnimator): a hook for sounds or effects. */
+  onReloadEvent: ((e: ReloadEvent) => void) | null = null;
 
-  // Sway noise
-  private nTremorX = new Noise1D(11);
-  private nTremorY = new Noise1D(23);
-  private nDriftX = new Noise1D(37);
-  private nDriftY = new Noise1D(51);
-  private breathPhase = 0;
-
-  private sprintBlend = 0;
-  private crouchBlend = 0;
-  private airOffset = 0;
   private time = 0;
   private sinceKick = 99;
   private lookRate = new THREE.Vector2();
-  private prevVel = new THREE.Vector3();
-  private accel = new THREE.Vector2();
 
   /** This frame's motion layers, shared by both placements. */
   private m = {
@@ -197,27 +155,12 @@ export class Viewmodel {
     sideV: 1,
     sideSign: 1,
     sideTransit: 0,
-    latVel: 0,
-    iner: new THREE.Vector3(),
-    linP: new THREE.Vector3(),
-    swayX: 0,
-    swayY: 0,
-    bobX: 0,
-    bobY: 0,
-    bobRoll: 0,
-    bobYaw: 0,
-    bobPitch: 0,
-    landY: 0,
-    landPitch: 0,
-    equipDown: 0,
     pull: 0,
     raise: 0,
     rp: new THREE.Vector3(),
     rr: new THREE.Vector3(),
-    jr: new THREE.Vector3(),
     sb: 0,
     sprintBlendPrev: 0,
-    crouchY: 0,
   };
 
   // Old placement
@@ -324,7 +267,7 @@ export class Viewmodel {
     for (const w of weapons) {
       const profile = viewProfile(w.id);
       const r = (profile && buildProfiledRig(profile, w)) || this.legacyRig(w);
-      // The old rigs' own hands stay hidden; arms are drawn on profiled weapons (see `arms`).
+      // The rigs' own hand points stay hidden: the arms hold every gun that has hands (`arms`).
       r.leftHand.visible = false;
       r.rightHand.visible = false;
       r.root.visible = false;
@@ -332,6 +275,7 @@ export class Viewmodel {
       this.rigs.set(w.id, r);
     }
     this.side.reset(1);
+    this.animator.onEvent = (e) => this.reloadEvent(e);
     // Lighting tuned to roughly match the arena.
     // A touch brighter than the room: aimed, the gun reads as parts and edges, not a black mass.
     this.scene.add(this.lights.fill, this.lights.key, this.lights.rim);
@@ -372,9 +316,7 @@ export class Viewmodel {
     this.adsCheck.profiled = !!this.rig.view;
     this.animator.setRig(this.rig);
     this.flash.attachTo(this.rig.muzzle);
-    this.recoilPos.reset();
-    this.recoilRot.reset();
-    this.jolt.reset();
+    this.stack.onWeapon();
     this.ads.reset(0);
     this.refresh(handling);
   }
@@ -473,65 +415,39 @@ export class Viewmodel {
    * without any shot-index tables.
    */
   kick(data: WeaponData, ammo: AmmoData, crouching: boolean): RecoilKick {
-    const r = data.recoil;
-    const h = this.handling!;
-    const ads = this.adsAmount;
-    const scale = feel.recoilScale * ammo.recoilModifier * h.recoilMass * (crouching ? 0.9 : 1) * (1 - 0.1 * ads);
-    const k = r.shoulder;
-    this.recoilRot.stiffness = k;
-    this.recoilRot.damping = 2 * r.damping * Math.sqrt(k);
-    this.recoilPos.stiffness = k * 1.6;
-    this.recoilPos.damping = 2 * 0.7 * Math.sqrt(k * 1.6);
-    const w = Math.sqrt(k) * 1.9 * DEG;
-    const vertical = r.vertical * scale * (0.9 + Math.random() * 0.2);
-    const horizontal = (r.horizontalBias + (Math.random() * 2 - 1) * r.horizontal) * scale;
     const side = this.side.value >= 0 ? 1 : -1;
-    // Aimed recoil "rework": when shouldered and aimed, the gun drives straight back
-    // into the shoulder instead of flipping the sights out of view; the climb is
-    // carried by the view instead (RecoilSystem), so the dot stays on the target.
-    const rw = rearwardShare(ads);
-    this.recoilRot.impulse(vertical * w * (1 - 0.85 * rw), -horizontal * w * side * (1 - 0.6 * rw), randSign() * r.roll * scale * w * (1 - 0.5 * rw));
-    const wp = Math.sqrt(k * 1.6) * 1.9;
-    this.recoilPos.impulse((Math.random() * 2 - 1) * r.back * 0.1 * wp, r.back * (0.15 - 0.1 * rw) * wp, r.back * scale * wp * (1 + 0.9 * rw));
-    if (feel.muzzleFlash) this.flash.trigger(data.fx.muzzleFlashScale * (1 - 0.25 * ads));
+    const kick = this.stack.recoil.kick(data, ammo, crouching, this.handling!, this.adsAmount, side, this.stack.classOf(this.weapon!).response);
+    if (feel.muzzleFlash) this.flash.trigger(data.fx.muzzleFlashScale * (1 - 0.25 * this.adsAmount));
     this.sinceKick = 0;
-    return { vertical, horizontal };
+    return kick;
   }
 
   /** Small physical jolts on mechanical events (mag seated, bolt release, pump...). */
-  onMechanical(kind: 'magIn' | 'boltForward' | 'shellInsert' | 'pump' | 'magOut' | 'equip'): void {
-    const j = this.jolt;
-    switch (kind) {
-      case 'magIn':
-        j.impulse(0.35, 0, 0.2);
-        this.recoilPos.impulse(0, 0.25, 0.1);
-        break;
-      case 'boltForward':
-        j.impulse(-0.25, 0.08, -0.3);
-        this.recoilPos.impulse(0, 0, -0.25);
-        break;
-      case 'shellInsert':
-        j.impulse(0.18, 0, 0.08);
-        break;
-      case 'pump':
-        j.impulse(-0.12, 0.05, 0.2);
-        break;
-      case 'magOut':
-        j.impulse(-0.1, 0, -0.1);
-        break;
-      case 'equip':
-        j.impulse(0.3, 0, -0.2);
-        break;
-    }
+  onMechanical(kind: MechanicalEvent): void {
+    this.stack.interaction.mechanical(kind, this.mass);
   }
 
   onLand(fallSpeed: number): void {
-    this.land.impulse(-clamp(fallSpeed * 0.05, 0, 0.7));
-    this.landRot.impulse(-clamp(fallSpeed * 0.06, 0, 0.9));
+    this.stack.interaction.onLand(fallSpeed, this.mass);
   }
 
   onJump(): void {
-    this.land.impulse(-0.25);
+    this.stack.interaction.onJump();
+  }
+
+  /** Mass of the weapon in hand, by class (1 = a rifle). */
+  private get mass(): number {
+    return this.weapon ? this.stack.classOf(this.weapon).mass : 1;
+  }
+
+  /** A reload stage passed: the gun feels it (hand off / on it), then the hook. */
+  private reloadEvent(e: ReloadEvent): void {
+    const t = this.stack.transitions;
+    const k = motionTuning.reload.handReaction;
+    if (e === 'handLeavesGrip') t.nudge(0, -0.001 * k, 0, -0.25 * DEG * k, 0, 0.2 * DEG * k);
+    else if (e === 'magazineGrab') t.nudge(0, -0.0006 * k, 0, -0.1 * DEG * k, 0, 0);
+    else if (e === 'handReturn') t.nudge(0, 0.0008 * k, 0, 0.15 * DEG * k, 0, -0.1 * DEG * k);
+    this.onReloadEvent?.(e);
   }
 
   update(dt: number, input: ViewmodelInput): void {
@@ -564,7 +480,7 @@ export class Viewmodel {
     updateVisibleMatrices(view ? this.aimReference : this.pivot, true);
     if (!view) this.legacyArms.updateMatrixWorld(true);
     const w = this.weapon;
-    this.arms.update(dt, rig, view ? this.weaponRig : this.legacyArms, { ads: this.adsAmount, sprint: this.sprintBlend, sinceShot: w.timeSinceShot, reloading: w.state === 'reloading' });
+    this.arms.update(dt, rig, view ? this.weaponRig : this.legacyArms, { ads: this.adsAmount, sprint: this.stack.sprintBlend, sinceShot: w.timeSinceShot, reloading: w.state === 'reloading' });
   }
 
   /** Every motion layer for this frame (springs, noise, poses), before any is placed. */
@@ -576,20 +492,7 @@ export class Viewmodel {
     this.time += dt;
     this.sinceKick += dt;
     const invDt = 1 / Math.max(dt, 1 / 240);
-
-    // --- Local-frame player motion (forward / lateral) and acceleration ---
-    const cy = Math.cos(p.yaw);
-    const sy = Math.sin(p.yaw);
-    const fwdVel = -p.velocity.x * sy - p.velocity.z * cy;
-    const latVel = p.velocity.x * cy - p.velocity.z * sy;
-    const ax = (p.velocity.x - this.prevVel.x) * invDt;
-    const az = (p.velocity.z - this.prevVel.z) * invDt;
-    this.prevVel.copy(p.velocity);
-    const ak = damp(12, dt);
-    this.accel.x += (clamp(-ax * sy - az * cy, -60, 60) - this.accel.x) * ak; // forward accel
-    this.accel.y += (clamp(ax * cy - az * sy, -60, 60) - this.accel.y) * ak; // lateral accel
-    const moving = clamp(Math.hypot(fwdVel, latVel) / 6, 0, 1.6);
-    m.latVel = latVel;
+    const moving = clamp(Math.hypot(p.velocity.x, p.velocity.z) / 6, 0, 1.6);
 
     // --- ADS: a spring whose speed comes from handling, stamina and movement ---
     const fatigue = 1 - input.stamina;
@@ -613,81 +516,13 @@ export class Viewmodel {
     m.sideTransit = 1 - Math.abs(m.sideV);
     this.switchingShoulder = Math.abs(m.sideV) < 0.75;
 
-    // --- Inertia: lag ≈ turn rate × inertia time; the follow spring settles it ---
+    // --- Look rate (rad/s), lightly smoothed: drives the camera inertia ---
     const rate = this.lookRate;
     const rk = damp(25, dt);
     rate.x += (input.lookPitch * invDt - rate.x) * rk;
     rate.y += (input.lookYaw * invDt - rate.y) * rk;
-    const inertiaTime = h.inertiaTime * (1 - K.inertia * ads);
-    const maxLag = 6 * DEG;
-    const lag = this.inertia;
-    lag.stiffness = h.followFreq * h.followFreq;
-    lag.damping = 2 * h.followZeta * h.followFreq;
-    lag.target.set(
-      clamp(-rate.x * inertiaTime, -maxLag, maxLag),
-      clamp(-rate.y * inertiaTime, -maxLag, maxLag),
-      -(latVel / 6) * 2.5 * DEG * (1 - ads * K.strafeRoll),
-    );
-    m.iner = lag.update(dt);
-    this.inertiaDeg.set(m.iner.x / DEG, m.iner.y / DEG);
 
-    // --- Linear inertia: the gun lags behind body acceleration (stops, direction changes) ---
-    const lin = this.linear;
-    lin.stiffness = (h.followFreq * 0.8) ** 2;
-    lin.damping = 2 * 0.55 * h.followFreq * 0.8;
-    const linScale = h.moment / 4.5;
-    lin.target.set(
-      clamp(-this.accel.y * 0.0009 * linScale, -0.025, 0.025),
-      clamp(-Math.abs(this.accel.x) * 0.0002 * linScale, -0.01, 0),
-      clamp(this.accel.x * 0.0011 * linScale, -0.03, 0.03),
-    );
-    m.linP = lin.update(dt);
-
-    // --- Procedural sway: breathing + hand tremor + slow drift, worse when tired ---
-    const stance = p.crouching ? 0.7 : 1;
-    const swayAmp = h.swayScale * stance * (1 - K.sway * ads);
-    const breathRate = 0.22 + 0.25 * fatigue;
-    this.breathPhase += Math.PI * 2 * breathRate * dt;
-    const settle = 1 + Math.min(3, Math.abs(this.ads.velocity) * 0.6);
-    const t = this.time;
-    const breathX = Math.sin(this.breathPhase) * 0.1 * (1 + 1.6 * fatigue);
-    const breathY = Math.sin(this.breathPhase * 0.5 + 1.3) * 0.04 * (1 + 1.6 * fatigue);
-    const tremor = 0.035 * (1 + 3 * fatigue * fatigue) * settle;
-    const drift = 0.18 * (1 + 0.6 * (1 - ads));
-    m.swayX = swayAmp * (breathX + this.nTremorX.sample(t * 2.6) * tremor + this.nDriftX.sample(t * 0.18) * drift) * DEG;
-    m.swayY = swayAmp * (breathY + this.nTremorY.sample(t * 2.9 + 40) * tremor + this.nDriftY.sample(t * 0.16 + 80) * drift) * DEG;
-    this.swayDeg.set(m.swayX / DEG, m.swayY / DEG);
-
-    // --- Walk bob (direction-aware) ---
-    m.sprintBlendPrev = this.sprintBlend;
-    const sprinting = p.sprinting && weapon.state !== 'reloading';
-    this.sprintBlend += ((sprinting ? 1 : 0) - this.sprintBlend) * damp(10, dt);
-    this.crouchBlend += ((p.crouching ? 1 : 0) - this.crouchBlend) * damp(10, dt);
-    const back = fwdVel < -0.5 ? 0.7 : 1;
-    const bob = (1 + 0.6 * this.sprintBlend) * moving * (p.grounded ? 1 : 0) * back * (1 - 0.35 * this.crouchBlend);
-    const bobShift = bob * (1 - K.bobShift * ads);
-    const bobTurn = bob * (1 - K.bobTurn * ads);
-    const ph = p.bobPhase;
-    m.bobX = Math.sin(ph) * 0.007 * bobShift;
-    m.bobY = -Math.abs(Math.cos(ph)) * 0.008 * bobShift + 0.004 * bobShift;
-    m.bobRoll = Math.sin(ph) * (1.3 + Math.abs(latVel) * 0.15) * DEG * bobTurn;
-    m.bobYaw = Math.sin(ph) * 0.7 * DEG * bobTurn;
-    m.bobPitch = Math.cos(ph * 2) * 0.35 * DEG * bobTurn;
-
-    // --- Air / landing ---
-    const targetAir = p.grounded ? 0 : clamp(-p.velocity.y * 0.0025, -0.02, 0.03);
-    this.airOffset += (targetAir - this.airOffset) * damp(10, dt);
-    m.landY = this.land.update(dt);
-    m.landPitch = this.landRot.update(dt) * DEG * 3;
-
-    // --- Equip / holster ---
-    let equipDown = 0;
-    if (weapon.state === 'equipping') equipDown = 1 - (1 - Math.pow(1 - weapon.stateProgress, 3));
-    else if (weapon.state === 'holstering') equipDown = weapon.stateProgress * weapon.stateProgress;
-    else if (weapon.state === 'holstered') equipDown = 1;
-    m.equipDown = equipDown;
-
-    // --- Procedural reload / cycling ---
+    // --- The weapon's own animation: reloads, bolt / pump work (hands, magazine, bolt) ---
     this.animator.update(weapon, this.pose);
 
     // --- Wall compression: slide back, then tilt up into a high-ready ---
@@ -700,18 +535,36 @@ export class Viewmodel {
     m.pull = Math.min(wc, 0.5) * 2 * Math.min(0.3 * weapon.data.handling.length, 0.26);
     m.raise = smoothstep((wc - 0.35) / 0.65);
 
-    // --- Recoil + jolts ---
-    m.rp = this.recoilPos.update(dt);
-    const rr = this.recoilRot.update(dt);
-    rr.x = clamp(rr.x, -6 * DEG, (14 - 10 * rearwardShare(ads)) * DEG);
-    rr.y = clamp(rr.y, -6 * DEG, 6 * DEG);
-    m.rr = rr;
-    m.jr = this.jolt.update(dt);
-    this.recoilDeg.set(rr.x / DEG, -rr.y / DEG);
+    // --- Every procedural layer (motion/) ---
+    m.sprintBlendPrev = this.stack.sprintBlend;
+    this.stack.update({
+      dt,
+      time: this.time,
+      player: p,
+      weapon,
+      rig: this.rig!,
+      handling: h,
+      taste: this.rig!.view?.profile.motion ?? NEUTRAL_TASTE,
+      K,
+      ads,
+      adsEase: m.adsEase,
+      adsRaw: this.ads.value,
+      adsVel: this.ads.velocity,
+      adsTarget: input.adsTarget,
+      lookRate: rate,
+      fatigue,
+      pose: this.pose,
+    });
+    m.rp = this.stack.recoil.rp;
+    m.rr = this.stack.recoil.rr;
+    m.sb = this.stack.sprintBlend * (1 - ads);
 
-    // --- Sprint pose share, crouch ---
-    m.sb = this.sprintBlend * (1 - ads);
-    m.crouchY = -0.012 * this.crouchBlend * (1 - ads);
+    // --- Readouts ---
+    const lag = this.stack.cameraInertia.lag;
+    this.inertiaDeg.set(lag.x / DEG, lag.y / DEG);
+    const sw = this.stack.sway.rot;
+    this.swayDeg.set(sw.x / DEG, sw.y / DEG);
+    this.recoilDeg.set(m.rr.x / DEG, -m.rr.y / DEG);
   }
 
   /** Old automatic placement: every layer summed into one pose (weapons without a view profile). */
@@ -726,7 +579,7 @@ export class Viewmodel {
     // --- Base position: shouldered (point fire) ↔ sights on the eye ---
     const pull = this.hipPull();
     const pos = this.tmp.set(this.hipPos.x * sideV * pull, this.hipPos.y * pull, this.hipPos.z).lerp(this.adsPos, adsEase);
-    pos.y -= Math.sin(adsEase * Math.PI) * 0.012 + sideTransit * 0.09;
+    pos.y -= sideTransit * 0.09;
 
     // --- Aim alignment: point the bore at the aim point (+ zero drop compensation) ---
     const muzzleRest = this.v.copy(pos).add(rig.muzzle.position);
@@ -753,19 +606,21 @@ export class Viewmodel {
     this.zero.pitch = borePitch - alignPitch;
     this.zero.yaw = boreYaw - alignYaw;
 
-    // --- Every layer summed ---
-    const { iner, linP, jr, rr, rp, sb } = m;
-    const pose = this.pose;
+    // --- Every layer summed: the world's pushes as they come, the gun's own moves mirrored ---
+    const { rr, rp, sb } = m;
+    const W = this.stack.world;
+    const S = this.stack.sway;
+    const O = this.stack.own;
     const sp = SPRINT_POSE[d.animSet];
-    pos.x += iner.y * 0.06 - m.latVel * 0.001 * (1 - ads) + linP.x + m.bobX + sp.pos[0] * sb * sideV + pose.pos.x * sideSign - m.raise * 0.03 * sideV;
-    pos.y += iner.x * 0.05 + linP.y + m.bobY + sp.pos[1] * sb + pose.pos.y + this.airOffset + m.landY + m.crouchY - 0.28 * m.equipDown + m.raise * 0.05;
-    pos.z += linP.z + sp.pos[2] * sb + pose.pos.z + 0.04 * m.equipDown + m.pull;
+    pos.x += W.pos.x + S.pos.x + sp.pos[0] * sb * sideV + O.pos.x * sideSign - m.raise * 0.03 * sideV;
+    pos.y += W.pos.y + S.pos.y + sp.pos[1] * sb + O.pos.y + m.raise * 0.05;
+    pos.z += W.pos.z + S.pos.z + sp.pos[2] * sb + O.pos.z + m.pull;
     this.pivot.position.copy(pos);
 
     this.euler.set(
-      alignPitch + iner.x + m.swayX + m.bobPitch + m.landPitch + sp.rot[0] * sb + pose.rot.x + jr.x - 0.9 * m.equipDown + m.raise * 0.95 + (hipRot ? hipRot[0] * DEG * hipK : 0),
-      alignYaw + iner.y + m.swayY + m.bobYaw + (sp.rot[1] * sb + pose.rot.y) * sideSign + jr.y + 0.15 * m.equipDown * sideSign - linP.x * 0.4 + (hipRot ? hipRot[1] * DEG * hipK * sideSign : 0),
-      iner.y * 0.6 + iner.z + m.bobRoll + (sp.rot[2] * sb + pose.rot.z) * sideSign + jr.z + 0.35 * m.equipDown * sideSign + m.raise * 0.25 * sideV +
+      alignPitch + W.rot.x + S.rot.x + sp.rot[0] * sb + O.rot.x + m.raise * 0.95 + (hipRot ? hipRot[0] * DEG * hipK : 0),
+      alignYaw + W.rot.y + S.rot.y + (sp.rot[1] * sb + O.rot.y) * sideSign + (hipRot ? hipRot[1] * DEG * hipK * sideSign : 0),
+      W.rot.z + S.rot.z + (sp.rot[2] * sb + O.rot.z) * sideSign + m.raise * 0.25 * sideV +
         // Hip carry: the gun sits canted, top toward the centre (gone when aimed or sprinting).
         (hipRot ? hipRot[2] * DEG * hipK : HIP_CANT * (1 - adsEase) * (1 - sb)) * sideSign +
         (handAds ? adsRot![2] * DEG * adsEase : 0),
@@ -848,35 +703,23 @@ export class Viewmodel {
     const m = this.m;
     const K = this.cut;
     const mot = view.profile.motion;
-    const { ads, adsEase, sideSign: s, iner, linP, jr, rr, rp } = m;
+    const { ads, adsEase, sideSign: s, rr, rp } = m;
     const side = Math.abs(m.sideV);
     const bp = this.baseP;
     const bq = this.baseQ;
-    const pose = this.pose;
-    const inr = mot.inertia;
-    const bob = mot.bob;
     const rc = mot.recoil;
-    const sway = withSway ? mot.sway : 0;
-    const lin = (1 - K.linear * ads) * inr;
-    const shift = (1 - K.inertiaShift * ads) * inr;
-    const roll = (1 - K.inertiaRoll * ads) * inr;
-    const land = 1 - K.landing * ads;
-    const jolt = 1 - K.jolt * ads;
-    // Bolt work and reloads aimed (a bolt action, a shell gun): the gun stays on the eye line.
-    const poseTurn = 1 - K.poseTurn * ads;
-    const poseShift = 1 - K.poseShift * ads;
-    const poseR = pose.rot;
-    const poseP = pose.pos;
+    const W = this.stack.world;
+    const S = withSway ? this.stack.sway : NO_MOTION;
+    const O = this.stack.own;
 
-    const pitch = iner.x * inr + m.swayX * sway + m.bobPitch * bob + m.landPitch * land + jr.x * jolt + poseR.x * poseTurn - 0.9 * m.equipDown + m.raise * 0.95;
-    const yaw = (iner.y * inr + m.swayY * sway + m.bobYaw * bob + jr.y * jolt - linP.x * 0.4 * lin) * s + poseR.y * poseTurn + 0.15 * m.equipDown;
-    const rollA = (iner.y * 0.6 * roll + iner.z * inr + m.bobRoll * bob + jr.z * jolt) * s + poseR.z * poseTurn + 0.35 * m.equipDown + m.raise * 0.25 * side;
+    const pitch = W.rot.x + S.rot.x + O.rot.x + m.raise * 0.95;
+    const yaw = (W.rot.y + S.rot.y) * s + O.rot.y;
+    const rollA = (W.rot.z + S.rot.z) * s + O.rot.z + m.raise * 0.25 * side;
     const qM = this.t.q1.setFromEuler(this.euler.set(pitch, yaw, rollA, 'YXZ'));
     const shiftV = this.t.a.set(
-      (iner.y * 0.06 * shift - m.latVel * 0.001 * (1 - ads) + linP.x * lin + m.bobX * bob) * s + poseP.x * poseShift - m.raise * 0.03 * side,
-      iner.x * 0.05 * shift + linP.y * lin + m.bobY * bob + poseP.y * poseShift + this.airOffset * (1 - K.air * ads) + m.landY * land + m.crouchY - 0.28 * m.equipDown + m.raise * 0.05 -
-        Math.sin(adsEase * Math.PI) * 0.012 - m.sideTransit * 0.09,
-      linP.z * lin + poseP.z * poseShift + 0.04 * m.equipDown + m.pull,
+      (W.pos.x + S.pos.x) * s + O.pos.x - m.raise * 0.03 * side,
+      W.pos.y + S.pos.y + O.pos.y + m.raise * 0.05 - m.sideTransit * 0.09,
+      W.pos.z + S.pos.z + O.pos.z + m.pull,
     );
 
     // Recoil, in the gun's own frame. The shoulder stops the gun: rearward travel is capped,
@@ -985,7 +828,7 @@ export class Viewmodel {
    * Calibration only: put hands `def` (or the current ones, re-placed) on the weapon in hand,
    * a procedural gun's (its rig's own space). Reload paths start from the new grips.
    */
-  setHands(def?: WeaponHands): void {
+  setHands(def?: AnyWeaponHands): void {
     const rig = this.rig;
     if (!rig) return;
     if (def) attachHands(rig, def);

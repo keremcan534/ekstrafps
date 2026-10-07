@@ -1,84 +1,55 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { clone as cloneSkinned } from 'three/examples/jsm/utils/SkeletonUtils.js';
-import config from '../config/hands.json';
 import type { WeaponRig } from './WeaponModels';
 import { smoothstep } from '../core/math';
-import { FINGER_NAMES, approachPose, copyPose, flatPose, gripQuaternion, lerpFinger, type FingerName, type FingerPose, type HandAction, type HandPose } from './HandPose';
+import { FINGERS, SIDES, bindArmRig, fingerBoneIndex, type ArmBones, type ArmRig, type ArmRigReport, type FingerName, type Side } from './hands/ArmRig';
+import { TwoBoneArmIK } from './hands/ArmIK';
+import { FingerPoser, type TriggerState } from './hands/FingerPoser';
+import { HandDebug, type HandDebugArm } from './hands/HandDebug';
+import { handConfig, type HandsConfig } from './hands/HandsConfig';
+import { poseQuats } from './hands/HandProfile';
+import type { HandAction, HandPose } from './HandPose';
 
-type V3 = [number, number, number];
+export { handConfig, type HandsConfig };
 
 /**
- * The player's first-person arms: the glove model (public/hands/arms.glb, skinned to a hand
- * skeleton by scripts/rig-arms.mjs) on the weapon's grips. The glove belongs to the skeleton;
- * the hands hold the weapon, never the other way round.
+ * The player's first-person arms: ONE canonical arm skeleton (hands/ArmRig.ts) wearing the glove
+ * model (public/hands/arms.glb, skinned by scripts/rig-arms.mjs), holding the weapon in hand.
  *
- * Per hand, every frame:
- *   1. Target: the weapon's RightHandGrip / LeftHandGrip (position + rotation, from the view
- *      profile's `hands`), blended by the hand's IK weight with where the weapon's animation
- *      has the hand (rig.leftHand / rig.rightHand, turned to its reload / interaction
- *      rotation). Normal holding: weight 1. A reload takes the weight to 0 and gives it back;
- *      the weight itself eases, so the hand never jumps.
- *   2. The Hand bone: the glove's `palmGrip` point (hands.json, hand space) on the target.
- *   3. Two-bone IK, shoulder → elbow → wrist (aimed, the firing shoulder moves onto the
- *      stock's butt, where a real one is). The elbow points its `elbow` way, turned (by
- *      `natural`) toward where the forearm would continue the hand (`forearm`, hand space);
- *      the forearm rolls with the hand, so the wrist bends but never twists.
- *   4. Fingers: the action's pose (grip / open / reload / interaction, HandPose.ts), eased in;
- *      on the grip the right index finger blends from `safe` to `ready` (aimed, or just fired)
- *      and presses to `pull` with each shot.
+ *   WEAPON          defines where the hands belong: RightHandTarget / LeftHandTarget, nodes of
+ *                   the weapon (HandGrips.ts), so its procedural motion carries them.
+ *   ANIMATION       WeaponAnimator (procedural keyframes; nothing here uses an AnimationMixer)
+ *                   moves the hand points for reloads and bolt work and says, per hand, its IK
+ *                   weight on the weapon's target (rig.handIk: 1 holding, 0 the animation has
+ *                   it) and what its fingers do (rig.handPose).
+ *   ARM IK          gets each wrist to its target (hands/ArmIK.ts: analytic two-bone).
+ *   GRIP POSES      make the fingers right (hands/FingerPoser.ts: library poses, slerped).
  *
- * Hidden on a weapon without hands (rig.hands: a view profile's, or a procedural gun's from
- * src/config/gunhands.json).
+ * Per hand, every frame, in this order (after all weapon motion, Viewmodel.update):
+ *   1. IK weight: the animation's, eased (a hand never teleports onto the weapon).
+ *   2. Target: the weapon's hand target and the animation's hand point, both read in arm space,
+ *      blended by the weight (position lerp, orientation slerp). A point that carries no turn
+ *      of its own (schema-1 weapons, path animations) turns by what the hand does, eased.
+ *   3. The Hand bone on it (schema 1: the target is the palm, the wrist is palmGrip behind).
+ *   4. Arm IK, the firing shoulder moving onto the stock's butt while aimed.
+ *   5. Fingers: the grip pose (+ corrections, trigger finger SAFE / READY / PRESS) or the
+ *      animation's pose, slerped.
+ *   6. Matrices. Nothing writes these bones after this.
+ *
+ * Hidden on a weapon without hands (rig.hands).
  */
-type Side = 'right' | 'left';
-const SIDES: Side[] = ['right', 'left'];
-const BONE_SIDE = { right: 'Right', left: 'Left' } as const;
-const BONE_FINGER: Record<FingerName, string> = { thumb: 'Thumb', index: 'Index', middle: 'Middle', ring: 'Ring', pinky: 'Pinky' };
-
-interface ArmSettings {
-  /** Aim space (m). */
-  shoulder: V3;
-  /**
-   * Aimed, the shoulder is where the stock sits: this offset (aim space, m) from the
-   * weapon's butt point (the firing side only; the support shoulder stays put).
-   */
-  aimShoulder?: V3;
-  /** Aim space: the way the elbow points. */
-  elbow: V3;
-  /**
-   * Hand space: the forearm's natural line out of the wrist (toward the elbow), and how much
-   * (0…1) it turns the elbow from `elbow` toward where that line would put it.
-   */
-  forearm: V3;
-  natural: number;
-  /** The elbow never points higher than this (the pole's aim-space y, −1 straight down … 1 up). */
-  elbowUp: number;
-}
-export interface HandsConfig {
-  model: string;
-  palmGrip: V3;
-  sleeve: { radius: [number, number]; color: string };
-  right: ArmSettings;
-  left: ArmSettings;
-  /** Easing time constants (s); `pull`: how long a shot keeps the trigger pressed. */
-  timing: { fingers: number; ik: number; trigger: number; pull: number };
-  open: HandPose;
-  reload: { rotation: V3; pose: HandPose };
-  interaction: { rotation: V3; pose: HandPose };
-}
-const CONFIG = config as unknown as HandsConfig;
-
-/** The arms' settings (the calibration page edits them live; the game only reads them). */
-export const handConfig = (): HandsConfig => CONFIG;
 
 let source: THREE.Object3D | null = null;
+let reported = false;
 
 /** Load the glove model (missing: no arms). Never rejects. */
 export async function loadArms(): Promise<void> {
+  if (!handConfig().enabled) return;
   try {
-    source = (await new GLTFLoader().loadAsync(CONFIG.model)).scene;
-  } catch {
+    source = (await new GLTFLoader().loadAsync(handConfig().model)).scene;
+  } catch (e) {
+    console.warn(`[hands] ${handConfig().model} did not load: no first-person arms`, e);
     source = null;
   }
 }
@@ -95,27 +66,13 @@ export interface ArmsInput {
 /** Calibration overrides: hold a hand state still to look at it. */
 export interface ArmsPreview {
   action?: HandAction;
-  /** Trigger finger: 0 safe … 1 ready; `pull` 0…1 on top. */
+  /** Trigger finger: 0 SAFE … 1 READY; `pull` 0…1 the press on top. */
   trigger?: number;
   pull?: number;
+  /** IK weight on the weapon's target, per hand (instead of the animation's). */
+  ik?: Partial<Record<Side, number>>;
   /** No easing: every pose and weight lands this frame. */
   instant?: boolean;
-}
-
-interface Arm {
-  upper: THREE.Bone;
-  fore: THREE.Bone;
-  hand: THREE.Bone;
-  fingers: Record<FingerName, THREE.Bone[]>;
-  rest: Map<THREE.Bone, THREE.Quaternion>;
-  upperLen: number;
-  foreLen: number;
-  /** The fingers as they are (eased) and this frame's target. */
-  pose: HandPose;
-  target: HandPose;
-  ik: number;
-  sleeve: THREE.Mesh;
-  gizmo: THREE.Group;
 }
 
 /** Measured each frame (the calibration page and the checks read it). */
@@ -123,19 +80,46 @@ export interface ArmStats {
   /** Wrist: angle between forearm and hand (deg), and any twist between them (deg). */
   wristBendDeg: number;
   wristTwistDeg: number;
-  /** How far out of reach the grip is (m): the upper arm's sleeve stretches by that. */
+  /** How far out of the arm's comfortable reach the target is (m): the upper arm's sleeve takes it. */
   reachM: number;
-  /** IK weight on the grip. */
+  /** IK weight on the weapon's target. */
   ik: number;
   action: HandAction;
+  /** The wrist against the weapon's target while holding it (IK ≥ 0.999; else -1): mm and deg. */
+  targetErrMm: number;
+  targetErrDeg: number;
+  /** How far the elbow's direction turned this frame (deg). */
+  poleTurnDeg: number;
+  /** The trigger finger (right hand), and its blend SAFE (0) … TRIGGER_READY (1). */
+  trigger: TriggerState;
+  triggerBlend: number;
+}
+
+interface Arm {
+  bones: ArmBones;
+  solver: TwoBoneArmIK;
+  fingers: FingerPoser;
+  /** The upper arm's parent frame in arm space, inverted (constant). */
+  upperParentInv: THREE.Matrix4;
+  weight: number;
+  /** The hand's turn (weapon space) when its point carries none: eased toward the action's. */
+  turn: THREE.Quaternion;
+  turnSet: boolean;
+  /** This frame's hand frame (arm space, the Hand bone) and the weapon's wish for it. */
+  want: THREE.Matrix4;
+  onTarget: THREE.Matrix4;
+  sleeve: THREE.Mesh;
+  /** Cached for the dev tools. */
+  byFinger: Record<FingerName, THREE.Bone[]>;
 }
 
 const Y = new THREE.Vector3(0, 1, 0);
+const ONE = new THREE.Vector3(1, 1, 1);
 
 /**
- * The upper arm's sleeve: the glove model ends at the elbow, so the upper arm is a tube in
- * the forearm sleeve's camo (its tones sampled off the model's texture: dark grey, lighter
- * blotches, a fabric weave). Deterministic, made once.
+ * The upper arm's sleeve: the glove model ends at the elbow, so the upper arm is a tube in the
+ * forearm sleeve's camo (tones sampled off the model's texture: dark grey, lighter blotches, a
+ * fabric weave). Deterministic, made once.
  */
 let sleeveMap: THREE.CanvasTexture | null = null;
 function sleeveTexture(): THREE.CanvasTexture {
@@ -145,21 +129,24 @@ function sleeveTexture(): THREE.CanvasTexture {
   c.width = c.height = N;
   const g = c.getContext('2d')!;
   let seed = 1234567;
-  const rnd = () => ((seed = (seed * 1664525 + 1013904223) >>> 0) / 4294967296);
+  const rnd = () => (seed = (seed * 1664525 + 1013904223) >>> 0) / 4294967296;
   g.fillStyle = 'rgb(41,45,48)';
   g.fillRect(0, 0, N, N);
   // Blotches, drawn wrapped so the tile repeats without a seam.
   for (let i = 0; i < 140; i++) {
-    const x = rnd() * N, y = rnd() * N, r = 8 + rnd() * 26;
+    const x = rnd() * N,
+      y = rnd() * N,
+      r = 8 + rnd() * 26;
     const v = rnd();
     const [cr, cg, cb] = v < 0.45 ? [24, 26, 28] : v < 0.8 ? [58, 61, 64] : [74, 77, 82];
-    for (const dx of [-N, 0, N]) for (const dy of [-N, 0, N]) {
-      const grad = g.createRadialGradient(x + dx, y + dy, 0, x + dx, y + dy, r);
-      grad.addColorStop(0, `rgba(${cr},${cg},${cb},0.55)`);
-      grad.addColorStop(1, `rgba(${cr},${cg},${cb},0)`);
-      g.fillStyle = grad;
-      g.fillRect(x + dx - r, y + dy - r, r * 2, r * 2);
-    }
+    for (const dx of [-N, 0, N])
+      for (const dy of [-N, 0, N]) {
+        const grad = g.createRadialGradient(x + dx, y + dy, 0, x + dx, y + dy, r);
+        grad.addColorStop(0, `rgba(${cr},${cg},${cb},0.55)`);
+        grad.addColorStop(1, `rgba(${cr},${cg},${cb},0)`);
+        g.fillStyle = grad;
+        g.fillRect(x + dx - r, y + dy - r, r * 2, r * 2);
+      }
   }
   // Weave: fine light and dark threads both ways.
   for (let i = 0; i < N; i += 2) {
@@ -178,131 +165,117 @@ function sleeveTexture(): THREE.CanvasTexture {
 
 export class FirstPersonArms {
   readonly group = new THREE.Group();
-  /** Grip gizmos: each grip's forward (blue) and up (green, the back of the hand). */
-  showGizmos = false;
   preview: ArmsPreview = {};
   readonly stats: Record<Side, ArmStats> = {
-    right: { wristBendDeg: 0, wristTwistDeg: 0, reachM: 0, ik: 1, action: 'grip' },
-    left: { wristBendDeg: 0, wristTwistDeg: 0, reachM: 0, ik: 1, action: 'grip' },
+    right: { wristBendDeg: 0, wristTwistDeg: 0, reachM: 0, ik: 1, action: 'grip', targetErrMm: 0, targetErrDeg: 0, poleTurnDeg: 0, trigger: 'SAFE', triggerBlend: 0 },
+    left: { wristBendDeg: 0, wristTwistDeg: 0, reachM: 0, ik: 1, action: 'grip', targetErrMm: 0, targetErrDeg: 0, poleTurnDeg: 0, trigger: 'SAFE', triggerBlend: 0 },
   };
-  private model: THREE.Object3D | null = null;
+  /** What binding the canonical skeleton found (errors: no arms; warnings: asset problems). */
+  readonly rigReport: ArmRigReport = { errors: [], warnings: [] };
+  readonly debug: HandDebug;
+  private rig: ArmRig | null = null;
   private arms: Partial<Record<Side, Arm>> = {};
   private trigger = 0;
   private butt = new THREE.Vector3();
-  private ads = 0;
-  /** A shouldered weapon (not a pistol): aimed, the firing shoulder goes behind its butt. */
-  private shouldered = true;
   private sleeveMat = new THREE.MeshStandardMaterial({ roughness: 1, metalness: 0, side: THREE.DoubleSide });
   private t = {
     inv: new THREE.Matrix4(),
     m: new THREE.Matrix4(),
     m2: new THREE.Matrix4(),
-    hand: new THREE.Matrix4(),
-    upper: new THREE.Matrix4(),
-    fore: new THREE.Matrix4(),
-    pg: new THREE.Vector3(),
-    pa: new THREE.Vector3(),
-    p: new THREE.Vector3(),
-    s: new THREE.Vector3(),
-    e: new THREE.Vector3(),
-    w: new THREE.Vector3(),
-    d: new THREE.Vector3(),
-    pole: new THREE.Vector3(),
-    hint: new THREE.Vector3(),
-    x: new THREE.Vector3(),
-    y: new THREE.Vector3(),
-    z: new THREE.Vector3(),
-    sc: new THREE.Vector3(),
-    qg: new THREE.Quaternion(),
-    qa: new THREE.Quaternion(),
+    pw: new THREE.Vector3(),
     qw: new THREE.Quaternion(),
+    pg: new THREE.Vector3(),
+    qg: new THREE.Quaternion(),
+    pa: new THREE.Vector3(),
+    qa: new THREE.Quaternion(),
     q: new THREE.Quaternion(),
-    eu: new THREE.Euler(0, 0, 0, 'ZXY'),
-    index: [[0, 0, 0], [0, 0, 0], [0, 0, 0]] as FingerPose,
+    s: new THREE.Vector3(),
+    v: new THREE.Vector3(),
+    sc: new THREE.Vector3(),
   };
+  private debugArms: Record<Side, HandDebugArm> | null = null;
+  /** The weapon the arms held last frame: a new one is taken already gripped (it comes in off-screen). */
+  private lastRig: WeaponRig | null = null;
 
   constructor() {
     this.group.name = 'Arms';
     this.group.visible = false;
+    this.debug = new HandDebug(this.group, null);
     if (!source) return;
     const model = cloneSkinned(source);
     model.traverse((o) => {
       o.frustumCulled = false;
     });
-    this.model = model;
+    const rig = bindArmRig(model, this.rigReport);
+    if (!reported) {
+      reported = true;
+      for (const e of this.rigReport.errors) console.error(`[hands] ${handConfig().model}: ${e}`);
+      for (const w of this.rigReport.warnings) console.warn(`[hands] ${handConfig().model}: ${w}`);
+    }
+    if (!rig) return;
+    this.rig = rig;
     this.group.add(model);
-    this.sleeveMat.color.set(CONFIG.sleeve.color);
+    this.group.updateMatrixWorld(true);
+    this.debug = new HandDebug(this.group, model);
+    // In the game: `?handdebug` draws the targets, elbow directions and hand axes.
+    if (typeof location !== 'undefined' && new URLSearchParams(location.search).has('handdebug')) this.debug.enabled = true;
+    const C = handConfig();
+    this.sleeveMat.color.set(C.sleeve.color);
     this.sleeveMat.map = sleeveTexture();
-    const bone = (n: string) => {
-      const b = model.getObjectByName(n) as THREE.Bone | undefined;
-      if (!b) throw new Error(`arms.glb: no bone ${n}`);
-      return b;
-    };
     for (const side of SIDES) {
-      const S = BONE_SIDE[side];
-      const fingers = {} as Record<FingerName, THREE.Bone[]>;
-      const rest = new Map<THREE.Bone, THREE.Quaternion>();
-      for (const f of FINGER_NAMES) {
-        fingers[f] = [1, 2, 3].map((i) => bone(`${S}${BONE_FINGER[f]}0${i}`));
-        for (const b of fingers[f]) rest.set(b, b.quaternion.clone());
-      }
-      const upper = bone(`${S}UpperArm`);
-      const fore = bone(`${S}ForeArm`);
-      const hand = bone(`${S}Hand`);
-      const sleeve = new THREE.Mesh(new THREE.CylinderGeometry(CONFIG.sleeve.radius[1], CONFIG.sleeve.radius[0], 1, 20, 1, true).translate(0, 0.5, 0), this.sleeveMat);
+      const bones = rig.bones[side];
+      const sleeve = new THREE.Mesh(new THREE.CylinderGeometry(C.sleeve.radius[1], C.sleeve.radius[0], 1, 20, 1, true).translate(0, 0.5, 0), this.sleeveMat);
       sleeve.frustumCulled = false;
       this.group.add(sleeve);
-      const gizmo = new THREE.Group();
-      gizmo.add(new THREE.ArrowHelper(new THREE.Vector3(0, 1, 0), new THREE.Vector3(), 0.07, 0x3a7bff, 0.015, 0.008));
-      gizmo.add(new THREE.ArrowHelper(new THREE.Vector3(0, 0, -1), new THREE.Vector3(), 0.05, 0x48ff7a, 0.012, 0.007));
-      gizmo.add(new THREE.Mesh(new THREE.SphereGeometry(0.004, 10, 8), new THREE.MeshBasicMaterial({ color: 0xffe14a })));
-      gizmo.traverse((o) => {
-        o.renderOrder = 999;
-        o.frustumCulled = false;
-        const m = (o as THREE.Mesh).material as THREE.Material | undefined;
-        if (m) m.depthTest = false;
-      });
-      gizmo.visible = false;
-      this.group.add(gizmo);
+      const byFinger = {} as Record<FingerName, THREE.Bone[]>;
+      for (const f of FINGERS) byFinger[f] = [0, 1, 2].map((j) => bones.fingers[fingerBoneIndex(f, j)]);
       this.arms[side] = {
-        upper,
-        fore,
-        hand,
-        fingers,
-        rest,
-        upperLen: fore.position.length(),
-        foreLen: hand.position.length(),
-        pose: copyPose(CONFIG.open, flatPose()),
-        target: flatPose(),
-        ik: 1,
+        bones,
+        solver: new TwoBoneArmIK(bones.upperLen, bones.foreLen),
+        fingers: new FingerPoser(side, bones),
+        // The arms model hangs straight in arm space; the upper arm's parents are fixed.
+        upperParentInv: bones.upper.parent!.matrixWorld.clone().invert(),
+        weight: 1,
+        turn: new THREE.Quaternion(),
+        turnSet: false,
+        want: new THREE.Matrix4(),
+        onTarget: new THREE.Matrix4(),
         sleeve,
-        gizmo,
+        byFinger,
       };
     }
   }
 
-  /** A hand's bones (calibration: fitting fingers, measuring). */
-  bonesOf(side: Side): { hand: THREE.Bone; fingers: Record<FingerName, THREE.Bone[]> } | null {
-    const a = this.arms[side];
-    return a ? { hand: a.hand, fingers: a.fingers } : null;
+  /** The grip-target gizmos (the calibration page's old switch): the debug helpers' axes. */
+  get showGizmos(): boolean {
+    return this.debug.enabled;
+  }
+  set showGizmos(v: boolean) {
+    this.debug.enabled = v;
   }
 
-  /** Calibration: a hand's fingers straight onto `pose` (no easing), matrices updated. */
+  /** A hand's bones (dev tools: measuring, fitting). */
+  bonesOf(side: Side): { hand: THREE.Bone; fingers: Record<FingerName, THREE.Bone[]> } | null {
+    const a = this.arms[side];
+    return a ? { hand: a.bones.hand, fingers: a.byFinger } : null;
+  }
+
+  /** Calibration (schema-1 tools): a hand's fingers straight onto a degree pose, matrices updated. */
   poseHand(side: Side, pose: Readonly<HandPose>): void {
     const arm = this.arms[side];
     if (!arm) return;
-    copyPose(pose, arm.pose);
-    this.poseFingers(arm, side, arm.pose.index);
-    arm.hand.updateMatrixWorld(true);
+    arm.fingers.snap(poseQuats(pose));
+    arm.bones.hand.updateMatrixWorld(true);
   }
 
   /** The glove mesh (checks: skinned vertices). */
   get gloves(): THREE.SkinnedMesh | null {
-    let m: THREE.SkinnedMesh | null = null;
-    this.model?.traverse((o) => {
-      if ((o as THREE.SkinnedMesh).isSkinnedMesh) m = o as THREE.SkinnedMesh;
-    });
-    return m;
+    return this.rig?.mesh ?? null;
+  }
+
+  /** The arm's IK solver (debug readouts: shoulder, elbow, pole). */
+  solverOf(side: Side): TwoBoneArmIK | null {
+    return this.arms[side]?.solver ?? null;
   }
 
   /**
@@ -310,151 +283,122 @@ export class FirstPersonArms {
    * current). Hidden without the rig's hands or the model.
    */
   update(dt: number, rig: WeaponRig | null, space: THREE.Object3D, input: ArmsInput): void {
-    const hands = rig?.hands?.def;
-    const show = !!hands && !!this.model && !!rig;
+    const h = rig?.hands;
+    const show = !!h && !!this.rig && !!rig;
     this.group.visible = show;
-    if (!show || !rig || !hands) return;
+    if (!show || !rig || !h) {
+      this.debug.hide();
+      return;
+    }
+    const C = handConfig();
+    const R = h.resolved;
     const t = this.t;
     const pv = this.preview;
-    const ease = (tau: number) => (pv.instant ? 1 : 1 - Math.exp(-dt / Math.max(1e-3, tau)));
+    // A weapon switch: the new weapon's grip, fingers and elbows land at once (no easing from
+    // the old weapon's, no elbow history), while it is still being drawn up out of view.
+    const switched = rig !== this.lastRig;
+    this.lastRig = rig;
+    if (switched) for (const side of SIDES) this.arms[side]!.solver.reset();
+    const instant = !!pv.instant || switched;
+    const ease = (tau: number) => (instant ? 1 : 1 - Math.exp(-dt / Math.max(1e-3, tau)));
     t.inv.copy(space.matrixWorld).invert();
-    // The weapon's turn in arm space (reload / interaction rotations are weapon space).
-    t.m.multiplyMatrices(t.inv, rig.root.matrixWorld).decompose(t.p, t.qw, t.sc);
-    // The butt in arm space: aimed, the firing shoulder sits behind it.
+    // The weapon in arm space: its turn (weapon-space orientations) and its butt.
+    t.m.multiplyMatrices(t.inv, rig.root.matrixWorld).decompose(t.pw, t.qw, t.sc);
     this.butt.copy(rig.butt).applyMatrix4(t.m);
-    this.ads = input.ads;
-    this.shouldered = rig.shellType !== 'pistol';
+    const shouldered = rig.shellType !== 'pistol';
 
-    // Trigger finger: ready when aimed or just fired; never sprinting or reloading.
+    // Trigger finger: READY when aimed or just fired; never sprinting or reloading. The press
+    // is the shot's own, on top.
     const ready = !input.reloading && input.sprint < 0.5 && (input.ads > 0.4 || input.sinceShot < 0.6) ? 1 : 0;
-    this.trigger += (ready - this.trigger) * ease(CONFIG.timing.trigger);
+    this.trigger += (ready - this.trigger) * ease(C.timing.trigger);
     const trig = pv.trigger ?? this.trigger;
-    const pulse = pv.pull ?? (input.sinceShot < 0.025 ? input.sinceShot / 0.025 : Math.max(0, 1 - (input.sinceShot - 0.025) / CONFIG.timing.pull));
+    const press = pv.pull ?? (input.sinceShot < 0.025 ? input.sinceShot / 0.025 : Math.max(0, 1 - (input.sinceShot - 0.025) / C.timing.pull));
 
     for (const side of SIDES) {
       const arm = this.arms[side]!;
-      const c = CONFIG[side];
+      const c = C[side];
       const action: HandAction = pv.action ?? rig.handPose[side];
-      // 1. Target: the grip, blended by the IK weight with the animated hand.
-      arm.ik += (rig.handIk[side] - arm.ik) * ease(CONFIG.timing.ik);
-      const grip = side === 'right' ? rig.hands!.right : rig.hands!.left;
-      t.m.multiplyMatrices(t.inv, grip.matrixWorld).decompose(t.pg, t.qg, t.sc);
-      (side === 'right' ? rig.rightHand : rig.leftHand).getWorldPosition(t.pa).applyMatrix4(t.inv);
-      const turn = action === 'reload' ? (hands.reload?.rotation ?? CONFIG.reload.rotation) : action === 'interaction' ? (hands.interaction?.rotation ?? CONFIG.interaction.rotation) : null;
-      if (turn) t.qa.copy(t.qw).multiply(gripQuaternion(turn, t.q));
-      else t.qa.copy(t.qg);
-      t.qa.slerp(t.qg, arm.ik);
-      t.pa.lerp(t.pg, arm.ik);
-      // 2. The Hand bone: palmGrip (hand space) on the target.
-      t.hand.compose(t.pa, t.qa, t.sc.set(1, 1, 1)).multiply(t.m2.makeTranslation(-CONFIG.palmGrip[0], -CONFIG.palmGrip[1], -CONFIG.palmGrip[2]));
-      arm.gizmo.visible = this.showGizmos;
-      if (this.showGizmos) {
-        arm.gizmo.position.copy(t.pg);
-        arm.gizmo.quaternion.copy(t.qg);
+      // 1. Who has the hand: the weapon's target (1) or the animation (0), eased.
+      arm.weight += ((pv.ik?.[side] ?? rig.handIk[side]) - arm.weight) * ease(C.timing.ik);
+      // 2. The weapon's target and the animation's hand point, in arm space.
+      const target = side === 'right' ? h.right : h.left;
+      t.m.multiplyMatrices(t.inv, target.matrixWorld).decompose(t.pg, t.qg, t.sc);
+      const point = side === 'right' ? rig.rightHand : rig.leftHand;
+      t.m.multiplyMatrices(t.inv, point.matrixWorld).decompose(t.pa, t.qa, t.sc);
+      if (h.oriented[side]) {
+        // The point's own turn; kept (weapon space) for when a point without one takes over.
+        arm.turn.copy(t.qw).invert().multiply(t.qa);
+        arm.turnSet = true;
+      } else {
+        // No turn of its own: what the hand does says it (on the magazine, on the bolt; else
+        // the grip's), eased so a change of action never snaps the wrist.
+        const turn = action === 'reload' ? R.turn.reload : action === 'interaction' ? R.turn.interaction : t.q.copy(t.qw).invert().multiply(t.qg);
+        if (!arm.turnSet || instant) arm.turn.copy(turn);
+        else arm.turn.slerp(turn, ease(C.timing.turn));
+        arm.turnSet = true;
+        t.qa.copy(t.qw).multiply(arm.turn);
       }
-      // 3. Arm IK.
-      this.solveArm(arm, c, side);
-      // 4. Fingers.
-      const base: Readonly<HandPose> =
-        action === 'grip' ? (side === 'right' ? hands.rightPose : hands.leftPose) : action === 'open' ? CONFIG.open : action === 'reload' ? (hands.reload?.pose ?? CONFIG.reload.pose) : (hands.interaction?.pose ?? CONFIG.interaction.pose);
-      copyPose(base, arm.target);
-      if (side === 'right' && action === 'grip') lerpFinger(hands.trigger.safe, hands.trigger.ready, trig, arm.target.index);
-      approachPose(arm.pose, arm.target, ease(CONFIG.timing.fingers));
-      // The shot's press goes on top, uneased (a trigger is quick).
-      let index: Readonly<FingerPose> = arm.pose.index;
-      if (side === 'right' && action === 'grip' && pulse > 0) index = lerpFinger(arm.pose.index, hands.trigger.pull, pulse * trig, t.index);
-      this.poseFingers(arm, side, index);
-      this.stats[side].ik = arm.ik;
-      this.stats[side].action = action;
+      t.pa.lerp(t.pg, arm.weight);
+      t.qa.slerp(t.qg, arm.weight);
+      // 3. The Hand bone: the target stands for R.palm (hand space) — the wrist itself (schema 2).
+      t.m2.makeTranslation(-R.palm.x, -R.palm.y, -R.palm.z);
+      arm.want.compose(t.pa, t.qa, ONE).multiply(t.m2);
+      arm.onTarget.compose(t.pg, t.qg, ONE).multiply(t.m2);
+      // 4. Arm IK. Aimed, the firing shoulder goes behind the butt (shouldered weapons).
+      const S = t.s.set(c.shoulder[0], c.shoulder[1], c.shoulder[2]);
+      if (c.aimShoulder && input.ads > 0 && shouldered) S.lerp(t.v.copy(this.butt).add(t.sc.set(c.aimShoulder[0], c.aimShoulder[1], c.aimShoulder[2])), smoothstep(input.ads));
+      const sv = arm.solver;
+      sv.solve(S, arm.want, c, C.ik.softReach, instant ? 1 : ease(C.ik.poleSmoothing));
+      sv.apply(arm.bones.upper, arm.bones.fore, arm.bones.hand, arm.want, arm.upperParentInv);
+      // The sleeve: shoulder → elbow.
+      arm.sleeve.position.copy(sv.shoulder);
+      arm.sleeve.quaternion.setFromUnitVectors(Y, t.v.subVectors(sv.elbow, sv.shoulder).normalize());
+      arm.sleeve.scale.set(1, sv.shoulder.distanceTo(sv.elbow), 1);
+      // 5. Fingers.
+      arm.fingers.update(ease(C.timing.fingers), action, R, side === 'right' ? trig : 0, side === 'right' ? press : 0);
+      const st = this.stats[side];
+      st.wristBendDeg = sv.stats.wristBendDeg;
+      st.wristTwistDeg = sv.stats.wristTwistDeg;
+      st.reachM = sv.stats.reachM;
+      st.poleTurnDeg = sv.stats.poleTurnDeg;
+      st.ik = arm.weight;
+      st.action = action;
+      st.trigger = arm.fingers.trigger;
+      st.triggerBlend = side === 'right' ? trig : 0;
     }
+    // 6. Matrices: the bones as solved (nothing writes them after this).
     this.group.updateMatrixWorld(true);
-  }
-
-  private solveArm(arm: Arm, c: ArmSettings, side: Side): void {
-    const t = this.t;
-    const a = arm.upperLen;
-    const b = arm.foreLen;
-    const W = t.w.setFromMatrixPosition(t.hand);
-    const S = t.s.set(...c.shoulder);
-    if (c.aimShoulder && this.ads > 0 && this.shouldered) S.lerp(t.p.copy(this.butt).add(t.hint.set(...c.aimShoulder)), smoothstep(this.ads));
-    const st = this.stats[side];
-    // Out of reach (a viewmodel holds its gun further out than an arm): the arm goes straight
-    // and the upper arm (a plain sleeve, nothing skinned to it) takes the extra length; the
-    // shoulder stays off the screen and the glove's forearm never stretches.
-    let d = S.distanceTo(W);
-    const reach = (a + b) * 0.995;
-    st.reachM = Math.max(0, d - reach);
-    const dir = t.d.subVectors(W, S).normalize();
-    d = Math.max(d, Math.abs(a - b) + 1e-3);
-    // The elbow's way, turned toward the natural one (the forearm continuing out of the hand).
-    t.x.set(...c.forearm).transformDirection(t.hand);
-    const pole = t.pole.copy(W).addScaledVector(t.x, b).sub(S);
-    pole.addScaledVector(dir, -pole.dot(dir));
-    const hint = t.hint.set(...c.elbow);
-    hint.addScaledVector(dir, -hint.dot(dir)).normalize();
-    // As natural as the elbow can be without rising above `elbowUp`.
-    if (pole.lengthSq() < 1e-8) pole.copy(hint);
-    else {
-      pole.normalize();
-      t.z.copy(pole);
-      for (let w = c.natural; w >= 0; w -= 0.1) {
-        pole.copy(t.z).multiplyScalar(w).addScaledVector(hint, 1 - w).normalize();
-        if (pole.y <= c.elbowUp || w < 0.05) break;
-      }
-    }
-    const E = t.e;
-    if (d > reach) E.copy(W).addScaledVector(dir, -b);
-    else {
-      const cosA = THREE.MathUtils.clamp((a * a + d * d - b * b) / (2 * a * d), -1, 1);
-      E.copy(S).addScaledVector(dir, a * cosA).addScaledVector(pole, a * Math.sqrt(1 - cosA * cosA));
-    }
-
-    // Hand frame axes (columns of the hand matrix).
-    const hx = new THREE.Vector3().setFromMatrixColumn(t.hand, 0);
-    const hy = new THREE.Vector3().setFromMatrixColumn(t.hand, 1);
-    const hz = new THREE.Vector3().setFromMatrixColumn(t.hand, 2);
-    // Forearm: elbow → wrist, rolled with the hand (the wrist bends, never twists).
-    const fy = t.y.subVectors(W, E).normalize();
-    const fz = t.z.copy(hz).addScaledVector(fy, -hz.dot(fy));
-    if (fz.lengthSq() < 0.09) fz.copy(hx).cross(fy);
-    fz.normalize();
-    const fx = new THREE.Vector3().crossVectors(fy, fz);
-    t.fore.makeBasis(fx, fy, fz).setPosition(E);
-    // Upper arm: shoulder → elbow, its bend plane facing the elbow's way (stretched when out
-    // of reach: the bone is moved to the elbow's end, so its child sits at the elbow).
-    const uy = new THREE.Vector3().subVectors(E, S).normalize();
-    const uz = pole.clone().addScaledVector(uy, -pole.dot(uy));
-    if (uz.lengthSq() < 1e-6) uz.copy(hint).addScaledVector(uy, -hint.dot(uy));
-    uz.normalize();
-    t.upper.makeBasis(new THREE.Vector3().crossVectors(uy, uz), uy, uz).setPosition(t.x.copy(E).addScaledVector(uy, -a));
-
-    // Bones: the upper arm hangs in arm space (its parents are identity), the rest local.
-    arm.upper.position.setFromMatrixPosition(t.upper);
-    arm.upper.quaternion.setFromRotationMatrix(t.upper);
-    t.m.copy(t.upper).invert().multiply(t.fore).decompose(arm.fore.position, arm.fore.quaternion, t.sc);
-    t.m.copy(t.fore).invert().multiply(t.hand).decompose(arm.hand.position, arm.hand.quaternion, t.sc);
-    // The sleeve: shoulder → elbow.
-    arm.sleeve.position.copy(S);
-    arm.sleeve.quaternion.setFromUnitVectors(Y, uy);
-    arm.sleeve.scale.set(1, S.distanceTo(E), 1);
-
-    st.wristBendDeg = THREE.MathUtils.radToDeg(fy.angleTo(hy));
-    // Twist: the hand's palm against the forearm's, about the forearm.
-    const pz = hz.clone().addScaledVector(fy, -hz.dot(fy));
-    st.wristTwistDeg = pz.lengthSq() > 1e-6 ? THREE.MathUtils.radToDeg(pz.angleTo(fz)) : 0;
-  }
-
-  private poseFingers(arm: Arm, side: Side, index: Readonly<FingerPose>): void {
-    const t = this.t;
-    const m = side === 'right' ? 1 : -1;
-    const D = THREE.MathUtils.DEG2RAD;
-    for (const f of FINGER_NAMES) {
-      const joints = f === 'index' ? index : arm.pose[f];
-      arm.fingers[f].forEach((b, j) => {
-        const [curl, spread, twist] = joints[j];
-        t.eu.set(curl * D, twist * m * D, spread * m * D, 'ZXY');
-        b.quaternion.copy(arm.rest.get(b)!).multiply(t.q.setFromEuler(t.eu));
+    for (const side of SIDES) this.measure(side);
+    if (this.debug.enabled) {
+      const arms = (this.debugArms ??= {
+        right: { shoulder: new THREE.Vector3(), elbow: new THREE.Vector3(), hint: new THREE.Vector3(), pole: new THREE.Vector3(), hand: new THREE.Matrix4() },
+        left: { shoulder: new THREE.Vector3(), elbow: new THREE.Vector3(), hint: new THREE.Vector3(), pole: new THREE.Vector3(), hand: new THREE.Matrix4() },
       });
+      for (const side of SIDES) {
+        const a = this.arms[side]!;
+        const d = arms[side];
+        d.shoulder.copy(a.solver.shoulder);
+        d.elbow.copy(a.solver.elbow);
+        d.hint.copy(a.solver.hint);
+        d.pole.copy(a.solver.pole);
+        d.hand.copy(a.want);
+      }
+      this.debug.update({ right: h.right, left: h.left }, arms);
+    } else this.debug.hide();
+  }
+
+  /** The wrist as drawn against the weapon's target (holding it): the hands stay connected. */
+  private measure(side: Side): void {
+    const arm = this.arms[side]!;
+    const st = this.stats[side];
+    if (arm.weight < 0.999) {
+      st.targetErrMm = st.targetErrDeg = -1;
+      return;
     }
+    const t = this.t;
+    t.m.multiplyMatrices(t.inv, arm.bones.hand.matrixWorld).decompose(t.pa, t.qa, t.sc);
+    arm.onTarget.decompose(t.pg, t.qg, t.sc);
+    st.targetErrMm = t.pa.distanceTo(t.pg) * 1000;
+    st.targetErrDeg = THREE.MathUtils.radToDeg(2 * Math.acos(Math.min(1, Math.abs(t.qa.dot(t.qg)))));
   }
 }

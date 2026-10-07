@@ -3,6 +3,7 @@ import { gunSource } from './WeaponMeshes';
 import { adsFrame, orientationMatrix, widenModel, type ViewProfile } from './ViewProfile';
 import { attachHands } from './HandGrips';
 import type { WeaponHands } from './HandPose';
+import { isV2, type AnyWeaponHands } from './hands/HandProfile';
 import type { WeaponData } from './WeaponData';
 import type { WeaponRig } from './WeaponModels';
 
@@ -13,9 +14,10 @@ import type { WeaponRig } from './WeaponModels';
  *   ├─ OrientationRoot (model → weapon) ─ the model file's meshes, untouched
  *   ├─ mag, bolt     moving pieces at their pivots, cut from the model by bone / node name
  *   └─ ADSPoint (rig.sight), MuzzlePoint (rig.muzzle), eject port, laser,
- *      RightHandGrip / LeftHandGrip (where the hands hold it: position and rotation, from the
- *      profile's `hands`, HandGrips.ts) and the animated hand points (RightHandIK /
- *      LeftHandIK, which rest on the grips and are moved by reloads and bolt work)
+ *      RightHandTarget / LeftHandTarget (where the hands belong: the wrists' place and turn,
+ *      from the profile's `hands`, HandGrips.ts), hand targets riding on the magazine / bolt
+ *      for reloads, and the animated hand points (RightHandIK / LeftHandIK, which rest on the
+ *      targets and are moved by reloads and bolt work)
  *
  * Nothing is read off the mesh's shape: every point comes from the profile, so changing
  * another weapon or the motion layers can't move this one.
@@ -136,7 +138,7 @@ export function buildProfiledRig(profile: Readonly<ViewProfile>, data: WeaponDat
           if (uv) U.set([uv.getX(t + v), uv.getY(t + v)], i * 2);
         }
       }
-      widenModel(profile, P, nor ? N : null);
+      widenModel(profile, P, nor ? N : null, piece === 'body' ? 1 : (spec[piece]?.width ?? 1));
       const g = new THREE.BufferGeometry();
       g.setAttribute('position', new THREE.BufferAttribute(P, 3));
       if (nor) g.setAttribute('normal', new THREE.BufferAttribute(N, 3));
@@ -201,12 +203,15 @@ export function buildProfiledRig(profile: Readonly<ViewProfile>, data: WeaponDat
   return rig;
 }
 
-/** `h` with its grips moved across like the model's surface (widthAlong); the poses shared. */
-function widenedGrips(p: Readonly<ViewProfile>, h: WeaponHands): WeaponHands {
-  if (!p.model.orientation.widthAlong?.length) return h;
+/**
+ * Schema 1: `h` with its grips moved across like the model's surface (widthAlong); the poses
+ * shared. Schema-2 targets are set on the gun as it is drawn: as they are.
+ */
+function widenedGrips(p: Readonly<ViewProfile>, h: AnyWeaponHands): AnyWeaponHands {
+  if (isV2(h) || !p.model.orientation.widthAlong?.length) return h;
   const at = new Float32Array([...h.rightGrip.position, ...h.leftGrip.position]);
   widenModel(p, at, null);
-  return { ...h, rightGrip: { ...h.rightGrip, position: [at[0], at[1], at[2]] }, leftGrip: { ...h.leftGrip, position: [at[3], at[4], at[5]] } };
+  return { ...h, rightGrip: { ...h.rightGrip, position: [at[0], at[1], at[2]] }, leftGrip: { ...h.leftGrip, position: [at[3], at[4], at[5]] } } satisfies WeaponHands;
 }
 
 /** Place the OrientationRoot, moving pieces and reference points from the rig's profile. */

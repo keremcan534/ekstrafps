@@ -1,3 +1,6 @@
+import type { Payout } from '../game/Progress';
+import { showReport } from './RaidReport';
+
 const div = (cls: string, parent: HTMLElement) => {
   const d = document.createElement('div');
   d.className = cls;
@@ -131,14 +134,15 @@ export class SurvivalHUD {
     this.prompt.classList.add('deny');
   }
 
-  gameOver(seconds: number, kills: number, points: number, report = ''): void {
+  /** The run is over: the after-action report. */
+  gameOver(seconds: number, kills: number, points: number, pay: Payout): void {
     const m = Math.floor(seconds / 60);
     const s = Math.floor(seconds % 60).toString().padStart(2, '0');
-    this.over.innerHTML = `<div class="sv-over-title">GAME OVER</div>
-      <div class="sv-over-sub">Survived ${m}:${s} · ${kills} robots destroyed · $ ${points}</div>
-      ${report}
-      <button class="sv-restart">PLAY AGAIN</button>`;
-    this.over.classList.add('show');
-    this.over.querySelector('button')!.addEventListener('click', () => location.reload());
+    showReport(this.over, {
+      title: 'GAME OVER',
+      tone: 'lose',
+      facts: [`SURVIVED ${m}:${s}`, `${kills} ROBOTS DESTROYED`, `$${points}`],
+      pay,
+    });
   }
 }
