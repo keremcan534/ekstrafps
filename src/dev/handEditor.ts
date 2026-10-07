@@ -1,7 +1,6 @@
 import * as THREE from 'three';
 import type GUI from 'lil-gui';
 import type { Viewmodel } from '../weapons/Viewmodel';
-import { orientationMatrix, type ViewProfile } from '../weapons/ViewProfile';
 import { FINGER_NAMES, copyPose, flatPose, gripRotation, type FingerName, type FingerPose, type HandGripDef, type HandPose, type WeaponHands } from '../weapons/HandPose';
 import { handConfig } from '../weapons/FirstPersonHands';
 import { WeaponSurface, fingerGaps, fitFingers, gloveInside } from './handChecks';
@@ -10,14 +9,22 @@ import { WeaponSurface, fingerGaps, fitFingers, gloveInside } from './handChecks
  * The calibration page's hands: where each hand holds the weapon (RightHandGrip /
  * LeftHandGrip: position and rotation), every finger joint of every pose (grip, trigger
  * safe / ready / pull, magazine, bolt), previews of each hand state, fitting the fingers to
- * the weapon, and saving it all into the weapon's view profile. Every change shows at once.
+ * the weapon, and saving it all: into the weapon's view profile, or for a procedural gun
+ * into src/config/gunhands.json. Every change shows at once.
  */
 export interface HandEditorHost {
   vm: Viewmodel;
-  profile: () => ViewProfile | null;
-  /** Rebuild the weapon from the working profile. */
+  /** The hands being edited (a view profile's, or a procedural gun's); null: none yet. */
+  hands: () => WeaponHands | null;
+  /** Definition space (a model file's own, or the rig's) → weapon space. */
+  toWeapon: () => THREE.Matrix4;
+  /** Give the weapon hands to start from. */
+  seed: () => void;
+  /** Show the edited hands on the weapon. */
   apply: () => void;
   save: () => Promise<void>;
+  /** Where saving writes (shown on the button). */
+  target: string;
   toast: (text: string, bad?: boolean) => void;
 }
 
@@ -44,31 +51,42 @@ const POSE_LABELS: Record<string, PoseKey> = {
 };
 const FINGER_LABELS: Record<string, FingerName> = { 'Başparmak': 'thumb', 'İşaret': 'index', 'Orta': 'middle', 'Yüzük': 'ring', 'Serçe': 'pinky' };
 
-/** Default hands for a profile that has none: the grips at the profile's centre, open fingers. */
-export function seedHands(p: ViewProfile): WeaponHands {
+/**
+ * Default hands for a weapon that has none: the grips at `right` / `left` (definition space;
+ * default: about where a rifle's are, through `toDef` from weapon space); the turns, finger
+ * poses and trigger finger of a weapon that has hands (`template`, e.g. the AK-47's), else
+ * open fingers. Then place the grips, fit the fingers, save.
+ */
+export function seedHands(toDef: THREE.Matrix4, template?: Readonly<WeaponHands>, right?: THREE.Vector3, left?: THREE.Vector3): WeaponHands {
   const c = handConfig();
   const pose = () => copyPose(c.open, flatPose());
   const finger = (): FingerPose => [[0, 0, 0], [0, 0, 0], [0, 0, 0]];
-  const inv = orientationMatrix(p, new THREE.Matrix4()).invert();
-  const model = (x: number, y: number, z: number) => new THREE.Vector3(x, y, z).applyMatrix4(inv).toArray().map((v) => +v.toFixed(3)) as [number, number, number];
-  return {
-    rightGrip: { position: model(0, -0.05, 0.02), rotation: gripRotation(new THREE.Vector3(0, -0.36, -0.93), new THREE.Vector3(-1, 0, 0)) },
-    leftGrip: { position: model(0, -0.02, -0.3), rotation: gripRotation(new THREE.Vector3(1, 0.15, 0), new THREE.Vector3(0, 1, 0)) },
+  const def = (v: THREE.Vector3) => v.clone().applyMatrix4(toDef).toArray().map((x) => +x.toFixed(4)) as [number, number, number];
+  const hands: WeaponHands = {
+    rightGrip: { position: def(right ?? new THREE.Vector3(0, -0.05, 0.02)), rotation: gripRotation(new THREE.Vector3(0, -0.36, -0.93), new THREE.Vector3(-1, 0, 0)) },
+    leftGrip: { position: def(left ?? new THREE.Vector3(0, -0.02, -0.3)), rotation: gripRotation(new THREE.Vector3(1, 0.15, 0), new THREE.Vector3(0, 1, 0)) },
     rightPose: pose(),
     leftPose: pose(),
     trigger: { safe: finger(), ready: finger(), pull: finger() },
   };
+  if (template) {
+    const t = structuredClone(template) as WeaponHands;
+    hands.rightGrip.rotation = t.rightGrip.rotation;
+    hands.leftGrip.rotation = t.leftGrip.rotation;
+    hands.rightPose = t.rightPose;
+    hands.leftPose = t.leftPose;
+    hands.trigger = t.trigger;
+  }
+  return hands;
 }
 
 export function handFolder(gui: GUI, host: HandEditorHost): void {
-  const p = host.profile();
-  if (!p) return;
   const root = gui.addFolder('Eller (kavrama)').close();
-  if (!p.hands) {
-    root.add({ seed: () => ((p.hands = seedHands(p)), host.apply(), host.toast('El profili oluşturuldu: kabzaları yerleştir, parmakları oturt, kaydet')) }, 'seed').name('Bu silaha eller ekle');
+  const h = host.hands();
+  if (!h) {
+    root.add({ seed: () => (host.seed(), host.toast('Eller eklendi: kabzaları yerleştir, parmakları oturt, kaydet')) }, 'seed').name('Bu silaha eller ekle');
     return;
   }
-  const h = p.hands;
   const vm = host.vm;
   const preview = () => {
     const s = handView.state;
@@ -86,14 +104,14 @@ export function handFolder(gui: GUI, host: HandEditorHost): void {
   root.add(vm.arms, 'showGizmos').name('Kabza gizmoları (mavi ileri, yeşil yukarı)');
   preview();
 
-  const O = () => orientationMatrix(p, new THREE.Matrix4());
+  const O = () => host.toWeapon();
   const gripFolder = (label: string, def: HandGripDef) => {
     const f = root.addFolder(label).close();
     const w = new THREE.Vector3(...def.position).applyMatrix4(O());
     const o = { x: +(w.x * 1000).toFixed(1), y: +(w.y * 1000).toFixed(1), z: +(w.z * 1000).toFixed(1) };
     const set = () => {
       const m = new THREE.Vector3(o.x / 1000, o.y / 1000, o.z / 1000).applyMatrix4(O().invert());
-      def.position = m.toArray().map((v) => +v.toFixed(3)) as [number, number, number];
+      def.position = m.toArray().map((v) => +v.toFixed(4)) as [number, number, number];
       host.apply();
     };
     for (const a of ['x', 'y', 'z'] as const) f.add(o, a, -800, 800, 0.5).name(`${a} (mm, silah)`).onChange(set);
@@ -176,7 +194,7 @@ export function handFolder(gui: GUI, host: HandEditorHost): void {
   fingers.add({ all: () => fit(true) }, 'all').name('Tüm parmakları silaha oturt');
   rebuild();
 
-  root.add({ save: () => host.save() }, 'save').name('El pozunu kaydet (profile)');
+  root.add({ save: () => host.save() }, 'save').name(`El pozunu kaydet (${host.target})`);
 }
 
 /** One line per hand for the info panel: wrist, grip weight, fingers' gaps, glove inside the weapon. */

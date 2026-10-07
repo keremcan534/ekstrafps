@@ -10,6 +10,8 @@ import * as THREE from 'three';
  *                                and smoother in patches, partly metallic
  *   coating  (dark greys, black)  polymer / anodised: a stipple, matte
  *
+ * and over all of it the field wear of a gun carried at Site-9: grime, dust and frost rime on
+ * the faces that look up (model +Y), worn-through scratches,
  * plus a small bump from the same noise, so light breaks up on every face. The noise is 3-D,
  * in the model's own space and scaled to metres (whatever units the file uses), so it stays
  * on the gun as it moves and no face shows a seam. Light colours (sight dots, markings)
@@ -99,16 +101,40 @@ if (gunCoat > 0.001) {
 diffuseColor.rgb *= gunTint;
 // Height for the bump: only what is a few pixels wide even at the hip (no shimmer).
 float gunApply = 1.0 - gunMark;
+// Field wear (Site-9, -30 C): greasy grime in broad patches, dust and frost rime settled on
+// the faces that look up, ice crystals glinting in the rime, bright scratches where a
+// coating or bluing is worn through. Model space, so it stays on the gun.
+float gunUp = normalize(vGunNrm).y;
+float gunTop = smoothstep(0.3, 0.95, gunUp);
+float gunUnder = smoothstep(0.2, 0.9, -gunUp);
+// Fine grain, not blobs: a film with specks reads as dirt, big patches read as camouflage.
+float gunFine = gunNoise(gp * 220.0 + 17.0);
+float gunMid = gunFbm(gp * 30.0 + 31.0);
+float gunDust = gunTop * (0.35 + 0.65 * smoothstep(0.4, 0.8, gunMid)) * (0.75 + 0.25 * gunFine);
+// Dirt toward a dark earth brown: on black it reads as dried grime, on wood as dark stains.
+float gunDirt = 0.25 * smoothstep(0.35, 0.85, gunFbm(gp * 9.0 + 3.0)) + 0.35 * gunUnder + 0.2 * smoothstep(0.7, 0.95, gunFine);
+float gunFrost = gunTop * smoothstep(0.55, 0.85, gunMid);
+float gunIce = step(0.93, gunNoise(gp * 1500.0)) * gunTop * (0.2 + 0.8 * gunFrost);
+float gunScratch = smoothstep(0.93, 0.985, gunNoise(vec3(dot(gp, vec3(0.8, 0.3, 0.52)) * 900.0, dot(gp, vec3(-0.3, 0.9, 0.2)) * 14.0, 3.3))) * (gunSteel + gunCoat);
+vec3 gunWorn = mix(diffuseColor.rgb, vec3(0.16, 0.14, 0.11), gunDirt * 0.4);
+gunWorn = mix(gunWorn, vec3(0.27, 0.26, 0.245), gunDust * 0.16);
+gunWorn = mix(gunWorn, vec3(0.7, 0.76, 0.83), gunFrost * 0.11);
+gunWorn += vec3(0.18, 0.2, 0.23) * gunIce;
+gunWorn = mix(gunWorn, gunWorn * 1.7 + 0.04, gunScratch * 0.65);
+diffuseColor.rgb = mix(diffuseColor.rgb, gunWorn, gunApply);
+gunRough += 0.12 * gunDirt + 0.15 * gunDust + 0.2 * gunFrost - 0.25 * gunScratch;
+gunMetal += 0.4 * gunScratch * gunCoat - 0.35 * gunFrost - 0.15 * gunDust;
+gunHeight += 0.4 * gunFrost + 0.2 * gunDirt;
 `;
 
 const ROUGH = /* glsl */ `
 #include <roughnessmap_fragment>
-roughnessFactor = mix(roughnessFactor, gunRough, gunApply);
+roughnessFactor = mix(roughnessFactor, clamp(gunRough, 0.0, 1.0), gunApply);
 `;
 
 const METAL = /* glsl */ `
 #include <metalnessmap_fragment>
-metalnessFactor = mix(metalnessFactor, gunMetal, gunApply);
+metalnessFactor = mix(metalnessFactor, clamp(gunMetal, 0.0, 1.0), gunApply);
 `;
 
 /** A bump from the height (screen-space derivatives), small: light breaks up, nothing shimmers. */

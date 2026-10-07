@@ -36,11 +36,16 @@ export const LIMITS = {
   settleMm: 0.1,
   /** Nearest drawn geometry beyond the near plane (m). */
   nearMargin: 0.01,
-  /** Hip presentation: share of the screen, share of the centre zone (middle 30% × 30%). */
+  /**
+   * Hip presentation: share of the screen, share of the centre zone (middle 30% × 30%), for a
+   * gun drawn at the world's FOV (scaled up for the gun's own, narrower one).
+   */
   hipScreenPct: 15,
   hipCentrePct: 5,
   /** Reloading the hands bring the action up into view. */
   reloadCentrePct: 15,
+  /** FocusAim (no sight picture): aimed, the gun may come in, but leaves the centre open. */
+  focusCentrePct: 8,
   /**
    * Hands: the wrist's bend (forearm against hand, deg: a support hand palm up under a
    * handguard bends most), the deepest finger into the weapon (mm), glove inside it (mm).
@@ -335,7 +340,10 @@ export function runStateChecks(h: Harness): StateRow[] {
         row.screenPct = Math.max(row.screenPct, c.screenPct);
         row.centrePct = Math.max(row.centrePct, vm.adsAmount < 0.05 ? c.centrePct : 0);
       }
-      if (vm.adsAmount >= 0.999) {
+      if (vm.adsAmount >= 0.999 && vm.adsCheck.focus) {
+        const c = coverage(vm, vm.camera);
+        row.centrePct = Math.max(row.centrePct, c.centrePct);
+      } else if (vm.adsAmount >= 0.999) {
         const s = sightLine(vm);
         if (s) {
           row.offDeg = Math.max(row.offDeg, s.off);
@@ -353,7 +361,7 @@ export function runStateChecks(h: Harness): StateRow[] {
     for (let i = 0; i < 150; i++) frame({ ads: aimedState });
     const s = sightLine(vm);
     const a = vm.adsCheck;
-    if (aimedState && s) {
+    if (aimedState && s && !a.focus) {
       row.settleDeg = Math.max(a.liveDeg, s.off);
       row.settleMm = a.liveMm;
     }
@@ -368,7 +376,10 @@ export function runStateChecks(h: Harness): StateRow[] {
       row.notes.push(why);
     };
     if (row.nearestM < vm.camera.near + LIMITS.nearMargin) fail(`geometry ${(row.nearestM * 100).toFixed(1)} cm from the eye`);
-    if (aimedState) {
+    if (aimedState && a.focus) {
+      // FocusAim: no sight picture to keep; the centre must stay clear.
+      if (row.centrePct > LIMITS.focusCentrePct) fail(`aimed, covers ${row.centrePct.toFixed(1)}% of the centre`);
+    } else if (aimedState) {
       const offLimit = state.includes('shoot') || state.includes('recoil') ? LIMITS.shootDeg : state === 'ads-still' || state.includes('crouch') ? LIMITS.stillDeg : LIMITS.moveDeg;
       const splitLimit = state.includes('shoot') || state.includes('recoil') ? LIMITS.splitShootDeg : LIMITS.splitDeg;
       if (row.offDeg > offLimit) fail(`sight ${row.offDeg.toFixed(2)}° off centre (> ${offLimit})`);
@@ -377,9 +388,12 @@ export function runStateChecks(h: Harness): StateRow[] {
       if (row.rollDeg > rollLimit) fail(`cant ${row.rollDeg.toFixed(2)}° (> ${rollLimit})`);
       if (row.settleDeg > LIMITS.settleDeg || row.settleMm > LIMITS.settleMm) fail(`not back on calibration: ${row.settleDeg.toFixed(3)}° ${row.settleMm.toFixed(2)} mm`);
     } else {
-      const centreLimit = state.startsWith('reload') ? LIMITS.reloadCentrePct : LIMITS.hipCentrePct;
-      if (row.centrePct > centreLimit) fail(`covers ${row.centrePct.toFixed(1)}% of the centre`);
-      if (row.screenPct > LIMITS.hipScreenPct) fail(`covers ${row.screenPct.toFixed(1)}% of the screen`);
+      // The shares are for a gun drawn at the world's FOV; at its own narrower one it is
+      // drawn bigger (on purpose), its area by the square of that.
+      const grow = (Math.tan((hfovToVfov(playerConfig.baseFov) * DEG) / 2) / Math.tan((hfovToVfov(Math.min(playerConfig.baseFov, playerConfig.viewmodelFov)) * DEG) / 2)) ** 2;
+      const centreLimit = (state.startsWith('reload') ? LIMITS.reloadCentrePct : LIMITS.hipCentrePct) * grow;
+      if (row.centrePct > centreLimit) fail(`covers ${row.centrePct.toFixed(1)}% of the centre (> ${centreLimit.toFixed(1)})`);
+      if (row.screenPct > LIMITS.hipScreenPct * grow) fail(`covers ${row.screenPct.toFixed(1)}% of the screen (> ${(LIMITS.hipScreenPct * grow).toFixed(1)})`);
     }
     if (row.settleMotionMm > 0.1 || row.settleMotionDeg > 0.01) fail(`motion left over: ${row.settleMotionMm.toFixed(2)} mm ${row.settleMotionDeg.toFixed(3)}°`);
     if (row.wristDeg > LIMITS.wristDeg) fail(`wrist bent ${row.wristDeg.toFixed(0)}° (> ${LIMITS.wristDeg})`);

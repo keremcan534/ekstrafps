@@ -28,7 +28,8 @@ type V3 = [number, number, number];
  *      on the grip the right index finger blends from `safe` to `ready` (aimed, or just fired)
  *      and presses to `pull` with each shot.
  *
- * Hidden on a weapon without `hands` in its view profile.
+ * Hidden on a weapon without hands (rig.hands: a view profile's, or a procedural gun's from
+ * src/config/gunhands.json).
  */
 type Side = 'right' | 'left';
 const SIDES: Side[] = ['right', 'left'];
@@ -304,10 +305,10 @@ export class FirstPersonArms {
 
   /**
    * Put both arms on `rig` (in `space`, the node holding `group`; world matrices must be
-   * current). Hidden without the profile's `hands` or the model.
+   * current). Hidden without the rig's hands or the model.
    */
   update(dt: number, rig: WeaponRig | null, space: THREE.Object3D, input: ArmsInput): void {
-    const hands = rig?.view?.profile.hands;
+    const hands = rig?.hands?.def;
     const show = !!hands && !!this.model && !!rig;
     this.group.visible = show;
     if (!show || !rig || !hands) return;
@@ -333,7 +334,7 @@ export class FirstPersonArms {
       const action: HandAction = pv.action ?? rig.handPose[side];
       // 1. Target: the grip, blended by the IK weight with the animated hand.
       arm.ik += (rig.handIk[side] - arm.ik) * ease(CONFIG.timing.ik);
-      const grip = side === 'right' ? rig.view!.rightGrip : rig.view!.leftGrip;
+      const grip = side === 'right' ? rig.hands!.right : rig.hands!.left;
       t.m.multiplyMatrices(t.inv, grip.matrixWorld).decompose(t.pg, t.qg, t.sc);
       (side === 'right' ? rig.rightHand : rig.leftHand).getWorldPosition(t.pa).applyMatrix4(t.inv);
       const turn = action === 'reload' ? (hands.reload?.rotation ?? CONFIG.reload.rotation) : action === 'interaction' ? (hands.interaction?.rotation ?? CONFIG.interaction.rotation) : null;

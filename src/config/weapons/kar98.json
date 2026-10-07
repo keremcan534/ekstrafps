@@ -41,7 +41,12 @@
     "zeroDistance": 100
   },
   "sight": {
-    "type": "iron"
+    "type": "iron",
+    "adsFov": 64,
+    "sightDistance": 0.4
+  },
+  "viewmodel": {
+    "hipPosition": [0.165, -0.215, -0.42]
   },
   "reload": {
     "kind": "shell",

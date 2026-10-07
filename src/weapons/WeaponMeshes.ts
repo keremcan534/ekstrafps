@@ -5,6 +5,7 @@ import type { ModelKey } from './WeaponData';
 import type { WeaponRig } from './WeaponModels';
 import { loadArms } from './FirstPersonHands';
 import { dressGunMaterial } from './GunSurface';
+import modelSettings from '../config/weaponModels.json';
 
 /**
  * Real weapon meshes, packed by scripts/pack-weapon.mjs: public/guns/fp/<key>.glb for the
@@ -26,6 +27,10 @@ import { dressGunMaterial } from './GunSurface';
  *
  * A weapon with a view profile (ViewProfile.ts) takes only its first-person model from here
  * (gunSource): none of the guessing below. Its placement is the profile's (ProfiledRig.ts).
+ *
+ * src/config/weaponModels.json `firstPersonModels`: false keeps every gun in your hands
+ * procedural (WeaponModels.ts), the files unused but kept (`?fpmodels=1` turns them on for a
+ * look). Third-person guns always use their files.
  */
 
 type Tier = 'view' | 'world';
@@ -56,8 +61,56 @@ const sources = new Map<string, GunSource>();
 /** Fitted root-space transform per `${key}|${tier}` (each file has its own coordinates). */
 const fits = new Map<string, THREE.Matrix4 | null>();
 
+/** Model materials for meshes in the rig's own space: there the gun runs along Z. */
+const rigMaterials = new WeakMap<THREE.Material, THREE.Material>();
+
+/**
+ * `m` (dressed for the model file's own space, its grain along the file's length) for a
+ * mesh cut into the rig's space: the wood grain and steel brushing run along Z.
+ */
+function rigMaterial(m: THREE.Material): THREE.Material {
+  if (!m.userData.gunSurface) return m;
+  let r = rigMaterials.get(m);
+  if (!r) {
+    r = m.clone();
+    r.userData.gunSurface = false;
+    dressGunMaterial(r, new THREE.Vector3(0, 0, 1));
+    rigMaterials.set(m, r);
+  }
+  return r;
+}
+
 /** Models whose rear sight is in the way (a folding sight left up): cut off at the rail. */
 const NO_REAR_SIGHT = new Set<ModelKey>(['svd']);
+
+/**
+ * Models whose own optic gives way to the gun's procedural holographic sight (the optic's
+ * piece in the file, by name). The MK47's micro red dot is a thick tube: aimed, a dark
+ * tunnel round a small window. The holo's hood and window frames are thin.
+ */
+const OPTIC_SWAP: Partial<Record<ModelKey, RegExp>> = { mk47: /^Cylinder_Material009/ };
+
+/** `geo` with only the triangles starting at `starts` (vertex indices). */
+function pickTriangles(geo: THREE.BufferGeometry, starts: number[]): THREE.BufferGeometry {
+  const out = new THREE.BufferGeometry();
+  for (const name of Object.keys(geo.attributes)) {
+    const at = geo.getAttribute(name);
+    const arr = new Float32Array(starts.length * 3 * at.itemSize);
+    let i = 0;
+    for (const t of starts) for (let k = 0; k < 3; k++, i++) for (let j = 0; j < at.itemSize; j++) arr[i * at.itemSize + j] = at.getComponent(t + k, j);
+    out.setAttribute(name, new THREE.BufferAttribute(arr, at.itemSize));
+  }
+  geo.dispose();
+  return out;
+}
+
+/** `geo` without the triangles of the pieces numbered `drop` (its `part` attribute). */
+function withoutParts(geo: THREE.BufferGeometry, drop: number[]): THREE.BufferGeometry {
+  const part = geo.getAttribute('part');
+  const keep: number[] = [];
+  for (let t = 0; t < part.count; t += 3) if (!drop.includes(part.getX(t))) keep.push(t);
+  return pickTriangles(geo, keep);
+}
 
 /** `geo` (root space) without its rear sight: whatever stands above the rail there. */
 function stripRearSight(geo: THREE.BufferGeometry): THREE.BufferGeometry {
@@ -81,16 +134,7 @@ function stripRearSight(geo: THREE.BufferGeometry): THREE.BufferGeometry {
     if (Math.abs(c.z - best.z) < 0.035 && c.y > rail + 0.003 && Math.abs(c.x) < 0.03) continue;
     keep.push(t);
   }
-  const out = new THREE.BufferGeometry();
-  for (const name of Object.keys(geo.attributes)) {
-    const at = geo.getAttribute(name);
-    const arr = new Float32Array(keep.length * 3 * at.itemSize);
-    let i = 0;
-    for (const t of keep) for (let k = 0; k < 3; k++, i++) for (let j = 0; j < at.itemSize; j++) arr[i * at.itemSize + j] = at.getComponent(t + k, j);
-    out.setAttribute(name, new THREE.BufferAttribute(arr, at.itemSize));
-  }
-  geo.dispose();
-  return out;
+  return pickTriangles(geo, keep);
 }
 
 /** The lit dot put in a model's reflex sight (it has a window, not a lens). */
@@ -288,7 +332,8 @@ export async function loadWeaponMeshes(): Promise<void> {
     if (k && url) override.set(k, url);
   }
   // The gun in your hands is the full model on phones too; others carry the light one.
-  const tiers: Tier[] = ['view', 'world'];
+  const fp = modelSettings.firstPersonModels || new URLSearchParams(location.search).has('fpmodels');
+  const tiers: Tier[] = fp ? ['view', 'world'] : ['world'];
   await Promise.all(
     KEYS.flatMap((k) =>
       tiers.map(async (tier) => {
@@ -612,6 +657,16 @@ function under(o: THREE.Object3D, nodes: (THREE.Object3D | null)[], root: THREE.
   return null;
 }
 
+/**
+ * Calibration (making a view profile from the old placement): where a dressed rig's model
+ * pieces for the magazine and the bolt / slide ended up, root space. Empty: none.
+ */
+export function movingBoxes(rig: WeaponRig): { mag: THREE.Box3; bolt: THREE.Box3 } {
+  const box = (node: THREE.Object3D | null) =>
+    node ? boundsOf(trianglesOf(rig.root, (m) => !!m.userData.gunModel && !!under(m, [node], rig.root))) : new THREE.Box3();
+  return { mag: box(rig.mag), bolt: box(rig.bolt) };
+}
+
 /** Root-space bounds of the meshes under `node` (hands excluded). */
 function partBounds(rig: WeaponRig, node: THREE.Object3D): THREE.Box3 {
   return boundsOf(trianglesOf(rig.root, (m) => !!under(m, [node], rig.root) && !under(m, [rig.leftHand, rig.rightHand, rig.heldShell], rig.root)));
@@ -702,6 +757,10 @@ export function dressRig(rig: WeaponRig, key: ModelKey, world: boolean, eyeBack?
   const root = rig.root;
   const keepNodes = [rig.leftHand, rig.rightHand, rig.heldShell];
   const isProc = (m: THREE.Mesh) => !under(m, keepNodes, root);
+  // In hand, a model whose optic gives way keeps the procedural holo instead.
+  const swap = world ? undefined : OPTIC_SWAP[key];
+  const opticParts = swap ? src.parts.flatMap((p, i) => (swap.test(p.name) ? [i] : [])) : [];
+  const holo = opticParts.length ? (root.getObjectByName('holoSight') ?? null) : null;
   let matrix = fits.get(`${key}|${tier}`);
   if (matrix === undefined) {
     const ref = trianglesOf(root, (m) => isProc(m) && !(m.material as THREE.Material).transparent);
@@ -729,7 +788,7 @@ export function dressRig(rig: WeaponRig, key: ModelKey, world: boolean, eyeBack?
   const drop: THREE.Mesh[] = [];
   root.traverse((o) => {
     const m = o as THREE.Mesh;
-    if (m.isMesh && isProc(m)) drop.push(m);
+    if (m.isMesh && isProc(m) && !(holo && under(m, [holo], root))) drop.push(m);
   });
   for (const m of drop) {
     // A moving part that is itself a mesh: keep the node, lose its looks.
@@ -746,6 +805,7 @@ export function dressRig(rig: WeaponRig, key: ModelKey, world: boolean, eyeBack?
   // Cut the model up: each triangle goes to the region its centre is in, else the body.
   let geo = src.geometry.clone().applyMatrix4(matrix);
   if (NO_REAR_SIGHT.has(key)) geo = stripRearSight(geo);
+  if (holo) geo = withoutParts(geo, opticParts);
   const pos = geo.getAttribute('position');
   const nor = geo.getAttribute('normal');
   const uv = geo.getAttribute('uv');
@@ -785,7 +845,7 @@ export function dressRig(rig: WeaponRig, key: ModelKey, world: boolean, eyeBack?
     // Into the node's own space (its rest place in the root).
     if (node !== root) part.applyMatrix4(new THREE.Matrix4().copy(node.matrixWorld).invert().multiply(root.matrixWorld));
     part.computeBoundingSphere();
-    const mesh = new THREE.Mesh(part, src.materials[mi]);
+    const mesh = new THREE.Mesh(part, rigMaterial(src.materials[mi]));
     mesh.userData.gunModel = true;
     mesh.castShadow = true;
     node.add(mesh);
@@ -804,7 +864,16 @@ export function dressRig(rig: WeaponRig, key: ModelKey, world: boolean, eyeBack?
   // front post's tip level with the rear sight's top, the eye a hand's width behind.
   // The front post: rays down the centre line near the muzzle; through a protective
   // ring the post's top counts, not the ring's.
-  if (rig.sight.parent === root) {
+  if (holo) {
+    // The holo on the model's rail (its own optic is gone): aimed through its reticle,
+    // the eye the weapon's sightDistance behind it, as on the procedural gun.
+    const base = new THREE.Box3().setFromObject(holo);
+    const rail = topNear(geo, base.min.z, base.max.z, base.min.y + 0.05);
+    const dy = rail === null ? 0 : rail - (holo.userData.railTop as number);
+    holo.position.y += dy;
+    rig.sight.position.y += dy;
+    rig.sightShift = 0;
+  } else if (rig.sight.parent === root) {
     const cap = rig.sight.position.y + 0.12;
     const probe = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ side: THREE.DoubleSide }));
     const ray = new THREE.Raycaster();

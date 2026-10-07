@@ -1,13 +1,16 @@
 import * as THREE from 'three';
 import { Spring, Spring3 } from '../core/Spring';
 import { Noise1D } from '../core/Noise';
-import { DEG, clamp, damp, randSign, smoothstep } from '../core/math';
+import { DEG, clamp, damp, hfovToVfov, randSign, smoothstep } from '../core/math';
+import { playerConfig } from '../player/PlayerConfig';
 import { feel } from '../config/Feel';
 import { MuzzleFlash } from '../fx/MuzzleFlash';
 import { buildWeaponModel, compactViewRig, type WeaponRig } from './WeaponModels';
 import { buildProfiledRig, type ProfiledView } from './ProfiledRig';
 import { FirstPersonArms } from './FirstPersonHands';
-import { adsTarget, poseQuaternion, solveAdsPose, viewProfile, type ViewProfile } from './ViewProfile';
+import { attachHands, layoutHands } from './HandGrips';
+import type { WeaponHands } from './HandPose';
+import { FOCUS_DEFAULTS, adsTarget, aimMode, poseQuaternion, solveAdsPose, viewProfile, type AimSettings, type ViewProfile } from './ViewProfile';
 import { updateVisibleMatrices } from '../core/VisibleMatrices';
 import { WeaponAnimator, type PoseOffset } from './WeaponAnimator';
 import type { Weapon } from './Weapon';
@@ -144,6 +147,8 @@ export class Viewmodel {
   private recoilPivot = new THREE.Group();
   private buttOffset = new THREE.Group();
   private mirror = new THREE.Group();
+  /** The arms' space for a weapon without a profile: camera space, mirrored to the shoulder. */
+  private legacyArms = new THREE.Group();
   private rigs = new Map<string, WeaponRig>();
   private rig: WeaponRig | null = null;
   private weapon: Weapon | null = null;
@@ -238,6 +243,10 @@ export class Viewmodel {
   private targetP = new THREE.Vector3();
   private targetQ = new THREE.Quaternion();
   private muzzleZ = { hip: 0, ads: 0 };
+  /** FocusAim settings of the weapon in hand (null: TrueADS or no profile). */
+  private focus: AimSettings | null = null;
+  /** What full aim takes away from each motion layer, for the weapon in hand. */
+  private cut: AdsCut = PROFILED_CUT;
   // This frame: base pose, motion with and without breathing sway (x ↦ q·x + t, aim space).
   private baseP = new THREE.Vector3();
   private baseQ = new THREE.Quaternion();
@@ -270,6 +279,8 @@ export class Viewmodel {
    */
   readonly adsCheck = {
     profiled: false,
+    /** FocusAim: no sight alignment to measure (the numbers below stay 0). */
+    focus: false,
     /** Fully aimed this frame: the numbers below are current. */
     aimed: false,
     /** Base pose alone: the solve itself, ~0 unless something is broken. */
@@ -298,6 +309,8 @@ export class Viewmodel {
     this.weaponRig.add(this.arms.group);
     this.basePoseRoot.add(this.proceduralRoot);
     this.scene.add(this.pivot);
+    this.legacyArms.name = 'LegacyArms';
+    this.scene.add(this.legacyArms);
     this.pivot.add(this.recoilPivot);
     this.recoilPivot.add(this.buttOffset);
     this.buttOffset.add(this.mirror);
@@ -338,6 +351,7 @@ export class Viewmodel {
     this.rig.root.visible = true;
     this.aimReference.visible = !!this.rig.view;
     this.pivot.visible = !this.rig.view;
+    (this.rig.view ? this.weaponRig : this.legacyArms).add(this.arms.group);
     this.adsCheck.profiled = !!this.rig.view;
     this.animator.setRig(this.rig);
     this.flash.attachTo(this.rig.muzzle);
@@ -362,7 +376,29 @@ export class Viewmodel {
       this.sprintP.set(...p.sprint.position);
       poseQuaternion(p.sprint.rotation, this.sprintQ);
       view.frame.decompose(this.frameP, this.frameQ, this.v);
-      solveAdsPose(p, view.frame, this.adsP, this.adsQ);
+      this.focus = aimMode(p) === 'FocusAim' ? { ...FOCUS_DEFAULTS, ...p.aim } : null;
+      this.adsCheck.focus = !!this.focus;
+      if (this.focus) {
+        // FocusAim: the hip pose brought in (no sight alignment); steadier by the weapon's own multipliers.
+        const f = this.focus;
+        this.adsP.set(...f.aimWeaponPositionOffset).add(this.hipP);
+        const r = p.hip.rotation;
+        const o = f.aimWeaponRotationOffset;
+        poseQuaternion([r[0] + o[0], r[1] + o[1], r[2] + o[2]], this.adsQ);
+        const keep = (k: number) => 1 - Math.min(1, Math.max(0, k));
+        this.cut = {
+          ...PROFILED_CUT,
+          sway: keep(f.aimSwayMultiplier),
+          bobTurn: keep(f.aimBobMultiplier),
+          bobShift: keep(f.aimBobMultiplier),
+          inertia: keep(f.aimInertiaMultiplier),
+          inertiaRoll: keep(f.aimInertiaMultiplier),
+          inertiaShift: keep(f.aimInertiaMultiplier),
+        };
+      } else {
+        solveAdsPose(p, view.frame, this.adsP, this.adsQ);
+        this.cut = PROFILED_CUT;
+      }
       adsTarget(p, new THREE.Matrix4()).decompose(this.targetP, this.targetQ, this.v);
       const mz = rig.muzzle.position;
       this.muzzleZ.hip = this.v.copy(mz).applyQuaternion(this.hipQ).add(this.hipP).z;
@@ -389,10 +425,21 @@ export class Viewmodel {
     return view ? view.profile.hip.position : this.weapon!.data.viewmodel!.hipPosition;
   }
 
-  /** Aimed horizontal FOV (deg, 16:9). */
+  /** Aimed horizontal FOV (deg, 16:9): TrueADS the profile's ADS FOV, FocusAim its aim FOV. */
   get adsFov(): number {
     const view = this.rig?.view;
-    return view ? view.profile.ads.fov : this.weapon!.data.sight.adsFov!;
+    if (!view) return this.weapon!.data.sight.adsFov!;
+    return this.focus ? this.focus.aimFOV : view.profile.ads.fov;
+  }
+
+  /** The weapon's own hip FOV (horizontal deg), or null: the player's FOV setting. */
+  get hipFov(): number | null {
+    return this.rig?.view?.profile.aim?.hipFOV ?? null;
+  }
+
+  /** Look sensitivity at full aim (× on top of the FOV's own scaling). */
+  get aimSensitivity(): number {
+    return this.rig?.view?.profile.aim?.aimSensitivityMultiplier ?? 1;
   }
 
   /** Muzzle-end distance in front of the eye at rest (m), used by the wall probes. */
@@ -474,19 +521,22 @@ export class Viewmodel {
     const rig = this.rig;
     if (!this.weapon || !rig || !this.handling) return;
     const view = rig.view;
-    this.motion(dt, input, view ? PROFILED_CUT : LEGACY_CUT);
+    this.motion(dt, input, view ? this.cut : LEGACY_CUT);
     if (view) {
       this.placeProfiled(input, view);
       this.checkAds(dt, input, view);
     } else this.placeLegacy(input);
 
-    // Same projection as the world camera: viewmodel space == camera space.
+    // Viewmodel space == camera space. The gun has its own field of view at the hip
+    // (player.json viewmodelFov): drawn at a wide world FOV a gun looks small and far off.
+    // Aimed it is the world's, so the sight picture sits over the world as it is.
     // Old placement only: aimed, the near plane cuts the stock at the eye (a profiled weapon
     // sits where it should and keeps a fixed near plane).
     const mc = input.mainCamera;
+    const fov = mc.fov - Math.max(0, mc.fov - hfovToVfov(playerConfig.viewmodelFov)) * (1 - this.adsAmount);
     const near = view ? VIEW_NEAR : 0.01 + 0.045 * this.m.ads;
-    if (this.camera.fov !== mc.fov || this.camera.aspect !== mc.aspect || Math.abs(this.camera.near - near) > 1e-4) {
-      this.camera.fov = mc.fov;
+    if (Math.abs(this.camera.fov - fov) > 1e-6 || this.camera.aspect !== mc.aspect || Math.abs(this.camera.near - near) > 1e-4) {
+      this.camera.fov = fov;
       this.camera.aspect = mc.aspect;
       this.camera.near = near;
       this.camera.updateProjectionMatrix();
@@ -495,8 +545,9 @@ export class Viewmodel {
     // The weapon in hand only: the fifteen holstered rigs (and the parts merged into
     // their anchors) are hidden. Points under hidden parts are read with getWorldPosition.
     updateVisibleMatrices(view ? this.aimReference : this.pivot, true);
+    if (!view) this.legacyArms.updateMatrixWorld(true);
     const w = this.weapon;
-    this.arms.update(dt, view ? rig : null, this.weaponRig, { ads: this.adsAmount, sprint: this.sprintBlend, sinceShot: w.timeSinceShot, reloading: w.state === 'reloading' });
+    this.arms.update(dt, rig, view ? this.weaponRig : this.legacyArms, { ads: this.adsAmount, sprint: this.sprintBlend, sinceShot: w.timeSinceShot, reloading: w.state === 'reloading' });
   }
 
   /** Every motion layer for this frame (springs, noise, poses), before any is placed. */
@@ -653,9 +704,11 @@ export class Viewmodel {
     const m = this.m;
     const { ads, adsEase, sideV, sideSign, sideTransit } = m;
     this.mirror.scale.x = sideSign;
+    this.legacyArms.scale.x = sideSign;
 
     // --- Base position: shouldered (point fire) ↔ sights on the eye ---
-    const pos = this.tmp.set(this.hipPos.x * sideV, this.hipPos.y, this.hipPos.z).lerp(this.adsPos, adsEase);
+    const pull = this.hipPull();
+    const pos = this.tmp.set(this.hipPos.x * sideV * pull, this.hipPos.y * pull, this.hipPos.z).lerp(this.adsPos, adsEase);
     pos.y -= Math.sin(adsEase * Math.PI) * 0.012 + sideTransit * 0.09;
 
     // --- Aim alignment: point the bore at the aim point (+ zero drop compensation) ---
@@ -721,14 +774,25 @@ export class Viewmodel {
     this.weaponRig.scale.x = m.sideSign;
 
     // --- Base pose: hip ↔ aimed (solved) ↔ sprint. Calibration only. ---
+    const pull = this.hipPull();
     const bp = this.baseP.copy(this.hipP);
-    bp.x *= side;
+    bp.x *= side * pull;
+    bp.y *= pull;
     const bq = this.baseQ.slerpQuaternions(IDENTITY, this.hipQ, side);
-    bp.lerp(this.adsP, m.adsEase);
-    bq.slerp(this.adsQ, m.adsEase);
+    if (this.focus) {
+      // FocusAim's pose is the hip's brought in: it crosses shoulders like the hip pose.
+      const ap = this.v3.copy(this.adsP);
+      ap.x *= side;
+      bp.lerp(ap, m.adsEase);
+      bq.slerp(this.t.q2.slerpQuaternions(IDENTITY, this.adsQ, side), m.adsEase);
+    } else {
+      bp.lerp(this.adsP, m.adsEase);
+      bq.slerp(this.adsQ, m.adsEase);
+    }
     if (m.sb > 0) {
       const sp = this.v2.copy(this.sprintP);
-      sp.x *= side;
+      sp.x *= side * pull;
+      sp.y *= pull;
       bp.lerp(sp, m.sb);
       bq.slerp(this.t.q1.slerpQuaternions(IDENTITY, this.sprintQ, side), m.sb);
     }
@@ -765,7 +829,7 @@ export class Viewmodel {
    */
   private composeMotion(view: ProfiledView, withSway: boolean, q: THREE.Quaternion, t: THREE.Vector3): void {
     const m = this.m;
-    const K = PROFILED_CUT;
+    const K = this.cut;
     const mot = view.profile.motion;
     const { ads, adsEase, sideSign: s, iner, linP, jr, rr, rp } = m;
     const side = Math.abs(m.sideV);
@@ -807,13 +871,15 @@ export class Viewmodel {
     const qR = this.t.q2.setFromEuler(this.euler.set(rr.x * rc, rr.y * rc * s, rr.z * rc * (1 - K.recoilRoll * ads), 'YXZ'));
     qR.premultiply(bq).multiply(this.t.q3.copy(bq).invert());
 
-    // Pivots: grip and butt at the hip, the eye (origin) aimed.
-    const pm = this.t.c.copy(bp).multiplyScalar(1 - adsEase);
+    // Pivots: grip and butt at the hip, the eye (origin) aimed with TrueADS (the sight
+    // picture stays whole); FocusAim has no sight picture to keep: grip and butt throughout.
+    const toEye = this.focus ? 0 : adsEase;
+    const pm = this.t.c.copy(bp).multiplyScalar(1 - toEye);
     const pr = this.t.d
       .copy(this.rig!.butt)
       .applyQuaternion(bq)
       .add(bp)
-      .multiplyScalar(1 - adsEase);
+      .multiplyScalar(1 - toEye);
 
     // P = T(shift + tR) · Rot(qM about pm) · Rot(qR about pr)
     q.multiplyQuaternions(qM, qR);
@@ -827,7 +893,7 @@ export class Viewmodel {
     const c = this.adsCheck;
     c.aimVsScreenDeg = Math.acos(clamp(-input.aimPoint.z / Math.max(1e-6, input.aimPoint.length()), -1, 1)) / DEG;
     c.aimed = this.ads.value >= 0.999 && this.weapon!.state !== 'holstered';
-    if (!c.aimed) {
+    if (!c.aimed || this.focus) {
       this.restHold = 0;
       return;
     }
@@ -889,6 +955,7 @@ export class Viewmodel {
       r.root.visible = true;
       this.aimReference.visible = true;
       this.pivot.visible = false;
+      this.weaponRig.add(this.arms.group);
       this.adsCheck.profiled = true;
       this.animator.setRig(r);
       this.flash.attachTo(r.muzzle);
@@ -897,9 +964,37 @@ export class Viewmodel {
     return true;
   }
 
+  /**
+   * Calibration only: put hands `def` (or the current ones, re-placed) on the weapon in hand,
+   * a procedural gun's (its rig's own space). Reload paths start from the new grips.
+   */
+  setHands(def?: WeaponHands): void {
+    const rig = this.rig;
+    if (!rig) return;
+    if (def) attachHands(rig, def);
+    else layoutHands(rig);
+    this.animator.setRig(rig);
+  }
+
+  /**
+   * The gun is drawn at its own, narrower field of view: bigger. Its hip and sprint poses
+   * come in toward the eye's axis by the same ratio, so it stays where it was on screen
+   * (bigger, not pushed further into the corner). Aimed, nothing changes.
+   */
+  private hipPull(): number {
+    const own = Math.tan((hfovToVfov(playerConfig.viewmodelFov) * DEG) / 2);
+    const world = Math.tan((hfovToVfov(playerConfig.baseFov) * DEG) / 2);
+    return Math.min(1, own / world);
+  }
+
   /** World position of a point on the weapon (muzzle, eject port, laser). */
   toWorld(local: THREE.Object3D, mainCamera: THREE.PerspectiveCamera, out: THREE.Vector3): THREE.Vector3 {
     local.getWorldPosition(out);
+    // Drawn at the gun's own field of view: the world point on screen where it is drawn
+    // (flash, smoke, tracers and shells start at the muzzle and port you see).
+    const k = Math.tan((mainCamera.fov * DEG) / 2) / Math.tan((this.camera.fov * DEG) / 2);
+    out.x *= k;
+    out.y *= k;
     return out.applyMatrix4(mainCamera.matrixWorld);
   }
 

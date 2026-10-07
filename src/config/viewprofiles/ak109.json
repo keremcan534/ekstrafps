@@ -1,0 +1,49 @@
+{
+  "id": "ak109",
+  "model": {
+    "key": "ak109",
+    "orientation": {
+      "forward": "+x",
+      "up": "+y",
+      "rotation": [0, 0, 0],
+      "scale": 0.00099452,
+      "position": [0.001953, -0.00698, -0.11615]
+    },
+    "parts": {
+      "mag": {
+        "names": ["_mag_02", "bullet_03", "bullets_04"]
+      },
+      "bolt": {
+        "names": ["bolt_01"]
+      }
+    }
+  },
+  "points": {
+    "sightRear": [7, 131.6, 0],
+    "sightFront": [436, 126.1, 0],
+    "muzzle": [528.6, 64.74, 0],
+    "boreRear": [228, 64.74, 0],
+    "eject": [-58.085, 49.397, 28.454],
+    "butt": [-437.436, -29.035, -2.995]
+  },
+  "ads": {
+    "eyeRelief": 0.3,
+    "fov": 60,
+    "offset": [0, 0, 0],
+    "roll": 0
+  },
+  "hip": {
+    "position": [0.165, -0.225, -0.4],
+    "rotation": [-2.132, -0.083, 6.98]
+  },
+  "sprint": {
+    "position": [0.125, -0.275, -0.35],
+    "rotation": [-20.359, 33.664, 23.253]
+  },
+  "motion": {
+    "sway": 1,
+    "inertia": 1,
+    "bob": 1,
+    "recoil": 1
+  }
+}

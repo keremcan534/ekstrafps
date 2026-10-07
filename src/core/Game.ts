@@ -1832,8 +1832,10 @@ export class Game {
 
     // --- Look: ADS sensitivity scaling, touch aim assist, recoil absorption ---
     const fovScale = Math.tan((this.camera.currentFov * DEG) / 2) / Math.tan((hfovToVfov(playerConfig.baseFov) * DEG) / 2);
-    let yaw = input.lookYaw * fovScale;
-    let pitch = input.lookPitch * fovScale;
+    // Aimed, a weapon may steady the look a little more (its profile's aim sensitivity).
+    const aimSens = 1 + (this.weapons.aimSensitivity - 1) * this.weapons.adsAmount;
+    let yaw = input.lookYaw * fovScale * aimSens;
+    let pitch = input.lookPitch * fovScale * aimSens;
     if (this.mobile) [yaw, pitch] = this.applyAimAssist(yaw, pitch, dt, input);
     [yaw, pitch] = this.weapons.recoil.absorb(yaw, pitch);
     this.player.updateLook(yaw, pitch);
@@ -1861,7 +1863,7 @@ export class Game {
 
     // --- Camera first, then aim the physical weapon, then fire from its muzzle ---
     this.weapons.updateState(dt, input);
-    this.camera.update(dt, alpha, this.player, this.weapons.adsAmount, this.weapons.adsFov);
+    this.camera.update(dt, alpha, this.player, this.weapons.adsAmount, this.weapons.adsFov, this.weapons.hipFov);
     this.camera.camera.updateMatrixWorld();
     this.director?.afterCamera(dt);
     if (this.cinematic) {

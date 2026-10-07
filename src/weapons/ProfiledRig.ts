@@ -1,7 +1,8 @@
 import * as THREE from 'three';
 import { gunSource } from './WeaponMeshes';
-import { adsFrame, orientationMatrix, type ViewProfile } from './ViewProfile';
-import { gripQuaternion } from './HandPose';
+import { adsFrame, orientationMatrix, widenModel, type ViewProfile } from './ViewProfile';
+import { attachHands } from './HandGrips';
+import type { WeaponHands } from './HandPose';
 import type { WeaponData } from './WeaponData';
 import type { WeaponRig } from './WeaponModels';
 
@@ -13,8 +14,8 @@ import type { WeaponRig } from './WeaponModels';
  *   ├─ mag, bolt     moving pieces at their pivots, cut from the model by bone / node name
  *   └─ ADSPoint (rig.sight), MuzzlePoint (rig.muzzle), eject port, laser,
  *      RightHandGrip / LeftHandGrip (where the hands hold it: position and rotation, from the
- *      profile's `hands`) and the animated hand points (RightHandIK / LeftHandIK, which rest
- *      on the grips and are moved by reloads and bolt work)
+ *      profile's `hands`, HandGrips.ts) and the animated hand points (RightHandIK /
+ *      LeftHandIK, which rest on the grips and are moved by reloads and bolt work)
  *
  * Nothing is read off the mesh's shape: every point comes from the profile, so changing
  * another weapon or the motion layers can't move this one.
@@ -27,9 +28,6 @@ export interface ProfiledView {
   frame: THREE.Matrix4;
   /** Moving pieces: their node (weapon space, at the pivot) and model-space pivot. */
   pieces: { node: THREE.Object3D; pivot: THREE.Vector3; orient: THREE.Group; knob?: THREE.Vector3 }[];
-  /** RightHandGrip / LeftHandGrip (weapon space; hand axes, see HandPose.ts). */
-  rightGrip: THREE.Object3D;
-  leftGrip: THREE.Object3D;
 }
 
 const FORWARD = new THREE.Vector3(0, 0, -1);
@@ -39,13 +37,14 @@ const MOVING = ['mag', 'bolt'] as const;
 
 /**
  * Per triangle: the moving part whose points lie on its loose piece of the model (a piece:
- * triangles joined by shared corners, as the model was built), or undefined.
+ * triangles joined by shared corners, as the model was built), else the part whose box holds
+ * its centre, or undefined.
  */
 function pickedPieces(geo: THREE.BufferGeometry, spec: ViewProfile['model']['parts']): (Piece | undefined)[] {
   const pos = geo.getAttribute('position');
   const tris = pos.count / 3;
   const out: (Piece | undefined)[] = new Array(tris);
-  if (!MOVING.some((k) => spec[k]?.pieces?.length)) return out;
+  if (!MOVING.some((k) => spec[k]?.pieces?.length || spec[k]?.box)) return out;
   const parent = Int32Array.from({ length: tris }, (_, i) => i);
   const find = (i: number): number => (parent[i] === i ? i : (parent[i] = find(parent[i])));
   const corner = new Map<string, number>();
@@ -74,7 +73,17 @@ function pickedPieces(geo: THREE.BufferGeometry, spec: ViewProfile['model']['par
       if (best >= 0) owner.set(find(best), k);
     }
   }
-  for (let t = 0; t < tris; t++) out[t] = owner.get(find(t));
+  const boxes = MOVING.flatMap((k) => {
+    const b = spec[k]?.box;
+    return b ? [{ k, box: new THREE.Box3(new THREE.Vector3(...b[0]), new THREE.Vector3(...b[1])) }] : [];
+  });
+  const c = new THREE.Vector3();
+  for (let t = 0; t < tris; t++) {
+    out[t] = owner.get(find(t));
+    if (out[t] || !boxes.length) continue;
+    c.fromArray(centre, t * 3);
+    out[t] = boxes.find((b) => b.box.containsPoint(c))?.k;
+  }
   return out;
 }
 
@@ -127,6 +136,7 @@ export function buildProfiledRig(profile: Readonly<ViewProfile>, data: WeaponDat
           if (uv) U.set([uv.getX(t + v), uv.getY(t + v)], i * 2);
         }
       }
+      widenModel(profile, P, nor ? N : null);
       const g = new THREE.BufferGeometry();
       g.setAttribute('position', new THREE.BufferAttribute(P, 3));
       if (nor) g.setAttribute('normal', new THREE.BufferAttribute(N, 3));
@@ -185,10 +195,18 @@ export function buildProfiledRig(profile: Readonly<ViewProfile>, data: WeaponDat
     laser: point('Laser'),
     butt: new THREE.Vector3(),
     shellType: data.category === 'pistol' ? 'pistol' : data.category === 'shotgun' ? 'shotgun' : 'rifle',
-    view: { profile, orientation, frame: new THREE.Matrix4(), pieces, rightGrip: point('RightHandGrip'), leftGrip: point('LeftHandGrip') },
+    view: { profile, orientation, frame: new THREE.Matrix4(), pieces },
   };
   layoutProfiledRig(rig);
   return rig;
+}
+
+/** `h` with its grips moved across like the model's surface (widthAlong); the poses shared. */
+function widenedGrips(p: Readonly<ViewProfile>, h: WeaponHands): WeaponHands {
+  if (!p.model.orientation.widthAlong?.length) return h;
+  const at = new Float32Array([...h.rightGrip.position, ...h.leftGrip.position]);
+  widenModel(p, at, null);
+  return { ...h, rightGrip: { ...h.rightGrip, position: [at[0], at[1], at[2]] }, leftGrip: { ...h.leftGrip, position: [at[3], at[4], at[5]] } };
 }
 
 /** Place the OrientationRoot, moving pieces and reference points from the rig's profile. */
@@ -219,15 +237,7 @@ export function layoutProfiledRig(rig: WeaponRig): void {
   rig.laser.position.y -= 0.03;
   rig.laser.quaternion.copy(rig.muzzle.quaternion);
   rig.ejectPort.position.copy(W(p.points.eject));
-  // The hands: their grips, and the animated points resting on them.
-  const h = p.hands;
-  for (const [grip, def] of [[v.rightGrip, h?.rightGrip], [v.leftGrip, h?.leftGrip]] as const) {
-    grip.position.copy(def ? W(def.position) : new THREE.Vector3());
-    gripQuaternion(def?.rotation ?? [0, 0, 0], grip.quaternion);
-  }
-  rig.leftHandRest.copy(v.leftGrip.position);
-  rig.leftHand.position.copy(rig.leftHandRest);
-  rig.rightHandRest.copy(v.rightGrip.position);
-  rig.rightHand.position.copy(rig.rightHandRest);
+  // The hands: their grips (model space), and the animated points resting on them.
+  if (p.hands) attachHands(rig, widenedGrips(p, p.hands), O);
   rig.butt.copy(W(p.points.butt));
 }

@@ -1,0 +1,49 @@
+{
+  "id": "ash127",
+  "model": {
+    "key": "ash127",
+    "orientation": {
+      "forward": "+x",
+      "up": "+y",
+      "rotation": [0, 0, 0],
+      "scale": 0.01635402,
+      "position": [-0.003278, 0.030131, -0.135502]
+    },
+    "parts": {
+      "mag": {
+        "names": ["mag_03", "bullet_04", "bullets_05"]
+      },
+      "bolt": {
+        "names": ["bolt_01", "charge_handle_02"]
+      }
+    }
+  },
+  "points": {
+    "sightRear": [-5.92, 6.99, 0],
+    "sightFront": [13.42, 6.95, 0],
+    "muzzle": [23.8, 1.81, 0],
+    "boreRear": [5.5, 1.81, 0],
+    "eject": [-5.219, 1.697, 1.911],
+    "butt": [-29.687, -0.637, 0.356]
+  },
+  "ads": {
+    "eyeRelief": 0.22,
+    "fov": 66,
+    "offset": [0, 0, 0],
+    "roll": 0
+  },
+  "hip": {
+    "position": [0.165, -0.225, -0.43],
+    "rotation": [0.003, -0.4, 7.202]
+  },
+  "sprint": {
+    "position": [0.125, -0.275, -0.38],
+    "rotation": [-18.221, 33.973, 23.368]
+  },
+  "motion": {
+    "sway": 1,
+    "inertia": 0.9,
+    "bob": 1,
+    "recoil": 1
+  }
+}

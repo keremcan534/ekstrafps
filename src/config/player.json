@@ -20,6 +20,7 @@
   "maxSlopeDeg": 46,
   "pushImpulse": 1.2,
   "baseFov": 90,
+  "viewmodelFov": 76,
   "sprintFovAdd": 8,
   "fovLerpSpeed": 9,
   "cameraBobAmount": 0.018,

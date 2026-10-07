@@ -1,0 +1,49 @@
+{
+  "id": "mp5sd",
+  "model": {
+    "key": "mp5sd",
+    "orientation": {
+      "forward": "+x",
+      "up": "+y",
+      "rotation": [0, 0, 0],
+      "scale": 0.00086412,
+      "position": [0, -0.056714, 0.053715]
+    },
+    "parts": {
+      "mag": {
+        "names": ["mag_03", "bullets_05", "bullet_04"]
+      },
+      "bolt": {
+        "names": ["bolt_01", "charginghandle_02"]
+      }
+    }
+  },
+  "points": {
+    "sightRear": [-51, 179.6, 0],
+    "sightFront": [429.6, 168.6, 0],
+    "muzzle": [645.5, 95.14, 0],
+    "boreRear": [298.4, 95.14, 0],
+    "eject": [131.596, 114.236, 27.774],
+    "butt": [-285.011, 82.991, 0]
+  },
+  "ads": {
+    "eyeRelief": 0.22,
+    "fov": 70,
+    "offset": [0, 0, 0],
+    "roll": 0
+  },
+  "hip": {
+    "position": [0.16, -0.215, -0.38],
+    "rotation": [0, 0, 6.88]
+  },
+  "sprint": {
+    "position": [0.12, -0.265, -0.33],
+    "rotation": [-18.335, 34.378, 22.918]
+  },
+  "motion": {
+    "sway": 1,
+    "inertia": 1,
+    "bob": 1,
+    "recoil": 1
+  }
+}

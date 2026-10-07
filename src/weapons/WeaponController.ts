@@ -133,6 +133,16 @@ export class WeaponController implements WeaponListener {
     return this.viewmodel.adsFov;
   }
 
+  /** The weapon in hand's own hip FOV, or null (the player's FOV setting). */
+  get hipFov(): number | null {
+    return this.viewmodel.hipFov;
+  }
+
+  /** Look sensitivity at full aim for the weapon in hand (on top of the FOV scaling). */
+  get aimSensitivity(): number {
+    return this.viewmodel.aimSensitivity;
+  }
+
   /** Camera aim (intent) direction this frame. */
   get cameraAimDir(): THREE.Vector3 {
     return this.aim;

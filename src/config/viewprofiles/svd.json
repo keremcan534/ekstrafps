@@ -1,0 +1,49 @@
+{
+  "id": "svd",
+  "model": {
+    "key": "svd",
+    "orientation": {
+      "forward": "+x",
+      "up": "+y",
+      "rotation": [0, 0, 0],
+      "scale": 0.00155875,
+      "position": [-0.000007, 0.003147, -0.229933]
+    },
+    "parts": {
+      "mag": {
+        "names": ["mag_05", "bullets_07", "bullet_06"]
+      },
+      "bolt": {
+        "names": ["charginghandle_01", "bolt_02"]
+      }
+    }
+  },
+  "points": {
+    "sightRear": [-134.75, 79.85, 0],
+    "sightFront": [314.25, 79.8, 0],
+    "muzzle": [403.1, 18.78, 0],
+    "boreRear": [210.7, 18.78, 0],
+    "eject": [-109.019, 23.643, 19.251],
+    "butt": [-362.428, -30.888, 0.004]
+  },
+  "ads": {
+    "eyeRelief": 0.22,
+    "fov": 62,
+    "offset": [0, 0, 0],
+    "roll": 0
+  },
+  "hip": {
+    "position": [0.165, -0.215, -0.43],
+    "rotation": [0, 0, 6.88]
+  },
+  "sprint": {
+    "position": [0.125, -0.265, -0.38],
+    "rotation": [-18.335, 34.377, 22.918]
+  },
+  "motion": {
+    "sway": 1,
+    "inertia": 1,
+    "bob": 1,
+    "recoil": 1
+  }
+}

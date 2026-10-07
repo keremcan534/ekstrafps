@@ -6,6 +6,7 @@ import { metalRoughness, metalTexture, polymerTexture, woodTexture } from '../fx
 import { dressRig } from './WeaponMeshes';
 import type { ProfiledView } from './ProfiledRig';
 import type { HandAction } from './HandPose';
+import { attachHands, proceduralHands, type RigHands } from './HandGrips';
 
 /**
  * Placeholder procedural weapon models with the moving parts the procedural
@@ -39,6 +40,8 @@ export interface WeaponRig {
    */
   handIk: { left: number; right: number };
   handPose: { left: HandAction; right: HandAction };
+  /** The first-person arms' grips and finger poses (HandGrips.ts); none: no arms. */
+  hands?: RigHands;
   /** Round/shell held in hand during single-round reloads. */
   heldShell: THREE.Object3D | null;
   /** Test laser emitter; the beam runs parallel to the bore. */
@@ -314,9 +317,14 @@ function triggerGuard(parent: THREE.Object3D, material: THREE.Material, zFront: 
 /**
  * Holographic sight (EOTech-pattern box): hood with a square window, base with
  * battery housing and buttons, and a red ring-and-dot reticle that floats in
- * the window. Returns the sight point (the reticle centre).
+ * the window. Returns the sight point (the reticle centre). Built as its own group
+ * ('holoSight', the rail height it sits on in userData.railTop): a gun whose model's own
+ * optic gives way to it keeps it (WeaponMeshes).
  */
-function holoSight(root: THREE.Object3D, z: number, railTop: number): THREE.Object3D {
+function holoSight(parent: THREE.Object3D, z: number, railTop: number): THREE.Object3D {
+  const root = group(parent, [0, 0, 0]);
+  root.name = 'holoSight';
+  root.userData.railTop = railTop;
   const y = railTop + 0.034;
   const P = mat.black;
   box(root, P, [0.036, 0.012, 0.08], [0, railTop + 0.006, z]); // base / mount
@@ -351,7 +359,7 @@ function holoSight(root: THREE.Object3D, z: number, railTop: number): THREE.Obje
     tick.position.set(tx * 0.0049, y + ty * 0.0049, z - 0.035);
     root.add(tick);
   }
-  return point(root, [0, y, z - 0.035]);
+  return point(parent, [0, y, z - 0.035]);
 }
 
 /** Centre line of a curved magazine, top to bottom, in (z, y): it bends forward as it goes down. */
@@ -1244,6 +1252,12 @@ const BUILDERS: Record<ModelKey, () => WeaponRig> = {
   ash127: buildSCARH,
 };
 
+/** The key of the builder a model is made by (newer guns borrow a relative's rig). */
+export function builderKey(model: ModelKey): ModelKey {
+  const b = BUILDERS[model];
+  return (Object.keys(BUILDERS) as ModelKey[]).find((k) => BUILDERS[k] === b) ?? model;
+}
+
 /**
  * `world`: a third-person gun (the light model file). A model from public/guns replaces
  * the procedural looks when there is one (see WeaponMeshes). `eyeBack`: the weapon's
@@ -1254,6 +1268,9 @@ export function buildWeaponModel(model: ModelKey, low = false, world = low, eyeB
   try {
     const r = BUILDERS[model]();
     dressRig(r, model, world, eyeBack);
+    // The gun in hand: the arms' grips (src/config/gunhands.json, by builder).
+    const hands = world ? undefined : proceduralHands(builderKey(model));
+    if (hands) attachHands(r, hands);
     r.root.traverse((o) => {
       o.frustumCulled = false;
     });
@@ -1370,6 +1387,7 @@ function cloneRig(t: WeaponRig): WeaponRig {
     rightHandRest: t.rightHandRest.clone(),
     handIk: { ...t.handIk },
     handPose: { ...t.handPose },
+    hands: undefined,
     butt: t.butt.clone(),
   };
 }

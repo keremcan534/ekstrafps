@@ -2,21 +2,22 @@ import * as THREE from 'three';
 import GUI from 'lil-gui';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
-import { buildWeaponModel } from '../weapons/WeaponModels';
-import { gunSource, legacyFit, loadWeaponMeshes } from '../weapons/WeaponMeshes';
+import { buildWeaponModel, builderKey } from '../weapons/WeaponModels';
+import { gunSource, legacyFit, loadWeaponMeshes, movingBoxes } from '../weapons/WeaponMeshes';
 import { createWeaponDefs } from '../weapons/WeaponData';
 import { SPRINT_POSE, Viewmodel, type ViewmodelPlayer } from '../weapons/Viewmodel';
 import { Weapon } from '../weapons/Weapon';
 import { computeHandling, type Handling } from '../weapons/Handling';
 import { getAmmo } from '../weapons/AmmoData';
-import { orientationMatrix, poseQuaternion, viewProfile, type Axis, type ViewProfile } from '../weapons/ViewProfile';
+import { FOCUS_DEFAULTS, aimMode, orientationMatrix, poseQuaternion, viewProfile, type AimMode, type AimSettings, type Axis, type ViewProfile } from '../weapons/ViewProfile';
 import { playerConfig } from '../player/PlayerConfig';
 import { feel } from '../config/Feel';
 import { DEG, hfovToVfov } from '../core/math';
 import { handConfig } from '../weapons/FirstPersonHands';
 import { LIMITS, coverage, runStateChecks, sightLine, sightPicture, type StateRow } from './viewChecks';
-import { handFolder, handReport, handView, seedHands } from './handEditor';
-import { gripRotation } from '../weapons/HandPose';
+import { handFolder, handReport, handView, seedHands, type HandEditorHost } from './handEditor';
+import gunHandsFile from '../config/gunhands.json';
+import { gripRotation, type WeaponHands } from '../weapons/HandPose';
 import { WeaponSurface, fingerGaps, fitFingers, gloveInside } from './handChecks';
 
 /**
@@ -247,6 +248,43 @@ function pointFolder(parent: GUI, key: PointKey, label: string): void {
   f.add({ pick: () => ((st.pick = key), toast(`${label}: modelin üstüne tıkla`)) }, 'pick').name('Modelde tıklayarak koy');
 }
 
+/**
+ * Aim mode: TrueADS (the ADSPoint lined up) or FocusAim (FOV narrows, the gun comes in, no
+ * sight alignment), with FocusAim's values; the hip FOV and aimed look sensitivity either way.
+ */
+function aimFolder(parent: GUI, p: ViewProfile): void {
+  const f = parent.addFolder('Nişan modu (TrueADS / FocusAim)').close();
+  const st = { mode: aimMode(p), hipFov: p.aim?.hipFOV ?? 0 };
+  const ensure = () => (p.aim ??= { ...structuredClone(FOCUS_DEFAULTS) as AimSettings, mode: st.mode });
+  f.add(st, 'mode', { 'TrueADS (gez–arpacık hizası)': 'TrueADS', 'FocusAim (zoom, hizasız)': 'FocusAim' })
+    .name('Mod')
+    .onChange((m: AimMode) => {
+      ensure().mode = m;
+      apply();
+      buildGui();
+    });
+  if (st.mode === 'FocusAim') {
+    const a = ensure();
+    f.add(a, 'aimFOV', 30, 90, 0.5).name('nişan FOV (yatay °)').onChange(apply);
+    const names = ['x (ortaya, m)', 'y (yukarı, m)', 'z (geri, m)'];
+    for (let i = 0; i < 3; i++) f.add(a.aimWeaponPositionOffset, IDX[i], -0.15, 0.15, 0.0005).name(`konum ${names[i]}`).onChange(apply);
+    const rot = ['eğim', 'sapma', 'yatma'];
+    for (let i = 0; i < 3; i++) f.add(a.aimWeaponRotationOffset, IDX[i], -20, 20, 0.1).name(`dönüş ${rot[i]} °`).onChange(apply);
+    f.add(a, 'aimSwayMultiplier', 0, 1, 0.01).name('sallanma kalan').onChange(apply);
+    f.add(a, 'aimBobMultiplier', 0, 1, 0.01).name('adım sarsıntısı kalan').onChange(apply);
+    f.add(a, 'aimInertiaMultiplier', 0, 1, 0.01).name('atalet kalan').onChange(apply);
+  }
+  if (p.aim) {
+    f.add(p.aim, 'aimSensitivityMultiplier', 0.5, 1, 0.01).name('nişanda hassasiyet');
+    f.add(st, 'hipFov', 0, 110, 1)
+      .name('bel FOV (0: oyuncu ayarı)')
+      .onChange((v: number) => {
+        if (v > 0) p.aim!.hipFOV = v;
+        else delete p.aim!.hipFOV;
+      });
+  }
+}
+
 function poseFolder(parent: GUI, label: string, pose: ViewProfile['hip']): void {
   const f = parent.addFolder(label).close();
   const names = ['x', 'y', 'z'];
@@ -269,8 +307,11 @@ function buildGui(): void {
   top.add(st, 'motion').name('Hareket (sway) açık').onChange(motionMode);
   top.add(st, 'leftShoulder').name('Sol omuz');
   const p = profile();
-  if (!p) {
-    top.add({ seed: () => seedFromLegacy() }, 'seed').name('Bu silaha profil oluştur');
+  if (!p || !vm.activeRig?.view) {
+    // A procedural gun (no profile, or the model files are off): its hands
+    // (src/config/gunhands.json, by builder), and the way to a profile.
+    handFolder(gui, proceduralHandsHost());
+    if (!p && gunSource(data.model)) top.add({ seed: () => seedFromLegacy() }, 'seed').name('Bu silaha profil oluştur');
     return;
   }
   const o = p.model.orientation;
@@ -281,6 +322,14 @@ function buildGui(): void {
   const rot = ['eğim (pitch)', 'sapma (yaw)', 'yatma (roll)'];
   for (let i = 0; i < 3; i++) ori.add(o.rotation, IDX[i], -15, 15, 0.01).name(`ince ${rot[i]} °`).onChange(apply);
   ori.add(o, 'scale', 0, 0.02, 0.000001).name('ölçek').onChange(apply);
+  const wd = { width: o.width ?? 1 };
+  ori.add(wd, 'width', 0.6, 2, 0.01)
+    .name('genişlik (yanlara, ×)')
+    .onChange((v: number) => {
+      if (Math.abs(v - 1) < 1e-3) delete o.width;
+      else o.width = v;
+      apply();
+    });
   for (let i = 0; i < 3; i++) ori.add(o.position, IDX[i], -0.5, 0.5, 0.0001).name(`konum ${'xyz'[i]} (m)`).onChange(apply);
 
   const ads = gui.addFolder('ADSPoint (nişan hattı)');
@@ -292,6 +341,7 @@ function buildGui(): void {
   for (let i = 0; i < 3; i++) off.add(p.ads.offset, IDX[i], -0.02, 0.02, 0.0001).name(`${'xyz'[i]} (m)`).onChange(apply);
   off.add(p.ads, 'roll', -10, 10, 0.01).name('yatma °').onChange(apply);
 
+  aimFolder(gui, p);
   poseFolder(gui, 'Bel pozu (hip)', p.hip);
   poseFolder(gui, 'Koşu pozu (sprint)', p.sprint);
 
@@ -301,7 +351,20 @@ function buildGui(): void {
   pointFolder(pts, 'eject', 'Kartuş çıkışı');
   pointFolder(pts, 'butt', 'Dipçik omuz noktası');
 
-  handFolder(gui, { vm, profile, apply, save, toast });
+  handFolder(gui, {
+    vm,
+    hands: () => p.hands ?? null,
+    toWeapon: () => orientationMatrix(p, new THREE.Matrix4()),
+    seed: () => {
+      p.hands = seedHands(orientationMatrix(p, new THREE.Matrix4()).invert(), viewProfile('ak47')?.hands ?? procHands.ak47);
+      apply();
+      buildGui();
+    },
+    apply,
+    save,
+    target: 'profil',
+    toast,
+  });
 
   const mo = gui.addFolder('Hareket çarpanları').close();
   for (const k of ['sway', 'inertia', 'bob', 'recoil'] as const) mo.add(p.motion, k, 0, 2, 0.01).name(k);
@@ -312,6 +375,33 @@ function buildGui(): void {
   act.add({ copy: () => navigator.clipboard?.writeText(format(p)).then(() => toast('JSON kopyalandı')) }, 'copy').name('JSON kopyala');
   act.add({ check: () => checkStates() }, 'check').name('15 durumu test et');
   refreshProxies();
+}
+
+// --- A procedural gun's hands (src/config/gunhands.json, one entry per builder) ---
+const procHands = structuredClone(gunHandsFile) as unknown as Record<string, WeaponHands>;
+
+function proceduralHandsHost(): HandEditorHost {
+  const key = builderKey(data.model);
+  return {
+    vm,
+    hands: () => procHands[key] ?? null,
+    toWeapon: () => new THREE.Matrix4(),
+    seed: () => {
+      const rig = vm.activeRig!;
+      procHands[key] = seedHands(new THREE.Matrix4(), procHands.ak47 ?? viewProfile('ak47')?.hands, rig.rightHandRest, rig.leftHandRest);
+      vm.setHands(procHands[key]);
+      buildGui();
+    },
+    apply: () => vm.setHands(procHands[key]),
+    save: async () => {
+      const text = JSON.stringify(procHands, null, 2).replace(/\[\s+([^[\]{}]*?)\s+\]/g, (_m, inner: string) => `[${inner.split(/,\s*/).join(', ')}]`) + '\n';
+      const res = await fetch('/__tuning/save', { method: 'POST', body: JSON.stringify({ file: 'gunhands', text }) });
+      const j = (await res.json().catch(() => ({ ok: false, error: res.statusText }))) as { ok: boolean; file?: string; error?: string };
+      toast(j.ok ? `Kaydedildi: ${j.file} (${key})` : `KAYDEDİLEMEDİ: ${j.error}`, !j.ok);
+    },
+    target: `gunhands.json: ${key}`,
+    toast,
+  };
 }
 
 // --- Save / revert / seed ---
@@ -386,9 +476,7 @@ function seedFromLegacy(): void {
   p.points.muzzle = toModel(legacy.muzzle.position);
   p.points.boreRear = toModel(legacy.muzzle.position.clone().add(V(0, 0, 0.3)));
   p.points.eject = toModel(legacy.ejectPort.position);
-  p.hands = seedHands(p);
-  p.hands.rightGrip.position = toModel(legacy.rightHandRest);
-  p.hands.leftGrip.position = toModel(legacy.leftHandRest);
+  p.hands = seedHands(fit.clone().invert(), viewProfile('ak47')?.hands ?? procHands.ak47, legacy.rightHandRest, legacy.leftHandRest);
   p.points.butt = toModel(legacy.butt);
   // The same look at the hip and sprinting: old pose · the stray turn.
   const deg = (q: THREE.Quaternion) => {
@@ -400,12 +488,23 @@ function seedFromLegacy(): void {
   const sp = SPRINT_POSE[d.animSet];
   p.sprint.position = d.viewmodel.hipPosition.map((v, i) => round(v + sp.pos[i], 4)) as [number, number, number];
   p.sprint.rotation = deg(poseQuaternion([sp.rot[0] / DEG, sp.rot[1] / DEG, sp.rot[2] / DEG], new THREE.Quaternion()).multiply(turn));
-  // Moving parts by name, when the model names them.
+  // Moving parts by name when the model's skeleton names them (the magazine with its rounds;
+  // the bolt with its charging handle, a pistol's slide), else where the old placement cut
+  // them out of the mesh (a box, model space).
   const names = src.parts.map((x) => x.name);
-  const mag = names.find((n) => /mag/i.test(n) && !/release|catch/i.test(n));
-  const bolt = names.find((n) => /bolt|slide|charg/i.test(n));
-  if (mag) p.model.parts.mag = { names: [mag] };
-  if (bolt) p.model.parts.bolt = { names: [bolt] };
+  const mag = names.filter((n) => /^_?mag_?\d*$|^bullets?_?\d*$/i.test(n));
+  const bolt = names.filter((n) => /^(bolt(arm)?|slide|charg\w*|charge_?handle)_?\d*$/i.test(n));
+  const boxes = movingBoxes(legacy);
+  const inv = fit.clone().invert();
+  const toModelBox = (b: THREE.Box3): [[number, number, number], [number, number, number]] => {
+    const m = new THREE.Box3();
+    for (let i = 0; i < 8; i++) m.expandByPoint(V(i & 1 ? b.max.x : b.min.x, i & 2 ? b.max.y : b.min.y, i & 4 ? b.max.z : b.min.z).applyMatrix4(inv));
+    return [m.min.toArray().map((v) => round(v, 4)) as [number, number, number], m.max.toArray().map((v) => round(v, 4)) as [number, number, number]];
+  };
+  if (mag.some((n) => /mag/i.test(n))) p.model.parts.mag = { names: mag };
+  else if (!boxes.mag.isEmpty()) p.model.parts.mag = { box: toModelBox(boxes.mag) };
+  if (bolt.length) p.model.parts.bolt = { names: bolt };
+  else if (!boxes.bolt.isEmpty()) p.model.parts.bolt = { box: toModelBox(boxes.bolt) };
   working.set(d.id, p);
   select(d.id);
   toast('Profil oluşturuldu: gez ve arpacığı modelde tıklayarak ayarla, sonra Kaydet');
@@ -456,17 +555,20 @@ function info(now: number): void {
   const out: string[] = [];
   const bad = (s: string) => `<span class="bad">${s}</span>`;
   out.push(`${data.name} (${data.id})  ${a.profiled ? 'PROFİL' : bad('ESKİ YERLEŞİM (profili yok)')}  ADS %${Math.round(vm.adsAmount * 100)}  ${st.motion ? 'hareket açık' : 'hareket dondurulmuş'}`);
-  if (a.profiled && a.aimed) {
+  if (a.profiled && a.aimed && a.focus) {
+    const f = profile()?.aim;
+    out.push(`FocusAim     nişan FOV ${f?.aimFOV}°, gez hizası aranmaz; mermi kamera merkezine gider`);
+  } else if (a.profiled && a.aimed) {
     const solveBad = a.solveMm > 0.05 || a.solveDeg > 0.005;
     out.push(`ADS hizası   çözüm ${a.solveMm.toFixed(3)} mm ${a.solveDeg.toFixed(4)}°${solveBad ? bad('  ← ÇÖZÜM HATALI') : ''}`);
     out.push(`             şu an ${a.liveDeg.toFixed(3)}° ${a.liveMm.toFixed(2)} mm, yatma ${a.liveRollDeg.toFixed(3)}°   oturunca ${a.restDeg.toFixed(4)}°`);
   }
-  const sl = sightLine(vm);
+  const sl = a.focus ? null : sightLine(vm);
   if (sl && vm.adsAmount > 0.99) {
     const s = `Gez–arpacık ayrılma ${sl.split.toFixed(3)}°, arpacık merkezden ${sl.off.toFixed(3)}° (${px(sl.off)} px @1080p)`;
     out.push(sl.split > LIMITS.splitDeg || sl.off > LIMITS.stillDeg ? bad(s) : s);
   }
-  if (vm.adsAmount > 0.999 && !st.motion && now > pictureAt) {
+  if (!a.focus && vm.adsAmount > 0.999 && !st.motion && now > pictureAt) {
     pictureAt = now + 600;
     picture = sightPicture(vm);
   } else if (vm.adsAmount < 0.99) picture = null;

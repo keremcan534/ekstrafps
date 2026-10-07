@@ -77,7 +77,8 @@ export class PlayerCamera {
     this.downedTarget = 0;
   }
 
-  update(dt: number, alpha: number, player: PlayerController, adsAmount: number, adsFov: number): void {
+  /** `hipFov`: the weapon's own hip FOV (horizontal deg), null for the player's setting. */
+  update(dt: number, alpha: number, player: PlayerController, adsAmount: number, adsFov: number, hipFov: number | null = null): void {
     this.punch.update(dt);
     this.fovPunch.update(dt);
     this.landingDip.update(dt);
@@ -148,8 +149,8 @@ export class PlayerCamera {
 
     // --- FOV ---
     this.sprintBlend += ((player.sprinting ? 1 : 0) - this.sprintBlend) * damp(cfg.fovLerpSpeed, dt);
-    const hipFov = cfg.baseFov + cfg.sprintFovAdd * this.sprintBlend;
-    const targetFov = hipFov + (adsFov - hipFov) * adsAmount;
+    const hip = (hipFov ?? cfg.baseFov) + cfg.sprintFovAdd * this.sprintBlend;
+    const targetFov = hip + (adsFov - hip) * adsAmount;
     this.fov += (targetFov - this.fov) * damp(cfg.fovLerpSpeed * 2, dt);
     const finalFov = hfovToVfov(this.fov + this.fovPunch.value);
     if (Math.abs(this.camera.fov - finalFov) > 0.001) {

@@ -64,6 +64,13 @@ export interface ViewProfile {
     offset: V3;
     roll: number;
   };
+  /**
+   * How aiming works (default TrueADS). TrueADS: the ADSPoint is lined up with the camera
+   * (sights that can be lined up). FocusAim: no sight alignment; the FOV narrows and the
+   * gun comes in toward the centre, steadier (a model whose sights can't be lined up
+   * stays usable). Both shoot along the camera's aim either way.
+   */
+  aim?: AimSettings;
   hip: ViewPose;
   sprint: ViewPose;
   /** This weapon's taste on the shared motion layers (1 = as its handling gives). */
@@ -72,12 +79,54 @@ export interface ViewProfile {
   hands?: WeaponHands;
 }
 
+export type AimMode = 'TrueADS' | 'FocusAim';
+
+export interface AimSettings {
+  mode: AimMode;
+  /** Horizontal FOV at the hip (deg); unset: the player's own FOV setting. */
+  hipFOV?: number;
+  /** FocusAim: aimed horizontal FOV (deg). (TrueADS uses `ads.fov`.) */
+  aimFOV: number;
+  /** FocusAim: the aimed pose from the hip pose: position (aim space, m) and turn (deg, added to the hip's). */
+  aimWeaponPositionOffset: V3;
+  aimWeaponRotationOffset: V3;
+  /** FocusAim: what is left of sway, walking bob and visual inertia at full aim (0…1). */
+  aimSwayMultiplier: number;
+  aimBobMultiplier: number;
+  aimInertiaMultiplier: number;
+  /** Look sensitivity at full aim (either mode; on top of the FOV's own scaling). */
+  aimSensitivityMultiplier: number;
+}
+
+/** FocusAim defaults: the gun a few centimetres in and up, upright, half as lively. */
+export const FOCUS_DEFAULTS: Readonly<AimSettings> = {
+  mode: 'FocusAim',
+  aimFOV: 52,
+  aimWeaponPositionOffset: [-0.055, 0.045, 0.04],
+  aimWeaponRotationOffset: [1.5, 0, -5],
+  aimSwayMultiplier: 0.4,
+  aimBobMultiplier: 0.35,
+  aimInertiaMultiplier: 0.5,
+  aimSensitivityMultiplier: 0.9,
+};
+
+/** A profile's aim mode. */
+export const aimMode = (p: Readonly<ViewProfile>): AimMode => p.aim?.mode ?? 'TrueADS';
+
 /** A model file's own axes along the barrel and up, a small fine turn (deg), scale, position (m). */
 export interface ViewOrientation {
   forward: Axis;
   up: Axis;
   rotation: V3;
   scale: number;
+  /** Extra scale across the weapon (its X): a model built too slim. Default 1. */
+  width?: number;
+  /**
+   * Scale across the weapon by region, about its centre line (the rear sight's): pairs of
+   * [position along `forward` (model units), ×], linear between, held past the ends. A
+   * model whose stock or handguard is slimmer than the real one, its receiver right.
+   */
+  widthAlong?: [number, number][];
   position: V3;
 }
 
@@ -90,6 +139,8 @@ export interface ViewOrientation {
 export interface ViewPart {
   names?: string[];
   pieces?: V3[];
+  /** Model space [min, max]: every triangle whose centre is inside (a part welded to the body). */
+  box?: [V3, V3];
   pivot?: V3;
   /** A bolt handle's knob (model space): the firing hand reaches for it to work the bolt. */
   knob?: V3;
@@ -150,7 +201,41 @@ export function orientMatrix(o: Readonly<ViewOrientation>, out: THREE.Matrix4): 
   const x = y.clone().cross(z);
   const axes = x.lengthSq() > 0.5 ? new THREE.Matrix4().makeBasis(x, y, z).transpose() : new THREE.Matrix4();
   const fine = poseQuaternion(o.rotation, new THREE.Quaternion());
-  return out.compose(new THREE.Vector3(...o.position), fine, new THREE.Vector3(o.scale, o.scale, o.scale)).multiply(axes);
+  return out.compose(new THREE.Vector3(...o.position), fine, new THREE.Vector3(o.scale * (o.width ?? 1), o.scale, o.scale)).multiply(axes);
+}
+
+/**
+ * Model-space positions / normals (xyz triples) widened by the profile's `widthAlong`: each
+ * point moved across the weapon, about its centre line, by the scale where it lies along
+ * it; normals kept square to the widened surface. In place; nothing without `widthAlong`.
+ */
+export function widenModel(p: Readonly<ViewProfile>, positions: Float32Array, normals: Float32Array | null): void {
+  const o = p.model.orientation;
+  const w = o.widthAlong;
+  if (!w?.length) return;
+  const f = AXIS[o.forward];
+  const u = AXIS[o.up];
+  // Across the weapon (either sign: the scale is about the centre line).
+  const s = [u[1] * f[2] - u[2] * f[1], u[2] * f[0] - u[0] * f[2], u[0] * f[1] - u[1] * f[0]];
+  const r = p.points.sightRear;
+  const centre = r[0] * s[0] + r[1] * s[1] + r[2] * s[2];
+  const at = (x: number): number => {
+    if (x <= w[0][0]) return w[0][1];
+    for (let i = 1; i < w.length; i++) if (x <= w[i][0]) return w[i - 1][1] + ((w[i][1] - w[i - 1][1]) * (x - w[i - 1][0])) / (w[i][0] - w[i - 1][0]);
+    return w[w.length - 1][1];
+  };
+  for (let i = 0; i < positions.length; i += 3) {
+    const k = at(positions[i] * f[0] + positions[i + 1] * f[1] + positions[i + 2] * f[2]);
+    if (k === 1) continue;
+    const across = positions[i] * s[0] + positions[i + 1] * s[1] + positions[i + 2] * s[2] - centre;
+    for (let c = 0; c < 3; c++) positions[i + c] += s[c] * across * (k - 1);
+    if (!normals) continue;
+    // Stretched k times across: the normal's part across shrinks k times.
+    const na = normals[i] * s[0] + normals[i + 1] * s[1] + normals[i + 2] * s[2];
+    for (let c = 0; c < 3; c++) normals[i + c] += s[c] * na * (1 / k - 1);
+    const len = Math.hypot(normals[i], normals[i + 1], normals[i + 2]) || 1;
+    for (let c = 0; c < 3; c++) normals[i + c] /= len;
+  }
 }
 
 /** A pose's rotation (deg [pitch, yaw, roll], yaw → pitch → roll). */
