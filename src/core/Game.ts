@@ -65,6 +65,7 @@ import { setTextureAnisotropy } from '../fx/Textures';
 import { DustMotes } from '../fx/DustMotes';
 import { Ambience } from '../audio/Ambience';
 import { PerfBench, benchFlagsFromUrl, glInfo, type BenchFlags } from './PerfBench';
+import { enterLandscape } from './Landscape';
 import { raid } from '../game/Progress';
 import { Inhabitants } from '../game/Inhabitants';
 import type { ShowcaseDeps } from '../ui/Showcase';
@@ -361,7 +362,7 @@ export class Game {
     const mapId = new URLSearchParams(location.search).get('map');
     // Character models (public/chars) load alongside the map; soldiers are built after.
     const characters = loadCharacterModels(this.mobile);
-    const guns = loadWeaponMeshes();
+    const guns = loadWeaponMeshes(this.mobile);
     this.arena = mapId === 'site9' ? new Site9(this.physics, this.mobile) : new Arena(this.physics, this.mobile);
     this.scene.add(this.arena.group);
     this.arena.sun.castShadow = this.quality.shadows;
@@ -829,7 +830,7 @@ export class Game {
     this.health.onRevived = () => {
       this.camera.downedTarget = 0;
       this.status.setDowned(-1);
-      this.audio.play('bd.contact', { pitch: 1.12 });
+      this.audio.play('bd.contact');
       this.hud.toast('Back on your feet', 1.6);
     };
     this.mapOverlay = new MapOverlay(ui, {
@@ -1176,7 +1177,7 @@ export class Game {
       return false;
     }
     const ally = this.addAlly(at, true);
-    this.audio.play('bd.moving', { position: at, pitch: 1.15 });
+    this.audio.play('bd.moving', { position: at });
     this.hud.toast(`Contractor ${ally.personality.name} hired (${ally.personality.role})`);
     return true;
   }
@@ -1231,7 +1232,7 @@ export class Game {
         // (The hit operator radios what it felt to the squad itself.)
         this.survival?.onSoldierHit('alpha', info, killed);
       },
-      onKilled: () => this.audio.play('bd.man_down', { pitch: 1.12 }),
+      onKilled: () => this.audio.play('bd.man_down'),
     });
     ally.soldier.body.friendly = true;
     ally.soldier.body.canGoDown = () => !this.health.dead || this.allies.some((a) => a !== ally && a.alive && !a.downed);
@@ -1314,18 +1315,8 @@ export class Game {
         this.frame(t);
       });
     }
-    // Phones: fullscreen without the navigation bar, then landscape (both need this gesture;
-    // iOS has neither on iPhone, older WebKit returns no promise: all optional).
-    if (this.mobile) {
-      try {
-        const el = document.documentElement;
-        el.requestFullscreen?.({ navigationUI: 'hide' })
-          .then(() => (screen.orientation as unknown as { lock?: (o: string) => Promise<void> } | undefined)?.lock?.('landscape'))
-          .catch(() => {});
-      } catch {
-        /* no fullscreen here */
-      }
-    }
+    // Phones: fullscreen without the navigation bar, then landscape (needs this gesture).
+    if (this.mobile) enterLandscape();
   }
 
   /** Start the benchmark a couple of seconds into play (the menu calls this, then PLAY). */

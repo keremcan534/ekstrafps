@@ -36,10 +36,10 @@ const POOLS: Record<WardenPlate, Line[]> = {
 const SPEAK = 0.4;
 const GAP = 40;
 /** Breathing level while he's there (aiming: a little closer). */
-const BREATH = { stand: 0.5, aim: 0.62 };
+const BREATH = { stand: 0.3, aim: 0.38 };
 /** One breath out of the take (s: in, then out), and the quiet between breaths (s). */
 const ONE_BREATH = { at: 3.1, length: 3.5 };
-const BREATH_GAP = [18, 40] as const;
+const BREATH_GAP = [45, 90] as const;
 
 export class MenuWardenVoice {
   private ctx: AudioContext | null = null;
@@ -85,14 +85,15 @@ export class MenuWardenVoice {
     this.out.connect(ctx.destination);
     this.breathGain = ctx.createGain();
     this.breathGain.gain.value = 0;
-    // The mask: a little darker than the raw take.
+    // The mask: darker than the raw take (the valve's hiss is what grated).
     const lp = ctx.createBiquadFilter();
     lp.type = 'lowpass';
-    lp.frequency.value = 2400;
+    lp.frequency.value = 1500;
     this.breathGain.connect(lp).connect(this.out);
     this.loading = this.load();
     await this.loading;
-    this.nextBreath(4 + Math.random() * 6);
+    // Nothing on opening the menu: the first breath comes after a full quiet.
+    this.nextBreath();
     this.level();
     this.presence(this.plate, true);
     if (this.active) this.welcome();

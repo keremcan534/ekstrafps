@@ -1,8 +1,8 @@
 // Pack a rigged character GLB (Meshy / Tripo / Mixamo export) for the game:
 //   node scripts/pack-character.mjs <source.glb> <name> [tris]
 // writes public/chars/<name>.glb (desktop: the model as made, textures up to 4K) and
-// public/chars/m/<name>.glb (phones: same mesh and 2K colour, 1K normal / metal-rough
-// maps). Animations are dropped (the game poses the body itself); the skeleton and skin
+// public/chars/m/<name>.glb (phones: same mesh, 1K colour, 512 px normal / metal-rough
+// maps: under ~200 px tall on a phone screen, and GPU memory is what phones run out of). Animations are dropped (the game poses the body itself); the skeleton and skin
 // weights are kept. See src/targets/CharacterModels.ts for which faction wears which name.
 // `tris` caps the desktop mesh (phones get half): for crowd characters that come out
 // far denser than the rest (a 125k-triangle robot in a horde of twenty).
@@ -30,5 +30,5 @@ if (needsNames(doc)) {
 }
 await pack(from, name, [
   { dir: 'public/chars', tris, color: 4096, maps: 4096 },
-  { dir: 'public/chars/m', tris: tris / 2, color: 2048, maps: 1024 },
+  { dir: 'public/chars/m', tris: tris / 2, color: 1024, maps: 512 },
 ]);

@@ -1,5 +1,6 @@
 import { trailerMode } from '../production/trailer/capture/determinism';
 import { Game } from './core/Game';
+import { enterLandscape, portraitQuery } from './core/Landscape';
 import { loadGraphics, noGlass } from './config/Graphics';
 import { MainMenu } from './ui/MainMenu';
 import { applyHudLayout, loadHudLayout } from './ui/HudLayout';
@@ -21,10 +22,16 @@ document.documentElement.style.setProperty('--dirt-light', 'url(ui/dirt_light.we
 document.documentElement.style.setProperty('--wear', `url(${wearMask()})`);
 const params = new URLSearchParams(location.search);
 
+// Phones held upright: a cover over everything (menu, match, loading) asking for landscape.
 const rotateHint = document.createElement('div');
 rotateHint.className = 'rotate-hint';
-rotateHint.textContent = 'Rotate your device to landscape';
-app.appendChild(rotateHint);
+rotateHint.innerHTML = `
+  <div class="rh-box">
+    <div class="rh-phone"><i></i></div>
+    <h2 class="rh-title">Turn your phone</h2>
+    <p class="rh-msg">SITE-9 is played in landscape</p>
+  </div>`;
+document.body.appendChild(rotateHint);
 
 const stored = (key: string): string | null => {
   try {
@@ -64,6 +71,20 @@ try {
   throw err;
 }
 document.body.classList.toggle('is-touch', game.mobile);
+if (game.mobile) {
+  // The first tap anywhere (the menu too, not only PLAY) goes fullscreen and turns the page
+  // sideways where the browser allows it; the portrait cover handles the rest.
+  const sideways = () => {
+    window.removeEventListener('pointerup', sideways);
+    enterLandscape();
+  };
+  window.addEventListener('pointerup', sideways);
+  rotateHint.addEventListener('pointerup', () => enterLandscape());
+  // Turned upright mid-raid: pause rather than play on behind the cover.
+  portraitQuery().addEventListener('change', (e) => {
+    if (e.matches && game.running && !game.ended) pause();
+  });
+}
 // Phones: no frosted glass (a blur pass per panel every frame). The game keeps this in sync with Settings.
 document.body.classList.toggle('no-glass', noGlass(game.mobile, loadGraphics(game.mobile)));
 // Phones: the UI is laid out for ~640 px of height; scale it to the real screen (a phone in landscape is ~400).

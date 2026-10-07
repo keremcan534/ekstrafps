@@ -240,7 +240,9 @@ export class Soldier implements LightSource {
     this.index = index;
     this.boss = palette === 'bdboss';
     this.mats = soldierMaterials(palette);
-    this.voicePitch = 0.94 + index * 0.035;
+    // A few distinct voices, cycled: the index grows with every operator spawned (allies start
+    // at 10), and an unbounded step played radio lines 30-40 % fast.
+    this.voicePitch = 0.95 + (index % 5) * 0.025;
     this.errNoise = new Noise1D(index * 17 + 3);
     this.errNoise2 = new Noise1D(index * 29 + 11);
     this.ammoData = getAmmo('762x39_ps');

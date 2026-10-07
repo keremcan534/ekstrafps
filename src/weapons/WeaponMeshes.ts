@@ -6,6 +6,7 @@ import type { WeaponRig } from './WeaponModels';
 import { loadArms } from './FirstPersonHands';
 import { dressGunMaterial } from './GunSurface';
 import modelSettings from '../config/weaponModels.json';
+import { capTextures } from '../core/TextureCap';
 
 /**
  * Real weapon meshes, packed by scripts/pack-weapon.mjs: public/guns/fp/<key>.glb for the
@@ -322,8 +323,11 @@ export function legacyFit(key: ModelKey): THREE.Matrix4 | null {
   return fits.get(`${key}|view`)?.clone() ?? null;
 }
 
-/** Load every weapon model there is (missing ones are skipped). Never rejects. */
-export async function loadWeaponMeshes(): Promise<void> {
+/**
+ * Load every weapon model there is (missing ones are skipped). Never rejects. `mobile`: the
+ * third-person guns' textures are capped (1K colour, 512 px maps) before they reach the GPU.
+ */
+export async function loadWeaponMeshes(mobile = false): Promise<void> {
   // The first-person arms come with the guns (src/weapons/FirstPersonHands.ts).
   const arms = loadArms();
   const override = new Map<string, string>();
@@ -339,6 +343,7 @@ export async function loadWeaponMeshes(): Promise<void> {
       tiers.map(async (tier) => {
         const url = override.get(k) ?? `${tier === 'view' ? 'guns/fp' : 'guns/m'}/${k}.glb`;
         const s = await loadOne(url, tier === 'world');
+        if (s && mobile && tier === 'world') capTextures(s.materials, 1024, 512);
         if (s) sources.set(`${k}|${tier}`, s);
       }),
     ),
