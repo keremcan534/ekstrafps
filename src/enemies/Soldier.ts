@@ -30,19 +30,29 @@ const POCKET = new THREE.Vector3(0.11, 0.41, 0.12);
 /** Model bodies: the stock sits this far from their own right shoulder joint (in, up, forward). */
 const MODEL_POCKET = new THREE.Vector3(-0.075, 0.035, 0.07);
 /** The support hand bends its elbow: at most this share of the arm's reach, sliding back along the handguard (up to SLIDE m). */
-const SUPPORT_REACH = 0.9;
+const SUPPORT_REACH = 0.96;
 const SLIDE = 0.32;
 /** High port: where the stock sits, from the shoulder pocket, in the torso's frame (m). */
 const HIGH_PORT = new THREE.Vector3(-0.05, -0.27, 0.1);
 /**
- * Model bodies have one rigid hand per forearm (no finger bones): where each palm faces in its
- * forearm's space ([left, right]), so the wrist can turn it onto the gun (Humanoid.palm).
+ * Model bodies have one rigid hand per forearm (no finger bones, curled into a grip at load:
+ * ModelBody.curlHands): where each palm faces in its forearm's space ([left, right]), towards
+ * the body as the arms hang, so the wrist can turn it onto the gun (Humanoid.palm).
  */
-const MODEL_PALM: [THREE.Vector3, THREE.Vector3] = [new THREE.Vector3(-1, 0, 0), new THREE.Vector3(1, 0, 0)];
+const MODEL_PALM: [THREE.Vector3, THREE.Vector3] = [new THREE.Vector3(1, 0, 0), new THREE.Vector3(-1, 0, 0)];
 /** In the holder (barrel +z, up +y, the gun's left +x): the firing palm against the grip's left, the support palm up under the handguard. */
 const PALM_R = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), new THREE.Vector3(1, 0, 0));
 const PALM_L = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), new THREE.Vector3(-0.5, 0.85, 0).normalize());
 /** High port (gun upright across the chest): the support palm against the handguard's side. */
+/**
+ * Model hands are solid (curled at load): the palm's centre can't sit on the gun's own
+ * centre line or the hand goes through it. Offsets in the holder (m): the support palm
+ * under the handguard (its curled fingers wrap the sides), against its side at high port;
+ * the firing hand on the grip's right side.
+ */
+const SUPPORT_UNDER = new THREE.Vector3(0, -0.045, 0);
+const SUPPORT_SIDE = new THREE.Vector3(0.035, -0.01, 0);
+const FIRING_SIDE = new THREE.Vector3(-0.025, -0.01, 0);
 const PALM_L_SIDE = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), new THREE.Vector3(-1, 0, 0));
 const PHONE_AIM = 1.2;
 /** Node budget for a soldier's path search (across the facility: ~85 m with detours). */
@@ -368,6 +378,7 @@ export class Soldier implements LightSource {
     this.supportAt.copy(this.rig.leftHand.getWorldPosition(this.tmp));
     this.rifleRoot.worldToLocal(this.supportAt);
     this.rifleRoot.worldToLocal(this.firingGrip.position.copy(this.rig.rightHand.getWorldPosition(this.tmp)));
+    if (this.body.palm) this.firingGrip.position.add(FIRING_SIDE);
   }
 
   /**
@@ -377,6 +388,7 @@ export class Soldier implements LightSource {
   private placeSupportGrip(): THREE.Object3D {
     const g = this.supportGrip;
     g.position.copy(this.supportAt);
+    if (this.body.palm) g.position.add(g.quaternion.equals(PALM_L_SIDE) ? SUPPORT_SIDE : SUPPORT_UNDER);
     const shoulder = this.body.part('upperArmL').group.getWorldPosition(this.tmp2);
     this.rifleRoot.updateWorldMatrix(true, false);
     const w = this.tmp.copy(this.supportAt).applyMatrix4(this.rifleRoot.matrixWorld).sub(shoulder);
