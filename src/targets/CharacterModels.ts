@@ -30,6 +30,8 @@ const GIRTH: Record<string, Girth> = { warden: [1.3, 1.25], robot_walker: [1, 1.
 const RIGID = new Set(['robot_walker']);
 
 const bodies = new Map<string, ModelBody>();
+/** Far-away versions (public/chars/lod, same skeleton): their geometry only. */
+const lods = new Map<string, ModelBody>();
 
 /** Load every faction model that exists (missing ones are skipped quietly). Never rejects. */
 export async function loadCharacterModels(mobile: boolean): Promise<void> {
@@ -49,8 +51,13 @@ export async function loadCharacterModels(mobile: boolean): Promise<void> {
   await Promise.all(
     Object.entries(FILES).map(async ([palette, file]) => {
       const url = test ?? `${mobile ? 'chars/m' : 'chars'}/${file}.glb`;
-      const body = await load(url, HEIGHTS[file], GIRTH[file], RIGID.has(file));
+      const [body, lod] = await Promise.all([
+        load(url, HEIGHTS[file], GIRTH[file], RIGID.has(file)),
+        test ? null : load(`chars/lod/${file}.glb`, HEIGHTS[file], GIRTH[file], RIGID.has(file)),
+      ]);
       if (body) bodies.set(palette, body);
+      // Only if it weighs the same parts in the same order (a mismatched one would tear the mesh).
+      if (body && lod && lod.slots.join() === body.slots.join()) lods.set(palette, lod);
     }),
   );
 }
@@ -63,5 +70,9 @@ export function modelBody(palette: string): ModelBody | null {
 /** The faction's model skin if one is loaded, else `base` unchanged. */
 export function withModel(palette: string, base: HumanoidSkin): HumanoidSkin {
   const body = bodies.get(palette);
-  return body ? skinFromModel(body, base) : base;
+  if (!body) return base;
+  const skin = skinFromModel(body, base);
+  const lod = lods.get(palette);
+  if (lod && skin.body) skin.body.lod = lod.geometry;
+  return skin;
 }

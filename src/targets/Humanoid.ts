@@ -51,7 +51,7 @@ export interface HumanoidSkin {
    * A whole model body (targets/ModelBody): rest-pose skinned geometry weighted over
    * `slots` (part names, plus footL / footR for the ankle bones). Replaces the parts' builds.
    */
-  body?: { geometry: THREE.BufferGeometry; materials: THREE.Material[]; slots: string[] };
+  body?: { geometry: THREE.BufferGeometry; materials: THREE.Material[]; slots: string[]; lod?: THREE.BufferGeometry };
   idleKnee?: number;
   /**
    * 'machine': a robot's walk. Legs sweep at a constant rate and lift sharply, every
@@ -150,6 +150,15 @@ const lowSpec = (): boolean => skinDetail.low;
 export const humanoidView = new THREE.Vector3(0, -1e5, 0);
 /** Phones: visible bodies beyond this (m²) pose every other frame. */
 const FAR_SQ = 30 * 30;
+/**
+ * Model bodies far from the camera swap to their simplified geometry (public/chars/lod, ~4.5k
+ * triangles instead of 15-40k) past LOD_FAR m, back inside LOD_NEAR (no flicker at the edge),
+ * and only bodies within SHADOW m cast a shadow: a crowd in the sun's shadow camera was
+ * drawing every robot's full mesh a second time each frame.
+ */
+const LOD_FAR_SQ = 14 * 14;
+const LOD_NEAR_SQ = 12.5 * 12.5;
+const SHADOW_SQ = 14 * 14;
 const speedSq = (v: { x: number; y: number; z: number }): number => v.x * v.x + v.y * v.y + v.z * v.z;
 
 /**
@@ -177,6 +186,11 @@ export class Humanoid {
   private pivot = new THREE.Group();
   /** The whole body is ONE skinned mesh (a draw call per material), parts are bones. */
   private mesh!: THREE.SkinnedMesh;
+  /** Model bodies: the full and the far-away geometry, which one is up, and whether to cast shadows at all. */
+  private nearGeo: THREE.BufferGeometry | null = null;
+  private farGeo: THREE.BufferGeometry | null = null;
+  private lodFar = false;
+  private shadowWanted = true;
   private pendingGeo: Map<THREE.Material, THREE.BufferGeometry[]>[] = [];
   private joints: RAPIER.ImpulseJoint[] = [];
   private knees: RAPIER.RevoluteImpulseJoint[] = [];
@@ -305,6 +319,8 @@ export class Humanoid {
         slot === 'footL' ? this.feet[0] : slot === 'footR' ? this.feet[1] : this.part(slot as PartName).group;
       const { geometry, materials, slots } = this.skin.body;
       this.mesh = new THREE.SkinnedMesh(geometry, materials);
+      this.nearGeo = geometry;
+      this.farGeo = this.skin.body.lod ?? null;
       this.mesh.boundingSphere = new THREE.Sphere(new THREE.Vector3(0, 1, 0), 3.5);
       this.mesh.castShadow = true;
       this.mesh.receiveShadow = true;
@@ -825,11 +841,15 @@ export class Humanoid {
    */
   setBodyLook(geometry: THREE.BufferGeometry | null, materials: THREE.Material[]): void {
     if (!this.skin.body) return;
-    if (geometry) this.mesh.geometry = geometry;
+    if (geometry) {
+      this.nearGeo = geometry;
+      if (!this.lodFar) this.mesh.geometry = geometry;
+    }
     this.mesh.material = materials;
   }
 
   setCastShadow(cast: boolean): void {
+    this.shadowWanted = cast;
     this.mesh.castShadow = cast;
   }
 
@@ -872,6 +892,7 @@ export class Humanoid {
   update(dt: number, pose: HumanoidPose, still = false): void {
     // Pooled (out of play): nothing to pose, no hitboxes to move.
     if (this.detached) return;
+    this.updateLod();
     if (!this.alive) {
       // A settled corpse costs nothing until something wakes it (once the knees are limp;
       // the frame it falls asleep still syncs the bones one last time).
@@ -920,6 +941,20 @@ export class Humanoid {
     this.updateHitboxes(dt);
     this.lastRootPos.copy(this.root.position);
     this.lastRootQuat.copy(this.root.quaternion);
+  }
+
+  /** Far geometry and shadow by distance from the camera (model bodies; see LOD_FAR_SQ). */
+  private updateLod(): void {
+    const d2 = this.root.position.distanceToSquared(humanoidView);
+    if (this.farGeo && this.nearGeo) {
+      const far = this.lodFar ? d2 > LOD_NEAR_SQ : d2 > LOD_FAR_SQ;
+      if (far !== this.lodFar) {
+        this.lodFar = far;
+        this.mesh.geometry = far ? this.farGeo : this.nearGeo;
+      }
+    }
+    const cast = this.shadowWanted && d2 < SHADOW_SQ;
+    if (this.mesh.castShadow !== cast) this.mesh.castShadow = cast;
   }
 
   private allAsleep(): boolean {

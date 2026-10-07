@@ -15,6 +15,7 @@ import { Physics } from '/src/core/Physics.ts';
 import { loadCharacterModels } from '/src/targets/CharacterModels.ts';
 import { loadWeaponMeshes } from '/src/weapons/WeaponMeshes.ts';
 import { Soldier } from '/src/enemies/Soldier.ts';
+import { humanoidView } from '/src/targets/Humanoid.ts';
 
 const q = new URLSearchParams(location.search);
 const r = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
@@ -84,6 +85,8 @@ const view = (i, name, dist = 2.2) => {
   orbit.target.set(at.x, 1.25, at.z);
   cam.position.set(at.x + Math.sin(yaw) * dist, name === 'top' ? 2.6 : 1.45, at.z + Math.cos(yaw) * dist);
   orbit.update();
+  humanoidView.copy(cam.position);
+  for (const s of soldiers) s.body.update(0, s.pose);
   r.render(scene, cam);
 };
 /** How far each hand's target is from its shoulder, as a share of the arm's length (1 = locked straight). */
@@ -103,6 +106,8 @@ const reach = () => soldiers.map((s) => {
 await set();
 window.__sl = { soldiers, set, view, step, reach, cam, scene, r, render: () => r.render(scene, cam), paused: false };
 r.setAnimationLoop(() => {
+  // Bodies pick their detail (near / far model) by distance from this camera.
+  humanoidView.copy(cam.position);
   if (!window.__sl.paused) step(1 / 60);
   orbit.update();
   r.render(scene, cam);

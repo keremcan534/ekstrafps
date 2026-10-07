@@ -28,13 +28,13 @@ function shrinkImage(tex, size, tmp) {
 
 /**
  * Pack `src` into each tier's `dir/<name>.glb`.
- * @param tiers [{ dir, tris, color, maps }]
+ * @param tiers [{ dir, tris, color, maps, error? }] (error: simplify's allowed deviation, default 0.002)
  * @param pivot 'below' puts the base on y = 0, centred (props); null leaves it.
  */
 export async function pack(src, name, tiers, { keepAnimations = false, pivot = null } = {}) {
   const tmp = join(tmpdir(), `site9-pack-${name}`);
   mkdirSync(tmp, { recursive: true });
-  for (const { dir, tris: target, color, maps } of tiers) {
+  for (const { dir, tris: target, color, maps, error = 0.002 } of tiers) {
     const doc = await io.read(src);
     if (!keepAnimations) for (const a of doc.getRoot().listAnimations()) a.dispose();
     // Older exports (spec/gloss materials) read as plain white in three.js: convert.
@@ -61,7 +61,7 @@ export async function pack(src, name, tiers, { keepAnimations = false, pivot = n
       '--instance', 'false',
       '--texture-compress', 'webp',
       '--texture-size', String(color),
-      ...(ratio < 1 ? ['--simplify', 'true', '--simplify-ratio', ratio.toFixed(4), '--simplify-error', '0.002'] : ['--simplify', 'false']),
+      ...(ratio < 1 ? ['--simplify', 'true', '--simplify-ratio', ratio.toFixed(4), '--simplify-error', String(error)] : ['--simplify', 'false']),
     ]);
     console.log(`${out}: ${Math.round(tris)} → ≤${target} triangles, ${color}px colour / ${maps}px maps, ${(statSync(out).size / 1e6).toFixed(2)} MB`);
   }
