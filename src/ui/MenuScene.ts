@@ -3,7 +3,9 @@
  * menu). The Warden in a misty night forest, three aligned plates of the same frame
  * (standing, aiming, and the field without him), and what keeps it alive for almost
  * nothing: snow in two depths on 2D canvases, and ground mist drifting. Every so often
- * he is simply not there any more, and later he is back.
+ * he is simply not there any more, and later he is back. Now and then his men are there
+ * too: SABLE in their white winter kit, standing in the mist at the treeline behind him,
+ * or still there when he has gone (the game's own models, composited into the plates).
  */
 
 import type { MenuWardenVoice } from '../audio/MenuWardenVoice';
@@ -94,9 +96,13 @@ class Snow {
   }
 }
 
-type Plate = 'stand' | 'aim' | 'gone';
-/** Same frame, same forest (public/menu): only the Warden changes. */
-const PLATES: Record<Plate, string> = { stand: 'warden_stand', aim: 'warden_aim', gone: 'forest' };
+type Plate = 'stand' | 'aim' | 'gone' | 'squad' | 'ranks';
+/** Same frame, same forest (public/menu): only the Warden and his men change. */
+const PLATES: Record<Plate, string> = { stand: 'warden_stand', aim: 'warden_aim', gone: 'forest', squad: 'warden_stand_sable', ranks: 'forest_sable' };
+/** Whether he is in the frame (his breathing and lines follow this, not the plate). */
+const WARDEN: Record<Plate, 'stand' | 'aim' | 'gone'> = { stand: 'stand', aim: 'aim', gone: 'gone', squad: 'stand', ranks: 'gone' };
+/** Chance a beat brings his men into the treeline (behind him, or in the empty field). */
+const MEN = 0.3;
 /** Seconds of menu time a plate holds: him, then the empty field. */
 const HOLD: Record<'here' | 'gone', [number, number]> = { here: [7, 12], gone: [4, 9] };
 /** Chance a beat takes him away rather than changing his pose. */
@@ -210,15 +216,31 @@ export class MenuScene {
 
   /** He changes pose, or he's gone; from the empty field he comes back. */
   private beat(): void {
-    const was = this.state;
+    const was = WARDEN[this.state];
     this.step();
-    this.voice?.presence(this.state);
-    if (was === 'gone' && this.state !== 'gone') this.voice?.returned();
+    const now = WARDEN[this.state];
+    this.voice?.presence(now);
+    if (was === 'gone' && now !== 'gone') this.voice?.returned();
     this.voice?.beat();
   }
 
   private step(): void {
     this.beats++;
+    // His men: they come and go without a sound, a cut and they're there (or gone).
+    if (this.state === 'squad' || this.state === 'ranks') {
+      const to: Plate = this.state === 'squad' ? (Math.random() < 0.5 ? 'stand' : 'gone') : Math.random() < 0.5 ? 'gone' : 'stand';
+      if (Math.random() < 0.5) this.cutTo(to);
+      else this.dipTo(to);
+      this.wait = rand(...(WARDEN[to] === 'gone' ? HOLD.gone : HOLD.here));
+      return;
+    }
+    if (this.beats > 1 && Math.random() < MEN) {
+      const to: Plate = this.state === 'gone' ? 'ranks' : 'squad';
+      if (this.state === 'gone' && Math.random() < 0.5) this.flickerTo(to);
+      else this.cutTo(to);
+      this.wait = rand(...HOLD.here);
+      return;
+    }
     if (this.state === 'gone') {
       const to: Plate = Math.random() < 0.5 ? 'stand' : 'aim';
       // Back without warning: a hard cut through a dark dip, or the signal glitch.
@@ -309,10 +331,10 @@ export class MenuScene {
     this.away = 0;
     if (away < 1500 || !this.active() || Math.random() < 0.4) return;
     // No transition: things were simply like this when you looked back.
-    if (this.state === 'gone') this.show(Math.random() < 0.5 ? 'stand' : 'aim');
-    else this.show(Math.random() < 0.65 ? 'gone' : this.state === 'stand' ? 'aim' : 'stand');
-    this.wait = rand(...(this.state === 'gone' ? HOLD.gone : HOLD.here));
-    this.voice?.presence(this.state, true);
+    if (WARDEN[this.state] === 'gone') this.show(Math.random() < 0.3 ? 'squad' : Math.random() < 0.5 ? 'stand' : 'aim');
+    else this.show(Math.random() < 0.25 ? 'ranks' : Math.random() < 0.6 ? 'gone' : this.state === 'stand' ? 'aim' : 'stand');
+    this.wait = rand(...(WARDEN[this.state] === 'gone' ? HOLD.gone : HOLD.here));
+    this.voice?.presence(WARDEN[this.state], true);
   }
 
   dispose(): void {
