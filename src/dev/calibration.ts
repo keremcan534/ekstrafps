@@ -865,7 +865,7 @@ Object.assign(window as object, {
   __calibSeed: seedFromLegacy,
   __calibAutoHands: autoHands,
   __calibAuto: auto,
-  __calibLib: { THREE, gunSource, orientationMatrix, handConfig, HANDLESS_RELOAD },
+  __calibLib: { THREE, gunSource, orientationMatrix, handConfig, HANDLESS_RELOAD, coverage, LIMITS },
   __calibHands: {
     view: handView,
     WeaponSurface,

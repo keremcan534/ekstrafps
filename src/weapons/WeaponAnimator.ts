@@ -201,14 +201,14 @@ const RELOAD_POSE = {
 
 /**
  * Without first-person arms (hands.json `enabled: false`) a magazine reload has to read on the
- * weapon alone: it rolls up to show its magwell, the old magazine drops out and falls away
+ * weapon alone: it comes forward off the face and rolls its magwell toward the eye, the old magazine drops out and falls away
  * (accelerating, tumbling), a fresh one rises from below and snaps in. Times follow each
  * reload's own magazineDetach / magazineInsert events, so sounds and gameplay stay in step.
  */
 export const HANDLESS_RELOAD = {
   /** Whole-weapon pose at the reload's height (rotation rad, position m), per animation set. */
   pose: {
-    rifle: { rot: [0.1, 0.25, 1.2], pos: [-0.04, 0.06, 0.03] },
+    rifle: { rot: [0.35, -0.3, -1.3], pos: [0.02, 0, -0.12] },
     bolt: { rot: [0.12, 0.1, 0.38], pos: [-0.025, 0.03, 0.02] },
     pistol: { rot: [0.35, 0.3, 0.6], pos: [-0.05, 0.05, 0.04] },
     shotgun: { rot: [0.12, 0.1, -0.55], pos: [-0.03, 0.03, 0.03] },
@@ -218,9 +218,10 @@ export const HANDLESS_RELOAD = {
   rise: 0.13,
   /**
    * Where a magazine is out of sight (weapon space, m) and its tumble there (rad). Weapon space
-   * rolled by the rifle pose: this way falls DOWN the screen (straight −Y would fly sideways).
+   * rolled by the rifle pose (its magwell turned toward the eye): this way falls DOWN the
+   * screen (straight −Y would fly sideways). Flip x with the roll's sign.
    */
-  away: [-0.35, -0.25, 0.06] as V,
+  away: [0.35, -0.25, 0.06] as V,
   tumble: 0.9,
 };
 

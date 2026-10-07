@@ -46,11 +46,8 @@
     "sightDistance": 0.3
   },
   "viewmodel": {
-    "hipPosition": [
-      0.165,
-      -0.225,
-      -0.42
-    ]
+    "hipPosition": [0.1758, -0.2628, -0.257],
+    "hipRotation": [0, 0, 2]
   },
   "reload": {
     "kind": "magazine",
