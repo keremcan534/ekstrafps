@@ -22,6 +22,18 @@ const FADE = 0.3;
 export const clipPoint = new Float32Array(MAX * 4);
 export const clipSpot = new Float32Array(MAX * 4);
 
+/**
+ * What the arrays hold now: 0 = all zero (no limits), else a version of the world's rooms
+ * (a new one only when they change). core/UniformCache sends them to a program only when this
+ * differs from what that program last got.
+ */
+let shown = 0;
+let worldVersion = 0;
+const lastPoint = new Float32Array(MAX * 4);
+const lastSpot = new Float32Array(MAX * 4);
+
+export const clipVersion = (): number => shown;
+
 let installed = false;
 
 export function installLightClip(): void {
@@ -58,6 +70,14 @@ float lightRoomMask( const in vec4 r ) {
       'getSpotLightInfo( spotLight, geometryPosition, directLight );',
       'getSpotLightInfo( spotLight, geometryPosition, directLight );\n\t\tdirectLight.color *= lightRoomMask( clipSpot[ i ] );',
     );
+  // A lamp in another room, past its reach or a spot outside its cone adds exactly nothing:
+  // skip its BRDF (most of a pixel's lighting work) rather than add a zero. The same image.
+  for (const info of ['getPointLightInfo( pointLight', 'getSpotLightInfo( spotLight']) {
+    const s = C.lights_fragment_begin;
+    const re = s.indexOf('RE_Direct( directLight', s.indexOf(info));
+    if (s.indexOf(info) < 0 || re < 0) continue;
+    C.lights_fragment_begin = `${s.slice(0, re)}if ( any( notEqual( directLight.color, vec3( 0.0 ) ) ) ) ${s.slice(re)}`;
+  }
   const L = THREE.ShaderLib as unknown as Record<string, { uniforms: Record<string, THREE.IUniform> }>;
   for (const k of ['standard', 'physical', 'lambert', 'phong', 'toon']) {
     if (!L[k]) continue;
@@ -90,12 +110,24 @@ export function syncLightClip(scene: THREE.Scene, room: (x: number, z: number, o
   spots.sort(order);
   fill(clipPoint, points, room, free);
   fill(clipSpot, spots, room, free);
+  if (worldVersion === 0 || !same(clipPoint, lastPoint) || !same(clipSpot, lastSpot)) {
+    worldVersion++;
+    lastPoint.set(clipPoint);
+    lastSpot.set(clipSpot);
+  }
+  shown = worldVersion;
 }
 
 /** After the world render: other scenes (the gun in your hands) are lit without limits. */
 export function clearLightClip(): void {
   clipPoint.fill(0);
   clipSpot.fill(0);
+  shown = 0;
+}
+
+function same(a: Float32Array, b: Float32Array): boolean {
+  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
+  return true;
 }
 
 function fill(out: Float32Array, lights: THREE.Light[], room: (x: number, z: number, out: THREE.Vector4) => boolean, free?: THREE.Light): void {

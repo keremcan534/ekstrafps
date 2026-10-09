@@ -9,9 +9,12 @@ export const G = {
   PROP: 1 << 1,
   PLAYER: 1 << 2,
   SHELL: 1 << 3,
+  /** Living bodies' hitboxes: no colliders, a query with this bit tests the hit sets (see HitSet). */
   HITBOX: 1 << 4,
   DEBRIS: 1 << 5,
   RAY: 1 << 6,
+  /** A living body's one capsule: keeps you (and props, corpses) out of it; bullets pass it. */
+  BLOCKER: 1 << 7,
 } as const;
 
 export const groups = (member: number, filter: number): number => ((member & 0xffff) << 16) | (filter & 0xffff);
@@ -19,14 +22,14 @@ export const groups = (member: number, filter: number): number => ((member & 0xf
 /** Pre-baked interaction groups for each kind of collider. */
 export const GROUPS = {
   world: groups(G.WORLD, 0xffff),
-  prop: groups(G.PROP, G.WORLD | G.PROP | G.PLAYER | G.SHELL | G.HITBOX | G.DEBRIS | G.RAY),
-  player: groups(G.PLAYER, G.WORLD | G.PROP | G.HITBOX | G.RAY),
+  prop: groups(G.PROP, G.WORLD | G.PROP | G.PLAYER | G.SHELL | G.BLOCKER | G.DEBRIS | G.RAY),
+  player: groups(G.PLAYER, G.WORLD | G.PROP | G.BLOCKER | G.RAY),
   shell: groups(G.SHELL, G.WORLD | G.PROP | G.DEBRIS),
-  hitbox: groups(G.HITBOX, G.PROP | G.PLAYER | G.DEBRIS | G.RAY),
-  debris: groups(G.DEBRIS, G.WORLD | G.PROP | G.SHELL | G.DEBRIS | G.HITBOX | G.RAY),
+  blocker: groups(G.BLOCKER, G.PROP | G.PLAYER | G.DEBRIS),
+  debris: groups(G.DEBRIS, G.WORLD | G.PROP | G.SHELL | G.DEBRIS | G.BLOCKER | G.RAY),
   /** Robot ragdoll parts: like debris, but ragdolls never collide with each other or themselves. */
-  ragdoll: groups(G.DEBRIS, G.WORLD | G.PROP | G.SHELL | G.HITBOX | G.RAY),
-  /** Phones: ragdolls ignore living hitboxes too, so walkers don't keep waking settled corpses. */
+  ragdoll: groups(G.DEBRIS, G.WORLD | G.PROP | G.SHELL | G.BLOCKER | G.RAY),
+  /** Phones: ragdolls ignore the living too, so walkers don't keep waking settled corpses. */
   ragdollLite: groups(G.DEBRIS, G.WORLD | G.PROP | G.SHELL | G.RAY),
   /** Query groups for bullets. */
   bullet: groups(G.RAY, G.WORLD | G.PROP | G.HITBOX | G.DEBRIS),
@@ -35,7 +38,7 @@ export const GROUPS = {
   /** AI line of sight: blocked by level geometry and props only. */
   sight: groups(G.RAY, G.WORLD | G.PROP),
   /** Query groups for the character controller. */
-  playerQuery: groups(G.PLAYER, G.WORLD | G.PROP | G.HITBOX),
+  playerQuery: groups(G.PLAYER, G.WORLD | G.PROP | G.BLOCKER),
 } as const;
 
 export type SurfaceType = 'concrete' | 'metal' | 'robot' | 'robotWeak' | 'flesh' | 'armor' | 'helmet' | 'player';
@@ -86,11 +89,33 @@ export interface HitReceiver {
 }
 
 export interface RayHit {
-  collider: RAPIER.Collider;
+  /** Null for a living body's hitbox (a hit set, no collider). */
+  collider: RAPIER.Collider | null;
   receiver: HitReceiver | undefined;
   point: THREE.Vector3;
   normal: THREE.Vector3;
   distance: number;
+}
+
+/** Where a ray met a hit set (written only for a nearer hit than the distance passed in). */
+export interface SetHit {
+  distance: number;
+  normal: THREE.Vector3;
+  receiver: HitReceiver | undefined;
+}
+
+/**
+ * A living body's hitboxes, tested in JS instead of as physics bodies: dozens of bodies with
+ * a dozen kinematic boxes each, moved every step, were most of the physics world. Queries with
+ * the HITBOX bit (bullets, aim probes) test every registered set after the physics world.
+ */
+export interface HitSet {
+  /** Whose body it is: a shooter's own rounds pass through it. */
+  readonly owner: object | undefined;
+  /** Nearest hit along the ray closer than `maxDist`: writes `out` and returns true. */
+  raycast(origin: THREE.Vector3, dir: THREE.Vector3, maxDist: number, out: SetHit): boolean;
+  /** Could a ball of `radius` swept along the ray for `maxDist` touch the body? (A cheap, generous test.) */
+  near(origin: THREE.Vector3, dir: THREE.Vector3, maxDist: number, radius: number): boolean;
 }
 
 const STATIC_RECEIVER: HitReceiver = { surface: 'concrete', allowDecals: true };
@@ -99,12 +124,14 @@ export class Physics {
   readonly world: RAPIER.World;
   readonly receivers = new Map<number, HitReceiver>();
   private synced: { body: RAPIER.RigidBody; object: THREE.Object3D }[] = [];
+  private hitSets: HitSet[] = [];
+  private setHit: SetHit = { distance: 0, normal: new THREE.Vector3(), receiver: undefined };
   /** One ray reused by every query (origin/dir are written in place). */
   private ray = new RAPIER.Ray({ x: 0, y: 0, z: 0 }, { x: 0, y: 0, z: 1 });
   private syncPos = { x: 0, y: 0, z: 0 };
   private syncRot = { x: 0, y: 0, z: 0, w: 1 };
   private rayHit: RayHit = {
-    collider: null as unknown as RAPIER.Collider,
+    collider: null,
     receiver: undefined,
     point: new THREE.Vector3(),
     normal: new THREE.Vector3(),
@@ -144,6 +171,16 @@ export class Physics {
   private constructor(timestep: number) {
     this.world = new RAPIER.World({ x: 0, y: -20, z: 0 });
     this.world.timestep = timestep;
+    // After every step Rapier re-maps each body and collider handle through JS callbacks (for
+    // soft bodies, which this game has none of): thousands of calls a step, ~0.2 ms on a desktop
+    // and several times that on a phone.
+    // Bodies, colliders and joints made or removed through the API keep those maps current
+    // themselves; the full pass still runs whenever the counts disagree.
+    const w = this.world;
+    const remap = w.mapNewSoftBodies.bind(w);
+    w.mapNewSoftBodies = () => {
+      if (w.bodies.len() !== w.bodies.raw.len() || w.colliders.len() !== w.colliders.raw.len()) remap();
+    };
   }
 
   register(collider: RAPIER.Collider, receiver: HitReceiver): void {
@@ -188,6 +225,18 @@ export class Physics {
     return c;
   }
 
+  /** A living body's hitboxes join the bullet queries (see HitSet). Adding twice is harmless. */
+  addHitSet(set: HitSet): void {
+    if (!this.hitSets.includes(set)) this.hitSets.push(set);
+  }
+
+  removeHitSet(set: HitSet): void {
+    const i = this.hitSets.indexOf(set);
+    if (i < 0) return;
+    this.hitSets[i] = this.hitSets[this.hitSets.length - 1];
+    this.hitSets.pop();
+  }
+
   /**
    * Cast a bullet ray. Returns a shared result object (do not keep a reference).
    */
@@ -197,13 +246,47 @@ export class Physics {
     const hit = this.world.castRayAndGetNormal(
       this.ray, maxDist, true, undefined, queryGroups, undefined, undefined, this.ignoreOwner ? this.ownerFilter : undefined,
     );
-    if (!hit) return null;
+    // Living bodies, nearer than whatever the physics world gave.
+    let onSet = false;
+    if (queryGroups & G.HITBOX) {
+      let best = hit ? hit.timeOfImpact : maxDist;
+      const sets = this.hitSets;
+      for (let i = 0; i < sets.length; i++) {
+        const s = sets[i];
+        if (ignoreOwner && s.owner === ignoreOwner) continue;
+        if (s.raycast(origin, dir, best, this.setHit)) {
+          best = this.setHit.distance;
+          onSet = true;
+        }
+      }
+    }
     const out = this.rayHit;
+    if (onSet) {
+      const s = this.setHit;
+      out.collider = null;
+      out.receiver = s.receiver;
+      out.distance = s.distance;
+      out.point.copy(origin).addScaledVector(dir, s.distance);
+      out.normal.copy(s.normal);
+      return out;
+    }
+    if (!hit) return null;
     out.collider = hit.collider;
     out.receiver = this.receivers.get(hit.collider.handle);
     out.distance = hit.timeOfImpact;
     out.point.copy(origin).addScaledVector(dir, hit.timeOfImpact);
     out.normal.set(hit.normal.x, hit.normal.y, hit.normal.z);
     return out;
+  }
+
+  /** Could a ball of `radius` swept along the ray touch a living body (hit assist's broad check)? */
+  nearHitSet(origin: THREE.Vector3, dir: THREE.Vector3, maxDist: number, radius: number, ignoreOwner?: object | null): boolean {
+    const sets = this.hitSets;
+    for (let i = 0; i < sets.length; i++) {
+      const s = sets[i];
+      if (ignoreOwner && s.owner === ignoreOwner) continue;
+      if (s.near(origin, dir, maxDist, radius)) return true;
+    }
+    return false;
   }
 }

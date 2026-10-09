@@ -35,6 +35,9 @@ export class MuzzleFlash {
         blending: THREE.AdditiveBlending,
         depthWrite: false,
         side: THREE.DoubleSide,
+        // Additive light needs no back-then-front order: one draw, not three's two passes
+        // (each of which also looks the shader program up again).
+        forceSinglePass: true,
         toneMapped: false,
       });
     for (let i = 0; i < STARS; i++) this.stars.push(fireStarTexture(i));

@@ -188,7 +188,7 @@ export class Site9Dressing {
       d_ivBag: new THREE.MeshStandardMaterial({ color: 0xd8f0ff, roughness: 0.2, transparent: true, opacity: 0.55, depthWrite: false }),
       d_bottle: new THREE.MeshStandardMaterial({ color: 0x6f9f8a, roughness: 0.1, metalness: 0.1, transparent: true, opacity: 0.5, depthWrite: false }),
       d_ice: new THREE.MeshStandardMaterial({ color: 0xcfe8ff, roughness: 0.1, metalness: 0.1, transparent: true, opacity: 0.6, depthWrite: false }),
-      d_holo: new THREE.MeshBasicMaterial({ color: 0x46c8ff, transparent: true, opacity: 0.16, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, toneMapped: false }),
+      d_holo: new THREE.MeshBasicMaterial({ color: 0x46c8ff, transparent: true, opacity: 0.16, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, forceSinglePass: true, toneMapped: false }),
       d_marble: this.marble(),
       d_holoLine: new THREE.MeshBasicMaterial({ color: 0x7fe0ff, transparent: true, opacity: 0.55, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false }),
       a_sign: this.atlas.mats.sign,

@@ -101,7 +101,11 @@ export class PropKit {
             if (!m.isMesh) return;
             // Bake the part's place in the model into its geometry (instances carry the rest).
             const geo = m.geometry.clone().applyMatrix4(m.matrixWorld);
-            list.push({ geo, mat: m.material as THREE.Material });
+            const mat = m.material as THREE.Material;
+            // Small see-through double-sided parts (the extinguisher's gauge glass): one pass.
+            // three's back-then-front pair is two draws and two shader lookups per room.
+            if (mat.transparent && mat.side === THREE.DoubleSide) mat.forceSinglePass = true;
+            list.push({ geo, mat });
           });
           parts.set(id, list);
         } catch (e) {

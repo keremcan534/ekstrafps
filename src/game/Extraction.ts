@@ -248,7 +248,8 @@ export class HeliExit implements ExtractSite {
     add(new THREE.BoxGeometry(2.7, 0.14, 3.0), dark, 0, 0, 1.5, this.ramp);
     g.add(this.ramp);
     // Tandem rotors: a blurred disc + three blades each.
-    const discMat = new THREE.MeshBasicMaterial({ color: 0x050607, transparent: true, opacity: 0.32, depthWrite: false, side: THREE.DoubleSide });
+    // A flat disc never overlaps itself: one pass, not three's back-then-front pair.
+    const discMat = new THREE.MeshBasicMaterial({ color: 0x050607, transparent: true, opacity: 0.32, depthWrite: false, side: THREE.DoubleSide, forceSinglePass: true });
     for (const [y, z] of [[4.85, -4.6], [6.0, 4.9]]) {
       const hub = new THREE.Group();
       hub.position.set(0, y, z);
@@ -548,7 +549,7 @@ export class BunkerExit implements ExtractSite {
       b.position.set(x, 7.45, 4.2);
       const lamp = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.22, 0.32, 14), new THREE.MeshBasicMaterial({ color: new THREE.Color(0xff2a10).multiplyScalar(4) }));
       b.add(lamp);
-      const beam = new THREE.Mesh(new THREE.ConeGeometry(0.8, 3.2, 16, 1, true), new THREE.MeshBasicMaterial({ color: 0xff3018, transparent: true, opacity: 0.12, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide }));
+      const beam = new THREE.Mesh(new THREE.ConeGeometry(0.8, 3.2, 16, 1, true), new THREE.MeshBasicMaterial({ color: 0xff3018, transparent: true, opacity: 0.12, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, forceSinglePass: true }));
       beam.rotation.z = Math.PI / 2;
       beam.position.x = 1.6;
       b.add(beam);

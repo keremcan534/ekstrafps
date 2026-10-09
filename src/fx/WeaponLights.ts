@@ -24,6 +24,8 @@ export function makeBeam(): THREE.Mesh & { setStrength(v: number): void } {
     depthWrite: false,
     blending: THREE.AdditiveBlending,
     side: THREE.DoubleSide,
+    // Additive: order-free, so one pass instead of three's back-then-front pair.
+    forceSinglePass: true,
     fog: false,
     uniforms: { color: { value: new THREE.Color(0xdfe9ff) }, strength: { value: 0 } },
     vertexShader: /* glsl */ `

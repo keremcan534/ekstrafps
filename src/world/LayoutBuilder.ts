@@ -52,6 +52,27 @@ export interface DoorSlot {
   height: number;
 }
 
+/**
+ * What portal culling looks through: a link's opening between two rooms, or the band above
+ * an open room's wall where a taller neighbour's wall rises into view (one way: from `a`).
+ */
+export interface Portal {
+  a: string;
+  b: string;
+  /** The link (null: over the wall). */
+  link: LinkDef | null;
+  /** Seen only from `a` (over a wall into the taller `b`). */
+  oneWay: boolean;
+  /** The boundary runs along X at z = line (true), or along Z at x = line. */
+  alongX: boolean;
+  line: number;
+  /** The opening along the boundary, and its bottom and top. */
+  s0: number;
+  s1: number;
+  bottom: number;
+  height: number;
+}
+
 /** Wall run for the map overlay. */
 export interface WallRun {
   x0: number;
@@ -89,6 +110,7 @@ export class LayoutBuilder {
   readonly rooms = new Map<string, BuiltRoom>();
   readonly doors: DoorSlot[] = [];
   readonly wallRuns: WallRun[] = [];
+  readonly portals: Portal[] = [];
   readonly bounds: Rect;
   private grid: Int16Array;
   private cols: number;
@@ -223,6 +245,7 @@ export class LayoutBuilder {
       const lowRoom = Math.min(ha || Infinity, hb || Infinity);
       const oh = Math.min(link.height ?? 4, lowRoom - 0.4);
       bottom = oh;
+      this.portals.push({ a: this.defs[a].id, b: this.defs[b].id, link, oneWay: false, alongX, line, s0, s1, bottom: 0, height: oh });
       if (link.kind === 'buy') {
         this.doors.push({ link, center: pos(mid, 0, 0), alongX, width: len, height: oh });
       }
@@ -245,6 +268,14 @@ export class LayoutBuilder {
     } else {
       box(pos(mid, hMax / 2, 0), size(len, hMax, T));
       this.wallRuns.push(alongX ? { x0: s0, z0: line, x1: s1, z1: line } : { x0: line, z0: s0, x1: line, z1: s1 });
+    }
+    // From a room open to the sky (or under glass), a taller neighbour's wall shows over this one.
+    for (const [lo, hi] of [[a, b], [b, a]]) {
+      if (lo < 0 || hi < 0) continue;
+      const open = this.defs[lo].sky || this.defs[lo].skylight;
+      if (open && this.defs[hi].h > this.defs[lo].h) {
+        this.portals.push({ a: this.defs[lo].id, b: this.defs[hi].id, link: null, oneWay: true, alongX, line, s0, s1, bottom: this.defs[lo].h + 0.3, height: this.defs[hi].h + 0.3 });
+      }
     }
 
     // Visual skins (each side in its own room's material, up to its own height).

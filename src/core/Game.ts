@@ -67,6 +67,7 @@ import { Ambience } from '../audio/Ambience';
 import { PerfBench, benchFlagsFromUrl, glInfo, type BenchFlags } from './PerfBench';
 import { enterLandscape } from './Landscape';
 import { installLightClip, syncLightClip, clearLightClip } from './LightClip';
+import { cacheUniforms } from './UniformCache';
 import { raid } from '../game/Progress';
 import { Inhabitants } from '../game/Inhabitants';
 import type { ShowcaseDeps } from '../ui/Showcase';
@@ -1929,7 +1930,9 @@ export class Game {
     if (this.arena instanceof Site9) {
       const map = this.arena;
       const s = this.survival;
-      map.updateVisibility(this.player.feet.x, this.player.feet.z, (l) => (s ? s.isLinkOpen(l) : true));
+      // Only rooms seen through the openings on screen (~30 % fewer draws on average), unless
+      // the sun casts shadows: a room out of sight can still shadow one in sight.
+      map.updateVisibility(this.player.feet.x, this.player.feet.z, (l) => (s ? s.isLinkOpen(l) : true), this.arena.sun.castShadow ? undefined : this.camera.camera);
       // Characters in rooms that aren't drawn don't need drawing either.
       if (s) for (const r of s.robots) if (r.active) r.body.root.visible = map.isVisibleAt(r.pos.x, r.pos.z);
       // Short view distance: far operators are a few pixels in the haze; skip drawing them.
@@ -2045,6 +2048,8 @@ export class Game {
 
     // --- Render: world, then the weapon on top, then debug lines over everything ---
     this.renderer.info.reset();
+    cacheUniforms(this.renderer);
+    this.bench?.gpuBegin();
     if (!this.director?.render()) {
       // ?nodraw (bisecting): only a clear, in a colour that changes so the canvas still
       // updates and the compositor does its usual work.
@@ -2077,6 +2082,7 @@ export class Game {
       if (this.aiDebug.enabled && !noDraw) this.renderer.render(this.aiDebug.draw.scene, this.camera.camera);
       grade?.end();
     }
+    this.bench?.gpuEnd();
 
     if (this.debug.visible) {
       const h = cw.data.handling;

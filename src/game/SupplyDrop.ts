@@ -52,7 +52,7 @@ export class SupplyDrop {
   constructor(private d: DropDeps) {
     this.beam = new THREE.Mesh(
       new THREE.CylinderGeometry(0.22, 0.6, 36, 10, 1, true),
-      new THREE.MeshBasicMaterial({ color: 0xffa040, transparent: true, opacity: 0.32, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, toneMapped: false }),
+      new THREE.MeshBasicMaterial({ color: 0xffa040, transparent: true, opacity: 0.32, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, forceSinglePass: true, toneMapped: false }),
     );
     this.beam.visible = false;
     d.scene.add(this.beam);

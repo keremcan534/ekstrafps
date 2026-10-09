@@ -50,8 +50,8 @@ export interface ProjectileHitReport {
 /** Surfaces a near miss can "catch" (bodies, armor, robots — never walls). */
 const TARGET_SURFACES = new Set(['flesh', 'armor', 'helmet', 'robot', 'robotWeak']);
 const ASSIST_OFFSETS: [number, number][] = [[1, 0], [-1, 0], [0, 1], [0, -1]];
-/** What hit assist can catch (hitboxes; ragdolls/debris): the cheap "any body near?" sweep. */
-const ASSIST_NEAR = groups(G.RAY, G.HITBOX | G.DEBRIS);
+/** What hit assist can catch in the physics world (ragdolls/debris; living bodies are hit sets): the cheap "any body near?" sweep. */
+const ASSIST_NEAR = groups(G.RAY, G.DEBRIS);
 const NO_ROT = { x: 0, y: 0, z: 0, w: 1 };
 
 interface Projectile {
@@ -292,6 +292,7 @@ export class ProjectileSystem {
    * they would all miss too and the four rays are skipped.
    */
   private bodyNear(p: Projectile, maxD: number): boolean {
+    if (this.physics.nearHitSet(p.pos, this.dir, maxD, p.assist, p.owner)) return true;
     if (!this.assistBall || this.assistBall.radius !== p.assist) this.assistBall = new RAPIER.Ball(p.assist);
     return !!this.physics.world.castShape(p.pos, NO_ROT, this.dir, this.assistBall, 0, maxD, true, undefined, ASSIST_NEAR);
   }

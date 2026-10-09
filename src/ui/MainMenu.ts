@@ -625,10 +625,10 @@ export class MainMenu {
     toggle('POST EFFECTS', g.postFx, (v) => (g.postFx = v));
     toggle('ANTI-ALIASING (RESTART)', g.antialias, (v) => (g.antialias = v));
     toggle('SHOW FPS', g.showFps, (v) => (g.showFps = v), false);
-    // On-device benchmark: ~30 s in game, then a chart of what costs how much (with COPY).
+    // On-device benchmark: ~40 s in game, then a chart of what costs how much (with COPY).
     const bench = el('button', 'gbtn bench-btn', box, '<span class="gbtn-label">RUN BENCHMARK</span><span class="gbtn-shine"></span>');
-    el('div', 'panel-note', box, 'Starts the game and measures for ~30 s: what each part (HUD, resolution, 3D, AI, effects, characters, audio) costs in FPS. Don’t touch the screen while it runs.');
-    // It plays the game for ~30 s: not from the pause menu (it would run over the raid), and asked first.
+    el('div', 'panel-note', box, 'Starts the game and measures for ~40 s: what each part (HUD, resolution, 3D, AI, effects, characters, audio) costs in FPS. Don’t touch the screen while it runs.');
+    // It plays the game for ~40 s: not from the pause menu (it would run over the raid), and asked first.
     if (this.paused) {
       bench.nextElementSibling?.remove();
       bench.remove();
@@ -637,7 +637,7 @@ export class MainMenu {
     bench.addEventListener('click', (e) => {
       e.stopPropagation();
       if (!this.game) return;
-      confirmTwice(bench, 'START ~30 s BENCHMARK? CLICK AGAIN', () => {
+      confirmTwice(bench, 'START ~40 s BENCHMARK? CLICK AGAIN', () => {
         this.game!.runBenchmark();
         this.play();
       });

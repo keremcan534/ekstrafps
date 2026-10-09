@@ -7,7 +7,7 @@ import { PhysicsProps } from './PhysicsProps';
 import { glowTexture, grimeRoughness, gridTexture, gridTint, neutralGridTexture, screenTexture, woodTexture } from '../fx/Textures';
 import type { RobotOptions } from '../targets/RobotTarget';
 import type { GameMap, SquadSpawn, Station } from './GameMap';
-import { LayoutBuilder, type BuiltRoom, type DoorSlot, type LinkDef, type RoomDef, type RoomStyle, type Rect } from './LayoutBuilder';
+import { LayoutBuilder, type BuiltRoom, type DoorSlot, type LinkDef, type Portal, type RoomDef, type RoomStyle, type Rect } from './LayoutBuilder';
 import type { MeshBuilder } from './MeshBuilder';
 import { Site9Atlas } from './Site9Atlas';
 import { Site9Dressing } from './Site9Dressing';
@@ -426,6 +426,7 @@ export class Site9 implements GameMap {
     this.buildClutter();
     this.buildSigns();
     this.layout.build(this.group);
+    this.shareLeaks();
     // Ceiling lamps (the practical lights near you come from these).
     for (const room of this.layout.rooms.values()) {
       const glow = styles[room.def.style]?.glow || 0xfff1e0;
@@ -915,7 +916,10 @@ export class Site9 implements GameMap {
   private prop(R: string, id: PropId, pos: V3, yaw = 0, o: { scale?: number; tilt?: V3; solid?: boolean; collider?: V3 } = {}): void {
     const k = o.scale ?? 1;
     const rot: V3 = o.tilt ? [o.tilt[0], yaw + o.tilt[1], o.tilt[2]] : [0, yaw, 0];
-    this.kit.place(this.room(R).group, id, pos, rot, k);
+    // In the room it stands in (a few chairs were listed under a neighbour), so it shows and
+    // hides with the room you see it in.
+    const at = this.layout.roomAt(pos[0], pos[2]);
+    this.kit.place(this.room(at ? at.id : R).group, id, pos, rot, k);
     if (o.solid === false) return;
     const sz = PROPS[id].size;
     const [cx, cy, cz] = o.collider ?? [sz[0] * k, sz[1] * k, sz[2] * k];
@@ -2017,14 +2021,156 @@ export class Site9 implements GameMap {
   }
 
   /**
-   * Cheap portal culling: draw the room you're in plus rooms seen through open
-   * links (archways, opened shutters), up to 3 rooms deep. Closed shutters block.
+   * Which rooms to draw. With a camera: only the rooms you actually see, through the
+   * openings on screen (portal culling: each opening narrows the view the next one is
+   * tested against), up to `viewDepth` rooms deep. Without one (or with the camera outside
+   * the rooms, cinematic shots): the room you're in plus every room through open links
+   * (archways, opened shutters) that deep. Closed shutters block either way.
    */
-  updateVisibility(x: number, z: number, isOpen: (l: LinkDef) => boolean): void {
+  updateVisibility(x: number, z: number, isOpen: (l: LinkDef) => boolean, camera?: THREE.Camera): void {
     const here = this.layout.roomAt(x, z);
     if (!here) return;
-    const seen = new Set<string>([here.id]);
-    let frontier = [here.id];
+    const seen = (camera && this.portalRooms(camera, x, z, isOpen)) || this.linkedRooms(here.id, x, z, isOpen);
+    this.visibleRooms = seen;
+    for (const [id, room] of this.layout.rooms) room.group.visible = seen.has(id);
+    for (const s of this.shared) s.mesh.visible = s.rooms.some((r) => seen.has(r));
+  }
+
+  /** Pieces of a room that reach into another's space (see shareLeaks), drawn while any of those rooms is. */
+  private shared: { mesh: THREE.Mesh; rooms: string[] }[] = [];
+
+  /**
+   * A room's geometry that reaches past its walls into another room's space (a floor stain
+   * slipping under a wall, a ceiling ledge, a light pool) moves to a mesh of its own, drawn
+   * while either room is: with portal culling a room can be hidden while its neighbour is in
+   * view, and those bits would blink. Same triangles, same material (the vertex buffers are
+   * shared, only the index is split).
+   */
+  private shareLeaks(): void {
+    const v = new THREE.Vector3();
+    for (const [id, room] of this.layout.rooms) {
+      const [x0, z0, x1, z1] = room.def.rect;
+      for (const child of [...room.group.children]) {
+        const mesh = child as THREE.Mesh;
+        if (!mesh.isMesh || (mesh as THREE.InstancedMesh).isInstancedMesh || Array.isArray(mesh.material)) continue;
+        const geo = mesh.geometry;
+        const pos = geo.getAttribute('position');
+        const index = geo.getIndex();
+        const corner = (t: number, k: number) => (index ? index.getX(t * 3 + k) : t * 3 + k);
+        mesh.updateMatrixWorld(true);
+        const keep: number[] = [];
+        const moved = new Map<string, number[]>();
+        for (let t = 0, n = (index ? index.count : pos.count) / 3; t < n; t++) {
+          const touched = new Set<string>();
+          for (let k = 0; k < 3; k++) {
+            v.fromBufferAttribute(pos, corner(t, k)).applyMatrix4(mesh.matrixWorld);
+            // Past this room's wall skins (0.15 m) into another room, below its ceiling.
+            if (v.x > x0 - 0.16 && v.x < x1 + 0.16 && v.z > z0 - 0.16 && v.z < z1 + 0.16) continue;
+            const other = this.layout.roomAt(v.x, v.z);
+            if (!other || other.id === id || (!other.sky && !other.skylight && v.y > other.h + 0.05)) continue;
+            touched.add(other.id);
+          }
+          const list = touched.size ? moved.get([id, ...[...touched].sort()].join('|')) ?? [] : keep;
+          if (touched.size) moved.set([id, ...[...touched].sort()].join('|'), list);
+          list.push(corner(t, 0), corner(t, 1), corner(t, 2));
+        }
+        if (!moved.size) continue;
+        geo.setIndex(keep);
+        for (const [key, list] of moved) {
+          const part = new THREE.BufferGeometry();
+          for (const [name, attr] of Object.entries(geo.attributes)) part.setAttribute(name, attr);
+          part.setIndex(list);
+          part.boundingSphere = geo.boundingSphere ?? null;
+          const m = new THREE.Mesh(part, mesh.material);
+          m.position.copy(mesh.position);
+          m.quaternion.copy(mesh.quaternion);
+          m.scale.copy(mesh.scale);
+          m.castShadow = mesh.castShadow;
+          m.receiveShadow = mesh.receiveShadow;
+          m.renderOrder = mesh.renderOrder;
+          m.frustumCulled = mesh.frustumCulled;
+          this.group.add(m);
+          this.shared.push({ mesh: m, rooms: key.split('|') });
+        }
+      }
+    }
+  }
+
+  private vp = new THREE.Matrix4();
+  private eyeAt = new THREE.Vector3();
+  private clip4 = new THREE.Vector4();
+
+  /** Rooms seen through the openings on screen; null when the camera isn't inside a room. */
+  private portalRooms(camera: THREE.Camera, x: number, z: number, isOpen: (l: LinkDef) => boolean): Set<string> | null {
+    const eye = this.eyeAt.setFromMatrixPosition(camera.matrixWorld);
+    const start = this.layout.roomAt(eye.x, eye.z);
+    if (!start || eye.y > start.h + 0.5) return null;
+    this.vp.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
+    const seen = new Set<string>([start.id]);
+    const far2 = this.viewFar * this.viewFar;
+    const visit = (id: string, rect: number[], depth: number, via: Portal | null) => {
+      if (depth >= this.viewDepth) return;
+      for (const p of this.layout.portals) {
+        if (p === via) continue;
+        const other = p.a === id ? p.b : p.b === id && !p.oneWay ? p.a : null;
+        if (!other) continue;
+        if (p.link?.kind === 'buy' && !isOpen(p.link)) continue;
+        if (depth > 0) {
+          const r = ROOM_OF.get(other)!.rect;
+          const dx = Math.max(r[0] - x, 0, x - r[2]);
+          const dz = Math.max(r[1] - z, 0, z - r[3]);
+          if (dx * dx + dz * dz > far2) continue;
+        }
+        const seenRect = this.portalRect(p, eye, rect);
+        if (!seenRect) continue;
+        seen.add(other);
+        visit(other, seenRect, depth + 1, p);
+      }
+    };
+    visit(start.id, [-1, -1, 1, 1], 0, null);
+    return seen;
+  }
+
+  /**
+   * An opening's screen rectangle (NDC, a little wider for safety) within `parent`, or null
+   * when it is off screen or behind you. Standing in it, or with it across the camera plane,
+   * it is all of `parent`.
+   */
+  private portalRect(p: Portal, eye: THREE.Vector3, parent: number[]): number[] | null {
+    const across = p.alongX ? Math.abs(eye.z - p.line) : Math.abs(eye.x - p.line);
+    const along = p.alongX ? eye.x : eye.z;
+    if (across < 0.6 && along > p.s0 - 0.6 && along < p.s1 + 0.6 && eye.y > p.bottom - 0.6 && eye.y < p.height + 0.6) return parent;
+    let x0 = Infinity;
+    let y0 = Infinity;
+    let x1 = -Infinity;
+    let y1 = -Infinity;
+    let behind = 0;
+    for (let k = 0; k < 4; k++) {
+      const s = k === 0 || k === 3 ? p.s0 : p.s1;
+      const y = k < 2 ? p.bottom : p.height;
+      const c = this.clip4.set(p.alongX ? s : p.line, y, p.alongX ? p.line : s, 1).applyMatrix4(this.vp);
+      if (c.w <= 1e-3) {
+        behind++;
+        continue;
+      }
+      const nx = c.x / c.w;
+      const ny = c.y / c.w;
+      if (nx < x0) x0 = nx;
+      if (nx > x1) x1 = nx;
+      if (ny < y0) y0 = ny;
+      if (ny > y1) y1 = ny;
+    }
+    if (behind === 4) return null;
+    if (behind > 0) return parent;
+    const m = 0.02;
+    const r = [Math.max(parent[0], x0 - m), Math.max(parent[1], y0 - m), Math.min(parent[2], x1 + m), Math.min(parent[3], y1 + m)];
+    return r[0] < r[2] && r[1] < r[3] ? r : null;
+  }
+
+  /** The room you're in plus rooms through open links, `viewDepth` deep (past your neighbours only within `viewFar`). */
+  private linkedRooms(hereId: string, x: number, z: number, isOpen: (l: LinkDef) => boolean): Set<string> {
+    const seen = new Set<string>([hereId]);
+    let frontier = [hereId];
     // Short view distance: fewer rooms deep, and rooms past your neighbours only within `far`.
     const maxDepth = this.viewDepth;
     const far = this.viewFar;
@@ -2047,8 +2193,7 @@ export class Site9 implements GameMap {
       }
       frontier = next;
     }
-    this.visibleRooms = seen;
-    for (const [id, room] of this.layout.rooms) room.group.visible = seen.has(id);
+    return seen;
   }
 
   /** Is (x, z) in a room currently being drawn? (Characters in hidden rooms skip rendering.) */

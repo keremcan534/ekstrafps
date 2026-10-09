@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { RAPIER, GROUPS, type BulletHit, type HitResult, type Physics, type SurfaceType } from '../core/Physics';
+import { RAPIER, GROUPS, type BulletHit, type HitReceiver, type HitResult, type HitSet, type Physics, type SetHit, type SurfaceType } from '../core/Physics';
 import { Spring, Spring3 } from '../core/Spring';
 import { clamp, DEG } from '../core/math';
 import { feel } from '../config/Feel';
@@ -82,16 +82,69 @@ export interface HumanoidVisual {
 /** Triangle wave in -1..1 on the same phase as sin: a constant-rate sweep. */
 const tri = (a: number): number => (2 / Math.PI) * Math.asin(Math.sin(a));
 
+const SLAB_O = [0, 0, 0];
+const SLAB_D = [0, 0, 0];
+
+/**
+ * A ray (o + t d) against the box `c` ± `h` (slab test): the entry distance in [0, maxT], or
+ * -1. `face` gets the entry face (axis, outward sign; axis -1: the ray starts inside, t = 0).
+ */
+function boxRay(o: THREE.Vector3, d: THREE.Vector3, c: V3, h: V3, maxT: number, face: { axis: number; sign: number }): number {
+  SLAB_O[0] = o.x - c[0];
+  SLAB_O[1] = o.y - c[1];
+  SLAB_O[2] = o.z - c[2];
+  SLAB_D[0] = d.x;
+  SLAB_D[1] = d.y;
+  SLAB_D[2] = d.z;
+  let tmin = 0;
+  let tmax = maxT;
+  let axis = -1;
+  let sign = 0;
+  for (let a = 0; a < 3; a++) {
+    const oa = SLAB_O[a];
+    const da = SLAB_D[a];
+    const ha = h[a];
+    if (Math.abs(da) < 1e-12) {
+      if (oa < -ha || oa > ha) return -1;
+      continue;
+    }
+    let t1 = (-ha - oa) / da;
+    let t2 = (ha - oa) / da;
+    // Moving +: in through the - face.
+    let s = -1;
+    if (t1 > t2) {
+      const t = t1;
+      t1 = t2;
+      t2 = t;
+      s = 1;
+    }
+    if (t1 > tmin) {
+      tmin = t1;
+      axis = a;
+      sign = s;
+    }
+    if (t2 < tmax) tmax = t2;
+    if (tmin > tmax) return -1;
+  }
+  face.axis = axis;
+  face.sign = sign;
+  return tmin;
+}
+
 export interface Part {
   name: PartName;
   side: -1 | 0 | 1;
   parent: Part | null;
   /** Bone of the skinned body (also the parent for attachments). */
   group: THREE.Bone;
-  body: RAPIER.RigidBody;
+  /** The ragdoll body (dead only: a living body is hit-tested by hand, see Humanoid.raycast). */
+  body: RAPIER.RigidBody | null;
   colliders: RAPIER.Collider[];
-  /** What the colliders are built from (rebuilt when a pooled body comes back). */
+  /** The hitboxes, in the part's frame (the hit test; the ragdoll's colliders). */
   shapes: PartDef['colliders'];
+  /** One bullet receiver per shape. */
+  receivers: HitReceiver[];
+  /** The bone's world transform as of the last pose (what rounds are tested against). */
   worldPos: THREE.Vector3;
   worldQuat: THREE.Quaternion;
   prevPos: THREE.Vector3;
@@ -185,19 +238,20 @@ const speedSq = (v: { x: number; y: number; z: number }): number => v.x * v.x + 
 /**
  * A physical humanoid body shared by robots and soldiers.
  *
- * - Alive: every part is a kinematic hitbox that follows the animated pose (what
- *   you see is what you hit). Zones: head, thorax, stomach, arms, legs, with
- *   optional armor per collider. Hits drive layered spring reactions sized by
+ * - Alive: every part's hitboxes follow the animated pose (what you see is what you
+ *   hit), tested by hand against each round (raycast(): no physics bodies, one capsule
+ *   keeps the player out). Zones: head, thorax, stomach, arms, legs, with
+ *   optional armor per box. Hits drive layered spring reactions sized by
  *   the round's momentum — head snap, chest stagger, gut fold, arm throw, knee
  *   buckle, step back — and repeated hits build stagger.
- * - Dead: the same bodies turn dynamic and are jointed into a ragdoll that
+ * - Dead: the parts become dynamic bodies jointed into a ragdoll that
  *   inherits the animated velocity plus the killing round's momentum at the
  *   exact hit point; the knees buckle as it drops.
  *
  * The owner positions `root`, feeds a HumanoidPose each frame and decides what
  * damage means (AI alerts, respawn...).
  */
-export class Humanoid {
+export class Humanoid implements HitSet {
   readonly root = new THREE.Group();
   readonly health: Damageable;
   readonly parts: Part[] = [];
@@ -314,7 +368,11 @@ export class Humanoid {
     this.machine = skin.gait === 'machine';
     this.upperLen = this.part('foreArmR').group.position.length();
     this.gripLocal = new THREE.Vector3(...skin.handGrip);
-    this.root.updateMatrixWorld(true);
+    this.hips = this.part('pelvis');
+    this.measure();
+    for (const part of this.parts) part.group.matrixWorld.decompose(part.worldPos, part.worldQuat, this.tmpScale);
+    this.setHits(true);
+    this.setBlocker(true);
   }
 
   get alive(): boolean {
@@ -447,66 +505,194 @@ export class Humanoid {
     this.pendingGeo.push(b.take());
 
     const part = {
-      name: def.name, side: def.side, parent, group, colliders: [], shapes: def.colliders,
+      name: def.name, side: def.side, parent, group, body: null, colliders: [], shapes: def.colliders, receivers: [],
       worldPos: new THREE.Vector3(), worldQuat: new THREE.Quaternion(), prevPos: new THREE.Vector3(), vel: new THREE.Vector3(), prevVy: 0,
     } as unknown as Part;
-    this.createBody(part);
+    part.receivers = def.colliders.map((c) => {
+      const surface = c.surface ?? (c.zone === 'head' ? 'robotWeak' : 'robot');
+      return { surface, owner: this.owner, allowDecals: false, impulseScale: 3, onBulletHit: (h, o) => this.onHit(h, part, c, surface, o) } as HitReceiver;
+    });
     this.parts.push(part);
     this.byName.set(def.name, part);
   }
 
-  /** A part's kinematic hitbox body and its colliders (registered for bullet hits). */
-  private createBody(part: Part): void {
+  /** A dead part's dynamic body and its colliders (the ragdoll; the corpse still takes rounds). */
+  private createRagdollBody(part: Part, groups: number, ccd: boolean): void {
     const body = this.physics.world.createRigidBody(
-      // CCD only once it falls as a ragdoll (die()); kinematic hitboxes don't need it.
-      RAPIER.RigidBodyDesc.kinematicPositionBased().setLinearDamping(0.08).setAngularDamping(1.1),
+      RAPIER.RigidBodyDesc.dynamic()
+        .setTranslation(part.worldPos.x, part.worldPos.y, part.worldPos.z)
+        .setRotation(part.worldQuat)
+        .setLinearDamping(0.08)
+        .setAngularDamping(1.1)
+        .setCcdEnabled(ccd),
     );
     part.body = body;
     part.colliders = [];
-    for (const c of part.shapes) {
+    part.shapes.forEach((c, k) => {
       const col = this.physics.world.createCollider(
         RAPIER.ColliderDesc.cuboid(...c.half)
           .setTranslation(...c.center)
           .setMass(c.mass)
           .setFriction(0.8)
           .setRestitution(0.1)
-          .setCollisionGroups(GROUPS.hitbox),
+          .setCollisionGroups(groups),
         body,
       );
       part.colliders.push(col);
-      const surface = c.surface ?? (c.zone === 'head' ? 'robotWeak' : 'robot');
-      this.physics.register(col, {
-        surface,
-        body,
-        owner: this.owner,
-        allowDecals: false,
-        impulseScale: 3,
-        onBulletHit: (h, o) => this.onHit(h, part, c, surface, o),
-      });
+      const r = part.receivers[k];
+      r.body = body;
+      this.physics.register(col, r);
+    });
+  }
+
+  /** The ragdoll's bodies and joints out of the physics world (respawn, pooling). */
+  private removeRagdoll(): void {
+    this.removeJoints();
+    if (!this.ragdolled) return;
+    this.ragdolled = false;
+    for (const part of this.parts) {
+      for (const c of part.colliders) this.physics.unregister(c);
+      if (part.body) this.physics.world.removeRigidBody(part.body);
+      part.body = null;
+      part.colliders = [];
+      for (const r of part.receivers) r.body = undefined;
+      part.group.matrixWorldAutoUpdate = true;
     }
   }
 
   /**
-   * Pooled and out of play: no bodies in the physics world at all. Rapier walks every
-   * body and collider each step, disabled ones too (~370 parked hitboxes cost as much as
-   * the live ones); they're rebuilt from the same shapes when the body comes back.
+   * Pooled and out of play: nothing in the physics world, no hit test. A living body has
+   * no physics bodies either: its hitboxes are tested by hand (raycast(), a core/Physics
+   * HitSet) and one capsule keeps the player out. Real bodies exist only for the ragdoll.
    */
   private detached = false;
+  /** The ragdoll's part bodies exist (dead, in play). */
+  private ragdolled = false;
+  private hitsOn = false;
+  private blocker: RAPIER.RigidBody | null = null;
+  private blockerAt = new THREE.Vector3();
+  /** The blocker capsule: radius, half the straight part, centre height above the root. */
+  private capRadius = 0.3;
+  private capHalf = 0.55;
+  private capY = 0.85;
+  /** Farthest any hitbox reaches from the pelvis pivot, in any pose (the quick reject). */
+  private reach = 1.5;
+  /** The pelvis part (the hit test's and the capsule's centre). */
+  private hips!: Part;
 
   private detach(): void {
     if (this.detached) return;
     this.detached = true;
-    for (const part of this.parts) {
-      for (const c of part.colliders) this.physics.unregister(c);
-      this.physics.world.removeRigidBody(part.body);
-      part.colliders = [];
-    }
+    this.removeRagdoll();
+    this.setHits(false);
+    this.setBlocker(false);
   }
 
   private attach(): void {
     if (!this.detached) return;
     this.detached = false;
-    for (const part of this.parts) this.createBody(part);
+    if (!this.alive) return;
+    this.setHits(true);
+    this.setBlocker(!this.downed);
+  }
+
+  private setHits(on: boolean): void {
+    if (this.hitsOn === on) return;
+    this.hitsOn = on;
+    if (on) this.physics.addHitSet(this);
+    else this.physics.removeHitSet(this);
+  }
+
+  /** The living body's capsule (blocks the player, pushes props and corpses; bullets pass it). */
+  private setBlocker(on: boolean): void {
+    if (on === !!this.blocker) return;
+    const world = this.physics.world;
+    if (!on) {
+      world.removeRigidBody(this.blocker!);
+      this.blocker = null;
+      return;
+    }
+    const at = this.blockerPos();
+    this.blocker = world.createRigidBody(RAPIER.RigidBodyDesc.kinematicPositionBased().setTranslation(at.x, at.y, at.z));
+    world.createCollider(RAPIER.ColliderDesc.capsule(this.capHalf, this.capRadius).setCollisionGroups(GROUPS.blocker), this.blocker);
+  }
+
+  private blockerPos(): THREE.Vector3 {
+    const p = this.hips.worldPos;
+    return this.blockerAt.set(p.x, this.root.position.y + this.capY, p.z);
+  }
+
+  /**
+   * Sizes of the hit test and the capsule, from the rest pose (root at the origin): the
+   * standing height, and how far a box can reach from the pelvis along the joint chain.
+   */
+  private measure(): void {
+    this.root.updateMatrixWorld(true);
+    const v = new THREE.Vector3();
+    let top = 0;
+    let reach = 0;
+    for (const part of this.parts) {
+      let chain = 0;
+      for (let p: Part | null = part; p && p.name !== 'pelvis'; p = p.parent) chain += p.group.position.length();
+      for (const c of part.shapes) {
+        reach = Math.max(reach, chain + Math.hypot(...c.center) + Math.hypot(...c.half));
+        v.set(...c.center).applyMatrix4(part.group.matrixWorld);
+        top = Math.max(top, v.y + c.half[1] - this.root.position.y);
+      }
+    }
+    this.reach = reach + 0.05;
+    this.capY = top / 2;
+    this.capHalf = Math.max(0.05, top / 2 - this.capRadius);
+  }
+
+  // ---------------------------------------------------------------- hit test (HitSet)
+
+  private ro = new THREE.Vector3();
+  private rd = new THREE.Vector3();
+  private qi = new THREE.Quaternion();
+  private face = { axis: -1, sign: 0 };
+
+  /** The ray against the sphere round the pelvis that holds every hitbox in any pose. */
+  private ballHit(o: THREE.Vector3, d: THREE.Vector3, maxDist: number, r: number): boolean {
+    const c = this.hips.worldPos;
+    const mx = o.x - c.x;
+    const my = o.y - c.y;
+    const mz = o.z - c.z;
+    const cc = mx * mx + my * my + mz * mz - r * r;
+    if (cc <= 0) return true;
+    const b = mx * d.x + my * d.y + mz * d.z;
+    if (b > 0) return false;
+    const disc = b * b - cc;
+    return disc >= 0 && -b - Math.sqrt(disc) <= maxDist;
+  }
+
+  /** Bullets (core/Physics HitSet): the ray against every part's boxes, in that part's frame. */
+  raycast(origin: THREE.Vector3, dir: THREE.Vector3, maxDist: number, out: SetHit): boolean {
+    if (!this.ballHit(origin, dir, maxDist, this.reach)) return false;
+    let best = maxDist;
+    let hit = false;
+    for (const part of this.parts) {
+      const qi = this.qi.copy(part.worldQuat).conjugate();
+      const lo = this.ro.copy(origin).sub(part.worldPos).applyQuaternion(qi);
+      const ld = this.rd.copy(dir).applyQuaternion(qi);
+      for (let k = 0; k < part.shapes.length; k++) {
+        const s = part.shapes[k];
+        const t = boxRay(lo, ld, s.center, s.half, best, this.face);
+        if (t < 0) continue;
+        best = t;
+        hit = true;
+        out.distance = t;
+        out.receiver = part.receivers[k];
+        // The face it came in through, back to world space (from inside: against the ray).
+        if (this.face.axis < 0) out.normal.copy(dir).negate();
+        else out.normal.set(0, 0, 0).setComponent(this.face.axis, this.face.sign).applyQuaternion(part.worldQuat);
+      }
+    }
+    return hit;
+  }
+
+  near(origin: THREE.Vector3, dir: THREE.Vector3, maxDist: number, radius: number): boolean {
+    return this.ballHit(origin, dir, maxDist, this.reach + radius);
   }
 
   // ---------------------------------------------------------------- hits
@@ -571,6 +757,8 @@ export class Humanoid {
     this.health.health = 1;
     this.downed = true;
     this.bleed = 30;
+    // On the floor: nothing to walk into (the hitboxes still take rounds).
+    this.setBlocker(false);
     this.react(hit, part, zone, dmg);
     const info = this.info;
     info.hit = hit;
@@ -603,6 +791,7 @@ export class Humanoid {
     if (!this.downed) return;
     this.downed = false;
     this.health.health = this.health.maxHealth * 0.5;
+    this.setBlocker(true);
   }
 
   /** Bleed-out ticking (call every frame). */
@@ -747,18 +936,18 @@ export class Humanoid {
     this.settled = false;
     const lite = lowSpec();
     this.root.updateMatrixWorld(true);
+    // The living hit test and capsule give way to real bodies, at the pose and speed the
+    // animation had.
+    this.setHits(false);
+    this.setBlocker(false);
+    this.removeRagdoll();
+    this.ragdolled = true;
     for (const part of this.parts) {
       part.group.matrixWorld.decompose(part.worldPos, part.worldQuat, this.tmpScale);
-      const b = part.body;
-      b.setBodyType(RAPIER.RigidBodyType.Dynamic, true);
       // Phones: CCD on the heavy core only (the joints hold the limbs to it).
-      b.enableCcd(!lite || part.name === 'torso' || part.name === 'pelvis');
-      b.setTranslation(part.worldPos, true);
-      b.setRotation(part.worldQuat, true);
+      this.createRagdollBody(part, lite ? GROUPS.ragdollLite : GROUPS.ragdoll, !lite || part.name === 'torso' || part.name === 'pelvis');
       part.vel.clampLength(0, 6);
-      b.setLinvel(part.vel, true);
-      b.setAngvel({ x: 0, y: 0, z: 0 }, true);
-      for (const c of part.colliders) c.setCollisionGroups(lite ? GROUPS.ragdollLite : GROUPS.ragdoll);
+      part.body!.setLinvel(part.vel, true);
       // From now on the bones follow the physics bodies directly.
       part.group.matrixWorldAutoUpdate = false;
       part.prevVy = 0;
@@ -769,22 +958,22 @@ export class Humanoid {
     // so heavy rounds visibly carry the body (Mosin/Kar98 more than a 5.56).
     const momentum = (hit.impulse / 0.18) * feel.ragdollForce;
     const dir = hit.direction;
-    struck.body.applyImpulseAtPoint(
+    struck.body!.applyImpulseAtPoint(
       { x: dir.x * momentum * 1.5, y: dir.y * momentum * 1.5, z: dir.z * momentum * 1.5 },
       hit.point,
       true,
     );
     const shove = Math.min(2.4, momentum * 0.075);
     for (const part of this.parts) {
-      const m = part.body.mass();
+      const m = part.body!.mass();
       const lift = part.name === 'head' || part.name === 'torso' ? 0.25 : 0;
-      part.body.applyImpulse({ x: dir.x * shove * m, y: lift * shove * m, z: dir.z * shove * m }, true);
+      part.body!.applyImpulse({ x: dir.x * shove * m, y: lift * shove * m, z: dir.z * shove * m }, true);
     }
     if (zone === 'head') {
       // Head snaps back and drags the upper body with it: falls backward.
       const k = momentum * 0.9;
-      this.part('head').body.applyImpulse({ x: dir.x * k, y: k * 0.35, z: dir.z * k }, true);
-      this.part('torso').body.applyImpulse({ x: dir.x * k * 0.8, y: 0, z: dir.z * k * 0.8 }, true);
+      this.part('head').body!.applyImpulse({ x: dir.x * k, y: k * 0.35, z: dir.z * k }, true);
+      this.part('torso').body!.applyImpulse({ x: dir.x * k * 0.8, y: 0, z: dir.z * k * 0.8 }, true);
     }
     this.ragdollTime = 0;
   }
@@ -792,7 +981,7 @@ export class Humanoid {
   private buildJoints(headshot: boolean): void {
     const world = this.physics.world;
     const link = (parentName: PartName, childName: PartName, data: RAPIER.JointData) => {
-      const j = world.createImpulseJoint(data, this.part(parentName).body, this.part(childName).body, true);
+      const j = world.createImpulseJoint(data, this.part(parentName).body!, this.part(childName).body!, true);
       j.setContactsEnabled(false);
       this.joints.push(j);
       return j;
@@ -849,7 +1038,7 @@ export class Humanoid {
       for (const axis of [RAPIER.JointAxis.AngX, RAPIER.JointAxis.AngY, RAPIER.JointAxis.AngZ]) t.raw.jointConfigureMotorPosition(t.handle, axis, 0, t.tone * share, t.damping);
     }
     // A body asleep in its last pose wouldn't notice: let it settle again.
-    for (const part of this.parts) part.body.wakeUp();
+    for (const part of this.parts) part.body?.wakeUp();
   }
 
   /**
@@ -859,16 +1048,8 @@ export class Humanoid {
   setActive(active: boolean): void {
     this.setFrozen(false);
     this.root.visible = active;
-    if (!active) {
-      this.removeJoints();
-      this.detach();
-      return;
-    }
-    this.attach();
-    for (const part of this.parts) {
-      for (const c of part.colliders) c.setEnabled(true);
-      part.body.setEnabled(true);
-    }
+    if (active) this.attach();
+    else this.detach();
   }
 
   /** Phones: many bodies in the shadow pass get expensive. */
@@ -894,20 +1075,15 @@ export class Humanoid {
   /** Back to a living, standing body at the root's current transform. */
   reset(fromFloor: boolean): void {
     this.attach();
-    this.removeJoints();
+    this.removeRagdoll();
     this.setFrozen(false);
     this.lodDt = 0;
     this.settled = false;
-    for (const part of this.parts) {
-      part.body.setBodyType(RAPIER.RigidBodyType.KinematicPositionBased, true);
-      part.body.enableCcd(false);
-      part.body.setLinvel({ x: 0, y: 0, z: 0 }, false);
-      part.body.setAngvel({ x: 0, y: 0, z: 0 }, false);
-      for (const c of part.colliders) c.setCollisionGroups(GROUPS.hitbox);
-      part.group.matrixWorldAutoUpdate = true;
-    }
+    for (const part of this.parts) part.group.matrixWorldAutoUpdate = true;
     this.health.reset();
     this.downed = false;
+    this.setHits(true);
+    this.setBlocker(true);
     for (const s of [this.tiltX, this.tiltZ, this.bodyYaw, this.spineX, this.spineY, this.spineZ, this.headX, this.headY, this.headZ, ...this.armX, ...this.armZ, ...this.elbow, ...this.knee]) {
       s.reset();
     }
@@ -932,6 +1108,8 @@ export class Humanoid {
     if (this.detached) return;
     this.updateLod();
     if (!this.alive) {
+      // No ragdoll (dead and brought back into play without a reset): nothing to move.
+      if (!this.ragdolled) return;
       // A settled corpse costs nothing until something wakes it (once the knees are limp;
       // the frame it falls asleep still syncs the bones one last time).
       if (this.settled || this.knees.length === 0) {
@@ -997,7 +1175,7 @@ export class Humanoid {
   }
 
   private allAsleep(): boolean {
-    for (const part of this.parts) if (!part.body.isSleeping()) return false;
+    for (const part of this.parts) if (!part.body!.isSleeping()) return false;
     return true;
   }
 
@@ -1184,20 +1362,16 @@ export class Humanoid {
   }
   private ik = { target: new THREE.Vector3(), dir: new THREE.Vector3(), perp: new THREE.Vector3(), elbow: new THREE.Vector3(), a: new THREE.Vector3(), b: new THREE.Vector3() };
 
-  /** Kinematic hitboxes follow the animated pose; remember velocities for the ragdoll. */
+  /** The hitboxes follow the animated pose (the hit test reads them); velocities for the ragdoll; the capsule follows. */
   private updateHitboxes(dt: number): void {
     this.root.updateMatrixWorld(true);
     for (const part of this.parts) {
       // The pass above made every matrixWorld current: read it, don't walk the parents again.
       part.group.matrixWorld.decompose(part.worldPos, part.worldQuat, this.tmpScale);
       if (this.teleport) {
-        part.body.setTranslation(part.worldPos, true);
-        part.body.setRotation(part.worldQuat, true);
         part.prevPos.copy(part.worldPos);
         part.vel.set(0, 0, 0);
       } else {
-        part.body.setNextKinematicTranslation(part.worldPos);
-        part.body.setNextKinematicRotation(part.worldQuat);
         if (dt > 1e-5) {
           part.vel.subVectors(part.worldPos, part.prevPos).divideScalar(dt);
           // The pop-up from the floor is not momentum.
@@ -1206,6 +1380,10 @@ export class Humanoid {
         part.prevPos.copy(part.worldPos);
       }
     }
+    if (this.blocker) {
+      if (this.teleport) this.blocker.setTranslation(this.blockerPos(), true);
+      else this.blocker.setNextKinematicTranslation(this.blockerPos());
+    }
     this.teleport = false;
   }
 
@@ -1213,8 +1391,8 @@ export class Humanoid {
     this.ragdollTime += dt;
     // Bones = physics bodies (body origin = bone pivot).
     for (const part of this.parts) {
-      part.body.translation(part.worldPos);
-      part.body.rotation(part.worldQuat);
+      part.body!.translation(part.worldPos);
+      part.body!.rotation(part.worldQuat);
       part.group.matrixWorld.compose(part.worldPos, part.worldQuat, ONE);
     }
     // Attachments still on the bones (chest markers...) follow.
@@ -1225,8 +1403,8 @@ export class Humanoid {
     // in the solver each): once it's barely moving, put it to sleep (sooner on phones, and
     // sooner still for a corpse nobody can see or that lies 30 m+ away).
     const unseen = lowSpec() && (!this.root.visible || this.part('torso').worldPos.distanceToSquared(humanoidView) > FAR_SQ);
-    if (this.ragdollTime > (lowSpec() ? (unseen ? 1.2 : 3.5) : 6) && this.parts.every((p) => p.body.isSleeping() || speedSq(p.body.linvel(this.linvel)) < 0.25)) {
-      for (const part of this.parts) part.body.sleep();
+    if (this.ragdollTime > (lowSpec() ? (unseen ? 1.2 : 3.5) : 6) && this.parts.every((p) => p.body!.isSleeping() || speedSq(p.body!.linvel(this.linvel)) < 0.25)) {
+      for (const part of this.parts) part.body!.sleep();
     }
     // Knees only buckle at the moment of death; afterwards the body is fully limp.
     if (this.ragdollTime > 0.45 && this.knees.length) {
@@ -1246,7 +1424,7 @@ export class Humanoid {
     // Body-fall sounds: a heavy part that was falling fast and suddenly stopped.
     this.thudCooldown -= dt;
     for (const part of this.parts) {
-      const vy = part.body.linvel(this.linvel).y;
+      const vy = part.body!.linvel(this.linvel).y;
       const heavy = part.name === 'torso' || part.name === 'pelvis' || part.name === 'head';
       if (heavy && this.thudCooldown <= 0 && part.prevVy < -2.2 && vy > part.prevVy * 0.35) {
         this.tmp.copy(part.worldPos);
