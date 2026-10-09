@@ -5,6 +5,8 @@ or a local colour version of the item itself:
   python scripts/gear-variant.py <item.glb> <out_dir> --recolour=R,G,B   (its main cloth colour -> R,G,B,
                                                     shading kept; writes only the base colour: the runtime
                                                     keeps the item's own normal / ORM maps)
+  python scripts/gear-variant.py <item.glb> <out_dir> --solid=R,G,B      (a flat-coloured item, e.g. the
+                                                    backpack straps: an 8 x 8 base colour of R,G,B)
 
 Writes <out_dir>/base_color.webp (sRGB), normal.webp (tangent space, OpenGL +Y as glTF) and
 orm.webp (R occlusion, 255 where the source has none; G roughness; B metallic: glTF order), plus
@@ -44,7 +46,15 @@ def main():
     args = [a for a in sys.argv[1:] if not a.startswith('--')]
     size = int(next((a[7:] for a in sys.argv[1:] if a.startswith('--size=')), 1024))
     recol = next((a[11:] for a in sys.argv[1:] if a.startswith('--recolour=')), None)
+    solid = next((a[8:] for a in sys.argv[1:] if a.startswith('--solid=')), None)
     src, out = args
+    if solid:
+        os.makedirs(out, exist_ok=True)
+        im = Image.new('RGB', (8, 8), tuple(int(c) for c in solid.split(',')))
+        for name in ('base_color.webp', 'base_color_1k.webp'):
+            im.save(os.path.join(out, name), quality=95)
+        print(f'{src} -> {out}: solid {solid}')
+        return
     j, blob = glb(src)
     mat = j['materials'][0]
     pbr = mat.get('pbrMetallicRoughness', {})

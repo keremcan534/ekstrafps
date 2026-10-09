@@ -10,7 +10,7 @@
     "gripCorrections: per library pose, the master's own small finger turns after the pose (bone keys Thumb1 ... Pinky3, quaternions in the poses' right-hand convention): its palm and thumb are not the glove's. Canonical, never per character.",
     "fingerBasis: the first-person glove's bind finger rotations (public/hands/arms.glb). The grip pose library (src/config/gripposes.json) is authored on top of them; on the master a finger bone's local rotation is basis (x) pose (left hand: basis.left (x) mirror(pose)), the first-person FingerPoser's rule with the glove's basis.",
     "weapons: weapon-side data in the weapon model's own units and axes (the AK: muzzle +X, up +Y, its right side +Z, ~1 mm per unit). rightGrip: the pistol grip's frame (it lands on RightHandWeaponSocket). leftGrip: Hand_L's frame on the handguard (the support hand's IK target). butt: the butt point the stance places.",
-    "game: the master humanoid in the game (src/characters/MasterCharacter.ts, src/characters/MasterGrips.ts). height: the ONE standing height every master character is scaled to (m). people: soldier palette -> character id (public/assets/characters/characters/<id>.json). stances: the Soldier's carry -> the stance above whose torso blade, low carry and poles it uses. neckTwist: share of the head's turn the neck takes (the rest the head; the torso's turn is spread by torso.spread). grip: the hold frames on a third-person gun without weapon data of its own, in the game rig's frame (barrel -Z, up +Y, its right side +X; metres). rifle: one rule for every long gun, fitted on the AK-47 (weapons.ak47 against the drawn AK: 0.2 deg, 1 mm): the pistol grip's frame +Y raked rakeDeg toward the muzzle, its origin 'along' m up that axis from the grip's lowest point (GunGrips), +X the gun's left; the support hand's wrist frame at leftOffset (turned by leftQuaternion) from the handguard support point: 12 mm under the handguard's underside where GunGrips wants it, or the nearest handguard within handguard.search m (an underside at least minDrop under the bore; what hangs more than maxDrop under it - magazines, bipods - ignored). stock: long guns with no pistol grip (bolt actions, pump guns): the grip frame raked rakeDeg, 'along' m up from the stock wrist's underside at the rig's firing-hand point; the support as for rifles at the rig's support-hand point. pistol: handguns, from the rig's firing-hand point: the grip frame rightOffset from it, raked rakeDeg; hold: where the Soldier carries a handgun per carry, from the stock pocket in the aim frame (m; x - = toward the body's centre line, + up, + forward); in the carries listed in twoHanded the support hand closes round the firing hand the mirror way, its weapon socket (LeftHandWeaponSocket) at supportOffset / supportQuaternion in the grip frame. fingers: library poses per weapon class (trigger while aiming, safe otherwise; free: a hand off the gun; reload: the support hand on a magazine)."
+    "game: the master humanoid in the game (src/characters/MasterCharacter.ts, src/characters/MasterGrips.ts). height: the ONE standing height every master character is scaled to (m). people: soldier palette -> character id (public/assets/characters/characters/<id>.json). stances: the Soldier's carry -> the stance above whose torso blade, low carry and poles it uses. neckTwist: share of the head's turn the neck takes (the rest the head; the torso's turn is spread by torso.spread). grip: the hold frames on a third-person gun without weapon data of its own, in the game rig's frame (barrel -Z, up +Y, its right side +X; metres). rifle: one rule for every long gun, fitted on the AK-47 (weapons.ak47 against the drawn AK: 0.2 deg, 1 mm): the pistol grip's frame +Y raked rakeDeg toward the muzzle, its origin 'along' m up that axis from the grip's lowest point (GunGrips), +X the gun's left; the support hand's wrist frame at leftOffset (turned by leftQuaternion) from the handguard support point: 12 mm under the handguard's underside where GunGrips wants it, or the nearest handguard within handguard.search m (an underside at least minDrop under the bore; what hangs more than maxDrop under it - magazines, bipods - ignored). stock: long guns with no pistol grip (bolt actions, pump guns): the grip frame raked rakeDeg, 'along' m up from the stock wrist's underside at the rig's firing-hand point; the support as for rifles at the rig's support-hand point. pistol: handguns, from the rig's firing-hand point: the grip frame rightOffset from it, raked rakeDeg; hold: where the Soldier carries a handgun per carry, from the stock pocket in the aim frame (m; x - = toward the body's centre line, + up, + forward); in the carries listed in twoHanded the support hand closes round the firing hand the mirror way, its weapon socket (LeftHandWeaponSocket) at supportOffset / supportQuaternion in the grip frame. fingers: library poses per weapon class (trigger while aiming, safe otherwise; free: a hand off the gun; reload: the support hand on a magazine). fit: per gun model, the two hold frames fitted on the drawn gun in the soldier lab (src/dev/masterGripFit.ts, __slm.fit: fingertips, thumb and palm on its surface, nothing deep inside, wrist bend and reach in bounds), [x, y, z, qx, qy, qz, qw] in the rig root's space for right (the grip frame) and left (the support wrist); they win over the rules above (weapons.<model> data still wins over them)."
   ],
   "sockets": {
     "RightHandWeaponSocket": {
@@ -466,6 +466,308 @@
             -0.06,
             -0.22,
             0.14
+          ]
+        }
+      },
+      "fit": {
+        "ak109": {
+          "right": [
+            0.00051,
+            -0.04545,
+            0.04831,
+            0.00989,
+            0.9671,
+            -0.23452,
+            -0.09804
+          ],
+          "left": [
+            -0.05916,
+            -0.03469,
+            -0.24283,
+            -0.40663,
+            -0.3463,
+            -0.34586,
+            0.77143
+          ]
+        },
+        "ash127": {
+          "right": [
+            -0.00231,
+            -0.05736,
+            -0.0099,
+            -0.04649,
+            0.96624,
+            -0.22295,
+            -0.12046
+          ],
+          "left": [
+            -0.06351,
+            -0.04226,
+            -0.15167,
+            -0.33569,
+            -0.32606,
+            -0.39859,
+            0.78875
+          ]
+        },
+        "asval": {
+          "right": [
+            -0.00092,
+            -0.06153,
+            0.0082,
+            0.01268,
+            0.98168,
+            -0.18423,
+            -0.0469
+          ],
+          "left": [
+            -0.04956,
+            -0.05074,
+            -0.21105,
+            -0.39948,
+            -0.42969,
+            -0.36659,
+            0.72208
+          ]
+        },
+        "cz805": {
+          "right": [
+            -0.00688,
+            -0.0306,
+            -0.00272,
+            0.05161,
+            0.94396,
+            -0.31872,
+            0.06847
+          ],
+          "left": [
+            -0.06658,
+            -0.03631,
+            -0.18203,
+            -0.38442,
+            -0.34199,
+            -0.34283,
+            0.78596
+          ]
+        },
+        "g36c": {
+          "right": [
+            0.00094,
+            -0.07629,
+            0.01061,
+            0.00408,
+            0.92885,
+            -0.36895,
+            -0.03315
+          ],
+          "left": [
+            -0.05853,
+            -0.05493,
+            -0.13192,
+            -0.41342,
+            -0.40829,
+            -0.34212,
+            0.73847
+          ]
+        },
+        "kar98": {
+          "right": [
+            -0.00981,
+            -0.02405,
+            -0.01937,
+            0.29988,
+            0.87041,
+            -0.39031,
+            -0.01092
+          ],
+          "left": [
+            -0.05492,
+            -0.04843,
+            -0.12414,
+            -0.46803,
+            -0.35996,
+            -0.28286,
+            0.75589
+          ]
+        },
+        "m4a1": {
+          "right": [
+            0.00206,
+            -0.03438,
+            -0.00219,
+            0.00865,
+            0.9405,
+            -0.33963,
+            -0.0059
+          ],
+          "left": [
+            -0.05093,
+            -0.02235,
+            -0.18095,
+            -0.4601,
+            -0.33638,
+            -0.27582,
+            0.774
+          ]
+        },
+        "mk47": {
+          "right": [
+            -0.00106,
+            -0.03804,
+            0.03147,
+            0.03671,
+            0.93821,
+            -0.34411,
+            -4e-05
+          ],
+          "left": [
+            -0.06181,
+            -0.01617,
+            -0.24903,
+            -0.39997,
+            -0.36956,
+            -0.33433,
+            0.76921
+          ]
+        },
+        "mp5": {
+          "right": [
+            0.00435,
+            -0.20363,
+            0.08145,
+            -0.02125,
+            0.86843,
+            -0.48824,
+            -0.08371
+          ],
+          "left": [
+            -0.04426,
+            -0.06196,
+            -0.2444,
+            -0.54313,
+            -0.32952,
+            -0.24917,
+            0.73099
+          ]
+        },
+        "mp5sd": {
+          "right": [
+            -0.0039,
+            -0.15954,
+            0.09797,
+            0.03647,
+            0.97649,
+            -0.18454,
+            -0.10524
+          ],
+          "left": [
+            -0.02989,
+            -0.05617,
+            -0.1896,
+            -0.46414,
+            -0.49122,
+            -0.27145,
+            0.68527
+          ]
+        },
+        "pistol": {
+          "right": [
+            -0.00288,
+            -0.04768,
+            -0.01471,
+            0.20339,
+            0.92515,
+            -0.26648,
+            0.17808
+          ],
+          "left": [
+            -0.11646,
+            -0.0597,
+            -0.00326,
+            -0.13316,
+            0.37079,
+            -0.49758,
+            0.77279
+          ]
+        },
+        "ppsh": {
+          "right": [
+            -0.00533,
+            0.02756,
+            0.05739,
+            -0.0378,
+            0.97383,
+            -0.2174,
+            0.05445
+          ],
+          "left": [
+            -0.0566,
+            -0.02042,
+            -0.22346,
+            -0.38492,
+            -0.27392,
+            -0.36249,
+            0.80337
+          ]
+        },
+        "qbz192": {
+          "right": [
+            0.0009,
+            -0.13462,
+            0.0233,
+            0.00876,
+            0.95145,
+            -0.3026,
+            -0.05563
+          ],
+          "left": [
+            -0.05108,
+            -0.06363,
+            -0.20198,
+            -0.46349,
+            -0.37467,
+            -0.30604,
+            0.74238
+          ]
+        },
+        "scarh": {
+          "right": [
+            -0.00469,
+            -0.01996,
+            0.04374,
+            0.05052,
+            0.98163,
+            -0.18347,
+            -0.01366
+          ],
+          "left": [
+            -0.06092,
+            -0.01007,
+            -0.27162,
+            -0.44004,
+            -0.37425,
+            -0.32478,
+            0.74888
+          ]
+        },
+        "svd": {
+          "right": [
+            -0.00052,
+            -0.06611,
+            0.03077,
+            0.0926,
+            0.96807,
+            -0.22093,
+            0.07384
+          ],
+          "left": [
+            -0.05757,
+            -0.06084,
+            -0.27795,
+            -0.39764,
+            -0.39768,
+            -0.27743,
+            0.77895
           ]
         }
       }

@@ -6,6 +6,7 @@
     "pouches/pouches",
     "radios/radio",
     "backpacks/pmc_backpack",
+    "backpacks/pmc_backpack_straps",
     "hats/pmc_cap"
   ]
 }

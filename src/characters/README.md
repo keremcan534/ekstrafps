@@ -62,6 +62,9 @@ on the master's own UVs; sources in production/assets/src/chars/master/texture/<
   belts, coats - anything that bends with the torso or legs).
 - Optional `hides`: names of body regions the gear covers (for future culling), `variants`: look
   name -> texture override folder.
+- Gear built on the body itself instead of fitted from a Meshy model: the Warden's greatcoat
+  (scripts/blender/build_coat.py) and the PMC backpack's shoulder straps
+  (scripts/blender/build_straps.py: laid over the plate carrier, skinned like it).
 
 ## Character `<id>.json`
 ```json
@@ -73,15 +76,20 @@ One animation system: the game's procedural Humanoid (src/targets/Humanoid.ts) p
 ragdolls every body; src/characters/MasterCharacter.ts retargets its parts onto the canonical
 skeleton each frame (constant offsets from the "hanging" pose), then the weapon hold (IK, fingers,
 twist) and writes the solved arms back to the Humanoid's arm parts, so hitboxes are the arms drawn.
+An arm that changes hands - IK on the gun ↔ following its part (the far switch, a hand to the
+magazine, a death) - eases from its last drawn pose over 0.2 s instead of snapping.
 No per-faction clips. animations/humanoid/ holds lab test clips only; a clip set, if it ever comes,
 is authored on this same skeleton and drives the same retarget.
 
 ## Not done on purpose
 - The cleanup's inner-arm seam step stays off: re-enabling it changes the mesh, which re-runs the
   UVs and invalidates every look and every gear fit for a cosmetic seam under the sleeve.
-- Grip data exists for the AK-47 only; other guns use the rifle / stock / pistol rules
-  (masterRig.json game.grip): close, but fingertips can be 1-3 cm off. Per-gun data is fitted in
-  the master lab like weapons.ak47.
+- Hold frames: the AK-47 has its lab data (masterRig.json `weapons.ak47`); every other gun the
+  game hands a soldier has frames fitted on the drawn gun (`game.grip.fit`, soldier-lab.html
+  `__slm.fit(i)`, src/dev/masterGripFit.ts); the rules are only the fallback for a new gun. The
+  finger poses stay the shared library's, so on grips far from the AK's shape (the SVD's thumbhole
+  stock, the PPSh's and Kar98k's wooden wrists, the pistol) a finger or the thumb can sit up to
+  ~1-2 cm off; per-gun finger curl would be the next step.
 
 ## Rules
 - Weapon holds: right hand owns the weapon via RightHandWeaponSocket, left hand two-bone IK, twist

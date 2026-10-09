@@ -6,6 +6,7 @@ import { MasterCharacter } from '../characters/MasterCharacter';
 import { masterAssets } from '../characters/MasterAssets';
 import { SIDES } from '../characters/master/MasterRig';
 import { measureMaster, Rows, yawSweep, type CheckRow } from './masterGameChecks';
+import { fitGrip } from './masterGripFit';
 
 /**
  * The master humanoid's game holds driven through the Soldier (soldier-lab.html: window.__slm).
@@ -17,6 +18,7 @@ import { measureMaster, Rows, yawSweep, type CheckRow } from './masterGameChecks
  *   __slm.drive(frames, { walk, crouch, turn, reload }) → step everything that many frames
  *   __slm.kill(i) → shoot soldier i down (its ragdoll)
  *   __slm.perf(n, frames) → ms per frame for the bodies' update (n soldiers)
+ *   __slm.fit(i) → fit soldier i's hold frames on its gun (dev/masterGripFit.ts): masterRig.json game.grip.fit
  */
 export interface DriveOptions {
   mode?: AimMode;
@@ -136,5 +138,11 @@ export function masterGameLab(lab: Lab) {
     return { msPerFrame: +((performance.now() - t0) / frames).toFixed(3), soldiers: lab.soldiers.length, masters: masters().length };
   }
 
-  return { step, drive, checks, kill, perf, masters, assets: masterAssets };
+  /** Fit soldier i's two hold frames on the gun it holds now (stand it in 'aim' first). */
+  function fit(i: number, maxEvals?: number) {
+    const s = lab.soldiers[i];
+    return fitGrip(s, (s as unknown as { modelKey: string }).modelKey, maxEvals);
+  }
+
+  return { step, drive, checks, kill, perf, masters, fit, assets: masterAssets };
 }

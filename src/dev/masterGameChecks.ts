@@ -127,7 +127,7 @@ interface Probes {
 let probes: Probes | null = null;
 
 /** Probe vertices chosen once on the template body at rest (every master character shares the geometry). */
-function getProbes(): Probes {
+export function getProbes(): Probes {
   if (probes) return probes;
   const a = masterAssets();
   if (!a) throw new Error('master not loaded');
@@ -270,12 +270,14 @@ export function measureMaster(s: Soldier, withSurface = true): MasterMeasure | n
     const restQ = (b: THREE.Bone) => rig.rest.get(b.name)!.quaternion;
     const tw = (b: THREE.Bone) => twistAboutY(t.q.copy(restQ(b)).invert().multiply(b.quaternion));
     const hand = tw(arm.hand);
-    out.splitErr[side] = Math.max(
+    // (An arm easing in after changing hands blends its twist bones too.)
+    out.splitErr[side] = m.easing(side) ? 0 : Math.max(
       Math.abs(r2d(tw(arm.foreTwist) - m.twist.alpha * hand)),
       Math.abs(r2d(tw(arm.foreTwist2) - m.twist.alpha2 * hand)),
       Math.abs(r2d(tw(arm.upperTwist) + m.twist.beta * tw(arm.upper))),
     );
-    if (!m.solved[side]) continue;
+    // (An arm easing in after changing hands is short of its target on purpose.)
+    if (!m.solved[side] || m.easing(side)) continue;
     const target = m.targets[side];
     out.posMm[side] = t.a.setFromMatrixPosition(arm.hand.matrixWorld).distanceTo(t.b.setFromMatrixPosition(target)) * 1000;
     out.rotDeg[side] = r2d(quatOf(arm.hand.matrixWorld, t.q).angleTo(quatOf(target, t.q2)));

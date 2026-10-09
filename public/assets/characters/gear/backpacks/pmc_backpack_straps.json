@@ -1,0 +1,10 @@
+{
+  "id": "pmc_backpack_straps",
+  "kind": "backpacks",
+  "model": "pmc_backpack_straps.glb",
+  "attach": "skinned",
+  "variants": {
+    "pmc_green": "pmc_backpack_straps/pmc_green",
+    "pmc_grey": "pmc_backpack_straps/pmc_grey"
+  }
+}

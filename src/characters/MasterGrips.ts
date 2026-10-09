@@ -18,18 +18,21 @@ import data from './master/masterRig.json';
  * One source per gun (masterRig.json `game.grip`; no per-weapon hand code):
  *   1. weapon data: masterRig.json `weapons.<model>` (model space), carried onto the drawn gun by
  *      its model fit (WeaponMeshes.worldFit): the AK-47.
- *   2. handguns: the grip frame from the rig's firing-hand point; two-handed, the support hand
+ *   2. fitted frames: masterRig.json `game.grip.fit.<model>` (the rig root's space), fitted on the
+ *      drawn gun in the soldier lab (dev/masterGripFit.ts: fingertips, thumb and palm on its
+ *      surface, nothing deep inside, the wrist and the reach in bounds).
+ *   3. handguns: the grip frame from the rig's firing-hand point; two-handed, the support hand
  *      closes round the firing hand the mirror way (its LeftHandWeaponSocket a finger's width on).
- *   3. long guns with a pistol grip (GunGrips finds it on the drawn model): the rule fitted on the
+ *   4. long guns with a pistol grip (GunGrips finds it on the drawn model): the rule fitted on the
  *      AK, the grip frame raked up the grip from its lowest point, the support wrist from the
  *      handguard's underside (the nearest real handguard: not the bare barrel, not a bipod).
- *   4. long guns without one (bolt actions, pump guns): the grip frame up the stock wrist at the
+ *   5. long guns without one (bolt actions, pump guns): the grip frame up the stock wrist at the
  *      rig's firing-hand point; the support at the rig's support-hand point, as for rifles.
  *
  * The frames are nodes under the rig's root, so they ride every recoil, carry and drop the gun
  * does. Measured once per gun model, the nodes made once per rig (cached on it).
  */
-export type GripSource = 'data' | 'rule' | 'stock' | 'pistol';
+export type GripSource = 'data' | 'fit' | 'rule' | 'stock' | 'pistol';
 
 export interface MasterGrip {
   pistol: boolean;
@@ -53,6 +56,8 @@ interface Frames {
 
 const G = data.game.grip;
 const WEAPONS = data.weapons as Record<string, WeaponHoldDef | undefined>;
+/** Fitted frames per gun model: [x, y, z, qx, qy, qz, qw] in the rig root's space. */
+const FITS = (G as { fit?: Record<string, { right: number[]; left: number[] } | undefined> }).fit ?? {};
 const SOCKET = data.sockets.RightHandWeaponSocket;
 const frames = new Map<string, Frames>();
 const v = () => new THREE.Vector3();
@@ -168,6 +173,11 @@ function measure(rig: WeaponRig, model: ModelKey, low: boolean, pistol: boolean)
     const onRig = (f: { position: number[]; quaternion: number[] }) =>
       frame(v().fromArray(f.position).applyMatrix4(fit), fq.clone().multiply(new THREE.Quaternion().fromArray(f.quaternion).normalize()).toArray());
     return { pistol, source: 'data', right: onRig(def.rightGrip), left: onRig(def.leftGrip), butt: v().fromArray(def.butt).applyMatrix4(fit) };
+  }
+  const fitted = FITS[model];
+  if (fitted) {
+    const at = (a: number[]) => new THREE.Matrix4().compose(v().fromArray(a), new THREE.Quaternion().fromArray(a, 3).normalize(), v().set(1, 1, 1));
+    return { pistol, source: 'fit', right: at(fitted.right), left: at(fitted.left), butt: rig.butt.clone() };
   }
   const rh = restPoint(rig, rig.rightHand, rig.rightHandRest);
   const lh = restPoint(rig, rig.leftHand, rig.leftHandRest);

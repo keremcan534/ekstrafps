@@ -37,6 +37,8 @@ const MODEL_POCKET = new THREE.Vector3(-0.075, 0.035, 0.07);
 /** The support hand bends its elbow: at most this share of the arm's reach, sliding back along the handguard (up to SLIDE m). */
 const SUPPORT_REACH = 0.99;
 const SLIDE = 0.14;
+/** The left hand's ease between its reload targets (s, time constant). */
+const LEFT_EASE = 0.06;
 /** High port: where the stock sits, from the shoulder pocket, in the torso's frame (m). */
 const HIGH_PORT = new THREE.Vector3(-0.05, -0.27, 0.1);
 /** Model bodies: the gloves on the gun (the rig's own hand points), and a fist on each forearm when a hand is off it. */
@@ -240,6 +242,14 @@ export class Soldier implements LightSource {
   // Dropped rifle
   private rifleBody: RAPIER.RigidBody;
   private reloadHand = new THREE.Object3D();
+  /**
+   * The left hand's target through a reload (support → magazine → pouch → magazine → support) and
+   * until it is back on the support: a point easing after the chosen one in the body's frame, so
+   * the arm reaches instead of snapping.
+   */
+  private leftReach = new THREE.Object3D();
+  private leftLocal = new THREE.Vector3();
+  private leftEasing = false;
   /** Where the support hand holds: the rig's grip, slid back along the barrel when the arm can't reach it. */
   private supportGrip = new THREE.Object3D();
   /** Model bodies: a fist on each forearm, shown while that hand is off the gun ([left, right]). */
@@ -349,6 +359,7 @@ export class Soldier implements LightSource {
     this.flash.attachTo(this.rig.muzzle);
     this.reloadHand.position.set(-0.05 * this.hand, 0.2, 0.24);
     torso.add(this.reloadHand);
+    this.body.root.add(this.leftReach);
 
     this.rifleBody = deps.physics.world.createRigidBody(
       RAPIER.RigidBodyDesc.dynamic().setEnabled(false).setCcdEnabled(true).setAngularDamping(0.5),
@@ -443,6 +454,26 @@ export class Soldier implements LightSource {
       h.add(hand);
       h.userData.gripHand = true;
     }
+  }
+
+  /** The left hand's target: `want`, or through a reload the point easing after it (leftReach). */
+  private easeLeft(want: THREE.Object3D, reloading: boolean, dt: number): THREE.Object3D {
+    if (!this.leftEasing && !reloading) return want;
+    const root = this.body.root;
+    const local = root.worldToLocal(want.getWorldPosition(this.tmp));
+    if (!this.leftEasing) {
+      // The reload starts with the hand where it is: on the support.
+      this.leftEasing = true;
+      this.leftLocal.copy(local);
+    }
+    this.leftLocal.lerp(local, 1 - Math.exp(-dt / LEFT_EASE));
+    if (!reloading && this.leftLocal.distanceToSquared(local) < 0.004 * 0.004) {
+      this.leftEasing = false;
+      return want;
+    }
+    this.leftReach.position.copy(this.leftLocal);
+    this.leftReach.updateMatrixWorld();
+    return this.leftReach;
   }
 
   /**
@@ -871,7 +902,7 @@ export class Soldier implements LightSource {
     const reloading = this.reloadTimer > 0;
     const rk = reloading ? 1 - this.reloadTimer / this.reloadTime : 0;
     const handOff = reloading && rk > 0.2 && rk < 0.62;
-    p.gripL = handOff ? this.reloadHand : this.rig.mag && reloading && rk > 0.1 && rk < 0.8 ? this.rig.mag : this.placeSupportGrip();
+    p.gripL = this.easeLeft(handOff ? this.reloadHand : this.rig.mag && reloading && rk > 0.1 && rk < 0.8 ? this.rig.mag : this.placeSupportGrip(), reloading, dt);
     this.syncGloves(p.gripL === this.supportGrip, true);
     if (this.master) {
       // Handguns go one-handed in the carries masterRig.json game.grip.pistol leaves out.
@@ -1186,10 +1217,11 @@ export class Soldier implements LightSource {
     if (this.deps.muzzleLights) this.deps.muzzleLights.flash(this.muzzle, this.deps.listener ?? this.muzzle);
     this.deps.impacts.muzzleBlast(this.muzzle, this.dir, 1.1);
     this.deps.impacts.muzzleSmoke(this.muzzle, this.dir, 0.6);
-    // Brass out to the right.
+    // Brass out to the right: the rig sits turned half round in rifleRoot (barrel +Z), so the
+    // gun's right side, where its eject port is, is −X here.
     this.rig.ejectPort.getWorldPosition(this.tmp);
-    this.tmp2.set(2.2, 1.5, 0.3).applyQuaternion(this.q).add(this.vel);
-    this.deps.shells.eject('rifle', this.tmp, this.tmp2, this.q);
+    this.tmp2.set(-2.2, 1.5, 0.3).applyQuaternion(this.q).add(this.vel);
+    this.deps.shells.eject(this.rig.shellType, this.tmp, this.tmp2, this.q);
   }
 }
 

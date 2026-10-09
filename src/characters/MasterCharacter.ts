@@ -51,6 +51,8 @@ type Q = THREE.Quaternion;
 const Y = new THREE.Vector3(0, 1, 0);
 const SPREAD = data.torso.spread;
 const STANCES = data.stances as Record<string, { poles: { right: number[]; left: number[] } }>;
+/** An arm changing hands (IK ↔ its part: the far switch, a hand to the magazine, a death) eases over this long (s). */
+const ARM_BLEND = 0.2;
 
 /**
  * The body's node: matrix passes from outside (the Humanoid's, the renderer's, the game's
@@ -123,6 +125,10 @@ export class MasterCharacter implements HumanoidVisual {
   readonly poles: Record<Side, THREE.Vector3> = { R: new THREE.Vector3(), L: new THREE.Vector3() };
   /** Which arms the IK solved this frame (the rest followed their parts). */
   readonly solved: Record<Side, boolean> = { R: false, L: false };
+  /** Whether an arm is still easing from its last pose after changing hands (drawn short of its target on purpose). */
+  easing(s: Side): boolean {
+    return this.armBlend[s].t < 1;
+  }
   private readonly gear: THREE.Mesh[] = [];
   /** Gear with a far version: swapped with the body's own LOD. */
   private readonly gearLods: { mesh: THREE.Mesh; near: THREE.BufferGeometry; far: THREE.BufferGeometry }[] = [];
@@ -140,6 +146,10 @@ export class MasterCharacter implements HumanoidVisual {
   private readonly leftShift = new THREE.Matrix4();
   private readonly fingerKey: Record<Side, { pose: string; trigger: string }> = { R: { pose: '', trigger: '' }, L: { pose: '', trigger: '' } };
   private wasFar = false;
+  /** Per arm: its chain's local turns when it last changed hands, and how far the ease is (1: done). */
+  private readonly armBlend: Record<Side, { t: number; bones: THREE.Bone[]; from: THREE.Quaternion[] }>;
+  /** Not posed last frame (just made, or out of sight): nothing to ease from. */
+  private wasHidden = true;
   /** Spine3 in the torso part's frame at rest (the torso part carries the chest rigidly). */
   private readonly chest: { p: THREE.Vector3; q: THREE.Quaternion };
   private t = {
@@ -214,6 +224,12 @@ export class MasterCharacter implements HumanoidVisual {
       };
     };
     this.limbs = { R: side('R'), L: side('L') };
+    const chain = (s: Side) => {
+      const a = this.rig.arms[s];
+      const bones = [a.clavicle, a.upper, a.upperTwist, a.fore, a.foreTwist, a.foreTwist2, a.hand];
+      return { t: 1, bones, from: bones.map(() => new THREE.Quaternion()) };
+    };
+    this.armBlend = { R: chain('R'), L: chain('L') };
     const p = (n: Parameters<Humanoid['part']>[0]) => body.part(n);
     this.parts = {
       pelvis: p('pelvis'), torso: p('torso'), head: p('head'), upperArmL: p('upperArmL'), upperArmR: p('upperArmR'),
@@ -301,15 +317,30 @@ export class MasterCharacter implements HumanoidVisual {
     this.fingers[s].apply(libraryPose(pose), trigger ? libraryPose(trigger) : undefined, INDEX_KEYS, masterCorrection(pose));
   }
 
-  posed(_dt: number, far: boolean): void {
+  posed(dt: number, far: boolean): void {
     const b = this.body;
     const alive = b.alive;
     // Not drawn (a room out of sight): nothing to pose. The game sets visibility before the
     // update, so a body coming into view is posed before it is drawn. (A ragdoll is posed
     // anyway: once it settles nothing would pose it again.)
-    if (alive && !b.root.visible) return;
+    if (alive && !b.root.visible) {
+      this.wasHidden = true;
+      return;
+    }
     const t = this.t;
     const P = this.parts;
+    // An arm about to change hands eases from the pose it was last drawn in.
+    const hd = this.hold;
+    const hands = alive && !far;
+    for (const s of SIDES) {
+      const bl = this.armBlend[s];
+      const solve = hands && !!(s === 'R' ? hd.right : hd.left);
+      if (solve !== this.solved[s] && !this.wasHidden) {
+        for (let i = 0; i < bl.bones.length; i++) bl.from[i].copy(bl.bones[i].quaternion);
+        bl.t = 0;
+      }
+    }
+    this.wasHidden = false;
     // The parts' world transforms: the pose just set their local turns (the ragdoll sets the
     // world matrices directly). The body's own node after them (its bones come below).
     if (alive) b.root.updateMatrixWorld(true);
@@ -368,8 +399,6 @@ export class MasterCharacter implements HumanoidVisual {
     for (const c of this.model.children) c.updateMatrixWorld(true);
 
     // The hold: near and alive only.
-    const hd = this.hold;
-    const hands = alive && !far;
     this.solved.R = hands && !!hd.right;
     this.solved.L = hands && !!hd.left;
     if (this.solved.R || this.solved.L) {
@@ -400,6 +429,18 @@ export class MasterCharacter implements HumanoidVisual {
     }
     if (far !== this.wasFar) for (const l of this.gearLods) l.mesh.geometry = far ? l.far : l.near;
     this.wasFar = far;
+    for (const s of SIDES) {
+      const bl = this.armBlend[s];
+      if (bl.t >= 1) continue;
+      bl.t = Math.min(1, bl.t + dt / ARM_BLEND);
+      const k = bl.t * bl.t * (3 - 2 * bl.t);
+      for (let i = 0; i < bl.bones.length; i++) {
+        const q = bl.bones[i].quaternion;
+        t.q.copy(q);
+        q.copy(bl.from[i]).slerp(t.q, k);
+      }
+      bl.bones[0].updateMatrixWorld(true);
+    }
 
     // The arm parts take the solved arms: the hitboxes (and a ragdoll starting now) are the arms drawn.
     for (const s of SIDES) {
