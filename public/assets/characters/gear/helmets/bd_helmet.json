@@ -1,0 +1,23 @@
+{
+  "id": "bd_helmet",
+  "kind": "helmets",
+  "model": "bd_helmet.glb",
+  "attach": "socket",
+  "socket": "HeadSocket",
+  "position": [
+    0.0,
+    -0.09313,
+    0.0196
+  ],
+  "quaternion": [
+    0.0,
+    0.0,
+    0.0,
+    1.0
+  ],
+  "scale": 1,
+  "hides": [
+    "scalp",
+    "hair"
+  ]
+}

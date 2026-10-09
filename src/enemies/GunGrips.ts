@@ -15,6 +15,10 @@ import type { WeaponRig } from '../weapons/WeaponModels';
 export interface GunGrips {
   firing: THREE.Vector3;
   support: THREE.Vector3;
+  /** The pistol grip's lowest point (its bottom slice, on the centre line). */
+  gripLow: THREE.Vector3;
+  /** The bore's height (the muzzle's y). */
+  bore: number;
 }
 
 const cache = new Map<string, GunGrips | null>();
@@ -94,5 +98,5 @@ function measure(rig: WeaponRig): GunGrips | null {
   for (let s = sliceOf(z - 0.03); s <= sliceOf(z + 0.03); s++) under = Math.min(under, low[s]);
   if (under === Infinity) return null;
   const support = new THREE.Vector3(0, under - 0.012, z);
-  return { firing, support };
+  return { firing, support, gripLow: new THREE.Vector3(0, low[grip], zOf(grip)), bore };
 }

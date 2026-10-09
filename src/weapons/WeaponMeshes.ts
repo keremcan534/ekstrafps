@@ -324,6 +324,15 @@ export function legacyFit(key: ModelKey): THREE.Matrix4 | null {
 }
 
 /**
+ * The third-person model's fit onto its rig (the file's model space → rig root space, metres),
+ * once a rig has been dressed with it; null without a model. Weapon-side data authored in a
+ * model's own space (masterRig.json grip frames) lands on the drawn gun through it.
+ */
+export function worldFit(key: ModelKey): THREE.Matrix4 | null {
+  return fits.get(`${key}|world`) ?? null;
+}
+
+/**
  * Load every weapon model there is (missing ones are skipped). Never rejects. `mobile`: the
  * third-person guns' textures are capped (1K colour, 512 px maps) before they reach the GPU.
  */

@@ -1,0 +1,22 @@
+{
+  "id": "warden_mask",
+  "kind": "masks",
+  "model": "warden_mask.glb",
+  "attach": "socket",
+  "socket": "FaceSocket",
+  "position": [
+    0.0,
+    0.06081,
+    -0.05852
+  ],
+  "quaternion": [
+    0.0,
+    -0.707107,
+    -0.707107,
+    0.0
+  ],
+  "scale": 1,
+  "hides": [
+    "face"
+  ]
+}

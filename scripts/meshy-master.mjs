@@ -5,6 +5,11 @@
  *   node scripts/meshy-master.mjs refs [n=4] [model,model...]    A-pose multi-view reference images (text-to-image)
  *   node scripts/meshy-master.mjs fromrefs r1 r3:2,1,3 ...       candidates from chosen references (multi-image-to-3D,
  *                                                                 untextured; :order lists the views, front first)
+ *   node scripts/meshy-master.mjs retexture <look> [--prompt="..."|--image=ref.png] [--model=uv.glb]
+ *                                                                 a look (texture set) painted on the master's OWN UVs
+ *                                                                 (enable_original_uv, meshy-6 + remove_lighting, 4K PBR):
+ *                                                                 maps -> texture/<look>/, then scripts/make_look.py
+ *                                                                 writes public/assets/characters/textures/<look>/
  *   node scripts/meshy-master.mjs rig <textured.glb> [height_m]  Phase 4 bootstrap: Meshy auto-rig of the cleaned,
  *                                                                 remeshed master (scripts/blender/rig_input.py makes
  *                                                                 the textured input). Only a bootstrap: the canonical
@@ -26,6 +31,7 @@
  * so the pose (palms facing the thighs) can be checked on a 9-credit image before a 3D task is paid for.
  * Needs MESHY_API_KEY in .env (see .env.example).
  */
+import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -46,6 +52,7 @@ const TEXT = 'https://api.meshy.ai/openapi/v2/text-to-3d';
 const IMAGE = 'https://api.meshy.ai/openapi/v1/text-to-image';
 const MULTI = 'https://api.meshy.ai/openapi/v1/multi-image-to-3d';
 const RIG = 'https://api.meshy.ai/openapi/v1/rigging';
+const RETEXTURE = 'https://api.meshy.ai/openapi/v1/retexture';
 const headers = { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' };
 const out = join(root, 'production/assets/src/chars/master');
 const statePath = join(out, 'master.json');
@@ -247,11 +254,48 @@ async function rig(file, height) {
   console.log(`rig: ${t.consumed_credits} credits`);
 }
 
+async function retexture(look, opts) {
+  const model = opts.model ?? join(out, 'master_uv.glb');
+  const dir = join(out, 'texture', look);
+  mkdirSync(dir, { recursive: true });
+  const state = loadState();
+  state.looks ??= {};
+  const body = {
+    model_url: `data:model/gltf-binary;base64,${readFileSync(model).toString('base64')}`,
+    ai_model: 'meshy-6', // remove_lighting is only supported by meshy-6
+    enable_original_uv: true,
+    enable_pbr: true,
+    texture_resolution: '4k',
+    remove_lighting: true,
+    target_formats: ['glb'],
+  };
+  if (opts.image) body.image_style_url = `data:image/png;base64,${readFileSync(opts.image).toString('base64')}`;
+  else body.text_style_prompt = opts.prompt;
+  const task = await call('POST', RETEXTURE, body);
+  console.log(`${look}: retexture task ${task.result}`);
+  state.looks[look] = { task: task.result, prompt: opts.prompt, image: opts.image, model };
+  saveState(state);
+  const t = await poll(`${RETEXTURE}/${task.result}`, look);
+  state.looks[look].credits = t.consumed_credits;
+  const maps = (t.texture_urls ?? [])[0] ?? {};
+  for (const [k, url] of Object.entries(maps)) if (url) await download(url, join(dir, `${k}.png`));
+  if (t.model_urls?.glb) await download(t.model_urls.glb, join(dir, 'preview.glb'));
+  state.looks[look].maps = Object.keys(maps);
+  saveState(state);
+  console.log(`${look}: maps ${Object.keys(maps).join(', ')}; ${t.consumed_credits} credits`);
+  execFileSync('python', [join(root, 'scripts/make_look.py'), look], { stdio: 'inherit' });
+}
+
 const [cmd, arg] = process.argv.slice(2);
 if (cmd === 'candidates') await candidates(Number(arg) || 4, process.argv[4] ?? 'v1');
 else if (cmd === 'refs') await refs(Number(arg) || 4, (process.argv[4] ?? 'gpt-image-2,nano-banana-pro').split(','));
 else if (cmd === 'fromrefs') await fromRefs(process.argv.slice(3));
 else if (cmd === 'rig') await rig(arg, Number(process.argv[4]) || 1.9);
+else if (cmd === 'retexture') {
+  const o = Object.fromEntries(process.argv.slice(4).map((a) => a.replace(/^--/, '').split(/=(.*)/s).slice(0, 2)));
+  if (!o.prompt && !o.image) throw new Error('retexture needs --prompt="..." or --image=path');
+  await retexture(arg, o);
+}
 else if (cmd === 'status') console.log(JSON.stringify(loadState(), null, 2));
 else {
   console.error('usage: node scripts/meshy-master.mjs candidates [n=4] [prompt=v1|v2] | refs [n=4] [models] | fromrefs <rN[:order]>... | rig <textured.glb> [height_m] | status');

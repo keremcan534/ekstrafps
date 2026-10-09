@@ -1,0 +1,19 @@
+{
+  "id": "nvg",
+  "kind": "nvg",
+  "model": "nvg.glb",
+  "attach": "socket",
+  "socket": "HeadSocket",
+  "position": [
+    0.0,
+    -0.12563,
+    0.13759
+  ],
+  "quaternion": [
+    0.0,
+    0.0,
+    0.0,
+    1.0
+  ],
+  "scale": 1
+}

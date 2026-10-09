@@ -1,0 +1,12 @@
+{
+  "id": "black_division",
+  "look": "black_division",
+  "gear": [
+    "vests/plate_carrier",
+    "pouches/pouches",
+    "radios/radio",
+    "helmets/bd_helmet",
+    "nvg/nvg",
+    "masks/bd_mask"
+  ]
+}

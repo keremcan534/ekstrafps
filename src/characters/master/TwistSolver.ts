@@ -5,10 +5,11 @@ import data from './masterRig.json';
 /**
  * The arms' twist bones, set every frame after the animation and the IK (masterRig.json `twist`):
  *
- *   ForearmTwist (leaf child of Forearm, on its axis) turns about its +Y by α × the hand's roll
- *   about the forearm: the hand's local rotation away from its rest, swing-twist decomposed about
- *   +Y. The forearm bone itself stays in the elbow's hinge frame; the skin between elbow and wrist
- *   (weighted Forearm → ForearmTwist → Hand) spreads the roll instead of wrapping at the wrist.
+ *   ForearmTwist and ForearmTwist2 (leaf children of Forearm, on its axis) turn about their +Y by
+ *   α₁ and α₂ × the hand's roll about the forearm (1/3, 2/3): the hand's local rotation away from
+ *   its rest, swing-twist decomposed about +Y. The forearm bone itself stays in the elbow's hinge
+ *   frame; the skin between elbow and wrist (weighted Forearm → ForearmTwist → ForearmTwist2 →
+ *   Hand) spreads the roll in thirds instead of wrapping at the wrist.
  *   UpperArmTwist (leaf child of UpperArm) turns about its +Y by −β × the upper arm's own roll
  *   (its local rotation away from rest, decomposed the same way): the shoulder's skin gives back
  *   part of the turn the IK put into the upper arm.
@@ -20,6 +21,8 @@ export interface TwistStats {
   handTwistDeg: number;
   /** ForearmTwist's turn about its axis (deg). */
   foreTwistDeg: number;
+  /** ForearmTwist2's turn about its axis (deg). */
+  foreTwist2Deg: number;
   /** The upper arm's roll about itself, away from rest (deg). */
   upperTwistDeg: number;
   /** UpperArmTwist's turn about its axis (deg). */
@@ -42,8 +45,8 @@ const Y = new THREE.Vector3(0, 1, 0);
 
 export class TwistSolver {
   readonly stats: Record<Side, TwistStats> = {
-    R: { handTwistDeg: 0, foreTwistDeg: 0, upperTwistDeg: 0, upperArmTwistDeg: 0 },
-    L: { handTwistDeg: 0, foreTwistDeg: 0, upperTwistDeg: 0, upperArmTwistDeg: 0 },
+    R: { handTwistDeg: 0, foreTwistDeg: 0, foreTwist2Deg: 0, upperTwistDeg: 0, upperArmTwistDeg: 0 },
+    L: { handTwistDeg: 0, foreTwistDeg: 0, foreTwist2Deg: 0, upperTwistDeg: 0, upperArmTwistDeg: 0 },
   };
   private d = new THREE.Quaternion();
   private t = new THREE.Quaternion();
@@ -52,6 +55,7 @@ export class TwistSolver {
     private rig: MasterRig,
     readonly alpha = data.twist.forearm,
     readonly beta = data.twist.upperArm,
+    readonly alpha2 = data.twist.forearm2,
   ) {}
 
   /** Set both arms' twist bones from the hands' and upper arms' current local rotations. */
@@ -61,11 +65,13 @@ export class TwistSolver {
       const a = this.rig.arms[s];
       const st = this.stats[s];
       const hand = this.twistOf(a.hand);
-      this.rig.arms[s].foreTwist.quaternion.copy(this.restQ(a.foreTwist)).multiply(this.t.setFromAxisAngle(Y, this.alpha * hand));
+      a.foreTwist.quaternion.copy(this.restQ(a.foreTwist)).multiply(this.t.setFromAxisAngle(Y, this.alpha * hand));
+      a.foreTwist2.quaternion.copy(this.restQ(a.foreTwist2)).multiply(this.t.setFromAxisAngle(Y, this.alpha2 * hand));
       const upper = this.twistOf(a.upper);
       a.upperTwist.quaternion.copy(this.restQ(a.upperTwist)).multiply(this.t.setFromAxisAngle(Y, -this.beta * upper));
       st.handTwistDeg = r2d(hand);
       st.foreTwistDeg = r2d(this.alpha * hand);
+      st.foreTwist2Deg = r2d(this.alpha2 * hand);
       st.upperTwistDeg = r2d(upper);
       st.upperArmTwistDeg = r2d(-this.beta * upper);
     }

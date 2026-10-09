@@ -101,6 +101,7 @@ export interface MasterArm {
   upperTwist: THREE.Bone;
   fore: THREE.Bone;
   foreTwist: THREE.Bone;
+  foreTwist2: THREE.Bone;
   hand: THREE.Bone;
   /** FINGER_KEYS order. */
   fingers: THREE.Bone[];
@@ -179,6 +180,7 @@ export function bindMasterRig(model: THREE.Object3D): MasterRig {
       upperTwist: bone(sided('UpperArmTwist', s)),
       fore,
       foreTwist: bone(sided('ForearmTwist', s)),
+      foreTwist2: bone(sided('ForearmTwist2', s)),
       hand,
       fingers: FINGER_KEYS.map((k) => bone(sided(k, s))),
       socket: bone(s === 'R' ? 'RightHandWeaponSocket' : 'LeftHandWeaponSocket'),

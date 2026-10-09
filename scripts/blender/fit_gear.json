@@ -1,0 +1,260 @@
+{
+  "notes": [
+    "Fit data for scripts/blender/fit_gear.py: one entry per gear item, shared by every character that wears it.",
+    "Lengths in metres, Blender space of the master (Z up, the character faces -Y). src: the Meshy source (production/assets/src/chars/master/gear/), its front already faces +Z glTF / -Y Blender.",
+    "cut: drop source geometry below this fraction of the source's height (chin harnesses hanging under helmets), drop: connected pieces under this many vertices.",
+    "head / face fits: the smallest scale that keeps every covered head vertex at least `clearance` inside the gear's outer surface (rays from the head centre), with the rim pinned at `rim.target` (a landmark name + offset); kx/ky widen or deepen the gear against its height within `aniso`.",
+    "Skinned items: bones = the allowed bone set (fit_gear.py ALLOWED); caps limit a bone's share (the rest goes to its parent): vests follow the upper arm a little at the armholes, never like a sleeve."
+  ],
+  "master": {
+    "blend": "production/assets/src/chars/master/rig/final/master_humanoid_rigged.blend",
+    "glb": "public/assets/characters/master/master_humanoid_rigged.glb"
+  },
+  "sources": "production/assets/src/chars/master/gear",
+  "out": "public/assets/characters/gear",
+  "texture": 1024,
+  "items": {
+    "vanta_helmet": {
+      "kind": "helmets",
+      "src": "vanta_helmet/a1.glb",
+      "fit": "head",
+      "socket": "HeadSocket",
+      "cut": 0.29,
+      "rim": {
+        "at": "front",
+        "target": "brow",
+        "offset": 0.016
+      },
+      "clearance": 0.009,
+      "aniso": 0.15,
+      "hides": [
+        "scalp",
+        "hair"
+      ],
+      "interior": 0.8,
+      "drop": 40,
+      "top_gap": 0.035
+    },
+    "bd_helmet": {
+      "kind": "helmets",
+      "src": "bd_helmet/a1.glb",
+      "fit": "head",
+      "socket": "HeadSocket",
+      "cut": 0.39,
+      "rim": {
+        "at": "front",
+        "target": "brow",
+        "offset": 0.016
+      },
+      "clearance": 0.009,
+      "aniso": 0.15,
+      "hides": [
+        "scalp",
+        "hair"
+      ],
+      "interior": 0.8,
+      "drop": 40,
+      "top_gap": 0.035
+    },
+    "warden_hat": {
+      "kind": "hats",
+      "src": "warden_hat/a2.glb",
+      "fit": "head",
+      "socket": "HeadSocket",
+      "rim": {
+        "at": "back",
+        "target": "occiput",
+        "offset": -0.024
+      },
+      "clearance": 0.008,
+      "aniso": 0.12,
+      "hides": [
+        "scalp",
+        "hair"
+      ]
+    },
+    "pmc_cap": {
+      "kind": "hats",
+      "src": "pmc_cap/a1.glb",
+      "fit": "head",
+      "socket": "HeadSocket",
+      "rim": {
+        "at": "back",
+        "target": "occiput",
+        "offset": -0.015
+      },
+      "clearance": 0.006,
+      "aniso": 0.15,
+      "hides": [
+        "scalp",
+        "hair"
+      ]
+    },
+    "bd_mask": {
+      "kind": "masks",
+      "src": "bd_mask/a1.glb",
+      "fit": "face",
+      "socket": "FaceSocket",
+      "rim": {
+        "target": "nasion",
+        "offset": -0.018
+      },
+      "clearance": 0.006,
+      "k_min": 0.8,
+      "k_max": 1.4,
+      "hides": [
+        "face_lower"
+      ],
+      "dz": [
+        -0.01,
+        0.0,
+        0.01
+      ]
+    },
+    "warden_mask": {
+      "kind": "masks",
+      "src": "warden_mask/a1.glb",
+      "fit": "face",
+      "socket": "FaceSocket",
+      "eyes": [
+        0.247,
+        0.112
+      ],
+      "cuts": [
+        {
+          "axis": "z",
+          "above": 0.8
+        },
+        {
+          "axis": "y",
+          "behind": 0.55
+        }
+      ],
+      "clearance": 0.006,
+      "k_min": 1.0,
+      "k_max": 1.2,
+      "hides": [
+        "face"
+      ],
+      "rigid_clearance": -0.012,
+      "k_steps": 5,
+      "dz": [
+        -0.03,
+        -0.02,
+        -0.01,
+        0.0
+      ]
+    },
+    "nvg": {
+      "kind": "nvg",
+      "src": "nvg/a1.glb",
+      "fit": "nvg",
+      "socket": "HeadSocket",
+      "width": 0.175,
+      "gap": 0.018,
+      "pitch": 0.0,
+      "over": "bd_helmet",
+      "dz": 0.004
+    },
+    "plate_carrier": {
+      "kind": "vests",
+      "src": "plate_carrier/a1.glb",
+      "fit": "torso",
+      "top_clear": 0.015,
+      "bottom": {
+        "target": "belt",
+        "offset": 0.02
+      },
+      "clearance": 0.012,
+      "sigma": 0.03,
+      "variants": {
+        "black_division": "plate_carrier/black_division"
+      },
+      "hides": [
+        "chest",
+        "back",
+        "abdomen"
+      ],
+      "bones": "torso_arms",
+      "caps": {
+        "UpperArm": 0.35
+      }
+    },
+    "vanta_vest": {
+      "kind": "vests",
+      "src": "vanta_vest/a1.glb",
+      "fit": "torso",
+      "top_clear": 0.012,
+      "bottom": {
+        "target": "belt",
+        "offset": 0.0
+      },
+      "clearance": 0.01,
+      "sigma": 0.03,
+      "hides": [
+        "chest",
+        "back",
+        "abdomen"
+      ],
+      "bones": "torso_arms",
+      "caps": {
+        "UpperArm": 0.35
+      }
+    },
+    "pouches": {
+      "kind": "pouches",
+      "src": "pouches/a1.glb",
+      "fit": "belt",
+      "centre": {
+        "target": "belt",
+        "offset": -0.005
+      },
+      "clearance": 0.008,
+      "sigma": 0.025,
+      "hides": [
+        "waist"
+      ]
+    },
+    "pmc_backpack": {
+      "kind": "backpacks",
+      "src": "pmc_backpack/a1.glb",
+      "fit": "back",
+      "socket": "BackSocket",
+      "height": 0.46,
+      "top": {
+        "target": "shoulder_top",
+        "offset": -0.03
+      },
+      "lean": 6,
+      "clearance": 0.008,
+      "over": "plate_carrier",
+      "cuts": [
+        {
+          "axis": "y",
+          "behind": 0.74
+        }
+      ]
+    },
+    "radio": {
+      "kind": "radios",
+      "src": "radio/a1.glb",
+      "fit": "chest",
+      "socket": "ChestSocket",
+      "height": 0.21,
+      "at": [
+        0.1,
+        1.4
+      ],
+      "yaw": -10,
+      "clearance": 0.004,
+      "over": "plate_carrier"
+    }
+  },
+  "poses": [
+    "legs",
+    "raise",
+    "elbows",
+    "crouch",
+    "stride"
+  ]
+}

@@ -31,7 +31,9 @@ def clear_scene():
 def import_glb(path):
     """Import a GLB and join its meshes into one object with applied transforms."""
     clear_scene()
-    bpy.ops.import_scene.gltf(filepath=path)
+    # merge_vertices: glTF stores a vertex per UV / normal seam; welding them back keeps the surface
+    # one connected manifold (geodesics, sections and landmarks need that) while the UVs stay on the loops.
+    bpy.ops.import_scene.gltf(filepath=path, merge_vertices=True)
     meshes = [o for o in bpy.context.scene.objects if o.type == 'MESH']
     for o in bpy.context.scene.objects:
         o.select_set(o in meshes)

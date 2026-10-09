@@ -52,12 +52,31 @@ export interface HumanoidSkin {
    * `slots` (part names, plus footL / footR for the ankle bones). Replaces the parts' builds.
    */
   body?: { geometry: THREE.BufferGeometry; materials: THREE.Material[]; slots: string[]; lod?: THREE.BufferGeometry };
+  /**
+   * A body drawn by a skeleton of its own (the master humanoid, characters/MasterCharacter):
+   * built once the parts exist, it follows them every frame (HumanoidVisual.posed). Replaces
+   * `body` and the parts' builds; the parts stay the one animation, hit test and ragdoll.
+   */
+  visual?: (body: Humanoid) => HumanoidVisual;
   idleKnee?: number;
   /**
    * 'machine': a robot's walk. Legs sweep at a constant rate and lift sharply, every
    * footfall lands with a hard drop, no hip twist, no idle breathing, stiff piston arms.
    */
   gait?: 'human' | 'machine';
+}
+
+/** A body drawn by a skeleton of its own, driven from the Humanoid's parts (see HumanoidSkin.visual). */
+export interface HumanoidVisual {
+  /** What is drawn: its geometry is swapped near / far and its shadow cast near, as a model body's. */
+  readonly mesh: THREE.SkinnedMesh;
+  readonly near: THREE.BufferGeometry;
+  readonly far: THREE.BufferGeometry | null;
+  /**
+   * The parts were just posed (alive: before the hitboxes read them, so it may turn the arm parts
+   * to match what it draws) or moved by the ragdoll (dead). `far`: the far geometry is up.
+   */
+  posed(dt: number, far: boolean): void;
 }
 
 /** Triangle wave in -1..1 on the same phase as sin: a constant-rate sweep. */
@@ -124,6 +143,8 @@ export interface HumanoidPose {
   elbows: number;
   /** Leaning out round a corner (Q / E): -1 left … 1 right. The torso rolls by lean × LEAN_ROLL. */
   lean?: number;
+  /** The head's roll about its line of sight (rad, + = its top toward −X): a cheek laid on a stock. */
+  headRoll?: number;
 }
 
 /** Torso roll at full lean (rad). */
@@ -182,6 +203,14 @@ export class Humanoid {
   readonly parts: Part[] = [];
   /** Ankle bones (left, right): visual only, posed flat in updatePose. */
   private feet: THREE.Bone[] = [];
+  /** A body drawn by a skeleton of its own (HumanoidSkin.visual), or null. */
+  visual: HumanoidVisual | null = null;
+  /**
+   * Which way each side's limbs lie from the centre line ([left, right], ±1, from the skin's own
+   * joints): procedural and model bodies put "R" at +X, the master humanoid its anatomical right
+   * (−X). Arm splay, elbow poles, pelvis roll and hit throws go that way.
+   */
+  private sideSign: [number, number] = [-1, 1];
   private byName = new Map<PartName, Part>();
   private pivot = new THREE.Group();
   /** The whole body is ONE skinned mesh (a draw call per material), parts are bones. */
@@ -278,6 +307,7 @@ export class Humanoid {
     const thigh = this.part('thighR').group.position;
     this.hipHalf = Math.abs(thigh.x);
     this.hipOffset = -thigh.y;
+    this.sideSign = [Math.sign(this.part('upperArmL').group.position.x) || -1, Math.sign(this.part('upperArmR').group.position.x) || 1];
     this.thigh = -this.part('shinR').group.position.y;
     this.shin = skin.shinLength;
     this.idleKnee = skin.idleKnee ?? 0.1;
@@ -312,6 +342,15 @@ export class Humanoid {
       this.feet.push(foot);
     }
     this.root.updateMatrixWorld(true);
+    if (this.skin.visual) {
+      // A body with a skeleton of its own, following the parts (HumanoidSkin.visual).
+      const v = (this.visual = this.skin.visual(this));
+      this.mesh = v.mesh;
+      this.nearGeo = v.near;
+      this.farGeo = v.far;
+      this.pendingGeo.length = 0;
+      return;
+    }
     if (this.skin.body) {
       // A model body: its geometry is already in the rest pose, weighted by slot name.
       const bone = (slot: string): THREE.Bone =>
@@ -669,7 +708,7 @@ export class Humanoid {
         break;
       case 'arm':
         this.armX[i].impulse(-d.z * s * 7);
-        this.armZ[i].impulse(d.x * s * 5 + part.side * s * 2);
+        this.armZ[i].impulse(d.x * s * 5 + this.sideSign[i] * s * 2);
         this.elbow[i].impulse(s * (part.name.startsWith('fore') ? -3 : 3));
         this.spineY.impulse(torque * s * 12);
         this.spineZ.impulse(-d.x * s * 0.8);
@@ -678,7 +717,7 @@ export class Humanoid {
         // Leg buckles; heavy rounds drop the body onto that knee for a moment.
         this.knee[i].impulse(s * 3.8);
         this.knee[1 - i].impulse(s * 1.2);
-        this.tiltZ.impulse(-part.side * s * 0.6);
+        this.tiltZ.impulse(-this.sideSign[i] * s * 0.6);
         this.spineX.impulse(s * 1.2);
         this.legWound[i] = Math.min(1, this.legWound[i] + dmg / 90);
         if (s > 1.4 || this.legWound[i] > 0.6) this.kneelTimer[i] = 0.35 + 0.18 * s;
@@ -937,6 +976,7 @@ export class Humanoid {
     }
     this.lodDt = 0;
     this.updatePose(dt, pose);
+    this.visual?.posed(dt, this.lodFar);
     this.updateHitboxes(dt);
     this.lastRootPos.copy(this.root.position);
     this.lastRootQuat.copy(this.root.quaternion);
@@ -1044,7 +1084,7 @@ export class Humanoid {
       theta[i] = this.idleKnee + crouchTheta + spring(this.knee[i], 0, 1.1) + 0.1 * stance;
       height[i] = (this.thigh + this.shin) * Math.cos(theta[i]);
     }
-    const roll = clamp(Math.atan2(height[1] - height[0], this.hipHalf * 2), -0.25, 0.25);
+    const roll = clamp(Math.atan2(height[1] - height[0], this.hipHalf * 2), -0.25, 0.25) * this.sideSign[1];
     const pelvis = this.part('pelvis').group;
     // A machine drops onto each footfall (|sin| = 1 as a swing ends) instead of rolling over it.
     const clunk = machine ? stride * Math.pow(Math.abs(Math.sin(pose.stridePhase)), 12) : 0;
@@ -1076,12 +1116,12 @@ export class Humanoid {
     const torso = this.part('torso').group;
     // Leaning into the run; a slight forward lean over the gun when standing to shoot.
     torso.rotation.set(spineX + pose.spineX + pose.crouch * 0.18 + stride * (machine ? 0.03 : 0.1) + clunk * 0.04 + stance * 0.05, spineY + pose.spineY - pelvis.rotation.y, spineZ - roll * 0.6 + (pose.lean ?? 0) * LEAN_ROLL);
-    this.part('head').group.rotation.set(headX + pose.headX, headY + pose.headY, headZ);
+    this.part('head').group.rotation.set(headX + pose.headX, headY + pose.headY, headZ + (pose.headRoll ?? 0));
     // Grip targets are read in torso space: one matrix pass serves both arms.
     if (pose.gripL || pose.gripR) torso.updateMatrixWorld(true);
 
     for (let i = 0; i < 2; i++) {
-      const side = i === 1 ? 1 : -1;
+      const side = this.sideSign[i];
       const s = i === 1 ? 'R' : 'L';
       const ax = spring(this.armX[i], -1.3, 1.3) + Math.sin(t * 1.3 + i) * 0.02 * idle;
       const az = spring(this.armZ[i], -1, 1);
@@ -1109,6 +1149,11 @@ export class Humanoid {
   /** Where the hand grips, in the forearm's own space (m). */
   get handPoint(): THREE.Vector3 {
     return this.gripLocal;
+  }
+
+  /** The ankle bones ([left, right], children of the shins): kept level, a visual's feet follow them. */
+  get footBones(): readonly THREE.Bone[] {
+    return this.feet;
   }
 
   /** Shoulder to hand-grip point with the arm straight (m): how far a grip can be reached. */
@@ -1175,6 +1220,7 @@ export class Humanoid {
     // Attachments still on the bones (chest markers...) follow.
     for (const part of this.parts) for (const c of part.group.children) if (!(c as THREE.Bone).isBone) c.updateMatrixWorld(true);
     for (const f of this.feet) f.updateMatrixWorld(true);
+    this.visual?.posed(dt, this.lodFar);
     // Joint jitter keeps a corpse awake long after it has come to rest (a dozen bodies
     // in the solver each): once it's barely moving, put it to sleep (sooner on phones, and
     // sooner still for a corpse nobody can see or that lies 30 m+ away).

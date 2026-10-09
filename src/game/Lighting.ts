@@ -70,6 +70,10 @@ export class Lighting {
       this.flashlight.shadow.bias = -0.0004;
       this.flashlight.shadow.normalBias = 0.03;
       this.flashlight.shadow.autoUpdate = false;
+      // Drawn once now, so its shadow map exists before the flashlight is first switched on: a
+      // shadow-casting light without one leaves every lit material's shadow sampler unbound,
+      // and WebGL refuses those draws (INVALID_OPERATION: props and characters went invisible).
+      this.flashlight.shadow.needsUpdate = true;
     }
     scene.add(this.flashlight, this.flashlight.target);
     this.envBase = scene.environmentIntensity * 0.3;

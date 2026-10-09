@@ -1,0 +1,27 @@
+{
+  "id": "pmc_cap",
+  "kind": "hats",
+  "model": "pmc_cap.glb",
+  "attach": "socket",
+  "socket": "HeadSocket",
+  "position": [
+    0.0,
+    -0.10778,
+    0.0196
+  ],
+  "quaternion": [
+    0.0,
+    0.0,
+    0.0,
+    1.0
+  ],
+  "scale": 1,
+  "hides": [
+    "scalp",
+    "hair"
+  ],
+  "variants": {
+    "pmc_green": "pmc_cap/pmc_green",
+    "pmc_grey": "pmc_cap/pmc_grey"
+  }
+}

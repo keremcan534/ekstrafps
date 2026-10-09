@@ -3,13 +3,14 @@
   "notes": [
     "Every offset the master humanoid's weapon holds use, in one place. Canonical: the same numbers for every character and faction on the MASTER_HUMANOID_RIG skeleton (scripts/blender/canonical_skeleton.json); nothing here is per character.",
     "sockets: non-deforming bones' local transforms (metres, parent bone space). RightHandWeaponSocket is where a pistol grip's frame sits in the closed right hand (origin on the grip's centre line at the middle finger, +Y up the grip toward the receiver, +Z forward toward the trigger). LeftHandWeaponSocket is its exact mirror (x, y, z) -> (-x, y, z), (qx, qy, qz, qw) -> (qx, -qy, -qz, qw).",
-    "twist: share of the hand's roll about the forearm that ForearmTwist takes, and of the upper arm's roll about itself that UpperArmTwist takes back.",
+    "twist: share of the hand's roll about the forearm that ForearmTwist (forearm, proximal) and ForearmTwist2 (forearm2, distal) take, and of the upper arm's roll about itself that UpperArmTwist takes back.",
     "ik: the arm never stretches: past maxReach of (upper + forearm) it stays straight toward the target; maxFlexDeg keeps the elbow from folding through itself. clavicle: a far target draws the shoulder toward it, the clavicle turning up to maxDeg (smoothstep of shoulder->target / arm length between start and full).",
     "torso: how a stance's torso blade is spread over Spine1..3 (spread) and how much of it the neck and head turn back (head: 1 = the face stays where the clip had it).",
     "stances: where the weapon is held, in chest space (Spine3; metres). butt: the weapon's butt point (weapons.<id>.butt) in Spine3 space. rotation [yaw, pitch, roll] deg (yaw + = muzzle to the character's left, pitch + = muzzle up) in the anchor's frame: 'chest' = Spine3's frame (the weapon rides the torso), 'aim' = the character's facing plus the aim pitch (the barrel along the aim line whatever the torso does). poles: each elbow's pole point in Spine3 space (the elbow bends toward it). torso.yaw: the chest's facing relative to the character's (deg, - = to the right: the rifle's bladed stance), whatever the clip's spine yaw (an aim offset); torso.headTilt: [chin down, toward the right shoulder] deg, a cheek on the stock.",
     "gripCorrections: per library pose, the master's own small finger turns after the pose (bone keys Thumb1 ... Pinky3, quaternions in the poses' right-hand convention): its palm and thumb are not the glove's. Canonical, never per character.",
     "fingerBasis: the first-person glove's bind finger rotations (public/hands/arms.glb). The grip pose library (src/config/gripposes.json) is authored on top of them; on the master a finger bone's local rotation is basis (x) pose (left hand: basis.left (x) mirror(pose)), the first-person FingerPoser's rule with the glove's basis.",
-    "weapons: weapon-side data in the weapon model's own units and axes (the AK: muzzle +X, up +Y, its right side +Z, ~1 mm per unit). rightGrip: the pistol grip's frame (it lands on RightHandWeaponSocket). leftGrip: Hand_L's frame on the handguard (the support hand's IK target). butt: the butt point the stance places."
+    "weapons: weapon-side data in the weapon model's own units and axes (the AK: muzzle +X, up +Y, its right side +Z, ~1 mm per unit). rightGrip: the pistol grip's frame (it lands on RightHandWeaponSocket). leftGrip: Hand_L's frame on the handguard (the support hand's IK target). butt: the butt point the stance places.",
+    "game: the master humanoid in the game (src/characters/MasterCharacter.ts, src/characters/MasterGrips.ts). height: the ONE standing height every master character is scaled to (m). people: soldier palette -> character id (public/assets/characters/characters/<id>.json). stances: the Soldier's carry -> the stance above whose torso blade, low carry and poles it uses. neckTwist: share of the head's turn the neck takes (the rest the head; the torso's turn is spread by torso.spread). grip: the hold frames on a third-person gun without weapon data of its own, in the game rig's frame (barrel -Z, up +Y, its right side +X; metres). rifle: one rule for every long gun, fitted on the AK-47 (weapons.ak47 against the drawn AK: 0.2 deg, 1 mm): the pistol grip's frame +Y raked rakeDeg toward the muzzle, its origin 'along' m up that axis from the grip's lowest point (GunGrips), +X the gun's left; the support hand's wrist frame at leftOffset (turned by leftQuaternion) from the handguard support point: 12 mm under the handguard's underside where GunGrips wants it, or the nearest handguard within handguard.search m (an underside at least minDrop under the bore; what hangs more than maxDrop under it - magazines, bipods - ignored). stock: long guns with no pistol grip (bolt actions, pump guns): the grip frame raked rakeDeg, 'along' m up from the stock wrist's underside at the rig's firing-hand point; the support as for rifles at the rig's support-hand point. pistol: handguns, from the rig's firing-hand point: the grip frame rightOffset from it, raked rakeDeg; hold: where the Soldier carries a handgun per carry, from the stock pocket in the aim frame (m; x - = toward the body's centre line, + up, + forward); in the carries listed in twoHanded the support hand closes round the firing hand the mirror way, its weapon socket (LeftHandWeaponSocket) at supportOffset / supportQuaternion in the grip frame. fingers: library poses per weapon class (trigger while aiming, safe otherwise; free: a hand off the gun; reload: the support hand on a magazine)."
   ],
   "sockets": {
     "RightHandWeaponSocket": {
@@ -28,7 +29,8 @@
     }
   },
   "twist": {
-    "forearm": 0.5,
+    "forearm": 0.3333,
+    "forearm2": 0.6667,
     "upperArm": 0.5
   },
   "ik": {
@@ -378,6 +380,111 @@
         "left": "RifleLeftGrip",
         "trigger": "TriggerReady"
       }
+    }
+  },
+  "game": {
+    "height": 1.78,
+    "people": {
+      "vanta": "vanta",
+      "bd": "black_division",
+      "bdboss": "warden",
+      "bravo": "pmc",
+      "charlie": "pmc_green",
+      "delta": "pmc_grey"
+    },
+    "stances": {
+      "aim": "aim",
+      "ready": "aim",
+      "low": "low",
+      "high": "low"
+    },
+    "neckTwist": 0.5,
+    "grip": {
+      "rifle": {
+        "rakeDeg": 24.55,
+        "along": 0.0509,
+        "leftOffset": [
+          -0.0623,
+          -0.0453,
+          0.1266
+        ],
+        "leftQuaternion": [
+          0.40083,
+          0.35142,
+          0.36257,
+          -0.76445
+        ],
+        "handguard": {
+          "minDrop": 0.015,
+          "maxDrop": 0.09,
+          "search": 0.1
+        }
+      },
+      "stock": {
+        "rakeDeg": 50,
+        "along": 0.02
+      },
+      "pistol": {
+        "rakeDeg": 18,
+        "rightOffset": [
+          0,
+          -0.02,
+          0
+        ],
+        "twoHanded": [
+          "aim",
+          "ready"
+        ],
+        "supportOffset": [
+          0.012,
+          -0.012,
+          0.022
+        ],
+        "supportQuaternion": [
+          -0.33037,
+          -0.08852,
+          -0.24321,
+          0.90767
+        ],
+        "hold": {
+          "aim": [
+            -0.12,
+            0.1,
+            0.42
+          ],
+          "ready": [
+            -0.1,
+            -0.04,
+            0.3
+          ],
+          "high": [
+            -0.1,
+            0.02,
+            0.16
+          ],
+          "low": [
+            -0.06,
+            -0.22,
+            0.14
+          ]
+        }
+      }
+    },
+    "fingers": {
+      "rifle": {
+        "right": "RifleRightGrip",
+        "left": "RifleLeftGrip",
+        "trigger": "TriggerReady",
+        "safe": "TriggerSafe"
+      },
+      "pistol": {
+        "right": "PistolRightGrip",
+        "left": "PistolSupportGrip",
+        "trigger": "TriggerReady",
+        "safe": "TriggerSafe"
+      },
+      "free": "OpenHand",
+      "reload": "MagazineHold"
     }
   }
 }

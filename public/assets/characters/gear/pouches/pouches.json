@@ -1,0 +1,9 @@
+{
+  "id": "pouches",
+  "kind": "pouches",
+  "model": "pouches.glb",
+  "attach": "skinned",
+  "hides": [
+    "waist"
+  ]
+}

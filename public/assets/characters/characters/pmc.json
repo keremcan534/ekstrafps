@@ -1,0 +1,11 @@
+{
+  "id": "pmc",
+  "look": "pmc",
+  "gear": [
+    "vests/plate_carrier",
+    "pouches/pouches",
+    "radios/radio",
+    "backpacks/pmc_backpack",
+    "hats/pmc_cap"
+  ]
+}

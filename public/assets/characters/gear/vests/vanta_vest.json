@@ -1,0 +1,11 @@
+{
+  "id": "vanta_vest",
+  "kind": "vests",
+  "model": "vanta_vest.glb",
+  "attach": "skinned",
+  "hides": [
+    "chest",
+    "back",
+    "abdomen"
+  ]
+}

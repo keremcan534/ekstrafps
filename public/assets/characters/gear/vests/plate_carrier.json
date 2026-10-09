@@ -1,0 +1,16 @@
+{
+  "id": "plate_carrier",
+  "kind": "vests",
+  "model": "plate_carrier.glb",
+  "attach": "skinned",
+  "hides": [
+    "chest",
+    "back",
+    "abdomen"
+  ],
+  "variants": {
+    "black_division": "plate_carrier/black_division",
+    "pmc_green": "plate_carrier/pmc_green",
+    "pmc_grey": "plate_carrier/black_division"
+  }
+}

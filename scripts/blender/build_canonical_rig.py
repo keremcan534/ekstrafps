@@ -23,7 +23,7 @@ Skin:
   2. Hands re-weighted from the digits' own regions (fingers never pull each other; rig-arms rules:
      inverse distance^5 to the bone segments, the Hand to its palm plate), blended into the
      transferred forearm weights between 4 and 8 cm above the wrist.
-  3. Twist splits: Forearm -> ForearmTwist ramps up toward the wrist, UpperArm -> UpperArmTwist
+  3. Twist splits: Forearm -> ForearmTwist -> ForearmTwist2 in thirds toward the wrist, UpperArm -> UpperArmTwist
      ramps up toward the shoulder.
   4. At most 4 influences per vertex, normalised.
 """
@@ -180,7 +180,8 @@ def plan_skeleton(spec, meshy, hands, mesh):
     P['UpperArm_R'] = (shoulder, elbow, palm)
     P['UpperArmTwist_R'] = (shoulder + (elbow - shoulder) * 0.25, shoulder + (elbow - shoulder) * 0.6, palm)
     P['Forearm_R'] = (elbow, wrist, palm)
-    P['ForearmTwist_R'] = (elbow + (wrist - elbow) * 0.5, elbow + (wrist - elbow) * 0.9, palm)
+    P['ForearmTwist_R'] = (elbow + (wrist - elbow) * 0.33, elbow + (wrist - elbow) * 0.5, palm)
+    P['ForearmTwist2_R'] = (elbow + (wrist - elbow) * 0.66, elbow + (wrist - elbow) * 0.9, palm)
     mid_mcp, _ = symmetric(hands['R']['Middle'][0], hands['L']['Middle'][0])
     P['Hand_R'] = (wrist, mid_mcp, palm)
     pad = unit(0.7 * palm - 0.7 * radial)
@@ -214,13 +215,34 @@ def plan_skeleton(spec, meshy, hands, mesh):
     pos = wrist + R @ np.array(sock['position'])
     S = R @ Rs
     P['RightHandWeaponSocket'] = (pos, pos + S[:, 1] * 0.05, S[:, 2])
-    P['HeadSocket'] = (np.array([0.0, head[1], z0 + 0.985 * H]), np.array([0.0, head[1], z0 + H + 0.05]), FWD)
-    P['FaceSocket'] = (np.array([0.0, head[1] - 0.09, head[2] + 0.05]), np.array([0.0, head[1] - 0.14, head[2] + 0.05]), UP)
-    P['ChestSocket'] = (sp3 + np.array([0.0, -0.11, 0.0]), sp3 + np.array([0.0, -0.11, 0.08]), FWD)
-    P['BackSocket'] = (sp3 + np.array([0.0, 0.12, 0.0]), sp3 + np.array([0.0, 0.12, 0.08]), FWD)
-    P['BeltSocket_R'] = (hips + np.array([-0.15, 0.0, 0.03]), hips + np.array([-0.15, 0.0, 0.11]), FWD)
-    P['ThighSocket_R'] = (thigh + (knee - thigh) * 0.35 + np.array([-0.08, 0.0, 0.0]),
-                          thigh + (knee - thigh) * 0.35 + np.array([-0.08, 0.0, 0.08]), FWD)
+    # Gear sockets ON the body surface (a ray from inside the body to its own surface), so a gear
+    # item's offset reads as "this far off the crown / face / sternum / back / hip / thigh". Their
+    # frames keep the canonical axes; only the origin is placed by the ray.
+    tree = bvhtree.BVHTree.FromPolygons([Vector(v) for v in mesh.V], mesh.T.tolist(), all_triangles=True)
+
+    def surface(origin, direction):
+        hit = tree.ray_cast(Vector(origin), Vector(unit(direction)))
+        if hit[0] is None:
+            raise RuntimeError(f'socket ray from {origin} along {direction} missed the body')
+        return np.array(hit[0])
+
+    def socket(head_pt, tail_dir, zvec):
+        return (head_pt, head_pt + unit(tail_dir) * 0.08, zvec)
+
+    eye_z = z0 + 0.9355 * H  # eye line (Drillis & Contini)
+    crown = surface([0.0, head[1], head[2]], UP)
+    brow = surface([0.0, head[1], eye_z], FWD)
+    sternum = surface([0.0, sp3[1], sp3[2]], FWD)
+    back = surface([0.0, sp3[1], sp3[2]], -FWD)
+    hip = surface([0.0, hips[1], hips[2] + 0.05], [-1.0, 0.0, 0.0])  # at the trouser waistband
+    tpt = thigh + (knee - thigh) * 0.35
+    outer_thigh = surface(tpt, [-1.0, 0.0, 0.0])
+    P['HeadSocket'] = socket(crown, UP, FWD)
+    P['FaceSocket'] = socket(brow, FWD, UP)
+    P['ChestSocket'] = socket(sternum, UP, FWD)
+    P['BackSocket'] = socket(back, UP, FWD)
+    P['BeltSocket_R'] = socket(hip, UP, FWD)
+    P['ThighSocket_R'] = socket(outer_thigh, UP, FWD)
     # Mirror every right-side bone to the left.
     for b in spec['bones']:
         n = b['name']
@@ -295,15 +317,15 @@ def hand_weights(mesh, X, side, P):
     W = {}
     Xr = X[region]
     finger_mask = np.array([int(v) in fingers_of for v in region])
-    # Trunk (palm + wrist + forearm part): ForearmTwist, Hand (plate), the five base bones.
-    trunk_bones = ['ForearmTwist' + s, 'Hand' + s, 'Thumb1' + s] + [f'{f}1{s}' for f in FINGERS]
+    # Trunk (palm + wrist + forearm part): ForearmTwist2 (the distal forearm), Hand (plate), the five base bones.
+    trunk_bones = ['ForearmTwist2' + s, 'Hand' + s, 'Thumb1' + s] + [f'{f}1{s}' for f in FINGERS]
     tid = np.nonzero(~finger_mask)[0]
     D = []
     for b in trunk_bones:
         if b == 'Hand' + s:
             d = plate_dist(Xr[tid], plate)
         else:
-            a, c = seg[b] if b != 'ForearmTwist' + s else (P['Forearm' + s][0], P['Forearm' + s][1])
+            a, c = seg[b] if b != 'ForearmTwist2' + s else (P['Forearm' + s][0], P['Forearm' + s][1])
             d = seg_dist(Xr[tid], a, c)
         if b == 'Thumb1' + s:
             d = d / 1.5  # THUMB_BALL: the thenar follows the thumb's metacarpal
@@ -409,11 +431,17 @@ def build_weights(mesh, X, meshy, names, P, source='meshy', heat=None):
         sh, el = P['UpperArm_' + s][0], P['UpperArm_' + s][1]
         wr = P['Forearm_' + s][1]
         t = np.clip(((X - el) @ (wr - el)) / max((wr - el) @ (wr - el), 1e-12), 0, 1)
-        f = np.clip((t - 0.2) / 0.65, 0, 1)
-        f = f * f * (3 - 2 * f)  # ForearmTwist share: 0 below 20 % of the forearm, all of it from 85 %
-        a, b = idx['Forearm_' + s], idx['ForearmTwist_' + s]
-        W[:, b] += W[:, a] * f
-        W[:, a] *= (1 - f)
+        # Forearm skin in thirds: Forearm (no roll) near the elbow, ForearmTwist (1/3 of the hand's roll)
+        # through the middle, ForearmTwist2 (2/3) toward the wrist; smooth ramps, a partition of unity.
+        r1 = np.clip((t - 0.10) / 0.40, 0, 1)
+        r1 = r1 * r1 * (3 - 2 * r1)  # 0 at 10 %, 1 at 50 % of the forearm
+        r2 = np.clip((t - 0.45) / 0.40, 0, 1)
+        r2 = r2 * r2 * (3 - 2 * r2)  # 0 at 45 %, 1 at 85 %
+        a, b, c = idx['Forearm_' + s], idx['ForearmTwist_' + s], idx['ForearmTwist2_' + s]
+        w = W[:, a].copy()
+        W[:, a] = w * (1 - r1)
+        W[:, b] += w * r1 * (1 - r2)
+        W[:, c] += w * r1 * r2
         u = np.clip(((X - sh) @ (el - sh)) / max((el - sh) @ (el - sh), 1e-12), 0, 1)
         g = 1 - np.clip((u - 0.1) / 0.5, 0, 1)
         g = g * g * (3 - 2 * g)
@@ -521,7 +549,7 @@ def main():
     bpy.context.view_layer.objects.active = arm
     bpy.ops.export_scene.gltf(filepath=os.path.join(out_dir, 'master_humanoid_rigged.glb'), use_selection=True,
                               export_format='GLB', export_yup=True, export_skins=True, export_animations=False,
-                              export_def_bones=False)
+                              export_def_bones=False, export_tangents=True)
     bpy.ops.export_scene.fbx(filepath=os.path.join(out_dir, 'master_humanoid_rigged.fbx'), use_selection=True,
                              add_leaf_bones=False, bake_anim=False, axis_forward='-Z', axis_up='Y')
     json.dump(skeleton_json(arm, spec), open(os.path.join(out_dir, 'skeleton.json'), 'w'), indent=1)

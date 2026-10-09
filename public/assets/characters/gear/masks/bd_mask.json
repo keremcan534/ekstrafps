@@ -1,0 +1,22 @@
+{
+  "id": "bd_mask",
+  "kind": "masks",
+  "model": "bd_mask.glb",
+  "attach": "socket",
+  "socket": "FaceSocket",
+  "position": [
+    0.0,
+    0.05,
+    -0.09457
+  ],
+  "quaternion": [
+    0.0,
+    -0.707107,
+    -0.707107,
+    0.0
+  ],
+  "scale": 1,
+  "hides": [
+    "face_lower"
+  ]
+}

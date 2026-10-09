@@ -10,7 +10,10 @@ import { Humanoid, defaultPose, type DamageInfo, strideLength, LEAN_ROLL } from 
 import { bakedRig, buildEnemyRifle, type WeaponRig } from '../weapons/WeaponModels';
 import { gunGrips } from './GunGrips';
 import { firingHand, supportHand } from './GripHands';
-import type { WeaponData } from '../weapons/WeaponData';
+import type { ModelKey, WeaponData } from '../weapons/WeaponData';
+import { MasterCharacter } from '../characters/MasterCharacter';
+import { masterGrip, type MasterGrip } from '../characters/MasterGrips';
+import masterRig from '../characters/master/masterRig.json';
 import { getAmmo, type AmmoData } from '../weapons/AmmoData';
 import type { MuzzleLights } from '../fx/MuzzleLights';
 import { MuzzleFlash } from '../fx/MuzzleFlash';
@@ -38,6 +41,11 @@ const SLIDE = 0.14;
 const HIGH_PORT = new THREE.Vector3(-0.05, -0.27, 0.1);
 /** Model bodies: the gloves on the gun (the rig's own hand points), and a fist on each forearm when a hand is off it. */
 const GLOVE = new THREE.MeshStandardMaterial({ color: 0x1c1e21, roughness: 0.85, metalness: 0.05 });
+/** The bladed stance: the torso's turn off the facing (rad; + = the +X shoulder back). */
+const BLADE = 0.32;
+/** Master humanoid bodies: their carries, from masterRig.json (stances, game.fingers). */
+const MASTER_STANCE = masterRig.game.stances as Record<AimMode, keyof typeof masterRig.stances>;
+const MASTER_FINGERS = masterRig.game.fingers;
 
 const PHONE_AIM = 1.2;
 /** Node budget for a soldier's path search (across the facility: ~85 m with detours). */
@@ -244,6 +252,22 @@ export class Soldier implements LightSource {
   private supportAt = new THREE.Vector3();
   /** How far this body's stock pocket is from the procedural one (handguns keep their place). */
   private pocketShift = new THREE.Vector3();
+  /**
+   * A master humanoid body (characters/MasterCharacter): right-handed (the gun at its right
+   * shoulder, −X: `hand` −1; every other body carries it at +X, `hand` 1), its stances and hold
+   * from masterRig.json, its hands on the gun's grip frames (MasterGrips).
+   */
+  private master: MasterCharacter | null = null;
+  private grip: MasterGrip | null = null;
+  private hand = 1;
+  /** The gun's model (the master's grip frames are found on it). */
+  private modelKey: ModelKey = 'mk47';
+  /** The torso's blade this frame (rad): eases to the stance's (master) or holds BLADE. */
+  private blade = BLADE;
+  /** Master: the low carry's butt from the aim stance's (torso frame). */
+  private lowShift = new THREE.Vector3();
+  /** Master: how far the cheek is down on the stock (0 … 1, eased). */
+  private cheek = 0;
 
   private tmp = v3();
   private tmp2 = v3();
@@ -287,7 +311,19 @@ export class Soldier implements LightSource {
     // Model bodies (public/chars) have their own shoulders: the stock goes into their pocket,
     // not the procedural body's (which sat it in the air above and in front of the shoulder).
     if (skin.body) this.aimNode.position.copy(this.body.part('upperArmR').group.position).add(MODEL_POCKET);
-    this.pocketShift.subVectors(this.aimNode.position, POCKET);
+    // The master humanoid: right-handed, the stock where its aim stance puts the butt.
+    this.master = this.body.visual instanceof MasterCharacter ? this.body.visual : null;
+    if (this.master) {
+      this.hand = -1;
+      this.master.chestPoint(masterRig.stances.aim.butt, this.aimNode.position);
+      // The low carry's butt sits where the low stance puts it (an offset in the torso's frame).
+      this.master.chestPoint(masterRig.stances.low.butt, this.lowShift).sub(this.aimNode.position);
+      this.blade = masterRig.stances.low.torso.yaw * DEG;
+    }
+    // Handguns are placed from the procedural pocket; the master's pocket is its own shoulder's
+    // (the procedural one sat higher over its torso pivot): its handguns go from there.
+    if (this.master) this.pocketShift.set(0, 0, 0);
+    else this.pocketShift.subVectors(this.aimNode.position, POCKET);
     // Z first: the node takes back the torso's lean roll (Q / E), so the gun points where
     // it's aimed whatever the body does (the bore cant is the rifle's own roll).
     this.aimNode.rotation.order = 'ZYX';
@@ -311,7 +347,7 @@ export class Soldier implements LightSource {
     }
     this.mountRig();
     this.flash.attachTo(this.rig.muzzle);
-    this.reloadHand.position.set(-0.05, 0.2, 0.24);
+    this.reloadHand.position.set(-0.05 * this.hand, 0.2, 0.24);
     torso.add(this.reloadHand);
 
     this.rifleBody = deps.physics.world.createRigidBody(
@@ -369,6 +405,16 @@ export class Soldier implements LightSource {
     this.rig.root.position.set(this.rig.butt.x, -this.rig.butt.y, this.rig.butt.z);
     this.rifleRoot.add(this.rig.root);
     this.flash.attachTo(this.rig.muzzle);
+    if (this.master) {
+      // The master's hands go on the gun's grip frames; its butt point in the shoulder. The rig's
+      // own hand points become those frames' (where the body's arm parts reach when far).
+      const g = (this.grip = masterGrip(this.rig, this.modelKey, !!this.deps.lowSpec, this.pistol));
+      const { leftHand: lh, rightHand: rh, root } = this.rig;
+      root.position.set(g.butt.x, -g.butt.y, g.butt.z);
+      root.updateMatrixWorld(true);
+      rh.position.copy(rh.parent!.worldToLocal(root.localToWorld(this.tmp.copy(g.right.position))));
+      lh.position.copy(lh.parent!.worldToLocal(root.localToWorld(this.tmp.copy(g.leftPalm))));
+    }
     // Model bodies: the gun's gloves are their hands (the sleeve tubes stay hidden).
     // Where they go: the drawn gun's own grip and handguard (GunGrips), else the rig's points.
     if (this.gloved) {
@@ -424,6 +470,23 @@ export class Soldier implements LightSource {
     return g;
   }
 
+  /**
+   * Master bodies: what the hands hold this frame (MasterCharacter.hold): the right hand the gun's
+   * grip frame, the left its support frame when `support` (else its arm follows the body's), the
+   * stance whose poles bend the elbows, and the library finger poses (masterRig.json game.fingers).
+   */
+  private holdMaster(mode: AimMode, support: boolean, reloading: boolean): void {
+    const h = this.master!.hold;
+    const g = this.grip!;
+    const f = g.pistol ? MASTER_FINGERS.pistol : MASTER_FINGERS.rifle;
+    h.right = g.right;
+    h.left = support ? g.left : null;
+    h.stance = MASTER_STANCE[mode];
+    h.rightPose = f.right;
+    h.trigger = mode === 'aim' ? f.trigger : f.safe;
+    h.leftPose = support ? f.left : reloading ? MASTER_FINGERS.reload : MASTER_FINGERS.free;
+  }
+
   /** Model bodies: each hand is the gun's glove while it holds the gun, else a fist on the forearm. */
   private syncGloves(left: boolean, right: boolean): void {
     if (!this.gloved) return;
@@ -449,9 +512,10 @@ export class Soldier implements LightSource {
     if (rig.mag) rig.mag.visible = true;
     this.rig = rig;
     this.rigKey = `${data.model}|${!!this.deps.lowSpec}`;
+    this.modelKey = data.model;
+    this.pistol = data.category === 'pistol';
     this.mountRig();
     this.weaponId = data.id;
-    this.pistol = data.category === 'pistol';
     this.weaponClass = data.fireModes.includes('bolt') ? 'bolt' : data.category === 'rifle' && !data.fireModes.includes('auto') ? 'dmr' : data.category;
     this.suppressed = /val/i.test(data.id);
     this.ammoData = getAmmo(data.ammo);
@@ -696,6 +760,7 @@ export class Soldier implements LightSource {
     this.pollPath();
     if (!this.alive) {
       this.syncGloves(false, false);
+      if (this.master) this.master.hold.right = this.master.hold.left = null;
       this.body.update(dt, this.pose);
       return;
     }
@@ -710,7 +775,9 @@ export class Soldier implements LightSource {
       p.spineY = 0;
       p.gripL = null;
       p.gripR = this.rig.rightHand;
+      p.headRoll = 0;
       this.syncGloves(false, true);
+      if (this.master) this.holdMaster('low', false, false);
       this.vel.set(0, 0, 0);
       this.aimNode.rotation.set(0.9, -0.4, 0);
       this.body.root.position.copy(this.pos);
@@ -738,11 +805,20 @@ export class Soldier implements LightSource {
     p.stridePhase = this.stride;
     p.strideAmount = this.strideAmount;
     p.strideSide = this.strideSide;
-    p.spineY = 0.32; // bladed stance: support shoulder forward
+    // Master bodies: the blade of the stance the carry uses (masterRig.json stances), eased.
+    if (this.master) this.blade += (masterRig.stances[MASTER_STANCE[aimMode]].torso.yaw * DEG - this.blade) * Math.min(1, dt * 6);
+    p.spineY = this.blade; // bladed stance: support shoulder forward
     p.spineX = aimMode === 'low' || aimMode === 'high' ? 0.04 : 0.1;
     const scan = this.state === 'patrol' ? Math.sin(this.time * 0.55 + this.index) * 0.45 : 0;
-    p.headY = scan - 0.32; // face the target over the bladed torso
+    p.headY = scan - this.blade; // face the target over the bladed torso
     p.headX = aimMode === 'aim' ? 0.18 : 0.05;
+    if (this.master) {
+      // Aimed: the cheek on the stock (masterRig.json stances.aim.torso.headTilt), eased in and out.
+      const tilt = masterRig.stances.aim.torso.headTilt;
+      this.cheek += ((aimMode === 'aim' && !this.pistol ? 1 : 0) - this.cheek) * Math.min(1, dt * 6);
+      p.headX = THREE.MathUtils.lerp(p.headX, tilt[0] * DEG, this.cheek);
+      p.headRoll = tilt[1] * DEG * this.cheek;
+    }
     // Standing around (not aiming): never a statue.
     const still = Math.hypot(this.vel.x, this.vel.z) < 0.3;
     let rollWant = 0;
@@ -797,6 +873,11 @@ export class Soldier implements LightSource {
     const handOff = reloading && rk > 0.2 && rk < 0.62;
     p.gripL = handOff ? this.reloadHand : this.rig.mag && reloading && rk > 0.1 && rk < 0.8 ? this.rig.mag : this.placeSupportGrip();
     this.syncGloves(p.gripL === this.supportGrip, true);
+    if (this.master) {
+      // Handguns go one-handed in the carries masterRig.json game.grip.pistol leaves out.
+      if (p.gripL === this.supportGrip && !this.grip!.twoHanded(aimMode)) p.gripL = null;
+      this.holdMaster(aimMode, p.gripL === this.supportGrip, reloading);
+    }
     if (this.rig.mag) this.rig.mag.visible = !(reloading && rk > 0.25 && rk < 0.6);
 
     this.aim(dt, faceTarget, aimMode, player);
@@ -912,12 +993,12 @@ export class Soldier implements LightSource {
     let pitch: number;
     if (mode === 'high') {
       // High port: muzzle up, gun diagonal across the chest (moving fast, ready to snap down).
-      yaw = -0.85;
+      yaw = -0.85 * this.hand;
       pitch = 0.7;
     } else if (mode === 'low' || !faceTarget) {
-      // Patrol carry: muzzle down and across the body.
-      yaw = -0.62;
-      pitch = -0.62;
+      // Patrol carry: muzzle down and across the body (master bodies: their low stance's turn).
+      yaw = this.master ? masterRig.stances.low.rotation[0] * DEG : -0.62;
+      pitch = this.master ? masterRig.stances.low.rotation[1] * DEG : -0.62;
     } else {
       // Aim point + lead + error; error tightens while the target stays visible.
       const dist = faceTarget.distanceTo(this.pos);
@@ -930,7 +1011,7 @@ export class Soldier implements LightSource {
       const c = Math.cos(-this.yaw);
       const lx = d.x * c + d.z * s;
       const lz = -d.x * s + d.z * c;
-      yaw = Math.atan2(lx, lz) - 0.32;
+      yaw = Math.atan2(lx, lz) - this.blade;
       pitch = Math.atan2(d.y, Math.hypot(lx, lz)) - (mode === 'ready' ? 0.35 : 0);
       if (mode === 'aim') {
         const moving = Math.hypot(this.vel.x, this.vel.z) > 0.6;
@@ -959,17 +1040,22 @@ export class Soldier implements LightSource {
     // (centred under the eyes), compressed at the chest at the ready, low while
     // running. Long guns stay shouldered (the holder origin is the shoulder pocket).
     if (this.pistol) {
-      if (mode === 'aim') this.holdWant.set(-0.1, 0.06, 0.28);
+      if (this.master) this.holdWant.fromArray(masterRig.game.grip.pistol.hold[mode]);
+      else if (mode === 'aim') this.holdWant.set(-0.1, 0.06, 0.28);
       else if (mode === 'ready') this.holdWant.set(-0.08, -0.08, 0.2);
       else if (mode === 'high') this.holdWant.set(-0.1, 0.02, 0.14);
       else this.holdWant.set(-0.06, -0.2, 0.12);
       // Handguns are held out from the arms, not the stock pocket: they keep their place.
+      this.holdWant.x *= this.hand;
       this.holdWant.sub(this.pocketShift);
     } else if (mode === 'high') {
       // High port: the stock comes down off the shoulder to the chest, the gun diagonal and
       // muzzle up. Placed in the torso's frame (the holder is pitched up 50°: an offset in
       // its own frame lifted the whole gun over the head).
-      this.holdWant.copy(HIGH_PORT).applyQuaternion(this.q.copy(this.aimNode.quaternion).invert());
+      this.holdWant.copy(HIGH_PORT).setX(HIGH_PORT.x * this.hand).applyQuaternion(this.q.copy(this.aimNode.quaternion).invert());
+    } else if (this.master && (mode === 'low' || !faceTarget)) {
+      // The master's low stance puts the butt a little off the aim stance's (torso frame).
+      this.holdWant.copy(this.lowShift).applyQuaternion(this.q.copy(this.aimNode.quaternion).invert());
     } else this.holdWant.set(0, 0, 0);
     this.hold.lerp(this.holdWant, Math.min(1, dt * 9));
     if (this.rifleRoot.parent === this.aimNode) this.rifleRoot.position.copy(this.hold);

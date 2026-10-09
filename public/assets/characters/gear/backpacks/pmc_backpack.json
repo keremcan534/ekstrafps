@@ -1,0 +1,23 @@
+{
+  "id": "pmc_backpack",
+  "kind": "backpacks",
+  "model": "pmc_backpack.glb",
+  "attach": "socket",
+  "socket": "BackSocket",
+  "position": [
+    0.0,
+    -0.09735,
+    -0.0459
+  ],
+  "quaternion": [
+    0.0,
+    0.0,
+    0.0,
+    1.0
+  ],
+  "scale": 1,
+  "variants": {
+    "pmc_green": "pmc_backpack/pmc_green",
+    "pmc_grey": "pmc_backpack/pmc_grey"
+  }
+}

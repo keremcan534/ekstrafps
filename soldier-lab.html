@@ -6,6 +6,8 @@
   Third-person weapon holds on every character model: one soldier per faction model, each
   with a gun, held still in a stance (?mode=aim|ready|low|high, ?gun=ak47|kar98|heavy_pistol|...).
   window.__sl: { soldiers, set(mode, gun), view(i, 'front'|'side'|'three'|'back'|'top', dist), reach() }.
+  Master humanoid factions (Vanta, SABLE, the Warden, the PMC rivals) draw the master body (?master=0: their old
+  models); window.__slm drives and measures them (src/dev/masterGameLab.ts).
 -->
 <body><div id="hud"></div><script type="module">
 import * as THREE from 'three';
@@ -104,7 +106,10 @@ const reach = () => soldiers.map((s) => {
   return out;
 });
 await set();
-window.__sl = { soldiers, set, view, step, reach, cam, scene, r, render: () => r.render(scene, cam), paused: false };
+window.__sl = { soldiers, set, view, step, reach, cam, scene, r, physics, render: () => r.render(scene, cam), paused: false };
+// The master humanoid's holds, driven and measured (src/dev/masterGameLab.ts): __slm.checks({ mode, walk, crouch, turn, reload }).
+const { masterGameLab } = await import('/src/dev/masterGameLab.ts');
+window.__slm = masterGameLab(window.__sl);
 r.setAnimationLoop(() => {
   // Bodies pick their detail (near / far model) by distance from this camera.
   humanoidView.copy(cam.position);

@@ -227,7 +227,7 @@ export function makeProbes(rig: MasterRig): Probes {
   for (const s of SIDES) {
     const arm = rig.arms[s];
     // Forearm slabs (mid, distal), and the upper arm's near the shoulder.
-    const forearmSet = new Set([idx(sided('Forearm', s)), idx(sided('ForearmTwist', s)), idx(sided('Hand', s))]);
+    const forearmSet = new Set([idx(sided('Forearm', s)), idx(sided('ForearmTwist', s)), idx(sided('ForearmTwist2', s)), idx(sided('Hand', s))]);
     const upperSet = new Set([idx(sided('UpperArm', s)), idx(sided('UpperArmTwist', s)), idx(sided('Forearm', s))]);
     const seg = (b: THREE.Bone, len: number) => {
       const a = new THREE.Vector3().setFromMatrixPosition(b.matrixWorld);
@@ -414,10 +414,11 @@ export function measure(host: CheckHost, probes: Probes, gun: GunSurface): Measu
     const restQ = (b: THREE.Bone) => rig.rest.get(b.name)!.quaternion;
     const handTw = twistAboutY(t.q.copy(restQ(arm.hand)).invert().multiply(arm.hand.quaternion));
     const foreTw = twistAboutY(t.q.copy(restQ(arm.foreTwist)).invert().multiply(arm.foreTwist.quaternion));
+    const foreTw2 = twistAboutY(t.q.copy(restQ(arm.foreTwist2)).invert().multiply(arm.foreTwist2.quaternion));
     const upTw = twistAboutY(t.q.copy(restQ(arm.upper)).invert().multiply(arm.upper.quaternion));
     const uatTw = twistAboutY(t.q.copy(restQ(arm.upperTwist)).invert().multiply(arm.upperTwist.quaternion));
     out.handTwistDeg[s] = r2d(handTw);
-    out.foreSplitErr[s] = Math.abs(r2d(foreTw - hold.twist.alpha * handTw));
+    out.foreSplitErr[s] = Math.max(Math.abs(r2d(foreTw - hold.twist.alpha * handTw)), Math.abs(r2d(foreTw2 - hold.twist.alpha2 * handTw)));
     out.upperSplitErr[s] = Math.abs(r2d(uatTw + hold.twist.beta * upTw));
     out.stretchMm[s] = (S.distanceTo(Wr) - (arm.upperLen + arm.foreLen)) * 1000;
     out.handQ[s] = quatOf(arm.hand.matrixWorld, new THREE.Quaternion());
@@ -530,7 +531,7 @@ export function runChecks(host: CheckHost, probes: Probes, gun: GunSurface, mode
           both('elbow flexion (min)', m.flexDeg[s], m.flexDeg[s] >= FLEX[0], '°', `≥ ${FLEX[0]}° (never backwards)`, where, false);
           both('wrist bend', m.wristBendDeg[s], m.wristBendDeg[s] < WRIST_BEND, '°', `< ${WRIST_BEND}°`, where);
           both('hand roll', Math.abs(m.handTwistDeg[s]), Math.abs(m.handTwistDeg[s]) < HAND_TWIST, '°', `|θ| < ${HAND_TWIST}°`, where);
-          both('twist split', Math.max(m.foreSplitErr[s], m.upperSplitErr[s]), Math.max(m.foreSplitErr[s], m.upperSplitErr[s]) < 0.5, '°', '< 0.5° from α θ, −β φ', where);
+          both('twist split', Math.max(m.foreSplitErr[s], m.upperSplitErr[s]), Math.max(m.foreSplitErr[s], m.upperSplitErr[s]) < 0.5, '°', '< 0.5° from α₁θ, α₂θ, −βφ', where);
           both('arm stretch', m.stretchMm[s], m.stretchMm[s] <= 1, 'mm', '≤ +1 mm', where);
           for (const d of WRAP[s]) both('finger grip', Math.abs(m.tipMm[s][d]), Math.abs(m.tipMm[s][d]) < GRIP_MM, 'mm', `|gap| < ${GRIP_MM} mm`, `${s}.${d} ${at}`);
           both('thumb on weapon', Math.abs(m.tipMm[s].Thumb), Math.abs(m.tipMm[s].Thumb) < THUMB_MM, 'mm', `|gap| < ${THUMB_MM} mm`, where);
@@ -589,4 +590,4 @@ export function runChecks(host: CheckHost, probes: Probes, gun: GunSurface, mode
 }
 
 /** The data the checks hold the hold to (for the report). */
-export const CHECK_DATA = { alpha: data.twist.forearm, beta: data.twist.upperArm };
+export const CHECK_DATA = { alpha: data.twist.forearm, alpha2: data.twist.forearm2, beta: data.twist.upperArm };

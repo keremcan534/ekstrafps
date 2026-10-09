@@ -85,7 +85,7 @@ export class ThirdPersonArmIK {
    * target, by `clavicle.maxDeg` × smoothstep of the reach (|shoulder → target| / arm length)
    * between `clavicle.start` and `clavicle.full`. Continuous, the same for every character.
    */
-  private reachClavicle(W: THREE.Vector3): void {
+  private reachClavicle(W: THREE.Vector3, scale: number): void {
     const c = this.cfg.clavicle;
     if (!c || c.maxDeg <= 0) return;
     const t = this.t;
@@ -93,7 +93,7 @@ export class ThirdPersonArmIK {
     cl.updateWorldMatrix(true, false);
     const C = t.v.setFromMatrixPosition(cl.matrixWorld);
     const S = t.p.copy(this.arm.upper.position).applyMatrix4(cl.matrixWorld);
-    const r = S.distanceTo(W) / (this.a + this.b);
+    const r = S.distanceTo(W) / ((this.a + this.b) * scale);
     const k = THREE.MathUtils.smoothstep(r, c.start, c.full);
     if (k <= 0) return;
     const cs = S.sub(C);
@@ -102,9 +102,10 @@ export class ThirdPersonArmIK {
     if (axis.lengthSq() < 1e-12) return;
     axis.normalize();
     const ang = Math.min(THREE.MathUtils.degToRad(c.maxDeg) * k, cs.angleTo(cw));
-    // World turn about the clavicle's head, written as a local rotation.
+    // World turn about the clavicle's head, written as a local rotation (decomposed: the
+    // world matrices may carry the body's uniform scale).
     cl.parent!.matrixWorld.decompose(t.xu, t.qp, t.s);
-    t.qu.setFromRotationMatrix(cl.matrixWorld);
+    cl.matrixWorld.decompose(t.xu, t.qu, t.s);
     t.q.setFromAxisAngle(axis, ang).multiply(t.qu);
     cl.quaternion.copy(t.qp).invert().multiply(t.q);
     cl.updateMatrixWorld(true);
@@ -119,12 +120,16 @@ export class ThirdPersonArmIK {
   solve(target: THREE.Matrix4, polePoint: THREE.Vector3): void {
     const t = this.t;
     this.stats.clavicleDeg = 0;
-    const { a, b } = this;
     const arm = this.arm;
     const parent = arm.upper.parent!;
+    // A body drawn at a uniform scale (the game's height): the bones' world lengths.
+    parent.updateWorldMatrix(true, false);
+    const k = t.s.setFromMatrixScale(parent.matrixWorld).x;
+    const a = this.a * k;
+    const b = this.b * k;
     target.decompose(this.wrist, t.qh, t.s);
     const W = this.wrist;
-    this.reachClavicle(W);
+    this.reachClavicle(W, k);
     parent.updateWorldMatrix(true, false);
     parent.matrixWorld.decompose(t.v, t.qp, t.s);
     const S = this.shoulder.copy(arm.upper.position).applyMatrix4(parent.matrixWorld);

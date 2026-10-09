@@ -1,7 +1,7 @@
 // Offscreen inspection renders of a humanoid GLB (Electron + three, never shown on screen):
 //   node_modules/electron/dist/electron.exe scripts/glb-views.cjs <model.glb> <outdir> [--size=1024] [--textured]
 //       [--markers=points.json] [--landmarks=landmarks.json] [--vcolors]
-//       [--skeleton] [--weights=BoneName] [--pose=pose.json]
+//       [--skeleton] [--weights=BoneName] [--pose=pose.json] [--look=public/assets/characters/textures/<look>]
 // Rig inspection: --skeleton draws the bones and each bone's axes (X red, Y green, Z blue);
 // --weights= colours the skin by one bone's weight (blue 0 .. red 1); --pose= applies local rotations
 // on top of the rest pose before rendering: {"Forearm_R": [xDeg, yDeg, zDeg] | [qx, qy, qz, qw], ...}.
@@ -33,6 +33,12 @@ const textured = flags.includes('--textured');
 const vcolors = flags.includes('--vcolors');
 const skeleton = flags.includes('--skeleton');
 const weights = (flags.find((f) => f.startsWith('--weights=')) ?? '').slice(10) || null;
+// --look=<dir>: a look's textures (base_color.webp, normal.webp, orm.webp) on the material named "Body".
+const lookDir = (flags.find((f) => f.startsWith('--look=')) ?? '').slice(7) || null;
+const look = lookDir ? path.relative(ROOT, path.resolve(lookDir)).split(path.sep).join('/') : null;
+// A colour version of another look (look.json {"maps": <look>}) shares that look's normal / ORM maps.
+const lookJson = lookDir && fs.existsSync(path.join(lookDir, 'look.json')) ? JSON.parse(fs.readFileSync(path.join(lookDir, 'look.json'), 'utf8')) : null;
+const lookMaps = lookJson?.maps ? path.posix.join(path.posix.dirname(look), lookJson.maps) : look;
 const readFlag = (name) => {
   const f = flags.find((x) => x.startsWith(`--${name}=`));
   return f ? JSON.parse(fs.readFileSync(f.slice(name.length + 3), 'utf8')) : null;
@@ -81,6 +87,14 @@ window.__run = async (cfg) => {
       b.quaternion.multiply(q);
     }
     root.updateMatrixWorld(true);
+  }
+  if (cfg.look) {
+    const tl = new THREE.TextureLoader();
+    const load = (dir, n, srgb) => tl.loadAsync(\`glbview://root/\${dir}/\${n}\`).then((t) => { t.flipY = false; if (srgb) t.colorSpace = THREE.SRGBColorSpace; return t; });
+    const [map, normalMap, orm] = await Promise.all([load(cfg.look, 'base_color.webp', true), load(cfg.lookMaps, 'normal.webp', false), load(cfg.lookMaps, 'orm.webp', false)]);
+    const body = new THREE.MeshStandardMaterial({ map, normalMap, roughnessMap: orm, metalnessMap: orm, aoMap: orm, metalness: 1, roughness: 1 });
+    for (const m of meshes) if (m.userData.orig?.name === 'Body') { m.userData.orig = body; m.material = body; }
+    cfg.textured = true;
   }
   if (cfg.weights) {
     for (const m of meshes) {
@@ -278,7 +292,7 @@ app.whenReady().then(async () => {
     await win.loadURL('glbview://root/__page.html');
     const rel = path.relative(ROOT, path.resolve(model)).split(path.sep).join('/');
     for (let i = 0; i < 100 && !(await win.webContents.executeJavaScript('!!window.__ready')); i++) await new Promise((r) => setTimeout(r, 100));
-    const res = await win.webContents.executeJavaScript(`window.__run(${JSON.stringify({ url: `glbview://root/${rel}`, size, textured, vcolors, markers, landmarks, pose, skeleton, weights })})`);
+    const res = await win.webContents.executeJavaScript(`window.__run(${JSON.stringify({ url: `glbview://root/${rel}`, size, textured, vcolors, markers, landmarks, pose, skeleton, weights, look, lookMaps })})`);
     fs.mkdirSync(outdir, { recursive: true });
     for (const [name, data] of Object.entries(res.shots)) fs.writeFileSync(path.join(outdir, `${name}.png`), Buffer.from(data.split(',')[1], 'base64'));
     fs.writeFileSync(path.join(outdir, 'views.json'), JSON.stringify(res.info, null, 2));

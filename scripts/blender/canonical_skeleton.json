@@ -1,11 +1,11 @@
 {
   "name": "MASTER_HUMANOID_RIG",
-  "version": 1,
+  "version": 2,
   "notes": [
     "The one skeleton every humanoid uses. Immutable once approved: never change names, hierarchy, local axes or rest orientations per faction.",
     "Axes (every bone): +Y from the bone's head toward its child / tail. Arm, hand and finger bones: +Z toward the palm side (thumb bones: toward the pad, 0.7 palm - 0.7 radial), the first-person ArmRig convention, so src/config/gripposes.json poses apply. Spine, neck, head, clavicles, legs: +Z forward. Feet and toes: +Z up. X = Y x Z.",
     "Left bones are exact mirror images of right bones (the skeleton is built symmetric). Mirroring a local pose quaternion between sides: (x, y, z, w) -> (x, -y, -z, w) for every bone.",
-    "Twist bones are leaf children on their parent's axis: Hand stays a direct child of Forearm, Forearm of UpperArm (clean two-bone IK chain). ForearmTwist takes part of the hand's roll about the forearm axis, UpperArmTwist counters part of the upper arm's roll, both at runtime (twist solver) and in skin weights (gradients along the bone).",
+    "Twist bones are leaf children on their parent's axis: Hand stays a direct child of Forearm, Forearm of UpperArm (clean two-bone IK chain). ForearmTwist (proximal) and ForearmTwist2 (distal) take 1/3 and 2/3 of the hand's roll about the forearm axis, UpperArmTwist counters part of the upper arm's roll, both at runtime (twist solver) and in skin weights (gradients along the bone): the forearm skin twists in thirds, so it holds its section well past 120 degrees of hand roll.",
     "Sockets are non-deforming bones: rigid gear and weapons attach to them with canonical offsets, never per-character ones."
   ],
   "bones": [
@@ -21,6 +21,7 @@
     {"name": "UpperArmTwist_R", "parent": "UpperArm_R", "twist": true, "roll": "palm"},
     {"name": "Forearm_R", "parent": "UpperArm_R", "meshy": "RightForeArm", "roll": "palm"},
     {"name": "ForearmTwist_R", "parent": "Forearm_R", "twist": true, "roll": "palm"},
+    {"name": "ForearmTwist2_R", "parent": "Forearm_R", "twist": true, "roll": "palm"},
     {"name": "Hand_R", "parent": "Forearm_R", "meshy": "RightHand", "roll": "palm"},
     {"name": "Thumb1_R", "parent": "Hand_R", "roll": "thumbpad"},
     {"name": "Thumb2_R", "parent": "Thumb1_R", "roll": "thumbpad"},

@@ -1,0 +1,12 @@
+{
+  "id": "warden_coat",
+  "kind": "coats",
+  "model": "warden_coat.glb",
+  "attach": "skinned",
+  "hides": [
+    "torso",
+    "upper_arms",
+    "forearms",
+    "thighs"
+  ]
+}

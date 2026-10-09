@@ -1,0 +1,19 @@
+{
+  "id": "radio",
+  "kind": "radios",
+  "model": "radio.glb",
+  "attach": "socket",
+  "socket": "ChestSocket",
+  "position": [
+    0.1,
+    -0.06235,
+    0.07951
+  ],
+  "quaternion": [
+    0.0,
+    0.0,
+    0.0,
+    1.0
+  ],
+  "scale": 1
+}
