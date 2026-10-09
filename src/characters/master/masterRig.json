@@ -1,0 +1,383 @@
+{
+  "rig": "MASTER_HUMANOID_RIG",
+  "notes": [
+    "Every offset the master humanoid's weapon holds use, in one place. Canonical: the same numbers for every character and faction on the MASTER_HUMANOID_RIG skeleton (scripts/blender/canonical_skeleton.json); nothing here is per character.",
+    "sockets: non-deforming bones' local transforms (metres, parent bone space). RightHandWeaponSocket is where a pistol grip's frame sits in the closed right hand (origin on the grip's centre line at the middle finger, +Y up the grip toward the receiver, +Z forward toward the trigger). LeftHandWeaponSocket is its exact mirror (x, y, z) -> (-x, y, z), (qx, qy, qz, qw) -> (qx, -qy, -qz, qw).",
+    "twist: share of the hand's roll about the forearm that ForearmTwist takes, and of the upper arm's roll about itself that UpperArmTwist takes back.",
+    "ik: the arm never stretches: past maxReach of (upper + forearm) it stays straight toward the target; maxFlexDeg keeps the elbow from folding through itself. clavicle: a far target draws the shoulder toward it, the clavicle turning up to maxDeg (smoothstep of shoulder->target / arm length between start and full).",
+    "torso: how a stance's torso blade is spread over Spine1..3 (spread) and how much of it the neck and head turn back (head: 1 = the face stays where the clip had it).",
+    "stances: where the weapon is held, in chest space (Spine3; metres). butt: the weapon's butt point (weapons.<id>.butt) in Spine3 space. rotation [yaw, pitch, roll] deg (yaw + = muzzle to the character's left, pitch + = muzzle up) in the anchor's frame: 'chest' = Spine3's frame (the weapon rides the torso), 'aim' = the character's facing plus the aim pitch (the barrel along the aim line whatever the torso does). poles: each elbow's pole point in Spine3 space (the elbow bends toward it). torso.yaw: the chest's facing relative to the character's (deg, - = to the right: the rifle's bladed stance), whatever the clip's spine yaw (an aim offset); torso.headTilt: [chin down, toward the right shoulder] deg, a cheek on the stock.",
+    "gripCorrections: per library pose, the master's own small finger turns after the pose (bone keys Thumb1 ... Pinky3, quaternions in the poses' right-hand convention): its palm and thumb are not the glove's. Canonical, never per character.",
+    "fingerBasis: the first-person glove's bind finger rotations (public/hands/arms.glb). The grip pose library (src/config/gripposes.json) is authored on top of them; on the master a finger bone's local rotation is basis (x) pose (left hand: basis.left (x) mirror(pose)), the first-person FingerPoser's rule with the glove's basis.",
+    "weapons: weapon-side data in the weapon model's own units and axes (the AK: muzzle +X, up +Y, its right side +Z, ~1 mm per unit). rightGrip: the pistol grip's frame (it lands on RightHandWeaponSocket). leftGrip: Hand_L's frame on the handguard (the support hand's IK target). butt: the butt point the stance places."
+  ],
+  "sockets": {
+    "RightHandWeaponSocket": {
+      "parent": "Hand_R",
+      "position": [
+        -0.0419,
+        0.0825,
+        0.0533
+      ],
+      "quaternion": [
+        -0.54148,
+        -0.5904,
+        -0.20674,
+        0.56168
+      ]
+    }
+  },
+  "twist": {
+    "forearm": 0.5,
+    "upperArm": 0.5
+  },
+  "ik": {
+    "maxReach": 0.9995,
+    "maxFlexDeg": 150,
+    "clavicle": {
+      "start": 0.85,
+      "full": 1.15,
+      "maxDeg": 20
+    }
+  },
+  "torso": {
+    "spread": [
+      0.3,
+      0.35,
+      0.35
+    ],
+    "head": 1
+  },
+  "stances": {
+    "low": {
+      "anchor": "chest",
+      "butt": [
+        -0.12,
+        0,
+        0.1
+      ],
+      "rotation": [
+        45,
+        -25,
+        0
+      ],
+      "torso": {
+        "yaw": -30
+      },
+      "poles": {
+        "right": [
+          -0.567,
+          -0.243,
+          0.23
+        ],
+        "left": [
+          0.014,
+          -0.428,
+          -0.124
+        ]
+      }
+    },
+    "aim": {
+      "anchor": "aim",
+      "butt": [
+        -0.13,
+        0.05,
+        0.09
+      ],
+      "rotation": [
+        0,
+        0,
+        0
+      ],
+      "torso": {
+        "yaw": -40,
+        "headTilt": [
+          14,
+          12
+        ]
+      },
+      "poles": {
+        "right": [
+          -0.55,
+          -0.25,
+          0
+        ],
+        "left": [
+          0.052,
+          -0.43,
+          0.135
+        ]
+      }
+    }
+  },
+  "fingerBasis": {
+    "right": {
+      "Thumb1": [
+        0.28868,
+        -0.25404,
+        -0.54862,
+        0.74239
+      ],
+      "Thumb2": [
+        0.07325,
+        0.01865,
+        0.23413,
+        0.96926
+      ],
+      "Thumb3": [
+        0.0685,
+        0.00021,
+        0.00093,
+        0.99765
+      ],
+      "Index1": [
+        0.25914,
+        -0.03201,
+        -0.11833,
+        0.95803
+      ],
+      "Index2": [
+        0.01464,
+        0.04149,
+        0.06874,
+        0.99666
+      ],
+      "Index3": [
+        -0.01062,
+        0.01662,
+        0.02729,
+        0.99943
+      ],
+      "Middle1": [
+        0.27299,
+        -0.01586,
+        -0.05579,
+        0.96027
+      ],
+      "Middle2": [
+        0.11914,
+        0.00946,
+        0.01185,
+        0.99276
+      ],
+      "Middle3": [
+        0.09458,
+        0.08364,
+        0.06801,
+        0.98966
+      ],
+      "Ring1": [
+        0.28262,
+        -0.00521,
+        -0.01769,
+        0.95905
+      ],
+      "Ring2": [
+        0.15391,
+        0.03057,
+        0.03431,
+        0.98702
+      ],
+      "Ring3": [
+        0.00591,
+        -0.11043,
+        -0.08972,
+        0.98981
+      ],
+      "Pinky1": [
+        0.37589,
+        0.02814,
+        0.06916,
+        0.92365
+      ],
+      "Pinky2": [
+        0.07281,
+        -0.00877,
+        -0.00777,
+        0.99728
+      ],
+      "Pinky3": [
+        -0.13436,
+        -0.13087,
+        -0.13187,
+        0.97336
+      ]
+    },
+    "left": {
+      "Thumb1": [
+        0.29187,
+        0.26749,
+        0.46962,
+        0.78912
+      ],
+      "Thumb2": [
+        0.02506,
+        -0.00805,
+        -0.14716,
+        0.98876
+      ],
+      "Thumb3": [
+        0.09081,
+        -0.0092,
+        -0.05326,
+        0.9944
+      ],
+      "Index1": [
+        0.24102,
+        0.01304,
+        0.05243,
+        0.96901
+      ],
+      "Index2": [
+        -0.01925,
+        -0.02071,
+        -0.04094,
+        0.99876
+      ],
+      "Index3": [
+        -0.00268,
+        -0.01408,
+        -0.02941,
+        0.99946
+      ],
+      "Middle1": [
+        0.23409,
+        -0.00188,
+        -0.0078,
+        0.97218
+      ],
+      "Middle2": [
+        0.12077,
+        -0.01216,
+        -0.01802,
+        0.99244
+      ],
+      "Middle3": [
+        0.06081,
+        0.04803,
+        0.04896,
+        0.99579
+      ],
+      "Ring1": [
+        0.3608,
+        0.00464,
+        0.01199,
+        0.93256
+      ],
+      "Ring2": [
+        0.0383,
+        -0.03558,
+        -0.03621,
+        0.99798
+      ],
+      "Ring3": [
+        -0.00551,
+        0.20865,
+        0.19892,
+        0.95753
+      ],
+      "Pinky1": [
+        0.32421,
+        -0.03302,
+        -0.0958,
+        0.94054
+      ],
+      "Pinky2": [
+        0.08054,
+        -0.00595,
+        -0.00646,
+        0.99671
+      ],
+      "Pinky3": [
+        -0.17892,
+        0.09512,
+        0.12698,
+        0.97099
+      ]
+    }
+  },
+  "gripCorrections": {
+    "RifleRightGrip": {
+      "Thumb1": [
+        0.13538,
+        -0.03479,
+        -0.17081,
+        0.97534
+      ],
+      "Thumb2": [
+        0.00294,
+        0,
+        0,
+        1
+      ],
+      "Thumb3": [
+        -0.01858,
+        0,
+        0,
+        0.99983
+      ]
+    },
+    "RifleLeftGrip": {
+      "Thumb1": [
+        0.05051,
+        0.04665,
+        0.33399,
+        0.94007
+      ],
+      "Thumb2": [
+        0.02226,
+        0,
+        0,
+        0.99975
+      ],
+      "Thumb3": [
+        0.00276,
+        0,
+        0,
+        1
+      ]
+    }
+  },
+  "weapons": {
+    "ak47": {
+      "model": "guns/m/ak47.glb",
+      "scale": 0.00098932,
+      "butt": [
+        -458.04,
+        12.24,
+        -0.03
+      ],
+      "rightGrip": {
+        "position": [
+          -170.72,
+          -60,
+          0
+        ],
+        "quaternion": [
+          0.1789,
+          0.6841,
+          -0.1789,
+          0.6841
+        ]
+      },
+      "leftGrip": {
+        "position": [
+          110.13,
+          -11.01,
+          -63.55
+        ],
+        "quaternion": [
+          0.05911,
+          0.78659,
+          0.55261,
+          -0.26909
+        ]
+      },
+      "fingers": {
+        "right": "RifleRightGrip",
+        "left": "RifleLeftGrip",
+        "trigger": "TriggerReady"
+      }
+    }
+  }
+}

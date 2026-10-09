@@ -1,0 +1,47 @@
+{
+  "source": "production/assets/src/chars/master/candidates/c12.glb",
+  "output": "production/assets/src/chars/master/c12_clean.glb",
+  "report": "production/assets/src/chars/master/cleanup_report.json",
+  "steps": {
+    "bun": {
+      "enabled": true,
+      "minProminence": 0.006,
+      "margin": 0.015,
+      "fixedRings": 3,
+      "_note": "other parameters are the module defaults (scripts/blender/steps/bun.py)"
+    },
+    "wrists": {
+      "enabled": true,
+      "minDeg": 0.5,
+      "blendAbove": 0.025,
+      "blendBelow": 0.02
+    },
+    "cuffs": {
+      "enabled": true,
+      "start": 0,
+      "_note": "other parameters are the module defaults (scripts/blender/steps/cuffs.py); reviewed and passed 2026-10-08"
+    },
+    "fingers": {
+      "enabled": true,
+      "scale": 0.82,
+      "webTaper": 0.25
+    },
+    "seams": {
+      "enabled": false,
+      "_note": "piping removal postponed: last review left an armpit-junction crease; re-enable once scripts/blender/steps/seams.py passes review"
+    }
+  },
+  "gate": {
+    "digits": 5,
+    "minDigitPersistence": 0.015,
+    "maxWristDeg": 3,
+    "maxArmAngleChangeDeg": 1,
+    "maxElbowBendDeg": 20,
+    "maxPalmMedialDeg": 50,
+    "maxThumbForwardDeg": 50,
+    "maxSymmetryIncreasePct": 0.05,
+    "minClearanceRatio": 0.97,
+    "maxNewSelfIntersections": 0,
+    "maxBunProminence": 0.003
+  }
+}

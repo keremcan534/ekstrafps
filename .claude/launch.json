@@ -32,6 +32,17 @@
         "--strictPort"
       ],
       "port": 5182
+    },
+    {
+      "name": "master-lab",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": [
+        "vite",
+        "--port",
+        "5184",
+        "--strictPort"
+      ],
+      "port": 5184
     }
   ]
 }

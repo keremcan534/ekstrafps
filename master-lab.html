@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Master Rig Lab</title>
+    <!--
+      MASTER_HUMANOID_RIG validation lab (dev server: /master-lab.html). The canonical skeleton
+      holding the AK-47 with RifleHold (src/characters/master/), clips from clips.glb, acceptance
+      checks over every mode and world yaw. Query: ?rig=<glb>&clips=<glb>&gun=ak47&mode=rifle-aim.
+      window.__ml: { set(mode), view(name, dist), step(n), shot(), sheet(specs, cols), post(url, i),
+      checks(), derive(), state() }. Logic: src/dev/masterLab.ts, checks: src/dev/masterChecks.ts.
+    -->
+    <style>
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        overflow: hidden;
+        background: #1b1d20;
+        color: #ddd;
+        font: 12px ui-monospace, Consolas, monospace;
+      }
+      #hud {
+        position: fixed;
+        left: 8px;
+        top: 6px;
+        z-index: 2;
+        white-space: pre;
+        pointer-events: none;
+        text-shadow: 0 1px 2px #000;
+      }
+      #report {
+        position: fixed;
+        left: 8px;
+        bottom: 8px;
+        z-index: 2;
+        white-space: pre;
+        max-height: 55vh;
+        overflow: auto;
+        background: rgba(0, 0, 0, 0.65);
+        padding: 6px 8px;
+        display: none;
+      }
+      .bad {
+        color: #ff7062;
+      }
+      .ok {
+        color: #7dffa0;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="hud"></div>
+    <pre id="report"></pre>
+    <script type="module" src="/src/dev/masterLab.ts"></script>
+  </body>
+</html>
