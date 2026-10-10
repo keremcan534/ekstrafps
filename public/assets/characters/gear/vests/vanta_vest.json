@@ -12,5 +12,8 @@
     "zone": "thorax",
     "surface": "armor",
     "armor": 40
+  },
+  "variants": {
+    "salvage": "vanta_vest/salvage"
   }
 }

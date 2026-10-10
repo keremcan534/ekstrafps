@@ -8,7 +8,8 @@ its minimum) that keeps the shape: collapse decimation interpolates UVs and skin
 re-limited to 4 influences and normalised.
   <id>_lod.glb  LODS['_lod']: desktop from the mid distance, phones up close; refused past 8 % of the
                 surface lost or 4 mm + 2 % of the extent
-  <id>_far.glb  LODS['_far']: past the far distance (14 m+, a few dozen pixels): looser, 15 % / 1 cm + 4 %
+  <id>_far.glb  LODS['_far']: past the far distance (14 m+, a few dozen pixels): looser, 25 % / 1.5 cm + 6 %
+                (Meshy items made of many small parts lose them first: at that distance they are a pixel)
 Past the last ratio an item gets no such version (src/characters/MasterAssets.ts falls back to the
 lighter one it has, or the item). Re-run after any gear item changes (scripts/build-gear.mjs).
 """
@@ -21,7 +22,7 @@ import bpy
 # suffix: (ratios tried in order, minimum triangles, kept surface share, extent slack: (m, share))
 LODS = {
     '_lod': ((0.3, 0.45, 0.6), 800, 0.92, (0.004, 0.02)),
-    '_far': ((0.12, 0.2, 0.3), 250, 0.85, (0.01, 0.04)),
+    '_far': ((0.12, 0.2, 0.3), 250, 0.75, (0.015, 0.06)),
 }
 
 

@@ -34,20 +34,22 @@ gear/<kind>/<id>_lod.glb, _far.glb  the item decimated (scripts/blender/lod_gear
                                     materials): _lod from the mid distance on desktop and up close on
                                     phones, _far past the far distance (see Distance bands)
 gear/<kind>/<id>/<look>/            the item's texture version for a look (`variants`)
-characters/<id>.json                vanta, black_division, warden, pmc (bravo), pmc_green (charlie), pmc_grey (delta)
+characters/<id>.json                vanta, black_division, warden, pmc (bravo), pmc_green (charlie), pmc_grey (delta),
+                                    salvage
 animations/humanoid/*.glb           clips on the canonical skeleton (lab test clips only, see Animation)
 ```
 Body GLBs carry UVs and one material named "Body"; the runtime fills it from the look's textures.
 Looks: `master` (neutral black underlayer), `vanta`, `black_division`, `pmc`, `pmc_green`, `pmc_grey`,
-`warden`. A look is made with `node scripts/meshy-master.mjs retexture <look> --prompt="..."` (Meshy paints
+`salvage`, `warden`. A look is made with `node scripts/meshy-master.mjs retexture <look> --prompt="..."` (Meshy paints
 on the master's own UVs; sources in production/assets/src/chars/master/texture/<look>/), then
 `python scripts/make_look.py <look>` writes the game sizes and applies the rules every look obeys:
 - no skin on the hands or forearms (every look is gloved and long-sleeved): Meshy's "glove gap" /
   rolled sleeves are repainted in the look's own glove / sleeve colour (masks from
   scripts/blender/region_masks.py);
 - palettes (`LOOKS` in make_look.py): a cloth colour repainted, shading kept, the head never touched.
-  The PMC rivals are one Meshy look in three colourways (khaki, green, grey) - no credits, and the
-  teams can be told apart. Gear follows with `variants` (scripts/gear-variant.py --recolour=R,G,B).
+  The PMC rivals are one Meshy look in three colourways (khaki, green, grey) and the salvagers a
+  fourth (denim and workwear) - no credits, and the teams can be told apart. Gear follows with
+  `variants` (scripts/gear-variant.py --recolour / --tint / --solid, recipes in scripts/gear_variants.json).
 
 ## Gear `<id>.json`
 ```json

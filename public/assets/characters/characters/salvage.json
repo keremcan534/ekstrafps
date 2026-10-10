@@ -1,0 +1,9 @@
+{
+  "id": "salvage",
+  "look": "salvage",
+  "gear": [
+    "vests/vanta_vest",
+    "pouches/pouches",
+    "helmets/bd_helmet"
+  ]
+}

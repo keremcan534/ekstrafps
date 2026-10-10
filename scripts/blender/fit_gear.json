@@ -64,6 +64,9 @@
         "zone": "head",
         "surface": "helmet",
         "armor": 30
+      },
+      "variants": {
+        "salvage": "bd_helmet/salvage"
       }
     },
     "warden_hat": {
@@ -225,6 +228,9 @@
         "zone": "thorax",
         "surface": "armor",
         "armor": 40
+      },
+      "variants": {
+        "salvage": "vanta_vest/salvage"
       }
     },
     "pouches": {

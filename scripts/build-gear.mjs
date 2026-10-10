@@ -55,6 +55,7 @@ if (run('variants')) {
     if (how.retexture) sh('python', 'scripts/gear-variant.py', `production/assets/src/chars/master/gear/${how.retexture}`, out);
     else if (how.recolour) sh('python', 'scripts/gear-variant.py', glb, out, `--recolour=${how.recolour.join(',')}`);
     else if (how.solid) sh('python', 'scripts/gear-variant.py', glb, out, `--solid=${how.solid.join(',')}`);
+    else if (how.tint) sh('python', 'scripts/gear-variant.py', glb, out, `--tint=${how.tint.join(',')}`);
     else throw new Error(`${folder}: no recipe`);
   }
 }

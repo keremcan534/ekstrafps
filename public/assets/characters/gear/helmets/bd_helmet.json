@@ -24,5 +24,8 @@
     "zone": "head",
     "surface": "helmet",
     "armor": 30
+  },
+  "variants": {
+    "salvage": "bd_helmet/salvage"
   }
 }

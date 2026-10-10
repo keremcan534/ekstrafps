@@ -390,7 +390,8 @@
       "bdboss": "warden",
       "bravo": "pmc",
       "charlie": "pmc_green",
-      "delta": "pmc_grey"
+      "delta": "pmc_grey",
+      "salvage": "salvage"
     },
     "stances": {
       "aim": "aim",

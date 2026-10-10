@@ -318,7 +318,7 @@ export function measureMaster(s: Soldier, withSurface = true): MasterMeasure | n
       out.insideMm[side] = Number.isFinite(inside) ? inside * 1000 : 99;
     }
   }
-  for (const sl of P.slabs) {
+  for (const sl of m.mesh.geometry === m.near ? P.slabs : []) {
     const [area, perim] = section(rig.mesh, rig.arms[sl.side].fore, sl.verts);
     out.candy = Math.min(out.candy, area / sl.area, perim / sl.perim);
   }

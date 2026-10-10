@@ -9,7 +9,7 @@ import { masterPerson, masterSkin } from './MasterBody';
  * procedural body. `?charmodel=<url>` puts one model on everyone (testing an import).
  *
  * The master humanoid (src/characters/README.md) takes over the factions masterRig.json
- * `game.people` names (Vanta, SABLE and the Warden, the PMC rivals) once it has loaded; their
+ * `game.people` names (Vanta, SABLE and the Warden, the PMC rivals, the salvagers) once it has loaded; their
  * old files are then not loaded at all. `?master=0` keeps every faction on its old model.
  */
 const FILES: Record<string, string> = {

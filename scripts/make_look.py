@@ -37,6 +37,8 @@ LOOKS = {
     # The three rival PMC teams (bravo / charlie / delta) must be told apart: tan, green, grey.
     'pmc_green': {'from': 'pmc', 'palette': [(TAN, (112, 116, 80))]},
     'pmc_grey': {'from': 'pmc', 'palette': [(TAN, (150, 152, 150)), (GREEN, (72, 76, 80))]},
+    # Salvagers (the old kit's palette): faded denim shirt, workwear-brown trousers.
+    'salvage': {'from': 'pmc', 'palette': [(TAN, (76, 90, 107)), (GREEN, (91, 74, 54))]},
 }
 
 

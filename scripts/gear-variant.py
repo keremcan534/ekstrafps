@@ -7,6 +7,9 @@ or a local colour version of the item itself:
                                                     keeps the item's own normal / ORM maps)
   python scripts/gear-variant.py <item.glb> <out_dir> --solid=R,G,B      (a flat-coloured item, e.g. the
                                                     backpack straps: an 8 x 8 base colour of R,G,B)
+  python scripts/gear-variant.py <item.glb> <out_dir> --tint=R,G,B       (the whole item in R,G,B, its
+                                                    shading kept: for an item with no hue to match, e.g.
+                                                    a black helmet; the median texel becomes R,G,B)
 
 Writes <out_dir>/base_color.webp (sRGB), normal.webp (tangent space, OpenGL +Y as glTF) and
 orm.webp (R occlusion, 255 where the source has none; G roughness; B metallic: glTF order), plus
@@ -47,6 +50,7 @@ def main():
     size = int(next((a[7:] for a in sys.argv[1:] if a.startswith('--size=')), 1024))
     recol = next((a[11:] for a in sys.argv[1:] if a.startswith('--recolour=')), None)
     solid = next((a[8:] for a in sys.argv[1:] if a.startswith('--solid=')), None)
+    tint = next((a[7:] for a in sys.argv[1:] if a.startswith('--tint=')), None)
     src, out = args
     if solid:
         os.makedirs(out, exist_ok=True)
@@ -71,6 +75,16 @@ def main():
         p.thumbnail((phone, phone), Image.LANCZOS)
         p.save(os.path.join(out, f'{name}_{"1k" if phone == 1024 else phone}.webp'), quality=q, method=6)
     bc = fit(image(j, blob, pbr['baseColorTexture']['index']).convert('RGB'))
+    if tint:
+        import numpy as np
+        a = np.asarray(bc).astype(np.float32) / 255.0
+        lum = a @ np.array([0.299, 0.587, 0.114], np.float32)
+        k = np.clip(lum / max(float(np.median(lum)), 1e-3), 0.25, 2.5)
+        a = np.clip(np.array([int(c) for c in tint.split(',')], np.float32)[None, None, :] / 255.0 * k[..., None], 0, 1)
+        bc = Image.fromarray((a * 255 + 0.5).astype(np.uint8))
+        save(bc, 'base_color', 90, 1024)
+        print(f'{src} -> {out}: tinted {tint}')
+        return
     if recol:
         import numpy as np
         from make_look import recolour
