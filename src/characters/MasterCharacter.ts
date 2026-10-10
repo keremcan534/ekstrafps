@@ -129,6 +129,12 @@ export class MasterCharacter implements HumanoidVisual {
   easing(s: Side): boolean {
     return this.armBlend[s].t < 1;
   }
+  /** Ease arm `s` from the pose it is drawn in now (its target is about to jump: a hand let go of the gun). */
+  ease(s: Side): void {
+    const bl = this.armBlend[s];
+    for (let i = 0; i < bl.bones.length; i++) bl.from[i].copy(bl.bones[i].quaternion);
+    bl.t = 0;
+  }
   private readonly gear: THREE.Mesh[] = [];
   /** Gear with a far version: swapped with the body's own LOD. */
   private readonly gearLods: { mesh: THREE.Mesh; near: THREE.BufferGeometry; far: THREE.BufferGeometry }[] = [];

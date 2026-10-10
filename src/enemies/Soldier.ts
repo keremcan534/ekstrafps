@@ -37,8 +37,9 @@ const MODEL_POCKET = new THREE.Vector3(-0.075, 0.035, 0.07);
 /** The support hand bends its elbow: at most this share of the arm's reach, sliding back along the handguard (up to SLIDE m). */
 const SUPPORT_REACH = 0.99;
 const SLIDE = 0.14;
-/** The left hand's ease between its reload targets (s, time constant). */
+/** The left hand's ease between its reload targets (s, time constant), and its longest tail after one (s). */
 const LEFT_EASE = 0.06;
+const LEFT_TAIL = 0.35;
 /** High port: where the stock sits, from the shoulder pocket, in the torso's frame (m). */
 const HIGH_PORT = new THREE.Vector3(-0.05, -0.27, 0.1);
 /** Model bodies: the gloves on the gun (the rig's own hand points), and a fist on each forearm when a hand is off it. */
@@ -243,13 +244,16 @@ export class Soldier implements LightSource {
   private rifleBody: RAPIER.RigidBody;
   private reloadHand = new THREE.Object3D();
   /**
-   * The left hand's target through a reload (support → magazine → pouch → magazine → support) and
-   * until it is back on the support: a point easing after the chosen one in the body's frame, so
-   * the arm reaches instead of snapping.
+   * The left hand's target through a reload (support → magazine → pouch → magazine → support) and a
+   * moment after it: a point easing after the chosen one in the gun's frame (rifleRoot: support and
+   * magazine hold still there however the body sways), so the arm reaches instead of snapping.
    */
   private leftReach = new THREE.Object3D();
   private leftLocal = new THREE.Vector3();
+  private leftGoal = new THREE.Vector3();
   private leftEasing = false;
+  /** Seconds since the reload ended (the tail is bounded: LEFT_TAIL). */
+  private leftTail = 0;
   /** Where the support hand holds: the rig's grip, slid back along the barrel when the arm can't reach it. */
   private supportGrip = new THREE.Object3D();
   /** Model bodies: a fist on each forearm, shown while that hand is off the gun ([left, right]). */
@@ -359,7 +363,7 @@ export class Soldier implements LightSource {
     this.flash.attachTo(this.rig.muzzle);
     this.reloadHand.position.set(-0.05 * this.hand, 0.2, 0.24);
     torso.add(this.reloadHand);
-    this.body.root.add(this.leftReach);
+    this.rifleRoot.add(this.leftReach);
 
     this.rifleBody = deps.physics.world.createRigidBody(
       RAPIER.RigidBodyDesc.dynamic().setEnabled(false).setCcdEnabled(true).setAngularDamping(0.5),
@@ -456,20 +460,37 @@ export class Soldier implements LightSource {
     }
   }
 
-  /** The left hand's target: `want`, or through a reload the point easing after it (leftReach). */
-  private easeLeft(want: THREE.Object3D, reloading: boolean, dt: number): THREE.Object3D {
+  /**
+   * The left hand's target: `want`, or through a reload and a moment after it the point easing after
+   * it (leftReach). `wasFree`: the hand hung free last frame (a one-handed carry); `oneHanded`: it
+   * hangs free once the reload is done - let go at once, the master's arm easing into the live swing
+   * (a stored point would be a different swing phase by then). Null: the hand is free.
+   */
+  private easeLeft(want: THREE.Object3D, reloading: boolean, wasFree: boolean, oneHanded: boolean, dt: number): THREE.Object3D | null {
     if (!this.leftEasing && !reloading) return want;
-    const root = this.body.root;
-    const local = root.worldToLocal(want.getWorldPosition(this.tmp));
+    const gun = this.rifleRoot;
+    gun.updateWorldMatrix(true, false);
+    const hand = () => this.body.part('foreArmL').group.localToWorld(this.tmp.copy(this.body.handPoint));
     if (!this.leftEasing) {
-      // The reload starts with the hand where it is: on the support.
+      // The reload starts from where the hand is: on the support, or hanging free.
       this.leftEasing = true;
-      this.leftLocal.copy(local);
+      this.leftTail = 0;
+      this.leftLocal.copy(gun.worldToLocal(wasFree ? hand() : want.getWorldPosition(this.tmp)));
     }
-    this.leftLocal.lerp(local, 1 - Math.exp(-dt / LEFT_EASE));
-    if (!reloading && this.leftLocal.distanceToSquared(local) < 0.004 * 0.004) {
+    if (!reloading && oneHanded) {
       this.leftEasing = false;
-      return want;
+      this.master?.ease('L');
+      return null;
+    }
+    // Back on the support after the reload.
+    this.leftGoal.copy(gun.worldToLocal(want.getWorldPosition(this.tmp)));
+    this.leftLocal.lerp(this.leftGoal, 1 - Math.exp(-dt / LEFT_EASE));
+    if (!reloading) {
+      this.leftTail += dt;
+      if (this.leftLocal.distanceToSquared(this.leftGoal) < 0.004 * 0.004 || this.leftTail > LEFT_TAIL) {
+        this.leftEasing = false;
+        return want;
+      }
     }
     this.leftReach.position.copy(this.leftLocal);
     this.leftReach.updateMatrixWorld();
@@ -571,8 +592,15 @@ export class Soldier implements LightSource {
     return this.crouch;
   }
 
+  /**
+   * Where to aim at this soldier: the centre of its thorax box, where rounds test it (every skin's
+   * own: the master humanoid's torso turns about a pivot higher than the procedural body's).
+   */
   get chestPos(): THREE.Vector3 {
-    return this.tmp3.copy(this.body.part('torso').worldPos).setY(this.body.part('torso').worldPos.y + 0.3);
+    const torso = this.body.part('torso');
+    const thorax = torso.shapes.find((c) => c.zone === 'thorax');
+    if (!thorax) return this.tmp3.copy(torso.worldPos).setY(torso.worldPos.y + 0.3);
+    return this.tmp3.set(thorax.center[0], thorax.center[1], thorax.center[2]).applyQuaternion(torso.worldQuat).add(torso.worldPos);
   }
 
   // ------------------------------------------------------------ lifecycle
@@ -589,6 +617,7 @@ export class Soldier implements LightSource {
     this.hasGoal = false;
     this.ammo = this.magSize;
     this.reloadTimer = 0;
+    this.leftEasing = false;
     this.crouch = this.crouchTarget = 0;
     this.aimPitch = -0.5;
     this.aimYaw = -0.3;
@@ -902,11 +931,13 @@ export class Soldier implements LightSource {
     const reloading = this.reloadTimer > 0;
     const rk = reloading ? 1 - this.reloadTimer / this.reloadTime : 0;
     const handOff = reloading && rk > 0.2 && rk < 0.62;
-    p.gripL = this.easeLeft(handOff ? this.reloadHand : this.rig.mag && reloading && rk > 0.1 && rk < 0.8 ? this.rig.mag : this.placeSupportGrip(), reloading, dt);
+    // Handguns go one-handed (master bodies) in the carries masterRig.json game.grip.pistol leaves out.
+    const oneHanded = !!this.master && !this.grip!.twoHanded(aimMode);
+    const wasFree = !p.gripL;
+    p.gripL = this.easeLeft(handOff ? this.reloadHand : this.rig.mag && reloading && rk > 0.1 && rk < 0.8 ? this.rig.mag : this.placeSupportGrip(), reloading, wasFree, oneHanded, dt);
     this.syncGloves(p.gripL === this.supportGrip, true);
     if (this.master) {
-      // Handguns go one-handed in the carries masterRig.json game.grip.pistol leaves out.
-      if (p.gripL === this.supportGrip && !this.grip!.twoHanded(aimMode)) p.gripL = null;
+      if (p.gripL === this.supportGrip && oneHanded) p.gripL = null;
       this.holdMaster(aimMode, p.gripL === this.supportGrip, reloading);
     }
     if (this.rig.mag) this.rig.mag.visible = !(reloading && rk > 0.25 && rk < 0.6);

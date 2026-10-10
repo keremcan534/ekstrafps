@@ -4,7 +4,8 @@
 </head>
 <!--
   Third-person weapon holds on every character model: one soldier per faction model, each
-  with a gun, held still in a stance (?mode=aim|ready|low|high, ?gun=ak47|kar98|heavy_pistol|...).
+  with a gun, held still in a stance (?mode=aim|ready|low|high, ?gun=ak47|kar98|heavy_pistol|...;
+  ?mobile=1: the phone's files and low-spec guns).
   window.__sl: { soldiers, set(mode, gun), view(i, 'front'|'side'|'three'|'back'|'top', dist), reach() }.
   Master humanoid factions (Vanta, SABLE, the Warden, the PMC rivals) draw the master body (?master=0: their old
   models); window.__slm drives and measures them (src/dev/masterGameLab.ts).
@@ -40,11 +41,13 @@ const orbit = new OrbitControls(cam, r.domElement);
 orbit.target.set(0, 1.2, 0);
 
 const physics = await Physics.create(1 / 60);
-await Promise.all([loadCharacterModels(false), loadWeaponMeshes(false)]);
+// ?mobile=1: the phone's files and low-spec guns (as Game builds them on a phone).
+const mobile = q.get('mobile') === '1';
+await Promise.all([loadCharacterModels(mobile), loadWeaponMeshes(mobile)]);
 const nav = { walkable: () => true, clearLine: () => true, findPathFor: () => null, requestPath: () => {}, lastTruncated: false, cellAt: () => null };
 const noop = () => {};
 const stub = new Proxy({}, { get: () => noop });
-const deps = { physics, nav, projectiles: stub, impacts: stub, shells: stub, audio: stub, scene };
+const deps = { physics, nav, projectiles: stub, impacts: stub, shells: stub, audio: stub, scene, lowSpec: mobile };
 const hooks = new Proxy({}, { get: () => noop });
 const target = { feet: new THREE.Vector3(0, 0, 30), head: new THREE.Vector3(0, 1.7, 30), chest: new THREE.Vector3(0, 1.35, 30), velocity: new THREE.Vector3(), sprinting: false, crouching: false, alive: false };
 const face = new THREE.Vector3(0, 1.4, 30);

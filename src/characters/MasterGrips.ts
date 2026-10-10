@@ -18,9 +18,10 @@ import data from './master/masterRig.json';
  * One source per gun (masterRig.json `game.grip`; no per-weapon hand code):
  *   1. weapon data: masterRig.json `weapons.<model>` (model space), carried onto the drawn gun by
  *      its model fit (WeaponMeshes.worldFit): the AK-47.
- *   2. fitted frames: masterRig.json `game.grip.fit.<model>` (the rig root's space), fitted on the
- *      drawn gun in the soldier lab (dev/masterGripFit.ts: fingertips, thumb and palm on its
- *      surface, nothing deep inside, the wrist and the reach in bounds).
+ *   2. fitted frames: masterRig.json `game.grip.fit.<model>` (model space, carried onto the drawn
+ *      gun by its model fit like weapon data: the phone's low-spec rig places the model a little
+ *      differently), fitted on the drawn gun in the soldier lab (dev/masterGripFit.ts: fingertips,
+ *      thumb and palm on its surface, nothing deep inside, the wrist and the reach in bounds).
  *   3. handguns: the grip frame from the rig's firing-hand point; two-handed, the support hand
  *      closes round the firing hand the mirror way (its LeftHandWeaponSocket a finger's width on).
  *   4. long guns with a pistol grip (GunGrips finds it on the drawn model): the rule fitted on the
@@ -56,7 +57,7 @@ interface Frames {
 
 const G = data.game.grip;
 const WEAPONS = data.weapons as Record<string, WeaponHoldDef | undefined>;
-/** Fitted frames per gun model: [x, y, z, qx, qy, qz, qw] in the rig root's space. */
+/** Fitted frames per gun model: [x, y, z, qx, qy, qz, qw] in the model's own space (its file's). */
 const FITS = (G as { fit?: Record<string, { right: number[]; left: number[] } | undefined> }).fit ?? {};
 const SOCKET = data.sockets.RightHandWeaponSocket;
 const frames = new Map<string, Frames>();
@@ -175,8 +176,12 @@ function measure(rig: WeaponRig, model: ModelKey, low: boolean, pistol: boolean)
     return { pistol, source: 'data', right: onRig(def.rightGrip), left: onRig(def.leftGrip), butt: v().fromArray(def.butt).applyMatrix4(fit) };
   }
   const fitted = FITS[model];
-  if (fitted) {
-    const at = (a: number[]) => new THREE.Matrix4().compose(v().fromArray(a), new THREE.Quaternion().fromArray(a, 3).normalize(), v().set(1, 1, 1));
+  const wf = fitted ? worldFit(model) : null;
+  if (fitted && wf) {
+    // Model space → the rig, as weapon data: positions through the whole fit, frames turned by its rotation.
+    const fq = new THREE.Quaternion();
+    wf.decompose(v(), fq, v());
+    const at = (a: number[]) => frame(v().fromArray(a).applyMatrix4(wf), fq.clone().multiply(new THREE.Quaternion().fromArray(a, 3).normalize()).toArray());
     return { pistol, source: 'fit', right: at(fitted.right), left: at(fitted.left), butt: rig.butt.clone() };
   }
   const rh = restPoint(rig, rig.rightHand, rig.rightHandRest);

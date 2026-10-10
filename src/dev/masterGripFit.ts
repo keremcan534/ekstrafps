@@ -4,6 +4,8 @@ import { MasterCharacter } from '../characters/MasterCharacter';
 import type { MasterGrip } from '../characters/MasterGrips';
 import type { Digit, Side } from '../characters/master/MasterRig';
 import { getProbes, RigSurface } from './masterGameChecks';
+import { worldFit } from '../weapons/WeaponMeshes';
+import type { ModelKey } from '../weapons/WeaponData';
 
 /**
  * Fits the master humanoid's two hold frames on a third-person gun (soldier-lab.html:
@@ -12,8 +14,9 @@ import { getProbes, RigSurface } from './masterGameChecks';
  * the lab's grip measures (dev/masterGameChecks.ts): the wrapping fingertips and the palm on the
  * gun's surface, the thumb near it, no part of the hand deep inside, the wrist bend, the IK's reach.
  * The hands are separate chains, so each side is fitted alone (a handgun's support hand keeps its
- * place round the firing hand). The result goes to masterRig.json game.grip.fit.<model> (frames in
- * the rig root's space, as MasterGrips makes them).
+ * place round the firing hand). The result goes to masterRig.json game.grip.fit.<model>: frames in
+ * the model's own space (the drawn gun's file), which MasterGrips carries onto any rig the model
+ * dresses through its fit (WeaponMeshes.worldFit), desktop or phone.
  */
 const WRAP: Record<Side, Digit[]> = { R: ['Middle', 'Ring', 'Pinky'], L: ['Index', 'Middle', 'Ring', 'Pinky'] };
 /** Surface search radius in 1 cm cells (beyond it a probe reads as `FAR` and the cost stays smooth). */
@@ -26,7 +29,7 @@ export interface FitReport {
   ms: number;
   before: Record<Side, SideMeasure>;
   after: Record<Side, SideMeasure>;
-  /** Root-space frames: position (m) then quaternion. */
+  /** Model-space frames (the gun's file): position then quaternion. */
   right: number[];
   left: number[];
 }
@@ -203,6 +206,14 @@ export function fitGrip(s: Soldier, model: string, maxEvals = 360): FitReport {
     place(side, best.x);
   }
   const after = { R: measure('R'), L: measure('L') } as Record<Side, SideMeasure>;
-  const frame = (o: THREE.Object3D) => [...o.position.toArray().map((n) => Math.round(n * 1e5) / 1e5), ...o.quaternion.toArray().map((n) => Math.round(n * 1e5) / 1e5)];
+  // Rig root space → the model's own (the inverse of the model's fit onto this rig).
+  const wf = worldFit(model as ModelKey);
+  if (!wf) throw new Error(`${model}: no drawn model to fit on`);
+  const inv = wf.clone().invert();
+  const fq = new THREE.Quaternion();
+  wf.decompose(new THREE.Vector3(), fq, new THREE.Vector3());
+  fq.invert();
+  const r5 = (n: number) => Math.round(n * 1e5) / 1e5;
+  const frame = (o: THREE.Object3D) => [...o.position.clone().applyMatrix4(inv).toArray().map(r5), ...fq.clone().multiply(o.quaternion).toArray().map(r5)];
   return { model, evals, ms: Math.round(performance.now() - t0), before, after, right: frame(grip.right), left: frame(grip.left) };
 }
