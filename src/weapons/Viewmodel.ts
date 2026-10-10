@@ -5,7 +5,7 @@ import { playerConfig } from '../player/PlayerConfig';
 import { feel } from '../config/Feel';
 import { MuzzleFlash } from '../fx/MuzzleFlash';
 import { buildWeaponModel, compactViewRig, type WeaponRig } from './WeaponModels';
-import { buildProfiledRig, type ProfiledView } from './ProfiledRig';
+import { buildProfiledRig, setBeadShown, sightBead, type ProfiledView } from './ProfiledRig';
 import { FirstPersonArms } from './FirstPersonHands';
 import { attachHands, layoutHands } from './HandGrips';
 import type { AnyWeaponHands } from './hands/HandProfile';
@@ -203,6 +203,7 @@ export class Viewmodel {
   private readonly t = { q1: new THREE.Quaternion(), q2: new THREE.Quaternion(), q3: new THREE.Quaternion(), a: new THREE.Vector3(), b: new THREE.Vector3(), c: new THREE.Vector3(), d: new THREE.Vector3(), e: new THREE.Vector3() };
   /** Shot direction this frame, camera space (profiled weapons). */
   private shotDir = new THREE.Vector3(0, 0, -1);
+  private shotRest = new THREE.Vector3();
   private restHold = 0;
   private warnedAt = { solve: -99, rest: -99 };
 
@@ -295,9 +296,22 @@ export class Viewmodel {
     this.scene.environmentIntensity = 0.6 * level;
   }
 
-  /** Old automatic placement: the procedural rig dressed in the model (WeaponMeshes.dressRig). */
+  /**
+   * Old automatic placement: the procedural rig dressed in the model (WeaponMeshes.dressRig).
+   * A model file's iron sights get the bead the procedural front post had (it went with the
+   * procedural parts): on the sight line (tipped by sightTilt) just behind the muzzle, where
+   * the line clears the model's front sight.
+   */
   private legacyRig(w: WeaponData): WeaponRig {
     const r = buildWeaponModel(w.model, false, false, w.sight.sightDistance);
+    let dressed = false;
+    r.root.traverse((o) => (dressed ||= !!o.userData.gunModel));
+    if (dressed && w.sight.type === 'iron') {
+      r.root.updateMatrixWorld(true);
+      const front = -r.sight.worldToLocal(r.muzzle.getWorldPosition(new THREE.Vector3())).z - 0.01;
+      const tilt = r.sightTilt ?? 0;
+      if (front > 0.05) r.sight.add(sightBead()).getObjectByName('SightBead')!.position.set(0, -front * Math.sin(tilt), -front * Math.cos(tilt));
+    }
     compactViewRig(r);
     return r;
   }
@@ -394,6 +408,19 @@ export class Viewmodel {
     return hip - (hip - fov) * recoilFeel().adsZoom;
   }
 
+  /**
+   * Aimed, the gun's field of view over the world's (tan ratio, at most 1): an iron or red-dot
+   * sight is drawn at its profile's sight picture made the feel profile's sightScale bigger,
+   * whatever share of the zoom the world kept (adsFov). 1 on desktop and for magnified optics.
+   */
+  private aimedDraw(): number {
+    const view = this.rig?.view;
+    if (!this.weapon || (view && this.focus)) return 1;
+    const sight = view ? view.profile.ads.fov : this.weapon.data.sight.adsFov!;
+    const t = (hfov: number) => Math.tan((hfovToVfov(hfov) * DEG) / 2);
+    return Math.min(1, t(sight) / recoilFeel().sightScale / t(this.adsFov));
+  }
+
   /** The weapon's own hip FOV (horizontal deg), or null: the player's FOV setting. */
   get hipFov(): number | null {
     return this.rig?.view?.profile.aim?.hipFOV ?? null;
@@ -460,11 +487,14 @@ export class Viewmodel {
 
     // Viewmodel space == camera space. The gun has its own field of view at the hip
     // (player.json viewmodelFov): drawn at a wide world FOV a gun looks small and far off.
-    // Aimed it is the world's, so the sight picture sits over the world as it is.
+    // Aimed it is the world's, so the sight picture sits over the world as it is, or narrower
+    // by aimedDraw() (phones: a bigger sight over a wider world).
     // Old placement only: aimed, the near plane cuts the stock at the eye (a profiled weapon
     // sits where it should and keeps a fixed near plane).
     const mc = input.mainCamera;
-    const fov = mc.fov - Math.max(0, mc.fov - hfovToVfov(playerConfig.viewmodelFov)) * (1 - this.adsAmount);
+    const hipFov = Math.min(mc.fov, hfovToVfov(playerConfig.viewmodelFov));
+    const aimFov = (2 * Math.atan(Math.tan((mc.fov * DEG) / 2) * this.aimedDraw())) / DEG;
+    const fov = hipFov + (aimFov - hipFov) * this.adsAmount;
     const near = view ? VIEW_NEAR : 0.01 + 0.045 * this.m.ads;
     if (Math.abs(this.camera.fov - fov) > 1e-6 || this.camera.aspect !== mc.aspect || Math.abs(this.camera.near - near) > 1e-4) {
       this.camera.fov = fov;
@@ -472,6 +502,7 @@ export class Viewmodel {
       this.camera.near = near;
       this.camera.updateProjectionMatrix();
     }
+    setBeadShown(recoilFeel().sightBead ? smoothstep((this.adsAmount - 0.75) / 0.22) : 0);
     this.flash.update(dt);
     // The weapon in hand only: the fifteen holstered rigs (and the parts merged into
     // their anchors) are hidden. Points under hidden parts are read with getWorldPosition.
@@ -687,7 +718,16 @@ export class Viewmodel {
     const turn = this.t.q1.copy(this.motionQ);
     if (m.sideSign < 0) turn.set(turn.x, -turn.y, -turn.z, turn.w);
     turn.premultiply(this.aimReference.quaternion).multiply(this.t.q3.copy(this.aimReference.quaternion).invert());
+    const rest = this.shotRest.copy(dir);
     dir.applyQuaternion(turn);
+    // Aimed at a narrower field of view than the world's (aimedDraw), the gun's turn shows
+    // that much bigger on screen: the shot goes where the sight is drawn.
+    const k = 1 + (1 / this.aimedDraw() - 1) * this.adsAmount;
+    if (k !== 1 && dir.z < 0 && rest.z < 0) {
+      const rx = rest.x / -rest.z;
+      const ry = rest.y / -rest.z;
+      dir.set(rx + (dir.x / -dir.z - rx) * k, ry + (dir.y / -dir.z - ry) * k, -1).normalize();
+    }
   }
 
   /**

@@ -84,6 +84,8 @@ export interface RecoilFeel {
   aimBack: number;
   moveSpread: number;
   adsZoom: number;
+  sightScale: number;
+  sightBead: boolean;
 }
 
 export const TARKOV = config as unknown as TarkovConfig & { feel: { desktop: RecoilFeel; mobile: RecoilFeel } };

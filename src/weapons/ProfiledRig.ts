@@ -13,7 +13,7 @@ import type { WeaponRig } from './WeaponModels';
  *   WeaponInstance (rig.root, weapon space)
  *   ├─ OrientationRoot (model → weapon) ─ the model file's meshes, untouched
  *   ├─ mag, bolt     moving pieces at their pivots, cut from the model by bone / node name
- *   └─ ADSPoint (rig.sight), MuzzlePoint (rig.muzzle), eject port, laser,
+ *   └─ ADSPoint (rig.sight, an iron sight's bead on the front post), MuzzlePoint (rig.muzzle), eject port, laser,
  *      RightHandTarget / LeftHandTarget (where the hands belong: the wrists' place and turn,
  *      from the profile's `hands`, HandGrips.ts), hand targets riding on the magazine / bolt
  *      for reloads, and the animated hand points (RightHandIK / LeftHandIK, which rest on the
@@ -33,6 +33,30 @@ export interface ProfiledView {
 }
 
 const FORWARD = new THREE.Vector3(0, 0, -1);
+
+/**
+ * An iron sight's fiber-optic bead, as the drawn guns' front posts have (WeaponModels ironFront):
+ * a sight you can find on a small screen. On the post's tip, centred on the sight line: the
+ * point of aim. Drawn over the gun and only when aimed (setBeadShown: the feel profile's
+ * sightBead, phones), when the sight line is clear: a model file's own post can't hide it.
+ */
+const BEAD = { radius: 0.0019, back: 0.003 };
+const BEAD_GEO = new THREE.CircleGeometry(BEAD.radius, 12);
+const BEAD_MAT = new THREE.MeshBasicMaterial({ color: 0xb8ff6a, toneMapped: false, transparent: true, depthTest: false, depthWrite: false });
+
+/** A bead (faces +Z, the eye), named SightBead. */
+export function sightBead(): THREE.Mesh {
+  const bead = new THREE.Mesh(BEAD_GEO, BEAD_MAT);
+  bead.name = 'SightBead';
+  bead.renderOrder = 10;
+  return bead;
+}
+
+/** The bead's opacity: 0 from the hip, 1 aimed (one gun is drawn at a time). */
+export function setBeadShown(a: number): void {
+  BEAD_MAT.opacity = a;
+  BEAD_MAT.visible = a > 0.01;
+}
 
 type Piece = 'body' | 'mag' | 'bolt';
 const MOVING = ['mag', 'bolt'] as const;
@@ -199,6 +223,7 @@ export function buildProfiledRig(profile: Readonly<ViewProfile>, data: WeaponDat
     shellType: data.category === 'pistol' ? 'pistol' : data.category === 'shotgun' ? 'shotgun' : 'rifle',
     view: { profile, orientation, frame: new THREE.Matrix4(), pieces },
   };
+  if (data.sight.type === 'iron') rig.sight.add(sightBead());
   layoutProfiledRig(rig);
   return rig;
 }
@@ -233,6 +258,9 @@ export function layoutProfiledRig(rig: WeaponRig): void {
   adsFrame(p, v.frame);
   rig.sight.position.setFromMatrixPosition(v.frame);
   rig.sight.quaternion.setFromRotationMatrix(v.frame);
+  // The bead faces the eye (+Z of the ADSPoint) from the front post, down the sight line.
+  const radius = W(p.points.sightFront).distanceTo(W(p.points.sightRear));
+  rig.sight.getObjectByName('SightBead')?.position.set(0, 0, -(radius - BEAD.back));
   const muzzle = W(p.points.muzzle);
   const bore = muzzle.clone().sub(W(p.points.boreRear)).normalize();
   rig.muzzle.position.copy(muzzle);
