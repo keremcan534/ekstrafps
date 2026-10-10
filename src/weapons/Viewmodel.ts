@@ -16,6 +16,7 @@ import { WeaponMotionStack } from './motion/WeaponMotionStack';
 import { LEGACY_CUT, MotionOffset, NEUTRAL_TASTE, PROFILED_CUT, type AdsCut } from './motion/MotionTypes';
 import type { MechanicalEvent } from './motion/Interaction';
 import { motionTuning } from './motion/MotionTuning';
+import { recoilFeel } from './TarkovRecoil';
 import type { Weapon } from './Weapon';
 import type { WeaponData } from './WeaponData';
 import type { AmmoData } from './AmmoData';
@@ -380,11 +381,17 @@ export class Viewmodel {
     return view ? view.profile.hip.position : this.weapon!.data.viewmodel!.hipPosition;
   }
 
-  /** Aimed horizontal FOV (deg, 16:9): TrueADS the profile's ADS FOV, FocusAim its aim FOV. */
+  /**
+   * Aimed horizontal FOV (deg, 16:9): TrueADS the profile's ADS FOV, FocusAim its aim FOV. An iron
+   * or red-dot sight keeps the feel profile's share of its zoom (phones: a small screen under the
+   * thumbs needs the view round the sights); a magnified optic keeps its own.
+   */
   get adsFov(): number {
     const view = this.rig?.view;
-    if (!view) return this.weapon!.data.sight.adsFov!;
-    return this.focus ? this.focus.aimFOV : view.profile.ads.fov;
+    if (view && this.focus) return this.focus.aimFOV;
+    const fov = view ? view.profile.ads.fov : this.weapon!.data.sight.adsFov!;
+    const hip = this.hipFov ?? playerConfig.baseFov;
+    return hip - (hip - fov) * recoilFeel().adsZoom;
   }
 
   /** The weapon's own hip FOV (horizontal deg), or null: the player's FOV setting. */

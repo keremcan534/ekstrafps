@@ -8,10 +8,11 @@ import type { TarkovRecoil } from './TarkovRecoil';
  * The VIEW side of recoil, Tarkov's way (the model is TarkovRecoil, kicked by the weapon's
  * recoil layer): the view carries its share of the hands' turn (RecoilCamera, following at
  * CameraSnap) and rolls with the per-shot camera curve. Bullets follow it plus the gun's own
- * turn. When a string of fire is over, the post-recoil offset passes into the base look: the
- * aim stays a little off until the player brings it back. Nothing absorbs the player's pull
- * against recoil (Tarkov doesn't): pull down through a burst and the hands' return carries
- * the aim below once it stops.
+ * turn. How much of the climb the view carries is the platform's feel profile (recoilFeel():
+ * a small share, so the sights rise on screen and the screen stays put); with the profile's
+ * `settle` off a string of fire leaves nothing in the look, the hands come back to where they
+ * were aimed. Nothing absorbs the player's pull against recoil: pull down through a burst and
+ * the hands' return carries the aim below once it stops.
  */
 export class RecoilSystem {
   private model: TarkovRecoil | null = null;

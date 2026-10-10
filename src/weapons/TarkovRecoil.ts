@@ -1,4 +1,5 @@
 import config from '../config/tarkovRecoil.json';
+import { isMobileMode } from '../core/math';
 
 /** One per-shot transformation curve (Tarkov's WeaponRecoilSettings). */
 interface TarkovCurve {
@@ -72,7 +73,26 @@ interface TarkovConfig {
   weapons: Record<string, TarkovWeapon>;
 }
 
-export const TARKOV = config as unknown as TarkovConfig;
+/** How hard the Tarkov numbers hit on this platform (tarkovRecoil.json `feel`, see its notes). */
+export interface RecoilFeel {
+  climb: number;
+  viewShare: number;
+  aimViewShare: number;
+  post: number;
+  settle: boolean;
+  back: number;
+  aimBack: number;
+  moveSpread: number;
+  adsZoom: number;
+}
+
+export const TARKOV = config as unknown as TarkovConfig & { feel: { desktop: RecoilFeel; mobile: RecoilFeel } };
+
+let profile: RecoilFeel | null = null;
+/** The feel profile in use: phones get the light one (minimal climb, no view drift). */
+export function recoilFeel(): RecoilFeel {
+  return (profile ??= isMobileMode() ? TARKOV.feel.mobile : TARKOV.feel.desktop);
+}
 
 /** Tarkov's curves have flat tangents: each segment eases in and out. */
 function sampleCurve(keys: [number, number][], t: number): number {
@@ -94,6 +114,11 @@ const lerp = (a: number, b: number, t: number): number => a + (b - a) * t;
 
 /**
  * Escape from Tarkov's recoil (the 0.14+ model), driven by its own per-weapon numbers.
+ *
+ * How hard it hits is the platform's feel profile (recoilFeel(): tarkovRecoil.json `feel`):
+ * the climb is scaled, the view carries only a small share of it (the sights rise on screen and
+ * come back; the screen doesn't slide up), a string of fire leaves no lasting offset in the look,
+ * and the rearward kick into the shoulder is what you feel. Phones: minimal climb.
  *
  *   hands   Every shot turns the hands: a kick of up × category at RecoilAngle ± RecolDispersion
  *           into a spring that pulls back at returnSpeed with damping. In full auto the kicks
@@ -166,10 +191,10 @@ export class TarkovRecoil {
     return [omega, this.firing ? zeta : 1 - (1 - zeta) * (1 - w.pathDamping)];
   }
 
-  /** The share of the hands' turn the view carries now. */
+  /** The share of the hands' turn the view carries now (the feel profile's, from the hip to aimed). */
   share(): number {
-    const base = Math.min(0.75, this.w.camera * TARKOV.model.cameraShare);
-    return base + (1 - base) * TARKOV.model.aimCameraFollow * this.aim;
+    const f = recoilFeel();
+    return lerp(f.viewShare, f.aimViewShare, this.aim);
   }
 
   /**
@@ -181,11 +206,12 @@ export class TarkovRecoil {
     const M = TARKOV.model;
     const G = TARKOV.globals;
     const I = crouching ? G.intensityCrouch : G.intensityStand;
+    const F = recoilFeel();
     this.shot = this.firing ? this.shot + 1 : 0;
     const n = this.shot + 1;
     if (this.shot === 0) {
-      this.post.x = -lerp(w.postVertical[0], w.postVertical[1], rand());
-      this.post.y = lerp(w.postHorizontal[0], w.postHorizontal[1], rand());
+      this.post.x = -lerp(w.postVertical[0], w.postVertical[1], rand()) * F.post;
+      this.post.y = lerp(w.postHorizontal[0], w.postHorizontal[1], rand()) * F.post;
     }
     const progress = Math.min(1, n / Math.max(1, w.stableShot));
     this.rest.x = this.post.x * progress;
@@ -193,10 +219,10 @@ export class TarkovRecoil {
 
     const spread = n >= w.stableShot ? Math.min(w.stableAngle, w.dispersion + (n - w.stableShot + 1) * w.stableStep) : w.dispersion;
     const a = ((w.angle + (rand() * 2 - 1) * spread) * Math.PI) / 180;
-    const f = w.up * w.category * M.forceToDegPerSec * scale;
+    const f = w.up * w.category * M.forceToDegPerSec * scale * F.climb;
     this.hand.vx += f * Math.sin(a) * I[1];
     this.hand.vy += f * Math.cos(a) * I[0];
-    this.backV += w.back * w.backMult * M.backToMeters * scale * I[2];
+    this.backV += w.back * w.backMult * M.backToMeters * scale * I[2] * F.back;
 
     this.times[this.next] = 0;
     this.aimed[this.next] = aimed;
@@ -261,6 +287,15 @@ export class TarkovRecoil {
   private settle(dt: number): void {
     if (this.firing || (this.rest.x === 0 && this.rest.y === 0)) return;
     const k = 1 - Math.exp(-3 * dt);
+    if (!recoilFeel().settle) {
+      // The hands come back to where they were aimed: the offset fades, nothing passes into the look.
+      this.rest.x -= this.rest.x * k;
+      this.rest.y -= this.rest.y * k;
+      this.post.x -= this.post.x * k;
+      this.post.y -= this.post.y * k;
+      if (Math.abs(this.rest.x) + Math.abs(this.rest.y) < 1e-4) this.rest.x = this.rest.y = 0;
+      return;
+    }
     const dx = this.rest.x * k;
     const dy = this.rest.y * k;
     this.rest.x -= dx;

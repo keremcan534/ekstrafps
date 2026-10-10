@@ -4,7 +4,7 @@ import { feel } from '../../config/Feel';
 import { skillFx } from '../../game/Skills';
 import type { WeaponData } from '../WeaponData';
 import type { AmmoData } from '../AmmoData';
-import { TarkovRecoil } from '../TarkovRecoil';
+import { TarkovRecoil, recoilFeel } from '../TarkovRecoil';
 
 /**
  * The weapon's side of recoil: Escape from Tarkov's model (TarkovRecoil) with each weapon's
@@ -41,7 +41,8 @@ export class RecoilLayer {
       clamp(-(t.hand.y - t.cam.y + c.y) * this.side, -15, 15) * DEG,
       clamp(-c.z * this.side, -10, 10) * DEG,
     );
-    this.rp.set(t.curvePos.x * this.side, t.curvePos.y, t.back + t.curvePos.z);
+    const f = recoilFeel();
+    this.rp.set(t.curvePos.x * this.side, t.curvePos.y, t.back * (1 + (f.aimBack - 1) * ads) + t.curvePos.z);
   }
 
   reset(): void {

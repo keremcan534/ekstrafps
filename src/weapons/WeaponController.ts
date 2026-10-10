@@ -17,6 +17,7 @@ import { Trails } from '../fx/Trails';
 import { Weapon, type WeaponListener } from './Weapon';
 import { liveWeaponId, type WeaponData } from './WeaponData';
 import { RecoilSystem } from './RecoilSystem';
+import { recoilFeel } from './TarkovRecoil';
 import { Viewmodel } from './Viewmodel';
 import { ProjectileSystem, type ProjectileHitReport } from './Ballistics';
 import { computeHandling, type Handling } from './Handling';
@@ -421,7 +422,7 @@ export class WeaponController implements WeaponListener {
     // aim comes from the weapon itself. On the move you can't hold it steady: running and
     // gunning from the hip scatters, aimed fire on the move a little, mid-air a lot.
     const moving = Math.min(1, Math.max(0, (this.deps.player.horizontalSpeed - 0.6) / 4));
-    const moveDeg = moving * (2.2 - 1.5 * this.adsAmount) + (this.deps.player.grounded ? 0 : 3);
+    const moveDeg = (moving * (2.2 - 1.5 * this.adsAmount) + (this.deps.player.grounded ? 0 : 3)) * recoilFeel().moveSpread;
     const coneRad = (this.handling.dispersionDeg * 0.5 + moveDeg) * DEG;
     const v0 = muzzleVelocity(ammo, d.barrelLength);
     this.lastMuzzleVelocity = v0;

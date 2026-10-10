@@ -46,6 +46,14 @@ export function controlPreference(): 'auto' | 'pc' | 'mobile' {
   }
 }
 
+/** Phone controls (touch) or PC, decided as Game does: ?touch / ?mouse, the menu choice, else the device. */
+export function isMobileMode(): boolean {
+  if (typeof window === 'undefined') return false;
+  const params = new URLSearchParams(location.search);
+  const pref = controlPreference();
+  return params.has('touch') || (!params.has('mouse') && (pref === 'mobile' || (pref === 'auto' && isTouchDevice())));
+}
+
 /** Phone/tablet user agent (incl. iPadOS, which reports itself as a Mac with touch points). */
 const isMobileUA = (): boolean => {
   const uaData = (navigator as Navigator & { userAgentData?: { mobile?: boolean } }).userAgentData;
