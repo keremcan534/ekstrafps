@@ -30,8 +30,9 @@ textures/<look>/orm.webp            1024: R = occlusion, G = roughness, B = meta
 textures/<look>/look.json           only in a colour version of another look: {"maps": "<look>"} - it has
                                     just its base colour and shares that look's normal / ORM maps
 gear/<kind>/<id>.glb + <id>.json    kinds: helmets, masks, nvg, vests, backpacks, pouches, radios, hats, coats
-gear/<kind>/<id>_lod.glb            the item decimated (scripts/blender/lod_gear.py; same UVs and skin, no
-                                    materials): drawn past the far distance on desktop, always on phones
+gear/<kind>/<id>_lod.glb, _far.glb  the item decimated (scripts/blender/lod_gear.py; same UVs and skin, no
+                                    materials): _lod from the mid distance on desktop and up close on
+                                    phones, _far past the far distance (see Distance bands)
 gear/<kind>/<id>/<look>/            the item's texture version for a look (`variants`)
 characters/<id>.json                vanta, black_division, warden, pmc (bravo), pmc_green (charlie), pmc_grey (delta)
 animations/humanoid/*.glb           clips on the canonical skeleton (lab test clips only, see Animation)
@@ -61,7 +62,11 @@ on the master's own UVs; sources in production/assets/src/chars/master/texture/<
   in the master's rest pose; the runtime rebinds it to the body's skeleton by bone name (vests,
   belts, coats - anything that bends with the torso or legs).
 - Optional `hides`: names of body regions the gear covers (for future culling), `variants`: look
-  name -> texture override folder.
+  name -> texture override folder (made by scripts/gear_variants.json), `armor`:
+  `{ "zone": "head" | "thorax", "surface": "helmet" | "armor", "armor": 30 }` - the protection it
+  gives. A character's head crown and thorax boxes take the best `armor` worn on that zone, or are
+  flesh: a cap is not a helmet (src/targets/MasterBody.ts). All three live in
+  scripts/blender/fit_gear.json, so re-fitting writes them back.
 - Gear built on the body itself instead of fitted from a Meshy model: the Warden's greatcoat
   (scripts/blender/build_coat.py) and the PMC backpack's shoulder straps
   (scripts/blender/build_straps.py: laid over the plate carrier, skinned like it).
@@ -90,6 +95,19 @@ is authored on this same skeleton and drives the same retarget.
   finger poses stay the shared library's, so on grips far from the AK's shape (the SVD's thumbhole
   stock, the PPSh's and Kar98k's wooden wrists, the pistol) a finger or the thumb can sit up to
   ~1-2 cm off; per-gun finger curl would be the next step.
+
+## Distance bands
+Near: LOD1 body (phones LOD2) and full gear (phones `_lod`); mid, desktop only, past 8.5 m (back
+under 7.5 m): LOD2 body and `_lod` gear; far, past 14 m (Humanoid): LOD3 body and `_far` gear (or
+`_lod`). The gear follows the body whenever it is drawn, settled corpses too. Textures: desktop look
+colour 2048 / maps 1024, gear colour 1024 / maps 512; phones 1024 / 512 and 512 / 256; all uploaded
+at boot (Game warm-up, masterTextures()). Body materials are front-faced (the body is closed).
+
+## Rebuilding
+`node scripts/build-master.mjs --from=<stage>` (body, skeleton, LODs; a stage at or before `uv`
+changes the UVs) and `node scripts/build-gear.mjs [--from=|--only=looks|fit|coat|straps|variants|lod]`
+(looks, gear fits, coat, straps, gear versions, gear LODs; no Meshy calls). Then soldier-lab.html
+(`__slm.checks()`, `?mobile=1` for the phone path) and scripts/character-preview.cjs.
 
 ## Rules
 - Weapon holds: right hand owns the weapon via RightHandWeaponSocket, left hand two-bone IK, twist

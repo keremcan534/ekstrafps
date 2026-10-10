@@ -8,5 +8,10 @@
     "upper_arms",
     "forearms",
     "thighs"
-  ]
+  ],
+  "armor": {
+    "zone": "thorax",
+    "surface": "armor",
+    "armor": 60
+  }
 }

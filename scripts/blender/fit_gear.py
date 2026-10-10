@@ -1219,10 +1219,11 @@ def run_item(m, cfg, item_id, spec, report, fitted, poses):
             info['poses'] = pose_checks(m, obj, poses)
             log(f"  poses: {info['poses']}")
         data = {'id': item_id, 'kind': spec['kind'], 'model': f'{item_id}.glb', 'attach': 'skinned'}
-    if spec.get('hides'):
-        data['hides'] = spec['hides']
-    if spec.get('variants'):
-        data['variants'] = spec['variants']
+    # Data the fit doesn't make, kept in fit_gear.json so a re-run writes it back: covered body
+    # regions, look versions (gear-variant.py folders) and ballistic protection.
+    for key in ('hides', 'variants', 'armor'):
+        if spec.get(key):
+            data[key] = spec[key]
     write_json(os.path.join(out_dir, f'{item_id}.json'), data)
     info.update({'glb': os.path.relpath(glb, ROOT).replace(os.sep, '/'), 'bytes': os.path.getsize(glb),
                  'tris': len(obj.data.polygons), 'textures': textures, 'seconds': round(time.time() - t0, 1)})

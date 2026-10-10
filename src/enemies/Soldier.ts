@@ -618,6 +618,7 @@ export class Soldier implements LightSource {
     this.ammo = this.magSize;
     this.reloadTimer = 0;
     this.leftEasing = false;
+    this.master?.reset();
     this.crouch = this.crouchTarget = 0;
     this.aimPitch = -0.5;
     this.aimYaw = -0.3;

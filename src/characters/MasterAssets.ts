@@ -8,18 +8,23 @@ import data from './master/masterRig.json';
  * The master humanoid's files for the game (src/characters/README.md is the contract), loaded
  * once and shared by every character built on it:
  *
- *   body     master/master_lod1.glb (desktop) or master_lod2.glb (phones) for near bodies,
- *            master_lod3.glb past the far distance; a missing or broken LOD falls back to the
- *            next finer one, down to master_humanoid_rigged.glb (LOD0). One skeleton for all:
- *            the far geometry is re-indexed onto the near body's bone order by name.
+ *   body     master/master_lod1.glb (desktop) or master_lod2.glb (phones) for near bodies, on
+ *            desktop master_lod2.glb from the mid distance (MasterCharacter), master_lod3.glb past
+ *            the far distance; a missing or broken LOD falls back to the next finer one, down to
+ *            master_humanoid_rigged.glb (LOD0). One skeleton for all: the mid and far geometry
+ *            are re-indexed onto the near body's bone order by name.
  *   looks    textures/<look>/{base_color,normal,orm}.webp (phones: base_color_1k, normal_512,
  *            orm_512) filling the body's "Body" material; a missing look falls back to "master",
  *            then to a plain material. A colour version of another look (textures/<look>/look.json
  *            {"maps": <look>}) has only its base colour and shares that look's normal / ORM maps.
  *   people   characters/<id>.json { look, gear[] }; missing: the look named like the id, no gear.
- *   gear     gear/<kind>/<id>.json + its GLB (socket or skinned); a missing one is left off. Its LOD
- *            (<id>_lod.glb, scripts/blender/lod_gear.py: the same mesh decimated, no materials) is
- *            drawn past the body's far distance on desktop, always on phones.
+ *   gear     gear/<kind>/<id>.json + its GLB (socket or skinned); a missing one is left off. Its
+ *            light versions (scripts/blender/lod_gear.py: the same mesh decimated, no materials):
+ *            <id>_lod.glb from the mid distance on desktop and always on phones, <id>_far.glb past
+ *            the far distance.
+ *   textures desktop: look colour 2048, look maps and gear colour 1024, gear maps 512; phones:
+ *            look colour 1024, gear colour 512, maps 512 / 256 (masterTextures() lists them all,
+ *            for an upload before play).
  *
  * Every file is looked up by fetch at load and nothing fails hard: what is missing is listed
  * (`missing`) and the body is drawn with what there is. The game height is ONE scale for every
@@ -49,8 +54,19 @@ export interface MasterGear {
   variants: Record<string, string>;
   /** This wearer's look's version of the item's material (its variant), if it has one. */
   material?: THREE.Material;
-  /** Far geometry of the item's one mesh (skin in the item's bone order), or null: none (phones: already drawn). */
+  /** The item's mid geometry (its one mesh; skin in the item's bone order), or null: none (phones: it is the near one). */
   lod: THREE.BufferGeometry | null;
+  /** Past the far distance (null: the mid one, or the item itself). */
+  far: THREE.BufferGeometry | null;
+  /** Ballistic protection it gives (the hit zone's box takes it: MasterBody), or null: none. */
+  armor: GearArmor | null;
+}
+
+/** A gear item's protection: the zone it covers, the surface rounds hit and its rating (plates ~40, helmets ~30). */
+export interface GearArmor {
+  zone: 'head' | 'thorax';
+  surface: 'armor' | 'helmet';
+  armor: number;
 }
 
 export interface MasterPerson {
@@ -73,6 +89,8 @@ export interface MasterAssets {
   /** The near body, bound and checked (a template: characters clone it). */
   rig: MasterRig;
   near: THREE.BufferGeometry;
+  /** From the mid distance (desktop; null: none, the near body is drawn). */
+  mid: THREE.BufferGeometry | null;
   /** Past the far distance (null: none, the near body is drawn). */
   far: THREE.BufferGeometry | null;
   /** The body's own height (m, its top over the floor) and the one scale to the game's height. */
@@ -172,13 +190,19 @@ async function load(mobile: boolean): Promise<MasterAssets | null> {
   if (!near || !rig) throw new Error(`no usable master body (${missing.join('; ')})`);
   for (const w of rig.report.warnings) console.warn('[master rig]', w);
 
-  let far: THREE.BufferGeometry | null = null;
-  const lod3 = near.url.endsWith('master_lod3.glb') ? null : await body('master_lod3');
-  if (lod3) {
-    const bad = wholeBody(lod3.mesh.geometry, rig) ?? sameSkeleton(lod3.mesh, near.mesh);
-    if (bad) missing.push(`${lod3.url} (${bad})`);
-    else far = reindex(lod3.mesh, near.mesh);
-  }
+  // Lighter bodies on the near one's skeleton: mid (desktop only: phones are near on LOD2) and far.
+  const lighter = async (file: string) => {
+    if (near!.url.endsWith(`${file}.glb`)) return null;
+    const b = await body(file);
+    if (!b) return null;
+    const bad = wholeBody(b.mesh.geometry, rig!) ?? sameSkeleton(b.mesh, near!.mesh);
+    if (bad) {
+      missing.push(`${b.url} (${bad})`);
+      return null;
+    }
+    return reindex(b.mesh, near!.mesh);
+  };
+  const [mid, far] = await Promise.all([mobile ? null : lighter('master_lod2'), lighter('master_lod3')]);
 
   near.mesh.geometry.computeBoundingBox();
   const height = near.mesh.geometry.boundingBox!.max.y;
@@ -221,7 +245,7 @@ async function load(mobile: boolean): Promise<MasterAssets | null> {
     }),
   );
   if (missing.length) console.info(`[master] using fallbacks for: ${missing.join(', ')}`);
-  loaded = { rig, near: near.mesh.geometry, far, height, scale, ankleHeight, hang, people, missing };
+  loaded = { rig, near: near.mesh.geometry, mid, far, height, scale, ankleHeight, hang, people, missing };
   return loaded;
 }
 
@@ -251,6 +275,25 @@ async function gearLod(item: THREE.Object3D, url: string, loader: GLTFLoader, mi
     missing.push(`${url} (${String(e)})`);
     return null;
   }
+}
+
+/** Every texture the master characters draw with (looks, gear, gear versions): upload them before play. */
+export function masterTextures(): THREE.Texture[] {
+  const out = new Set<THREE.Texture>();
+  const add = (m: THREE.Material | THREE.Material[] | undefined) => {
+    for (const mt of Array.isArray(m) ? m : m ? [m] : []) {
+      const s = mt as THREE.MeshStandardMaterial;
+      for (const t of [s.map, s.normalMap, s.roughnessMap, s.metalnessMap, s.aoMap, s.emissiveMap]) if (t) out.add(t);
+    }
+  };
+  for (const p of loaded?.people.values() ?? []) {
+    add(p.look.material);
+    for (const g of p.gear) {
+      add(g.material);
+      g.scene.traverse((o) => add((o as THREE.Mesh).material));
+    }
+  }
+  return [...out];
 }
 
 /** Why a body LOD can't stand in for the whole body (null: it can): it must reach the floor and the top of the head. */
@@ -344,7 +387,7 @@ function hangingPose(rig: MasterRig): MasterHang {
  * PBR material like `base` (side, name), or null without a base colour. Desktop at most 2048 px
  * (a 4K hero texture would cost 64 MB a map); phones 1K colour, 512 maps.
  */
-async function textureSet(dir: string, mobile: boolean, base: THREE.Material, mapsDir = dir): Promise<THREE.MeshStandardMaterial | null> {
+async function textureSet(dir: string, mobile: boolean, base: THREE.Material, mapsDir = dir, caps = LOOK_CAPS, side = base.side): Promise<THREE.MeshStandardMaterial | null> {
   const files = mobile
     ? [['base_color_1k.webp', 'base_color.webp'], ['normal_512.webp', 'normal.webp'], ['orm_512.webp', 'orm.webp']]
     : [['base_color.webp'], ['normal.webp'], ['orm.webp']];
@@ -363,7 +406,7 @@ async function textureSet(dir: string, mobile: boolean, base: THREE.Material, ma
   const [colour, normal, orm] = await Promise.all(files.map((names, i) => (i === 0 ? first(names) : first(names, mapsDir))));
   if (!colour) return null;
   colour.colorSpace = THREE.SRGBColorSpace;
-  const m = new THREE.MeshStandardMaterial({ map: colour, side: base.side, roughness: 1, metalness: 1 });
+  const m = new THREE.MeshStandardMaterial({ map: colour, side, roughness: 1, metalness: 1 });
   m.name = base.name;
   if (normal) m.normalMap = normal;
   if (orm) {
@@ -375,15 +418,20 @@ async function textureSet(dir: string, mobile: boolean, base: THREE.Material, ma
     m.roughness = 0.85;
     m.metalness = 0;
   }
-  capTextures([m], mobile ? 1024 : 2048, mobile ? 512 : 2048);
+  capTextures([m], ...caps(mobile));
   return m;
 }
+
+/** [colour, maps] px: a look fills a body up close; gear is small on screen, its maps more so. */
+const LOOK_CAPS = (mobile: boolean): [number, number] => (mobile ? [1024, 512] : [2048, 1024]);
+const GEAR_CAPS = (mobile: boolean): [number, number] => (mobile ? [512, 256] : [1024, 512]);
 
 /** A look's material: its textures if they are there, else the "master" look's, else plain. */
 async function loadLook(name: string, mobile: boolean, base: THREE.Material, missing: string[], looks: Map<string, Promise<MasterLook>>): Promise<MasterLook> {
   const dir = `${ROOT}textures/${name}/`;
   const shared = (await json<{ maps?: string }>(`${dir}look.json`))?.maps;
-  const m = await textureSet(dir, mobile, base, shared ? `${ROOT}textures/${shared}/` : dir);
+  // The body is closed: front faces only (half the fragments, in the shadow pass too).
+  const m = await textureSet(dir, mobile, base, shared ? `${ROOT}textures/${shared}/` : dir, LOOK_CAPS, THREE.FrontSide);
   if (m) return { name, material: m, textured: true };
   missing.push(`${dir}base_color.webp`);
   if (name !== 'master') {
@@ -404,11 +452,13 @@ async function loadVariant(g: MasterGear, folder: string, mobile: boolean, missi
     if (!base && (o as THREE.Mesh).isMesh) base = (o as THREE.Mesh).material as THREE.Material;
   });
   const dir = `${ROOT}gear/${g.kind}/${folder}/`;
-  const m = base ? await textureSet(dir, mobile, base) : null;
+  const m = base ? await textureSet(dir, mobile, base, dir, GEAR_CAPS) : null;
   if (!m) missing.push(`${dir}base_color.webp`);
   // A colour-only version keeps the item's own normal / ORM maps.
   const own = base as THREE.MeshStandardMaterial | null;
   if (m && own?.isMeshStandardMaterial) {
+    // The item's normal-map sign: glTF gear has no tangents, and the loader flips green for that.
+    m.normalScale.copy(own.normalScale);
     if (!m.normalMap && own.normalMap) m.normalMap = own.normalMap;
     if (!m.roughnessMap && !m.metalnessMap) {
       m.aoMap = own.aoMap;
@@ -449,6 +499,7 @@ interface GearFile {
   quaternion?: number[];
   scale?: number;
   variants?: Record<string, string>;
+  armor?: GearArmor;
 }
 
 /** A gear item ("<kind>/<id>"): its JSON and GLB, or null (missing: left off). */
@@ -467,16 +518,19 @@ async function loadGear(ref: string, loader: GLTFLoader, mobile: boolean, missin
   }
   try {
     const gltf = await loader.loadAsync(glb);
-    // The item's own textures, capped like the looks' (phones: 1K colour, 512 maps).
+    // The item's own textures, capped (GEAR_CAPS).
     const mats: THREE.Material[] = [];
     gltf.scene.traverse((o) => {
       const m = (o as THREE.Mesh).material;
       if ((o as THREE.Mesh).isMesh) mats.push(...(Array.isArray(m) ? m : [m]));
     });
-    capTextures(mats, mobile ? 1024 : 2048, mobile ? 512 : 2048);
-    let lod = await gearLod(gltf.scene, glb.replace(/\.glb$/, '_lod.glb'), loader, missing);
+    capTextures(mats, ...GEAR_CAPS(mobile));
+    let [lod, far] = await Promise.all([
+      gearLod(gltf.scene, glb.replace(/\.glb$/, '_lod.glb'), loader, missing),
+      gearLod(gltf.scene, glb.replace(/\.glb$/, '_far.glb'), loader, missing),
+    ]);
     if (lod && mobile) {
-      // Phones draw the light version at every distance.
+      // Phones draw the mid version up close.
       gltf.scene.traverse((o) => {
         if ((o as THREE.Mesh).isMesh) (o as THREE.Mesh).geometry = lod!;
       });
@@ -493,6 +547,8 @@ async function loadGear(ref: string, loader: GLTFLoader, mobile: boolean, missin
       scene: gltf.scene,
       variants: def.variants ?? {},
       lod,
+      far,
+      armor: def.armor ?? null,
     };
   } catch (e) {
     missing.push(`${glb} (${String(e)})`);

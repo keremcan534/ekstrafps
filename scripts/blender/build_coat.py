@@ -2,7 +2,9 @@
 
   node scripts/blender.mjs scripts/blender/build_coat.py build     -> gear/warden_coat/coat_base.glb (UV'd, for texturing)
   node scripts/meshy-gear.mjs retexture-file warden_coat <coat_base.glb> "<prompt>"   (Meshy paints it on these UVs)
-  node scripts/blender.mjs scripts/blender/build_coat.py finish    -> public/assets/characters/gear/coats/warden_coat.glb + .json
+  node scripts/blender.mjs scripts/blender/build_coat.py finish [<textured.glb>]
+                                    -> public/assets/characters/gear/coats/warden_coat.glb + .json
+                                       (the painted coat: COAT['texture'] unless given)
 
 Shape (all numbers in COAT below, landmarks from the skeleton and the mesh):
   shell   the body's torso and arms (a decimated copy of the rest mesh) cut at the neck, the wrists
@@ -52,6 +54,8 @@ COAT = {
     'knee_calf': 0.5,        # calf share of the front panel's leg weights below the knee
     'belt_z': 1.17,          # the coat's belt (natural waist)
     'collar_back': 0.065, 'collar_front': 0.03, 'collar_out': 0.012,
+    # The painted coat (a Meshy retexture of coat_base.glb on its own UVs; gear.json warden_coat r2).
+    'texture': 'production/assets/src/chars/master/gear/warden_coat/r2_textured.glb',
 }
 OUT_SRC = 'production/assets/src/chars/master/gear/warden_coat'
 OUT = 'public/assets/characters/gear/coats'
@@ -452,7 +456,8 @@ def main():
         log(f'coat base: {len(obj.data.vertices)} verts, {tris} tris -> {path}')
     else:
         # finish: our coat (geometry, UVs) + the textures Meshy painted on those UVs, skinned.
-        textured = sys.argv[sys.argv.index('--') + 2]
+        rest = sys.argv[sys.argv.index('--') + 2:]
+        textured = rest[0] if rest else COAT['texture']
         # The saved build scene: the master (armature + body) and the coat.
         m = fg.Master(dict(cfg, master=dict(cfg['master'], blend=OUT_SRC + '/coat_base.blend')))
         obj = bpy.data.objects['warden_coat']
@@ -482,8 +487,10 @@ def main():
         fg.export_skinned(m, obj, g, V, W, allowed, np.eye(3), path)
         poses = {n: json.load(open(fg.rel(f'production/assets/src/chars/master/rig/poses/{n}.json'))) for n in cfg.get('poses', [])}
         checks = fg.pose_checks(m, obj, poses)
+        # Plates under the coat (the old commander's heavier kit): the thorax takes them.
         data = {'id': 'warden_coat', 'kind': 'coats', 'model': 'warden_coat.glb', 'attach': 'skinned',
-                'hides': ['torso', 'upper_arms', 'forearms', 'thighs']}
+                'hides': ['torso', 'upper_arms', 'forearms', 'thighs'],
+                'armor': {'zone': 'thorax', 'surface': 'armor', 'armor': 60}}
         fg.write_json(fg.rel(os.path.join(OUT, 'warden_coat.json')), data)
         rep_path = fg.rel(os.path.join(cfg['sources'], 'fit_report.json'))
         rep = json.load(open(rep_path)) if os.path.exists(rep_path) else {}

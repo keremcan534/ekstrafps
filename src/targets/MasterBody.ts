@@ -1,6 +1,6 @@
 import * as THREE from 'three';
-import type { HumanoidSkin, PartDef, PartName } from './Humanoid';
-import { masterAssets } from '../characters/MasterAssets';
+import type { ColliderDef, HumanoidSkin, PartDef, PartName } from './Humanoid';
+import { masterAssets, type MasterPerson } from '../characters/MasterAssets';
 import { MasterCharacter } from '../characters/MasterCharacter';
 import data from '../characters/master/masterRig.json';
 
@@ -18,7 +18,8 @@ export function masterPerson(palette: string): string | null {
  * arm, −X; Humanoid takes the side signs from these joints). Hitboxes come from the faction's
  * procedural skin `base` (zones, armour, masses): limbs scaled to the master's limb lengths, the
  * core by its height, the torso's boxes at the same heights over the pelvis as on `base` (the
- * master's torso turns about Spine1, higher than the procedural pivot). Null when the master isn't
+ * master's torso turns about Spine1, higher than the procedural pivot). Protection is what the
+ * character wears (gear `armor`, see protect()), not the procedural kit's. Null when the master isn't
  * loaded or the palette has no master character.
  */
 export function masterSkin(palette: string, base: HumanoidSkin): HumanoidSkin | null {
@@ -87,7 +88,7 @@ export function masterSkin(palette: string, base: HumanoidSkin): HumanoidSkin | 
       pos: pivot[p.name],
       side: sideOf[p.name],
       build: () => {},
-      colliders: p.colliders.map((c) => ({
+      colliders: protect(p.name, p.colliders, person).map((c) => ({
         ...c,
         half: [c.half[0] * Math.sqrt(s), c.half[1] * s, c.half[2] * Math.sqrt(s)] as V3,
         center: [c.center[0] * s, c.center[1] * s + dy, c.center[2] * s] as V3,
@@ -107,4 +108,38 @@ export function masterSkin(palette: string, base: HumanoidSkin): HumanoidSkin | 
     handGrip: [0, -(forearm + hand), 0],
     visual: (h) => new MasterCharacter(a, person, h),
   };
+}
+
+/** The procedural kit's helmet box (crown over the head), for a hooded kit that has none. */
+const CROWN: ColliderDef = { half: [0.125, 0.065, 0.135], center: [0, 0.265, 0], mass: 2, zone: 'head', surface: 'flesh' };
+
+/**
+ * A part's boxes with the protection the character wears: the head's crown box and the thorax
+ * take the worn gear's `armor` (the best of what covers that zone), or are flesh when nothing
+ * does - a cap is not a helmet, and a helmet protects even on a kit that had none.
+ */
+function protect(part: PartName, colliders: ColliderDef[], person: MasterPerson): ColliderDef[] {
+  const worn = (zone: 'head' | 'thorax') => {
+    let best: { surface: 'armor' | 'helmet'; armor: number } | null = null;
+    for (const g of person.gear) if (g.armor?.zone === zone && (!best || g.armor.armor > best.armor)) best = g.armor;
+    return best;
+  };
+  const cover = (c: ColliderDef, a: ReturnType<typeof worn>): ColliderDef => {
+    const { surface: _s, armor: _a, ...flesh } = c;
+    void _s;
+    void _a;
+    return a ? { ...flesh, surface: a.surface, armor: a.armor } : { ...flesh, surface: 'flesh' };
+  };
+  if (part === 'torso') {
+    const a = worn('thorax');
+    return colliders.map((c) => (c.zone === 'thorax' ? cover(c, a) : c));
+  }
+  if (part === 'head') {
+    const a = worn('head');
+    // The crown: the kit's helmet box, else (a hooded kit) one added when a helmet is worn.
+    const crown = colliders.findIndex((c) => c.surface === 'helmet' || c.armor !== undefined);
+    if (crown >= 0) return colliders.map((c, i) => (i === crown ? cover(c, a) : c));
+    return a ? [...colliders, cover(CROWN, a)] : colliders;
+  }
+  return colliders;
 }

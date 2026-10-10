@@ -7,5 +7,10 @@
     "chest",
     "back",
     "abdomen"
-  ]
+  ],
+  "armor": {
+    "zone": "thorax",
+    "surface": "armor",
+    "armor": 40
+  }
 }

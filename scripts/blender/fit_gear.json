@@ -33,7 +33,12 @@
       ],
       "interior": 0.8,
       "drop": 40,
-      "top_gap": 0.035
+      "top_gap": 0.035,
+      "armor": {
+        "zone": "head",
+        "surface": "helmet",
+        "armor": 30
+      }
     },
     "bd_helmet": {
       "kind": "helmets",
@@ -54,7 +59,12 @@
       ],
       "interior": 0.8,
       "drop": 40,
-      "top_gap": 0.035
+      "top_gap": 0.035,
+      "armor": {
+        "zone": "head",
+        "surface": "helmet",
+        "armor": 30
+      }
     },
     "warden_hat": {
       "kind": "hats",
@@ -88,7 +98,11 @@
       "hides": [
         "scalp",
         "hair"
-      ]
+      ],
+      "variants": {
+        "pmc_green": "pmc_cap/pmc_green",
+        "pmc_grey": "pmc_cap/pmc_grey"
+      }
     },
     "bd_mask": {
       "kind": "masks",
@@ -168,7 +182,9 @@
       "clearance": 0.012,
       "sigma": 0.03,
       "variants": {
-        "black_division": "plate_carrier/black_division"
+        "black_division": "plate_carrier/black_division",
+        "pmc_green": "plate_carrier/pmc_green",
+        "pmc_grey": "plate_carrier/black_division"
       },
       "hides": [
         "chest",
@@ -178,6 +194,11 @@
       "bones": "torso_arms",
       "caps": {
         "UpperArm": 0.35
+      },
+      "armor": {
+        "zone": "thorax",
+        "surface": "armor",
+        "armor": 40
       }
     },
     "vanta_vest": {
@@ -199,6 +220,11 @@
       "bones": "torso_arms",
       "caps": {
         "UpperArm": 0.35
+      },
+      "armor": {
+        "zone": "thorax",
+        "surface": "armor",
+        "armor": 40
       }
     },
     "pouches": {
@@ -233,7 +259,11 @@
           "axis": "y",
           "behind": 0.74
         }
-      ]
+      ],
+      "variants": {
+        "pmc_green": "pmc_backpack/pmc_green",
+        "pmc_grey": "pmc_backpack/pmc_grey"
+      }
     },
     "radio": {
       "kind": "radios",

@@ -1,0 +1,11 @@
+{
+  "notes": "How every gear look version (gear/<kind>/<item>/<folder>/, named by the item JSON's `variants`) is made, run by scripts/build-gear.mjs with scripts/gear-variant.py: retexture = a Meshy retexture of the item's source on its own UVs (production/assets/src/chars/master/gear/, credits spent once), recolour = the item's main cloth colour to R,G,B (shading kept), solid = a flat colour (8 x 8 base colour).",
+  "vests/plate_carrier/black_division": { "retexture": "plate_carrier/variant_black_division.glb" },
+  "vests/plate_carrier/pmc_green": { "recolour": [96, 102, 72] },
+  "backpacks/pmc_backpack/pmc_green": { "recolour": [96, 102, 72] },
+  "backpacks/pmc_backpack/pmc_grey": { "recolour": [70, 72, 74] },
+  "hats/pmc_cap/pmc_green": { "recolour": [96, 102, 72] },
+  "hats/pmc_cap/pmc_grey": { "recolour": [58, 60, 62] },
+  "backpacks/pmc_backpack_straps/pmc_green": { "solid": [84, 90, 63] },
+  "backpacks/pmc_backpack_straps/pmc_grey": { "solid": [62, 64, 66] }
+}

@@ -19,5 +19,10 @@
   "hides": [
     "scalp",
     "hair"
-  ]
+  ],
+  "armor": {
+    "zone": "head",
+    "surface": "helmet",
+    "armor": 30
+  }
 }

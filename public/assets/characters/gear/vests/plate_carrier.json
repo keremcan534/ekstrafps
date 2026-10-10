@@ -12,5 +12,10 @@
     "black_division": "plate_carrier/black_division",
     "pmc_green": "plate_carrier/pmc_green",
     "pmc_grey": "plate_carrier/black_division"
+  },
+  "armor": {
+    "zone": "thorax",
+    "surface": "armor",
+    "armor": 40
   }
 }

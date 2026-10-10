@@ -260,6 +260,8 @@ export function measureMaster(s: Soldier, withSurface = true): MasterMeasure | n
   gunRoot.updateWorldMatrix(true, false);
   out.weaponUp = col(gunRoot.matrixWorld, 1, t.a).y;
   const P = getProbes();
+  // (The probes are vertices of the near body: a body in its mid or far band is measured without them.)
+  if (m.mesh.geometry !== m.near) withSurface = false;
   let surface = withSurface ? surfaces.get(gunRoot) : undefined;
   if (withSurface && !surface) surfaces.set(gunRoot, (surface = new RigSurface(gunRoot)));
   const toRoot = new THREE.Matrix4().copy(gunRoot.matrixWorld).invert().multiply(rig.mesh.matrixWorld);

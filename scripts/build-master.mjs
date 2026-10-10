@@ -1,7 +1,9 @@
 #!/usr/bin/env node
 /**
  * MASTER_HUMANOID_RIG from the approved c12 source, end to end (Blender headless, no Meshy calls):
- *   node scripts/build-master.mjs [--from=cleanup|remesh|uv|bake|rig|lod|clips|views] [--faces=46000]
+ *   node scripts/build-master.mjs --from=cleanup|remesh|uv|bake|rig|lod|clips|views [--faces=46000]
+ *   (--from is required: from `uv` or earlier the UVs change, and every look and gear fit with them -
+ *   rebuild those after with `node scripts/build-gear.mjs`)
  *
  *   cleanup  scripts/blender/cleanup_master.py   c12 -> c12_clean.glb (only if every gate check passes)
  *   remesh   scripts/blender/remesh_master.py    -> master_remesh.glb (voxel + QuadriFlow, dense hands /
@@ -31,9 +33,13 @@ import { fileURLToPath } from 'node:url';
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const M = 'production/assets/src/chars/master';
 const args = process.argv.slice(2);
-const from = (args.find((a) => a.startsWith('--from=')) ?? '--from=cleanup').slice(7);
+const from = args.find((a) => a.startsWith('--from='))?.slice(7);
 const faces = (args.find((a) => a.startsWith('--faces=')) ?? '--faces=46000').slice(8);
 const STAGES = ['cleanup', 'remesh', 'uv', 'bake', 'rig', 'lod', 'clips', 'views'];
+if (!from || !STAGES.includes(from)) {
+  console.error(`usage: node scripts/build-master.mjs --from=${STAGES.join('|')}  (a stage at or before uv re-makes the UVs: then node scripts/build-gear.mjs)`);
+  process.exit(1);
+}
 const run = (stage) => STAGES.indexOf(stage) >= STAGES.indexOf(from);
 
 const blender = (script, ...rest) =>

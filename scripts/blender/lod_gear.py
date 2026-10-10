@@ -3,11 +3,14 @@
 
   node scripts/blender.mjs scripts/blender/lod_gear.py [<gear dir>]
 
-gear/<kind>/<id>.glb -> gear/<kind>/<id>_lod.glb at the first of RATIOS of the triangles (at least
-MIN_TRIS) that keeps the shape: collapse decimation interpolates UVs and skin weights; the skin is
-re-limited to 4 influences and normalised. A LOD that lost more than 8 % of its surface or 4 mm + 2 %
-of its extent is refused; past the last ratio the item gets no LOD. Desktop draws the LOD past the
-body's far distance, phones always (src/characters/MasterAssets.ts). Re-run after any gear item changes.
+gear/<kind>/<id>.glb -> two light versions, each at the first of its ratios of the triangles (at least
+its minimum) that keeps the shape: collapse decimation interpolates UVs and skin weights; the skin is
+re-limited to 4 influences and normalised.
+  <id>_lod.glb  LODS['_lod']: desktop from the mid distance, phones up close; refused past 8 % of the
+                surface lost or 4 mm + 2 % of the extent
+  <id>_far.glb  LODS['_far']: past the far distance (14 m+, a few dozen pixels): looser, 15 % / 1 cm + 4 %
+Past the last ratio an item gets no such version (src/characters/MasterAssets.ts falls back to the
+lighter one it has, or the item). Re-run after any gear item changes (scripts/build-gear.mjs).
 """
 import glob
 import os
@@ -15,7 +18,11 @@ import sys
 
 import bpy
 
-RATIOS, MIN_TRIS = (0.3, 0.45, 0.6), 800
+# suffix: (ratios tried in order, minimum triangles, kept surface share, extent slack: (m, share))
+LODS = {
+    '_lod': ((0.3, 0.45, 0.6), 800, 0.92, (0.004, 0.02)),
+    '_far': ((0.12, 0.2, 0.3), 250, 0.85, (0.01, 0.04)),
+}
 
 
 def tris(o):
@@ -30,7 +37,7 @@ def shape(o):
     return sum(p.area for p in me.polygons), [max(c[i] for c in xs) - min(c[i] for c in xs) for i in range(3)]
 
 
-def decimated(path, ratio):
+def decimated(path, ratio, min_tris, keep, slack):
     """The item's one mesh (and its armature) decimated to ratio, or (None, reason)."""
     bpy.ops.wm.read_factory_settings(use_empty=True)
     bpy.ops.import_scene.gltf(filepath=path, merge_vertices=True)
@@ -41,7 +48,7 @@ def decimated(path, ratio):
     o = meshes[0]
     n0 = tris(o)
     a0, sz0 = shape(o)
-    target = max(MIN_TRIS, int(n0 * ratio))
+    target = max(min_tris, int(n0 * ratio))
     if target > 0.8 * n0:
         return None, None, f'{n0} triangles, already light'
     dec = o.modifiers.new('Decimate', 'DECIMATE')
@@ -60,7 +67,7 @@ def decimated(path, ratio):
         bpy.ops.object.vertex_group_limit_total(group_select_mode='ALL', limit=4)
         bpy.ops.object.vertex_group_normalize_all(group_select_mode='ALL', lock_active=False)
     a, sz = shape(o)
-    if not (a > 0.92 * a0 and all(abs(x - y) < 0.02 * max(y, 1e-6) + 0.004 for x, y in zip(sz, sz0))):
+    if not (a > keep * a0 and all(abs(x - y) < slack[1] * max(y, 1e-6) + slack[0] for x, y in zip(sz, sz0))):
         return None, None, f'{ratio}: area {a / a0 * 100:.1f}%, size {[round(x, 3) for x in sz]} vs {[round(y, 3) for y in sz0]}'
     return o, arm, f'{n0} -> {tris(o)} triangles ({ratio}), area {a / a0 * 100:.1f}%'
 
@@ -68,30 +75,30 @@ def decimated(path, ratio):
 def main():
     argv = sys.argv[sys.argv.index('--') + 1:] if '--' in sys.argv else []
     root = os.path.abspath(next((a for a in argv if not a.startswith('--')), 'public/assets/characters/gear'))
-    for path in sorted(glob.glob(os.path.join(root, '*', '*.glb'))):
-        if path.endswith('_lod.glb'):
-            continue
+    items = [p for p in sorted(glob.glob(os.path.join(root, '*', '*.glb'))) if not p.endswith(tuple(f'{k}.glb' for k in LODS))]
+    for path in items:
         name = os.path.relpath(path, root).replace(os.sep, '/')
-        out = path[:-4] + '_lod.glb'
-        why = []
-        for ratio in RATIOS:
-            o, arm, msg = decimated(path, ratio)
-            if o:
-                break
-            why.append(msg)
-            if 'meshes' in msg or 'light' in msg:
-                break
-        if not o:
-            if os.path.exists(out):
-                os.remove(out)
-            print(f'[gear lod] {name}: no LOD ({"; ".join(why)})', flush=True)
-            continue
-        for x in bpy.context.scene.objects:
-            x.select_set(x is o or x is arm)
-        bpy.ops.export_scene.gltf(filepath=out, use_selection=True, export_format='GLB', export_yup=True,
-                                  export_skins=bool(arm), export_animations=False, export_materials='NONE',
-                                  export_def_bones=False)
-        print(f'[gear lod] {name}: {msg} -> {os.path.basename(out)}', flush=True)
+        for suffix, (ratios, min_tris, keep, slack) in LODS.items():
+            out = path[:-4] + suffix + '.glb'
+            why = []
+            for ratio in ratios:
+                o, arm, msg = decimated(path, ratio, min_tris, keep, slack)
+                if o:
+                    break
+                why.append(msg)
+                if 'meshes' in msg or 'light' in msg:
+                    break
+            if not o:
+                if os.path.exists(out):
+                    os.remove(out)
+                print(f'[gear lod] {name}: no {suffix} ({"; ".join(why)})', flush=True)
+                continue
+            for x in bpy.context.scene.objects:
+                x.select_set(x is o or x is arm)
+            bpy.ops.export_scene.gltf(filepath=out, use_selection=True, export_format='GLB', export_yup=True,
+                                      export_skins=bool(arm), export_animations=False, export_materials='NONE',
+                                      export_def_bones=False)
+            print(f'[gear lod] {name}: {msg} -> {os.path.basename(out)}', flush=True)
 
 
 if __name__ == '__main__':

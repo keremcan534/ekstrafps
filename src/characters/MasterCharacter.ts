@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { clone as cloneSkinned } from 'three/examples/jsm/utils/SkeletonUtils.js';
 import type { Humanoid, HumanoidVisual, Part } from '../targets/Humanoid';
+import { humanoidView } from '../targets/Humanoid';
 import { FINGER_KEYS, SIDES, sided, type MasterArm, type MasterRig, type Side } from './master/MasterRig';
 import { ThirdPersonArmIK } from './master/ThirdPersonArmIK';
 import { TwistSolver } from './master/TwistSolver';
@@ -53,6 +54,9 @@ const SPREAD = data.torso.spread;
 const STANCES = data.stances as Record<string, { poles: { right: number[]; left: number[] } }>;
 /** An arm changing hands (IK ↔ its part: the far switch, a hand to the magazine, a death) eases over this long (s). */
 const ARM_BLEND = 0.2;
+/** The mid band (desktop: LOD2 body, light gear) from MID_IN m, back to near under MID_OUT m. */
+const MID_IN_SQ = 8.5 * 8.5;
+const MID_OUT_SQ = 7.5 * 7.5;
 
 /**
  * The body's node: matrix passes from outside (the Humanoid's, the renderer's, the game's
@@ -113,6 +117,7 @@ interface Limb {
 export class MasterCharacter implements HumanoidVisual {
   readonly mesh: THREE.SkinnedMesh;
   readonly near: THREE.BufferGeometry;
+  readonly mid: THREE.BufferGeometry | null;
   readonly far: THREE.BufferGeometry | null;
   readonly model: THREE.Object3D;
   readonly rig: MasterRig;
@@ -129,6 +134,11 @@ export class MasterCharacter implements HumanoidVisual {
   easing(s: Side): boolean {
     return this.armBlend[s].t < 1;
   }
+  /** Back in play (a respawn): the arms take their new pose at once, nothing eases out of the corpse's. */
+  reset(): void {
+    this.wasHidden = true;
+    for (const s of SIDES) this.armBlend[s].t = 1;
+  }
   /** Ease arm `s` from the pose it is drawn in now (its target is about to jump: a hand let go of the gun). */
   ease(s: Side): void {
     const bl = this.armBlend[s];
@@ -136,8 +146,8 @@ export class MasterCharacter implements HumanoidVisual {
     bl.t = 0;
   }
   private readonly gear: THREE.Mesh[] = [];
-  /** Gear with a far version: swapped with the body's own LOD. */
-  private readonly gearLods: { mesh: THREE.Mesh; near: THREE.BufferGeometry; far: THREE.BufferGeometry }[] = [];
+  /** Gear with lighter versions: swapped with the body's band (near, mid, far). */
+  private readonly gearLods: { mesh: THREE.Mesh; geo: [THREE.BufferGeometry, THREE.BufferGeometry, THREE.BufferGeometry] }[] = [];
   private readonly scale: number;
   private readonly rootBone: THREE.Bone;
   private readonly rootLocal = new THREE.Matrix4();
@@ -154,8 +164,11 @@ export class MasterCharacter implements HumanoidVisual {
   private wasFar = false;
   /** Per arm: its chain's local turns when it last changed hands, and how far the ease is (1: done). */
   private readonly armBlend: Record<Side, { t: number; bones: THREE.Bone[]; from: THREE.Quaternion[] }>;
-  /** Not posed last frame (just made, or out of sight): nothing to ease from. */
+  /** Not posed last frame (just made, respawned, or out of sight): nothing to ease from. */
   private wasHidden = true;
+  /** The gear's band (0 near, 1 mid, 2 far) and shadow as last set (they follow the body's: syncGear). */
+  private gearBand = 0;
+  private gearCast: boolean | null = null;
   /** Spine3 in the torso part's frame at rest (the torso part carries the chest rigidly). */
   private readonly chest: { p: THREE.Vector3; q: THREE.Quaternion };
   private t = {
@@ -194,6 +207,7 @@ export class MasterCharacter implements HumanoidVisual {
     this.rig = cloneRig(assets.rig, this.model);
     this.mesh = this.rig.mesh;
     this.near = assets.near;
+    this.mid = assets.mid;
     this.far = assets.far;
     this.mesh.geometry = this.near;
     this.mesh.material = person.look.material;
@@ -202,6 +216,9 @@ export class MasterCharacter implements HumanoidVisual {
     this.mesh.boundingSphere = new THREE.Sphere(new THREE.Vector3(0, 1 / this.scale, 0), 3.5 / this.scale);
     this.mesh.castShadow = true;
     this.mesh.receiveShadow = true;
+    // A settled corpse isn't posed, but the Humanoid still swaps its LOD and shadow by distance:
+    // the mid band and the gear follow whenever the body is drawn.
+    this.mesh.onBeforeRender = () => this.syncGear();
     body.root.add(this.model);
 
     const hang = assets.hang.q;
@@ -273,7 +290,7 @@ export class MasterCharacter implements HumanoidVisual {
     if (g.material) m.material = g.material;
     m.receiveShadow = true;
     this.gear.push(m);
-    if (g.lod) this.gearLods.push({ mesh: m, near: m.geometry, far: g.lod });
+    if (g.lod || g.far) this.gearLods.push({ mesh: m, geo: [m.geometry, g.lod ?? m.geometry, g.far ?? g.lod ?? m.geometry] });
   }
 
   /** Put on a gear item: rigid under its socket, or skinned onto this body's bones by name. */
@@ -433,8 +450,8 @@ export class MasterCharacter implements HumanoidVisual {
       this.twist.update();
       for (const s of SIDES) this.rig.arms[s].upper.updateMatrixWorld(true);
     }
-    if (far !== this.wasFar) for (const l of this.gearLods) l.mesh.geometry = far ? l.far : l.near;
     this.wasFar = far;
+    this.syncGear();
     for (const s of SIDES) {
       const bl = this.armBlend[s];
       if (bl.t >= 1) continue;
@@ -461,8 +478,28 @@ export class MasterCharacter implements HumanoidVisual {
       t.wFore.multiply(L.fore.cInv);
       fore.group.quaternion.copy(t.wUpper).invert().multiply(t.wFore);
     }
+  }
 
+  /**
+   * The body's band and the gear's with it: far when the Humanoid has put the far body up, else
+   * (desktop) mid by distance from the viewer; the gear's shadow as the body's.
+   */
+  private syncGear(): void {
+    let band = this.far !== null && this.mesh.geometry === this.far ? 2 : 0;
+    if (band === 0 && this.mid) {
+      const d2 = this.body.root.position.distanceToSquared(humanoidView);
+      band = d2 > (this.mesh.geometry === this.mid ? MID_OUT_SQ : MID_IN_SQ) ? 1 : 0;
+      const geo = band ? this.mid : this.near;
+      if (this.mesh.geometry !== geo) this.mesh.geometry = geo;
+    }
+    if (band !== this.gearBand) {
+      this.gearBand = band;
+      for (const l of this.gearLods) l.mesh.geometry = l.geo[band];
+    }
     const cast = this.mesh.castShadow;
-    for (const g of this.gear) g.castShadow = cast;
+    if (cast !== this.gearCast) {
+      this.gearCast = cast;
+      for (const g of this.gear) g.castShadow = cast;
+    }
   }
 }

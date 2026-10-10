@@ -51,6 +51,7 @@ import { SurvivalHUD } from '../ui/SurvivalHUD';
 import { MapOverlay, type MapState } from '../ui/MapOverlay';
 import { ScreenGrade } from '../fx/ScreenGrade';
 import { loadCharacterModels } from '../targets/CharacterModels';
+import { masterTextures } from '../characters/MasterAssets';
 import { loadWeaponMeshes } from '../weapons/WeaponMeshes';
 import { MuzzleLights } from '../fx/MuzzleLights';
 import { ViewLight } from '../fx/ViewLight';
@@ -550,6 +551,9 @@ export class Game {
     // variants with shadows: one real render while everything is visible does.
     this.camera.camera.updateMatrixWorld();
     this.renderer.render(this.scene, this.camera.camera);
+    // The master characters' textures too: squads that spawn later (SABLE, the Warden at a raid)
+    // would otherwise upload dozens of them the moment they come into view.
+    for (const t of masterTextures()) this.renderer.initTexture(t);
     for (const o of hidden) o.visible = false;
     if (warm) this.scene.remove(warm);
     await this.renderer.compileAsync(this.weapons.viewmodel.scene, this.weapons.viewmodel.camera);
