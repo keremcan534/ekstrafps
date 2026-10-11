@@ -110,6 +110,19 @@ export interface FrameDirector {
  * movement & physics (120 Hz) → camera → physical weapon pose → fire from the
  * muzzle → projectiles → fx → UI → render (world, weapon, debug overlay).
  */
+/**
+ * The gun before the world: its opaque parts go down with depths in [0, GUN_DEPTH], then the
+ * world with its own depths, untouched (Site-9's signs win their depth ties with their boards by
+ * a hair: squeezing the world's depth range lost some of their print). Every world surface more
+ * than ~1 cm past the near plane (all of them: the player keeps well away from walls) is deeper
+ * than GUN_DEPTH, so under the gun it fails the depth test before it is shaded (the gun covers a
+ * good share of a phone's screen, most of all aimed); then the gun's see-through parts over both.
+ * The same picture: an opaque gun pixel never depended on what lay under it, and the see-through
+ * parts still sit in front of everything. ?nogunfirst: the world first and the gun over it.
+ */
+const GUN_DEPTH = 1 / 4;
+const GUN_FIRST = typeof location === 'undefined' || !new URLSearchParams(location.search).has('nogunfirst');
+
 export class Game {
   readonly renderer: THREE.WebGLRenderer;
   /** Characters' frustum bounds and room culling (render only; stats for the A/B). */
@@ -284,6 +297,8 @@ export class Game {
   /** ?nodraw clear colour (and the renderer's own, put back after). */
   private clearTint = new THREE.Color();
   private clearBase = new THREE.Color();
+  /** The world's background colour as the frame's clear (the gun-first order, see GUN_DEPTH). */
+  private clearHeld = new THREE.Color();
   private prevBroken = 0;
   private fpsTimer = 0;
   private stationIndex = 0;
@@ -1659,6 +1674,18 @@ export class Game {
     if (!v) this.dyn.skip = 1;
   }
 
+  /** The world (main scene) for this frame's view: lamps clipped to their rooms, rigid pieces batched. */
+  private renderWorld(): void {
+    // Each lamp lights its own room only (the flashlight casts a real shadow instead).
+    const room = this.arena.lightRoom?.bind(this.arena);
+    if (room) syncLightClip(this.scene, room, this.lighting?.flashlightLight);
+    // The same rigid piece on many characters (guns, helmets): one instanced draw each.
+    rigidBatch.begin(this.scene, this.camera.camera, sceneLights(this.scene).all);
+    this.renderer.render(this.scene, this.camera.camera);
+    rigidBatch.end();
+    clearLightClip();
+  }
+
   setQuality(pixelRatio: number, shadows: boolean): void {
     this.quality.pixelRatio = pixelRatio;
     this.quality.shadows = shadows;
@@ -2091,22 +2118,51 @@ export class Game {
         this.renderer.getClearColor(this.clearBase);
         this.renderer.setClearColor(this.clearTint.setHSL((now / 4000) % 1, 0.25, 0.12));
       }
-      this.renderer.clear();
-      if (noDraw) this.renderer.setClearColor(this.clearBase);
       // Phones: the full map covers the screen, nothing behind it needs drawing.
       const covered = this.mobile && !!this.mapOverlay?.visible;
-      if (!this.benchFlags.noWorld && !noDraw && !covered) {
-        // Each lamp lights its own room only (the flashlight casts a real shadow instead).
-        const room = this.arena.lightRoom?.bind(this.arena);
-        if (room) syncLightClip(this.scene, room, this.lighting?.flashlightLight);
-        // The same rigid piece on many characters (guns, helmets): one instanced draw each.
-        rigidBatch.begin(this.scene, this.camera.camera, sceneLights(this.scene).all);
-        this.renderer.render(this.scene, this.camera.camera);
-        rigidBatch.end();
-        clearLightClip();
+      const world = !this.benchFlags.noWorld && !noDraw && !covered;
+      const gun = !this.health.dead && !this.cinematic && !this.spectator && !noDraw && !covered;
+      const vm = this.weapons.viewmodel;
+      // The gun first (see GUN_DEPTH): no shadow map (a shadow pass would take the depth range
+      // too), a plain colour behind the world (a textured one is drawn over everything) and a
+      // gun that splits into its opaque and see-through parts.
+      const bg = this.scene.background;
+      const plainBg = bg === null || (bg as THREE.Color).isColor === true;
+      const split = GUN_FIRST && world && gun && plainBg && !this.renderer.shadowMap.enabled ? vm.splitPasses() : null;
+      if (split !== null) {
+        // The world's background colour is the frame's clear: its own pass may not clear the gun away.
+        this.renderer.getClearColor(this.clearBase);
+        const alpha = this.renderer.getClearAlpha();
+        if (bg) this.renderer.setClearColor(this.clearHeld.copy(bg as THREE.Color), 1);
+        this.renderer.clear();
+        this.scene.background = null;
+        const gl = this.renderer.getContext();
+        gl.depthRange(0, GUN_DEPTH);
+        this.renderer.render(vm.scene, vm.camera);
+        // The world at its own full depth precision: every surface of it more than ~1 cm past the
+        // near plane lies deeper than GUN_DEPTH, under the gun it fails the test unshaded.
+        gl.depthRange(0, 1);
+        this.renderWorld();
+        if (split) {
+          const mask = vm.camera.layers.mask;
+          vm.camera.layers.mask = 2;
+          gl.depthRange(0, GUN_DEPTH);
+          this.renderer.render(vm.scene, vm.camera);
+          vm.camera.layers.mask = mask;
+        }
+        gl.depthRange(0, 1);
+        vm.joinPasses();
+        this.scene.background = bg;
+        if (bg) this.renderer.setClearColor(this.clearBase, alpha);
+      } else {
+        this.renderer.clear();
+        if (noDraw) this.renderer.setClearColor(this.clearBase);
+        if (world) this.renderWorld();
+        this.renderer.clearDepth();
+        if (gun) this.renderer.render(vm.scene, vm.camera);
       }
-      this.renderer.clearDepth();
-      if (!this.health.dead && !this.cinematic && !this.spectator && !noDraw && !covered) this.renderer.render(this.weapons.viewmodel.scene, this.weapons.viewmodel.camera);
+      // Debug lines go over the gun, as before (the gun-first order leaves the world's depth behind).
+      if (split !== null && (this.debugDraw.enabled || this.aiDebug.enabled)) this.renderer.clearDepth();
       this.debugDraw.flush(realDt);
       if (this.debugDraw.enabled && !noDraw) this.renderer.render(this.debugDraw.scene, this.camera.camera);
       this.aiDebug.update(realDt);

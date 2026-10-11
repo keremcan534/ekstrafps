@@ -204,6 +204,8 @@ export class Viewmodel {
   /** Shot direction this frame, camera space (profiled weapons). */
   private shotDir = new THREE.Vector3(0, 0, -1);
   private shotRest = new THREE.Vector3();
+  /** splitPasses: the see-through objects and the lights, with the layer masks they had. */
+  private split: { o: THREE.Object3D; mask: number }[] = [];
   private restHold = 0;
   private warnedAt = { solve: -99, rest: -99 };
 
@@ -899,6 +901,47 @@ export class Viewmodel {
   shotDirection(mainCamera: THREE.PerspectiveCamera, out: THREE.Vector3): THREE.Vector3 {
     if (this.rig?.view) return out.copy(this.shotDir).transformDirection(mainCamera.matrixWorld);
     return this.forwardWorld(this.rig!.muzzle, mainCamera, out, true);
+  }
+
+  /**
+   * For drawing the gun in two passes (Game: the gun first): the see-through parts shown (the
+   * muzzle flash, sight glass and glows) go on layer 1, the opaque ones stay on layer 0, the
+   * lights light both. Returns whether anything see-through is shown, or null (nothing changed)
+   * when a part can't be split: one drawn opaque and see-through at once, or a transmissive one.
+   * Undo with joinPasses.
+   */
+  splitPasses(): boolean | null {
+    const split = this.split;
+    split.length = 0;
+    let clear = false;
+    let mixed = false;
+    this.scene.traverseVisible((o) => {
+      if ((o as THREE.Light).isLight) {
+        split.push({ o, mask: o.layers.mask });
+        o.layers.mask |= 3;
+        return;
+      }
+      const m = (o as THREE.Mesh).material as THREE.Material | THREE.Material[] | undefined;
+      if (!m) return;
+      const list = Array.isArray(m) ? m : [m];
+      const see = list.filter((x) => x.transparent).length;
+      if (list.some((x) => ((x as THREE.MeshPhysicalMaterial).transmission ?? 0) > 0) || (see && see < list.length)) mixed = true;
+      if (!see && !(o as THREE.Sprite).isSprite) return;
+      split.push({ o, mask: o.layers.mask });
+      o.layers.mask = 2;
+      clear = true;
+    });
+    if (mixed) {
+      this.joinPasses();
+      return null;
+    }
+    return clear;
+  }
+
+  /** Every layer as it was before splitPasses. */
+  joinPasses(): void {
+    for (const s of this.split) s.o.layers.mask = s.mask;
+    this.split.length = 0;
   }
 
   setAspect(aspect: number): void {
