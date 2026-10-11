@@ -4,6 +4,7 @@ import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js
 import type { ModelKey } from './WeaponData';
 import { metalRoughness, metalTexture, polymerTexture, woodTexture } from '../fx/Textures';
 import { dressRig } from './WeaponMeshes';
+import { cullGunParts, mergeGunParts } from './GunMerge';
 import type { ProfiledView } from './ProfiledRig';
 import type { HandAction } from './HandPose';
 import { attachHands, proceduralHands, type RigHands } from './HandGrips';
@@ -1288,7 +1289,9 @@ const bakedMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness:
  * Third-person weapon: every static part merged into ONE mesh (material colours
  * baked into vertex colours), the magazine into another (it hides during
  * reloads). ~100 parts → 2 draw calls per soldier. Glass and reticles are dropped
- * (invisible at that range); hands stay as IK points.
+ * (invisible at that range); hands stay as IK points. A model file's gun keeps its
+ * textures: its body one draw, its magazine another (GunMerge.ts). Off screen, none
+ * of it is drawn.
  */
 export function bakeRig(rig: WeaponRig): void {
   const root = rig.root;
@@ -1307,9 +1310,11 @@ export function bakeRig(rig: WeaponRig): void {
   const statics: THREE.BufferGeometry[] = [];
   const mags: THREE.BufferGeometry[] = [];
   const m4 = new THREE.Matrix4();
+  // A real model (textured, cut per moving part and material): the body (bolt and pump
+  // included, a soldier never works them) one draw, the magazine another (GunMerge.ts).
+  mergeGunParts(rig, meshes);
   for (const m of meshes) {
     if (under(m, rig.leftHand) || under(m, rig.rightHand)) continue;
-    // A real model (textured, one or two meshes already) stays as it is.
     if (m.userData.gunModel) continue;
     const mt = (Array.isArray(m.material) ? m.material[0] : m.material) as THREE.MeshStandardMaterial;
     const inMag = !!mag && under(m, mag);
@@ -1351,6 +1356,8 @@ export function bakeRig(rig: WeaponRig): void {
       }
     }
   }
+  // Off screen, a soldier's gun is not drawn (built with culling off, as the gun in hand is).
+  cullGunParts(rig);
 }
 
 /**
