@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { onStage, sceneLights } from './SceneLights';
 
 /**
  * Lights stop at walls. None of the point or spot lights casts shadows (a shadow-casting point
@@ -61,22 +62,37 @@ float lightRoomMask( const in vec4 r ) {
 	return 1.0 - smoothstep( 0.0, ${FADE.toFixed(2)}, max( d.x, d.y ) );
 }
 `;
-  C.lights_fragment_begin = C.lights_fragment_begin
-    .replace(
-      'getPointLightInfo( pointLight, geometryPosition, directLight );',
-      'getPointLightInfo( pointLight, geometryPosition, directLight );\n\t\tdirectLight.color *= lightRoomMask( clipPoint[ i ] );',
-    )
-    .replace(
-      'getSpotLightInfo( spotLight, geometryPosition, directLight );',
-      'getSpotLightInfo( spotLight, geometryPosition, directLight );\n\t\tdirectLight.color *= lightRoomMask( clipSpot[ i ] );',
-    );
-  // A lamp in another room, past its reach or a spot outside its cone adds exactly nothing:
-  // skip its BRDF (most of a pixel's lighting work) rather than add a zero. The same image.
-  for (const info of ['getPointLightInfo( pointLight', 'getSpotLightInfo( spotLight']) {
+  // Each point / spot light, unrolled per light:
+  //   colour (uniform) zero: a lamp switched off (the shot flash between shots, the flashlight
+  //     off) adds exactly nothing; skip it whole, one branch every pixel takes the same way;
+  //   past its room's walls (mask 0): the same, per pixel, before the falloff maths;
+  //   else as three does it, the mask applied right after the light's own falloff.
+  // A light that comes out black anyway (beyond reach, outside a spot's cone, a shadow) skips
+  // its BRDF (most of a pixel's lighting work) rather than add a zero. The same image.
+  for (const [light, info, clip] of [
+    ['pointLight', 'getPointLightInfo( pointLight', 'clipPoint'],
+    ['spotLight', 'getSpotLightInfo( spotLight', 'clipSpot'],
+  ]) {
     const s = C.lights_fragment_begin;
-    const re = s.indexOf('RE_Direct( directLight', s.indexOf(info));
-    if (s.indexOf(info) < 0 || re < 0) continue;
-    C.lights_fragment_begin = `${s.slice(0, re)}if ( any( notEqual( directLight.color, vec3( 0.0 ) ) ) ) ${s.slice(re)}`;
+    const pick = `${light} = ${light}s[ i ];`;
+    const a = s.indexOf(pick);
+    const i = s.indexOf(info, a);
+    const ie = s.indexOf(';', i) + 1;
+    const re = s.indexOf('RE_Direct( directLight', ie);
+    const end = s.indexOf(';', re) + 1;
+    if (a < 0 || i < 0 || re < 0 || s.lastIndexOf('#pragma unroll_loop_end', re) > a) throw new Error(`LightClip: three's ${light} loop has changed`);
+    // A spot's light map (none here) is sampled with derivatives: never under a per-pixel branch.
+    const masked = light === 'spotLight' ? '\n#if NUM_SPOT_LIGHT_MAPS > 0\n\t\tif ( true ) {\n#else\n\t\tif ( roomK > 0.0 ) {\n#endif' : '\n\t\tif ( roomK > 0.0 ) {';
+    C.lights_fragment_begin =
+      s.slice(0, a + pick.length) +
+      `\n\t\tif ( any( notEqual( ${light}.color, vec3( 0.0 ) ) ) ) {\n\t\tfloat roomK = lightRoomMask( ${clip}[ i ] );${masked}` +
+      s.slice(a + pick.length, ie) +
+      '\n\t\tdirectLight.color *= roomK;' +
+      s.slice(ie, re) +
+      'if ( any( notEqual( directLight.color, vec3( 0.0 ) ) ) ) ' +
+      s.slice(re, end) +
+      '\n\t\t} }' +
+      s.slice(end);
   }
   const L = THREE.ShaderLib as unknown as Record<string, { uniforms: Record<string, THREE.IUniform> }>;
   for (const k of ['standard', 'physical', 'lambert', 'phong', 'toon']) {
@@ -102,10 +118,10 @@ const order = (a: THREE.Light, b: THREE.Light): number =>
  */
 export function syncLightClip(scene: THREE.Scene, room: (x: number, z: number, out: THREE.Vector4) => boolean, free?: THREE.Light): void {
   points.length = spots.length = 0;
-  scene.traverseVisible((o) => {
-    if ((o as THREE.PointLight).isPointLight) points.push(o as THREE.PointLight);
-    else if ((o as THREE.SpotLight).isSpotLight) spots.push(o as THREE.SpotLight);
-  });
+  // The scene's lights in traversal order (kept up to date by SceneLights), the shown ones.
+  const all = sceneLights(scene);
+  for (const l of all.points) if (onStage(l, scene)) points.push(l);
+  for (const l of all.spots) if (onStage(l, scene)) spots.push(l);
   points.sort(order);
   spots.sort(order);
   fill(clipPoint, points, room, free);

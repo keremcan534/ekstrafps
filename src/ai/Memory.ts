@@ -75,6 +75,11 @@ interface Mark {
  * where shots came from, where friends died, what was already searched,
  * which covers it used, unexplained sounds to check.
  */
+/** Drop marks older than `window` seconds (the oldest come first). */
+function dropOld(list: Mark[], now: number, window: number): void {
+  while (list.length && now - list[0].time > window) list.shift();
+}
+
 export class BotMemory {
   readonly contacts = new Map<Combatant, Contact>();
   /** Sounds without a known enemy behind them (to investigate). */
@@ -216,28 +221,32 @@ export class BotMemory {
 
   /** Beliefs fade out of sight; uncertainty grows with how far the enemy could have moved. */
   update(now: number, dt: number): void {
+    // Every bot, every contact, every frame: the per-contact factors are worked out once
+    // (the same expressions, so the same numbers).
     const tau = AI_TUNING.contactMemory;
-    for (const [t, c] of this.contacts) {
+    const fadeOwn = Math.exp(-dt / tau);
+    const fadeReported = Math.exp(-dt / (tau * 0.7));
+    const driftRobot = dt * 2 * 0.6;
+    const driftOther = dt * 2.6 * 0.6;
+    const unrecognise = dt * 0.45;
+    for (const c of this.contacts.values()) {
+      const t = c.target;
       if (!t.alive) {
         this.contacts.delete(t);
         continue;
       }
       if (c.visible) continue;
-      c.confidence *= Math.exp(-dt / (c.reported ? tau * 0.7 : tau));
-      const speed = t.kind === 'robot' ? 2 : 2.6;
-      c.uncertainty = Math.min(18, c.uncertainty + dt * speed * 0.6);
-      if (now - c.lastGlimpse > 0.4) c.recognition = Math.max(0, c.recognition - dt * 0.45);
+      c.confidence *= c.reported ? fadeReported : fadeOwn;
+      c.uncertainty = Math.min(18, c.uncertainty + (t.kind === 'robot' ? driftRobot : driftOther));
+      if (now - c.lastGlimpse > 0.4) c.recognition = Math.max(0, c.recognition - unrecognise);
       if (c.confidence < 0.04 && c.age(now) > AI_TUNING.forgetAfter) this.contacts.delete(t);
     }
-    const old = (list: Mark[], window: number) => {
-      while (list.length && now - list[0].time > window) list.shift();
-    };
-    old(this.sounds, 14);
-    old(this.searched, 40);
-    old(this.covers, 30);
-    old(this.gunfire, 20);
-    old(this.danger, 40);
-    old(this.friendlyDeaths, 60);
+    dropOld(this.sounds, now, 14);
+    dropOld(this.searched, now, 40);
+    dropOld(this.covers, now, 30);
+    dropOld(this.gunfire, now, 20);
+    dropOld(this.danger, now, 40);
+    dropOld(this.friendlyDeaths, now, 60);
   }
 
   /** How much a contact matters right now (target choice). */

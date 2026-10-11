@@ -1,4 +1,4 @@
-import GUI from 'lil-gui';
+import GUI, { type Controller } from 'lil-gui';
 import { AI_TUNING, PROFILES } from '../ai/Tuning';
 import type { WeaponData } from '../weapons/WeaponData';
 import { WEAPON_DEFAULTS, weaponFile } from '../weapons/WeaponData';
@@ -27,6 +27,8 @@ export interface TuningHooks {
  * to src/config/*.json through the Vite dev server.
  */
 export class TuningPanel {
+  /** Controllers that listen while the panel shows (paused while it's hidden). */
+  private listening = new Set<Controller>();
   readonly gui: GUI;
   private weaponFolder: GUI | null = null;
   private currentWeaponId = '';
@@ -215,6 +217,16 @@ export class TuningPanel {
   setVisible(v: boolean): void {
     this.gui.domElement.style.display = v ? '' : 'none';
     this.shown = v;
+    // A listening controller polls its value every animation frame, shown or not: hidden, they
+    // stop (lil-gui refreshes each one as it starts listening again).
+    for (const c of this.gui.controllersRecursive()) {
+      const l = c as unknown as { _listening: boolean };
+      if (!v && l._listening) {
+        this.listening.add(c);
+        c.listen(false);
+      } else if (v && this.listening.has(c)) c.listen(true);
+    }
+    if (v) this.listening.clear();
     // Weapon swaps while hidden only left the folder stale: build it now.
     if (v) this.syncWeapon();
   }

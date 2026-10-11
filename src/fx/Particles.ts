@@ -128,6 +128,8 @@ export class ParticleSystem {
     this.mesh = new THREE.Mesh(this.geometry, material);
     this.mesh.frustumCulled = false;
     this.mesh.renderOrder = blending === 'additive' ? 3 : 2;
+    // Nothing alive, nothing to draw: an empty instanced draw still costs its setup.
+    this.mesh.visible = false;
   }
 
   get alive(): number {
@@ -142,6 +144,7 @@ export class ParticleSystem {
     } else {
       this.count++;
     }
+    this.mesh.visible = true;
     const i3 = i * STRIDE_POS;
     this.pos[i3] = p.x;
     this.pos[i3 + 1] = p.y;
@@ -190,6 +193,7 @@ export class ParticleSystem {
       i++;
     }
     this.geometry.instanceCount = this.count;
+    this.mesh.visible = this.count > 0;
     if (this.count > 0) {
       this.posAttr.addUpdateRange(0, this.count * 3);
       this.velAttr.addUpdateRange(0, this.count * 3);

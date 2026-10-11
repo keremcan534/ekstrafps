@@ -29,6 +29,8 @@ class DecalSet {
     });
     this.mesh = new THREE.InstancedMesh(new THREE.PlaneGeometry(1, 1), mat, capacity);
     this.mesh.count = 0;
+    // Not drawn until the first mark (an empty instanced draw still costs its setup).
+    this.mesh.visible = false;
     this.mesh.frustumCulled = false;
     this.mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     this.mesh.renderOrder = 1;
@@ -46,6 +48,7 @@ class DecalSet {
     this.next = (this.next + 1) % this.mesh.instanceMatrix.count;
     this.used = Math.min(this.used + 1, this.mesh.instanceMatrix.count);
     this.mesh.count = this.used;
+    this.mesh.visible = true;
     this.mesh.instanceMatrix.needsUpdate = true;
   }
 }

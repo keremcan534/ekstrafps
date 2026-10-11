@@ -66,7 +66,10 @@ vec3 gunTint = vec3(1.0);
 float gunRough = 0.0;
 float gunMetal = 0.0;
 float gunHeight = 0.0;
-float gunBlotch = gunFbm(gp * 60.0);
+// Noise that only feeds terms multiplied by an exact zero elsewhere is skipped there (the
+// heaviest shader in the game, on the gun in hand): the same values come out.
+float gunBlotch = 0.0;
+if (gunSteel > 0.001 || gunCoat > 0.001) gunBlotch = gunFbm(gp * 60.0);
 if (gunWood > 0.001) {
   // Fibres along the gun (noise stretched along uGunGrain), warped; darker late-wood streaks; pores.
   float gunAlong = dot(gp, uGunGrain);
@@ -109,13 +112,20 @@ float gunTop = smoothstep(0.3, 0.95, gunUp);
 float gunUnder = smoothstep(0.2, 0.9, -gunUp);
 // Fine grain, not blobs: a film with specks reads as dirt, big patches read as camouflage.
 float gunFine = gunNoise(gp * 220.0 + 17.0);
-float gunMid = gunFbm(gp * 30.0 + 31.0);
+float gunMid = 0.0;
+float gunIceN = 0.0;
+if (gunTop > 0.0) {
+  gunMid = gunFbm(gp * 30.0 + 31.0);
+  gunIceN = gunNoise(gp * 1500.0);
+}
 float gunDust = gunTop * (0.35 + 0.65 * smoothstep(0.4, 0.8, gunMid)) * (0.75 + 0.25 * gunFine);
 // Dirt toward a dark earth brown: on black it reads as dried grime, on wood as dark stains.
 float gunDirt = 0.25 * smoothstep(0.35, 0.85, gunFbm(gp * 9.0 + 3.0)) + 0.35 * gunUnder + 0.2 * smoothstep(0.7, 0.95, gunFine);
 float gunFrost = gunTop * smoothstep(0.55, 0.85, gunMid);
-float gunIce = step(0.93, gunNoise(gp * 1500.0)) * gunTop * (0.2 + 0.8 * gunFrost);
-float gunScratch = smoothstep(0.93, 0.985, gunNoise(vec3(dot(gp, vec3(0.8, 0.3, 0.52)) * 900.0, dot(gp, vec3(-0.3, 0.9, 0.2)) * 14.0, 3.3))) * (gunSteel + gunCoat);
+float gunIce = step(0.93, gunIceN) * gunTop * (0.2 + 0.8 * gunFrost);
+float gunScratchN = 0.0;
+if (gunSteel + gunCoat > 0.0) gunScratchN = gunNoise(vec3(dot(gp, vec3(0.8, 0.3, 0.52)) * 900.0, dot(gp, vec3(-0.3, 0.9, 0.2)) * 14.0, 3.3));
+float gunScratch = smoothstep(0.93, 0.985, gunScratchN) * (gunSteel + gunCoat);
 vec3 gunWorn = mix(diffuseColor.rgb, vec3(0.16, 0.14, 0.11), gunDirt * 0.4);
 gunWorn = mix(gunWorn, vec3(0.27, 0.26, 0.245), gunDust * 0.16);
 gunWorn = mix(gunWorn, vec3(0.7, 0.76, 0.83), gunFrost * 0.11);

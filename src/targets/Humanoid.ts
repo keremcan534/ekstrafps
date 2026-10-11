@@ -235,6 +235,16 @@ const LOD_NEAR_SQ = 12.5 * 12.5;
 const SHADOW_SQ = 14 * 14;
 const speedSq = (v: { x: number; y: number; z: number }): number => v.x * v.x + v.y * v.y + v.z * v.z;
 
+/** Step a joint spring and keep it within [lo, hi] (it bounces back off a stop). */
+function springClamped(s: Spring, lo: number, hi: number, dt: number): number {
+  s.update(dt);
+  if (s.value < lo || s.value > hi) {
+    s.value = clamp(s.value, lo, hi);
+    s.velocity *= -0.25;
+  }
+  return s.value;
+}
+
 /**
  * A physical humanoid body shared by robots and soldiers.
  *
@@ -333,6 +343,10 @@ export class Humanoid implements HitSet {
   private lodSkip = 0;
   private frozen = false;
   private lastPose: HumanoidPose | null = null;
+  /** updatePose's limb groups by side (0 = L, 1 = R) and its per-leg scratch (no allocations per pose). */
+  private limbs: { thigh: THREE.Object3D; shin: THREE.Object3D; upper: THREE.Object3D; fore: THREE.Object3D }[] | null = null;
+  private readonly theta = [0, 0];
+  private readonly height = [0, 0];
   private lastRootPos = new THREE.Vector3();
   private lastRootQuat = new THREE.Quaternion();
   /** Every ragdoll part asleep: the bones already sit where the bodies are. */
@@ -1225,25 +1239,22 @@ export class Humanoid implements HitSet {
       this.knee[i].target = Math.max(kneel, other) + this.legWound[i] * 0.18 + wobble * 0.12;
     }
 
-    const spring = (s: Spring, lo: number, hi: number) => {
-      s.update(dt);
-      if (s.value < lo || s.value > hi) {
-        s.value = clamp(s.value, lo, hi);
-        s.velocity *= -0.25;
-      }
-      return s.value;
-    };
-    const tiltX = spring(this.tiltX, -MAX_TILT, MAX_TILT);
-    const tiltZ = spring(this.tiltZ, -MAX_TILT, MAX_TILT);
-    const yaw = spring(this.bodyYaw, -0.6, 0.6);
+    // Limb groups by side (0 = L, 1 = R), looked up once: posed every frame, every body.
+    const limbs = (this.limbs ??= [0, 1].map((i) => {
+      const s = i === 1 ? 'R' : 'L';
+      return { thigh: this.part(`thigh${s}`).group, shin: this.part(`shin${s}`).group, upper: this.part(`upperArm${s}`).group, fore: this.part(`foreArm${s}`).group };
+    }));
+    const tiltX = springClamped(this.tiltX, -MAX_TILT, MAX_TILT, dt);
+    const tiltZ = springClamped(this.tiltZ, -MAX_TILT, MAX_TILT, dt);
+    const yaw = springClamped(this.bodyYaw, -0.6, 0.6, dt);
     const step = this.step.update(dt);
     const rise = this.rise.update(dt);
-    const spineX = spring(this.spineX, -0.5, 0.75);
-    const spineY = spring(this.spineY, -0.7, 0.7);
-    const spineZ = spring(this.spineZ, -0.4, 0.4);
-    const headX = spring(this.headX, -0.8, 0.6);
-    const headY = spring(this.headY, -0.8, 0.8);
-    const headZ = spring(this.headZ, -0.5, 0.5);
+    const spineX = springClamped(this.spineX, -0.5, 0.75, dt);
+    const spineY = springClamped(this.spineY, -0.7, 0.7, dt);
+    const spineZ = springClamped(this.spineZ, -0.4, 0.4, dt);
+    const headX = springClamped(this.headX, -0.8, 0.6, dt);
+    const headY = springClamped(this.headY, -0.8, 0.8, dt);
+    const headZ = springClamped(this.headZ, -0.5, 0.5, dt);
 
     this.pivot.position.set(clamp(step.x, -0.5, 0.5), rise, clamp(step.z, -0.5, 0.5));
     this.pivot.rotation.set(tiltX, yaw, tiltZ);
@@ -1256,10 +1267,10 @@ export class Humanoid implements HitSet {
     // half step forward) instead of a mannequin's locked knees and heels together.
     const armed = pose.gripL || pose.gripR ? 1 : 0.4;
     const stance = Math.max(0, 1 - stride * 2.5) * armed * (1 - pose.crouch);
-    const theta = [0, 0];
-    const height = [0, 0];
+    const theta = this.theta;
+    const height = this.height;
     for (let i = 0; i < 2; i++) {
-      theta[i] = this.idleKnee + crouchTheta + spring(this.knee[i], 0, 1.1) + 0.1 * stance;
+      theta[i] = this.idleKnee + crouchTheta + springClamped(this.knee[i], 0, 1.1, dt) + 0.1 * stance;
       height[i] = (this.thigh + this.shin) * Math.cos(theta[i]);
     }
     const roll = clamp(Math.atan2(height[1] - height[0], this.hipHalf * 2), -0.25, 0.25) * this.sideSign[1];
@@ -1271,20 +1282,19 @@ export class Humanoid implements HitSet {
     pelvis.rotation.set(0, machine ? 0 : Math.sin(pose.stridePhase) * 0.08 * stride, roll);
     const fwd = 1 - Math.abs(pose.strideSide);
     for (let i = 0; i < 2; i++) {
-      const s = i === 1 ? 'R' : 'L';
       const ph = pose.stridePhase + i * Math.PI;
       const swing = (machine ? tri(ph) : Math.sin(ph)) * 0.42 * stride;
       // Machine: the knee snaps up at the start of the swing and holds, a short high step.
       const lift = (machine ? Math.sqrt(Math.max(0, Math.cos(ph))) * 0.6 : Math.max(0, Math.cos(ph)) * 0.75) * stride;
       const abduct = Math.sin(ph) * 0.3 * stride * pose.strideSide;
-      const thigh = this.part(`thigh${s}`).group;
+      const thigh = limbs[i].thigh;
       // Feet apart (outward is away from the body's centre) and staggered: left ahead.
       const out = Math.sign(thigh.position.x) * 0.06 * stance;
       const stagger = (i === 0 ? -0.16 : 0.1) * stance;
       const tx = -theta[i] - swing * fwd - lift * 0.35 + stagger;
       const sx = 2 * theta[i] + lift;
       thigh.rotation.set(tx, 0, -roll + abduct + out);
-      this.part(`shin${s}`).group.rotation.set(sx, 0, 0);
+      limbs[i].shin.rotation.set(sx, 0, 0);
       // The foot stays level: it takes back the thigh's and shin's pitch and the body's
       // tilt, then toes up a little through the swing.
       const foot = this.feet[i];
@@ -1300,12 +1310,11 @@ export class Humanoid implements HitSet {
 
     for (let i = 0; i < 2; i++) {
       const side = this.sideSign[i];
-      const s = i === 1 ? 'R' : 'L';
-      const ax = spring(this.armX[i], -1.3, 1.3) + Math.sin(t * 1.3 + i) * 0.02 * idle;
-      const az = spring(this.armZ[i], -1, 1);
-      const el = spring(this.elbow[i], -0.15, 1.6);
-      const upper = this.part(`upperArm${s}`).group;
-      const fore = this.part(`foreArm${s}`).group;
+      const ax = springClamped(this.armX[i], -1.3, 1.3, dt) + Math.sin(t * 1.3 + i) * 0.02 * idle;
+      const az = springClamped(this.armZ[i], -1, 1, dt);
+      const el = springClamped(this.elbow[i], -0.15, 1.6, dt);
+      const upper = limbs[i].upper;
+      const fore = limbs[i].fore;
       const grip = i === 1 ? pose.gripR : pose.gripL;
       if (grip) {
         this.solveArm(upper, fore, grip, side);

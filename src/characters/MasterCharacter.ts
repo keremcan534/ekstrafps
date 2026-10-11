@@ -8,6 +8,7 @@ import { TwistSolver } from './master/TwistSolver';
 import { INDEX_KEYS, MasterFingers, libraryPose, masterCorrection } from './master/MasterFingers';
 import type { MasterAssets, MasterPerson } from './MasterAssets';
 import data from './master/masterRig.json';
+import { rigidBatch } from '../core/RigidBatch';
 
 /**
  * One character on the master humanoid in the game: the canonical skinned body (its own copy of
@@ -50,6 +51,44 @@ export interface MasterHold {
 
 type Q = THREE.Quaternion;
 const Y = new THREE.Vector3(0, 1, 0);
+
+/** Per skinned geometry: the largest weight each bone index gets. */
+const boneWeights = new WeakMap<THREE.BufferGeometry, Float32Array>();
+function maxWeights(geo: THREE.BufferGeometry, n: number): Float32Array {
+  let w = boneWeights.get(geo);
+  if (w && w.length === n) return w;
+  w = new Float32Array(n);
+  const si = geo.getAttribute('skinIndex'), sw = geo.getAttribute('skinWeight');
+  for (let v = 0; v < si.count; v++) {
+    for (let k = 0; k < 4; k++) {
+      const i = si.getComponent(v, k), x = sw.getComponent(v, k);
+      if (i < n && x > w[i]) w[i] = x;
+    }
+  }
+  boneWeights.set(geo, w);
+  return w;
+}
+
+/**
+ * Would a gear piece skin exactly the same on the body's skeleton? The same bones in the same
+ * order, and the same inverse bind matrix on every bone that moves one of its vertices (near
+ * and far geometry): a bone it doesn't weight adds zero either way.
+ */
+function sameSkinning(sm: THREE.SkinnedMesh, bones: THREE.Bone[], body: THREE.Skeleton, lod: THREE.BufferGeometry | null): boolean {
+  const n = bones.length;
+  if (n !== body.bones.length || bones.some((b, i) => b !== body.bones[i])) return false;
+  const geos = lod && lod.getAttribute('skinIndex') ? [sm.geometry, lod] : [sm.geometry];
+  for (const geo of geos) {
+    if (!geo.getAttribute('skinIndex') || !geo.getAttribute('skinWeight')) return false;
+    const w = maxWeights(geo, n);
+    for (let i = 0; i < n; i++) {
+      if (w[i] === 0) continue;
+      const a = sm.skeleton.boneInverses[i].elements, b = body.boneInverses[i].elements;
+      for (let k = 0; k < 16; k++) if (a[k] !== b[k]) return false;
+    }
+  }
+  return true;
+}
 const SPREAD = data.torso.spread;
 const STANCES = data.stances as Record<string, { poles: { right: number[]; left: number[] } }>;
 /** An arm changing hands (IK ↔ its part: the far switch, a hand to the magazine, a death) eases over this long (s). */
@@ -306,7 +345,12 @@ export class MasterCharacter implements HumanoidVisual {
       o.quaternion.copy(g.quaternion);
       o.scale.setScalar(g.scale);
       socket.add(o);
-      o.traverse((m) => (m as THREE.Mesh).isMesh && this.dress(m as THREE.Mesh, g));
+      o.traverse((m) => {
+        if (!(m as THREE.Mesh).isMesh) return;
+        this.dress(m as THREE.Mesh, g);
+        // The same helmet or radio on every character of a look: drawn together (core/RigidBatch).
+        rigidBatch.add(m as THREE.Mesh);
+      });
       return;
     }
     const o = cloneSkinned(g.scene);
@@ -322,7 +366,11 @@ export class MasterCharacter implements HumanoidVisual {
         sm.visible = false;
         return;
       }
-      sm.bind(new THREE.Skeleton(bones as THREE.Bone[], sm.skeleton.boneInverses), sm.bindMatrix);
+      // The body's own skeleton when that changes nothing (one bone pass and one bone-texture
+      // upload per character a frame instead of one per worn piece).
+      const body = this.mesh.skeleton;
+      const skel = sameSkinning(sm, bones as THREE.Bone[], body, g.lod) ? body : new THREE.Skeleton(bones as THREE.Bone[], sm.skeleton.boneInverses);
+      sm.bind(skel, sm.bindMatrix);
       sm.boundingSphere = new THREE.Sphere(new THREE.Vector3(0, 1 / this.scale, 0), 3.5 / this.scale);
       this.dress(sm, g);
     });

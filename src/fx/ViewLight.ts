@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { damp } from '../core/math';
+import { sceneLights } from '../core/SceneLights';
 
 const WHITE = new THREE.Color(1, 1, 1);
 
@@ -97,10 +98,7 @@ export class ViewLight {
     if (this.listAge > 2) {
       // Lights come and go with the map (practical lights are parked, not added): a slow refresh.
       this.listAge = 0;
-      this.lights = [];
-      this.scene.traverse((o) => {
-        if ((o as THREE.Light).isLight) this.lights.push(o as THREE.Light);
-      });
+      this.lights = sceneLights(this.scene).all.slice();
     }
     const at = this.at.copy(eye).addScaledVector(forward, 0.45).addScaledVector(up, -0.15);
     const lum = this.measure(at, this.targetColor);

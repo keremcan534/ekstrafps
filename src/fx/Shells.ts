@@ -14,6 +14,7 @@ interface Shell {
 }
 
 const LIFETIME = 3.5;
+const TYPES: ShellType[] = ['rifle', 'pistol', 'shotgun'];
 const SHAPES: Record<ShellType, { r: number; len: number; mat: THREE.Material; density: number }> = {
   rifle: { r: 0.0055, len: 0.045, mat: shellMaterials.brass, density: 8000 },
   pistol: { r: 0.0065, len: 0.025, mat: shellMaterials.brass, density: 8000 },
@@ -30,6 +31,8 @@ export class Shells {
   private pools: Record<ShellType, Shell[]> = { rifle: [], pistol: [], shotgun: [] };
   private meshes = {} as Record<ShellType, THREE.InstancedMesh>;
   private cursor: Record<ShellType, number> = { rifle: 0, pistol: 0, shotgun: 0 };
+  /** Casings in flight per type: a type with none isn't drawn (an all-zero-scale instanced draw still costs a draw call). */
+  private live: Record<ShellType, number> = { rifle: 0, pistol: 0, shotgun: 0 };
   private m = new THREE.Matrix4();
   private q = new THREE.Quaternion();
   private p = new THREE.Vector3();
@@ -50,6 +53,7 @@ export class Shells {
       mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
       mesh.frustumCulled = false;
       mesh.castShadow = false;
+      mesh.visible = false;
       for (let i = 0; i < perType; i++) {
         mesh.setMatrixAt(i, this.zero);
         const body = physics.world.createRigidBody(
@@ -74,6 +78,8 @@ export class Shells {
     const pool = this.pools[type];
     const shell = pool[this.cursor[type]];
     this.cursor[type] = (this.cursor[type] + 1) % pool.length;
+    if (!shell.active) this.live[type]++;
+    this.meshes[type].visible = true;
     const b = shell.body;
     b.setEnabled(true);
     b.setTranslation(pos, true);
@@ -86,7 +92,7 @@ export class Shells {
   }
 
   update(dt: number): void {
-    for (const type of Object.keys(this.pools) as ShellType[]) {
+    for (const type of TYPES) {
       const mesh = this.meshes[type];
       let dirty = false;
       for (const s of this.pools[type]) {
@@ -95,6 +101,7 @@ export class Shells {
         dirty = true;
         if (s.age > LIFETIME) {
           s.active = false;
+          this.live[type]--;
           s.body.setEnabled(false);
           mesh.setMatrixAt(s.index, this.zero);
           continue;
@@ -115,6 +122,7 @@ export class Shells {
         }
       }
       if (dirty) mesh.instanceMatrix.needsUpdate = true;
+      mesh.visible = this.live[type] > 0;
     }
   }
 }

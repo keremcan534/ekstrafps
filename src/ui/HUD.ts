@@ -202,10 +202,16 @@ export class HUD {
       this.toastTime -= dt;
       if (this.toastTime <= 0) this.toastEl.classList.remove('show');
     }
-    const w = window.innerWidth;
-    const h = window.innerHeight;
+    // The viewport is read only with a number on screen: on phones reading innerWidth forces a
+    // style and layout pass mid-frame whenever the HUD has just been written to.
+    let w = -1;
+    let h = -1;
     for (const n of this.numbers) {
       if (!n.active) continue;
+      if (w < 0) {
+        w = window.innerWidth;
+        h = window.innerHeight;
+      }
       n.age += dt;
       if (n.age >= n.life) {
         n.active = false;

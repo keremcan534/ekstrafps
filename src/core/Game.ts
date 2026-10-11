@@ -69,6 +69,8 @@ import { PerfBench, benchFlagsFromUrl, glInfo, type BenchFlags } from './PerfBen
 import { enterLandscape } from './Landscape';
 import { installLightClip, syncLightClip, clearLightClip } from './LightClip';
 import { cacheUniforms } from './UniformCache';
+import { rigidBatch } from './RigidBatch';
+import { sceneLights } from './SceneLights';
 import { raid } from '../game/Progress';
 import { Inhabitants } from '../game/Inhabitants';
 import type { ShowcaseDeps } from '../ui/Showcase';
@@ -320,6 +322,9 @@ export class Game {
     this.renderer.shadowMap.type = this.mobile ? THREE.PCFShadowMap : THREE.PCFSoftShadowMap;
     this.renderer.autoClear = false;
     this.renderer.info.autoReset = false;
+    // Shader error checks read each program's logs back the first time it's used: a stall per
+    // program on a phone (a hitch whenever a new one turns up mid-match). The dev server keeps them.
+    this.renderer.debug.checkShaderErrors = import.meta.env.DEV || params.has('dev');
     container.appendChild(this.renderer.domElement);
     // GPU reset (phones under memory pressure): render targets come back empty, rebuild the reflections.
     this.renderer.domElement.addEventListener('webglcontextrestored', () => {
@@ -536,11 +541,13 @@ export class Game {
       warm.position.copy(this.camera.eye).y -= 50;
       this.scene.add(warm);
     }
+    rigidBatch.attach(this.scene);
     // compile() skips invisible objects: pooled robots, muzzle flashes and culled
     // rooms would otherwise compile on first sight (a visible hitch mid-fight).
     const hidden: THREE.Object3D[] = [];
+    // (Not the light probe: it's out of the lights on purpose while image-based lighting is on.)
     this.scene.traverse((o) => {
-      if (!o.visible) {
+      if (!o.visible && o !== this.probe) {
         hidden.push(o);
         o.visible = true;
       }
@@ -1568,6 +1575,9 @@ export class Game {
     const env = s.lighting === 'full' ? ibl : null;
     if (this.scene.environment !== env) this.scene.environment = env;
     this.probe.intensity = env ? 0 : this.scene.environmentIntensity * 1.1;
+    // At zero it adds exactly nothing, yet a probe in the scene still costs every lit pixel its
+    // spherical-harmonics sum: out of the scene's lights while image-based lighting is on.
+    this.probe.visible = !env;
     const vm = this.weapons.viewmodel.scene;
     const vmEnv = ibl;
     if (vm.environment !== vmEnv) vm.environment = vmEnv;
@@ -1906,6 +1916,7 @@ export class Game {
     this.lighting?.update(dt);
     // The probe stands in for the image-based fill (and dims with it in a blackout).
     this.probe.intensity = this.scene.environment ? 0 : this.scene.environmentIntensity * 1.1;
+    this.probe.visible = !this.scene.environment;
     // Lights out: muzzle flashes light the room (and give shooters away).
     const darkness = this.lighting?.darkness ?? 0;
     this.dust.update(dt, this.camera.eye, darkness);
@@ -2075,7 +2086,10 @@ export class Game {
         // Each lamp lights its own room only (the flashlight casts a real shadow instead).
         const room = this.arena.lightRoom?.bind(this.arena);
         if (room) syncLightClip(this.scene, room, this.lighting?.flashlightLight);
+        // The same rigid piece on many characters (guns, helmets): one instanced draw each.
+        rigidBatch.begin(this.scene, this.camera.camera, sceneLights(this.scene).all);
         this.renderer.render(this.scene, this.camera.camera);
+        rigidBatch.end();
         clearLightClip();
       }
       this.renderer.clearDepth();

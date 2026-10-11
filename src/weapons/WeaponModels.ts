@@ -7,6 +7,7 @@ import { dressRig } from './WeaponMeshes';
 import type { ProfiledView } from './ProfiledRig';
 import type { HandAction } from './HandPose';
 import { attachHands, proceduralHands, type RigHands } from './HandGrips';
+import { rigidBatch } from '../core/RigidBatch';
 
 /**
  * Placeholder procedural weapon models with the moving parts the procedural
@@ -1403,7 +1404,12 @@ export function bakedRig(model: ModelKey, low = false): WeaponRig {
     t.rightHand.visible = false;
     bakedTemplates.set(key, t);
   }
-  return cloneRig(t);
+  const rig = cloneRig(t);
+  // Many soldiers carry the same model: its pieces are drawn together (core/RigidBatch).
+  rig.root.traverse((o) => {
+    if ((o as THREE.Mesh).isMesh && o.userData.gunModel) rigidBatch.add(o as THREE.Mesh);
+  });
+  return rig;
 }
 
 /**
