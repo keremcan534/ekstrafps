@@ -5,7 +5,7 @@ import { playerConfig } from '../player/PlayerConfig';
 import { feel } from '../config/Feel';
 import { MuzzleFlash } from '../fx/MuzzleFlash';
 import { buildWeaponModel, compactViewRig, type WeaponRig } from './WeaponModels';
-import { buildProfiledRig, setBeadShown, sightBead, type ProfiledView } from './ProfiledRig';
+import { buildProfiledRig, type ProfiledView } from './ProfiledRig';
 import { FirstPersonArms } from './FirstPersonHands';
 import { attachHands, layoutHands } from './HandGrips';
 import type { AnyWeaponHands } from './hands/HandProfile';
@@ -296,22 +296,9 @@ export class Viewmodel {
     this.scene.environmentIntensity = 0.6 * level;
   }
 
-  /**
-   * Old automatic placement: the procedural rig dressed in the model (WeaponMeshes.dressRig).
-   * A model file's iron sights get the bead the procedural front post had (it went with the
-   * procedural parts): on the sight line (tipped by sightTilt) just behind the muzzle, where
-   * the line clears the model's front sight.
-   */
+  /** Old automatic placement: the procedural rig dressed in the model (WeaponMeshes.dressRig). */
   private legacyRig(w: WeaponData): WeaponRig {
     const r = buildWeaponModel(w.model, false, false, w.sight.sightDistance);
-    let dressed = false;
-    r.root.traverse((o) => (dressed ||= !!o.userData.gunModel));
-    if (dressed && w.sight.type === 'iron') {
-      r.root.updateMatrixWorld(true);
-      const front = -r.sight.worldToLocal(r.muzzle.getWorldPosition(new THREE.Vector3())).z - 0.01;
-      const tilt = r.sightTilt ?? 0;
-      if (front > 0.05) r.sight.add(sightBead()).getObjectByName('SightBead')!.position.set(0, -front * Math.sin(tilt), -front * Math.cos(tilt));
-    }
     compactViewRig(r);
     return r;
   }
@@ -502,7 +489,6 @@ export class Viewmodel {
       this.camera.near = near;
       this.camera.updateProjectionMatrix();
     }
-    setBeadShown(recoilFeel().sightBead ? smoothstep((this.adsAmount - 0.75) / 0.22) : 0);
     this.flash.update(dt);
     // The weapon in hand only: the fifteen holstered rigs (and the parts merged into
     // their anchors) are hidden. Points under hidden parts are read with getWorldPosition.

@@ -74,6 +74,10 @@ body.is-touch .sv-points { font-size: 15px; padding: 3px 8px; }
 body.is-touch .squad-panel { transform: scale(0.8); opacity: var(--o, 1); }
 body.is-touch .minimap { opacity: var(--o, 1); }
 
+/* Nothing over the middle of the screen, where an enemy is a few pixels across: no hit marker or
+   kill ring (hits are heard, kills felt and counted). */
+body.is-touch :is(.hitmarker, .kill-ring) { display: none; }
+
 /* Switched off in the layout (the editor still shows it, faint). */
 body.is-touch .hud-off { visibility: hidden !important; pointer-events: none !important; }
 
