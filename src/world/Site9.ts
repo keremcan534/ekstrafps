@@ -16,6 +16,34 @@ import { Site9Dressing } from './Site9Dressing';
 
 type V3 = [number, number, number];
 
+/** Screen rects (NDC x0, y0, x1, y1, flat), `n` of them: kept from frame to frame, grown when full. */
+interface RectList {
+  n: number;
+  r: Float64Array;
+}
+
+function pushRect(list: RectList, rect: ArrayLike<number>): void {
+  if (list.n * 4 + 4 > list.r.length) {
+    const r = new Float64Array(list.r.length * 2);
+    r.set(list.r);
+    list.r = r;
+  }
+  const r = list.r;
+  const k = list.n * 4;
+  r[k] = rect[0];
+  r[k + 1] = rect[1];
+  r[k + 2] = rect[2];
+  r[k + 3] = rect[3];
+  list.n++;
+}
+
+/** Does any rect in `list` touch [x0, x1] × [y0, y1]? */
+function overlaps(list: RectList, x0: number, y0: number, x1: number, y1: number): boolean {
+  const r = list.r;
+  for (let i = 0, k = 0; i < list.n; i++, k += 4) if (r[k] <= x1 && r[k + 2] >= x0 && r[k + 1] <= y1 && r[k + 3] >= y0) return true;
+  return false;
+}
+
 const METAL: HitReceiver = { surface: 'metal', allowDecals: true };
 
 /** A weapon for sale on a wall (Survival). */
@@ -2057,9 +2085,17 @@ export class Site9 implements GameMap {
    * (archways, opened shutters) that deep. Closed shutters block either way.
    */
   updateVisibility(x: number, z: number, isOpen: (l: LinkDef) => boolean, camera?: THREE.Camera): void {
+    this.portalLive = false;
     const here = this.layout.roomAt(x, z);
     if (!here) return;
-    const seen = (camera && this.portalRooms(camera, x, z, isOpen)) || this.linkedRooms(here.id, x, z, isOpen);
+    const portal = camera ? this.portalRooms(camera, x, z, isOpen) : null;
+    const seen = portal || this.linkedRooms(here.id, x, z, isOpen);
+    if (portal && camera) {
+      // The rects hold for this view only (boxVisible's callers check it with portalCamera).
+      this.portalLive = true;
+      this.portalView.copy(camera.matrixWorld);
+      this.portalProj.copy(camera.projectionMatrix);
+    }
     this.visibleRooms = seen;
     for (const [id, room] of this.layout.rooms) room.group.visible = seen.has(id);
     for (const s of this.shared) s.mesh.visible = this.sharedShown(s);
@@ -2314,16 +2350,47 @@ export class Site9 implements GameMap {
   private eyeAt = new THREE.Vector3();
   private clip4 = new THREE.Vector4();
 
+  // What the portal search leaves for culling the characters in the rooms it found (boxVisible).
+  /** Per room, the screen rects (NDC) it was seen through this frame: one per portal chain that reached it. */
+  private seenRects = new Map<string, RectList>();
+  private rectLists: RectList[] = [];
+  /**
+   * The chains the search stopped short (view depth, view distance): whatever lies past one of
+   * them, in any room, is on screen inside its rect.
+   */
+  private cutRects: RectList = { n: 0, r: new Float64Array(64) };
+  /** The rects are this frame's, for the view in portalView / portalProj. */
+  private portalLive = false;
+  private portalFrom = '';
+  private portalEyeY = 0;
+  private portalView = new THREE.Matrix4();
+  private portalProj = new THREE.Matrix4();
+  /** Per room, the portals the search can leave it by. */
+  private portalsOut = new Map<string, Portal[]>();
+  /** The lowest wall top on the map: under it every wall is solid but for the openings. */
+  private wallTop = Infinity;
+  private boxLo = new THREE.Vector3();
+  private boxHi = new THREE.Vector3();
+
   /** Rooms seen through the openings on screen; null when the camera isn't inside a room. */
   private portalRooms(camera: THREE.Camera, x: number, z: number, isOpen: (l: LinkDef) => boolean): Set<string> | null {
     const eye = this.eyeAt.setFromMatrixPosition(camera.matrixWorld);
     const start = this.layout.roomAt(eye.x, eye.z);
     if (!start || eye.y > start.h + 0.5) return null;
     this.vp.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
+    if (!this.portalsOut.size) this.indexPortals();
+    for (let i = 0; i < this.rectLists.length; i++) this.rectLists[i].n = 0;
+    this.cutRects.n = 0;
+    this.portalFrom = start.id;
+    this.portalEyeY = eye.y;
     const seen = new Set<string>([start.id]);
     const far2 = this.viewFar * this.viewFar;
     const visit = (id: string, rect: number[], depth: number, via: Portal | null) => {
-      if (depth >= this.viewDepth) return;
+      if (depth >= this.viewDepth) {
+        // Not followed further: anything seen past this room is seen inside its rect.
+        if (this.leadsOut(id, via, isOpen)) pushRect(this.cutRects, rect);
+        return;
+      }
       for (const p of this.layout.portals) {
         if (p === via) continue;
         const other = p.a === id ? p.b : p.b === id && !p.oneWay ? p.a : null;
@@ -2333,16 +2400,106 @@ export class Site9 implements GameMap {
           const r = ROOM_OF.get(other)!.rect;
           const dx = Math.max(r[0] - x, 0, x - r[2]);
           const dz = Math.max(r[1] - z, 0, z - r[3]);
-          if (dx * dx + dz * dz > far2) continue;
+          if (dx * dx + dz * dz > far2) {
+            // Not drawn (too far), but what lies past it can still show through its opening.
+            const cut = this.portalRect(p, eye, rect);
+            if (cut) pushRect(this.cutRects, cut);
+            continue;
+          }
         }
         const seenRect = this.portalRect(p, eye, rect);
         if (!seenRect) continue;
         seen.add(other);
+        let list = this.seenRects.get(other);
+        if (!list) {
+          this.seenRects.set(other, (list = { n: 0, r: new Float64Array(16) }));
+          this.rectLists.push(list);
+        }
+        pushRect(list, seenRect);
         visit(other, seenRect, depth + 1, p);
       }
     };
     visit(start.id, [-1, -1, 1, 1], 0, null);
     return seen;
+  }
+
+  /** Would the search go on from room `id` (entered by `via`) if it went deeper? */
+  private leadsOut(id: string, via: Portal | null, isOpen: (l: LinkDef) => boolean): boolean {
+    const out = this.portalsOut.get(id);
+    if (out) for (const p of out) if (p !== via && !(p.link?.kind === 'buy' && !isOpen(p.link))) return true;
+    return false;
+  }
+
+  /** The portals out of each room (the search's own rule) and the lowest wall top, once. */
+  private indexPortals(): void {
+    for (const p of this.layout.portals) {
+      for (const [from, ok] of [[p.a, true], [p.b, !p.oneWay]] as const) {
+        if (!ok) continue;
+        const list = this.portalsOut.get(from) ?? [];
+        list.push(p);
+        this.portalsOut.set(from, list);
+      }
+    }
+    // A wall between two rooms stands 0.3 m over the taller one, a wall onto rock over its room.
+    for (const r of ROOMS) this.wallTop = Math.min(this.wallTop, r.h + 0.3);
+  }
+
+  /** Was portal culling's last search made for exactly this view (same place, same lens)? */
+  portalCamera(camera: THREE.Camera): boolean {
+    return this.portalLive && camera.matrixWorld.equals(this.portalView) && camera.projectionMatrix.equals(this.portalProj);
+  }
+
+  /**
+   * Could any point of the world box [lo, hi] be on screen through the openings, for the view
+   * of the last search (check portalCamera first)? Conservative: true whenever it can't tell.
+   *
+   * A line of sight that starts below every wall top and ends below it stays below it, so it
+   * can't go over a wall: it passes from room to room through the openings only (never into
+   * the rock), each one a portal. The point then projects to where the line crossed each
+   * opening, inside the rect of that chain of portals, which the search kept for the room the
+   * point is in, or, for a chain it stopped short, among the cut rects. It stands on the same
+   * assumption as the room culling: walls are opaque and every opening is a portal.
+   */
+  boxVisible(lo: THREE.Vector3, hi: THREE.Vector3): boolean {
+    if (!this.portalLive) return true;
+    // (Written so a NaN box counts as seen; a huge one isn't worth the cells.)
+    if (!(lo.x <= hi.x && lo.y <= hi.y && lo.z <= hi.z) || hi.x - lo.x > 32 || hi.z - lo.z > 32) return true;
+    if (this.portalEyeY >= this.wallTop || hi.y >= this.wallTop) return true;
+    // The box's screen rect (any corner at or behind the eye: on screen as far as we know).
+    let x0 = Infinity;
+    let y0 = Infinity;
+    let x1 = -Infinity;
+    let y1 = -Infinity;
+    for (let k = 0; k < 8; k++) {
+      const c = this.clip4.set(k & 1 ? hi.x : lo.x, k & 2 ? hi.y : lo.y, k & 4 ? hi.z : lo.z, 1).applyMatrix4(this.vp);
+      if (c.w <= 1e-3) return true;
+      const nx = c.x / c.w;
+      const ny = c.y / c.w;
+      if (nx < x0) x0 = nx;
+      if (nx > x1) x1 = nx;
+      if (ny < y0) y0 = ny;
+      if (ny > y1) y1 = ny;
+    }
+    // Every room under the box (the 1 m cells it covers; rock cells hold nothing to see).
+    let last = '';
+    for (let cz = Math.floor(lo.z), z1 = Math.floor(hi.z); cz <= z1; cz++) {
+      for (let cx = Math.floor(lo.x), xe = Math.floor(hi.x); cx <= xe; cx++) {
+        const r = this.layout.roomAt(cx, cz);
+        if (!r || r.id === last) continue;
+        last = r.id;
+        if (r.id === this.portalFrom) return true;
+        const list = this.seenRects.get(r.id);
+        if (list && overlaps(list, x0, y0, x1, y1)) return true;
+      }
+    }
+    return overlaps(this.cutRects, x0, y0, x1, y1);
+  }
+
+  /** boxVisible for a world sphere (its bounding box). */
+  sphereVisible(center: THREE.Vector3, radius: number): boolean {
+    this.boxLo.set(center.x - radius, center.y - radius, center.z - radius);
+    this.boxHi.set(center.x + radius, center.y + radius, center.z + radius);
+    return this.boxVisible(this.boxLo, this.boxHi);
   }
 
   /**

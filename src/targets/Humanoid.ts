@@ -7,6 +7,7 @@ import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js
 import { MeshBuilder } from '../world/MeshBuilder';
 import { skinDetail } from '../enemies/SoldierSkin';
 import { Damageable } from './Damageable';
+import { trackBody } from '../core/CharacterBounds';
 
 export type PartName = 'pelvis' | 'torso' | 'head' | 'upperArmL' | 'upperArmR' | 'foreArmL' | 'foreArmR' | 'thighL' | 'thighR' | 'shinL' | 'shinR';
 export type HitZone = 'head' | 'thorax' | 'stomach' | 'arm' | 'leg';
@@ -387,6 +388,8 @@ export class Humanoid implements HitSet {
     for (const part of this.parts) part.group.matrixWorld.decompose(part.worldPos, part.worldQuat, this.tmpScale);
     this.setHits(true);
     this.setBlocker(true);
+    // Frustum bounds from the bones, and no draw in rooms out of sight (core/CharacterBounds).
+    trackBody(this, this.mesh, this.nearGeo, this.farGeo);
   }
 
   get alive(): boolean {

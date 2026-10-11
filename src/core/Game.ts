@@ -62,6 +62,7 @@ import { AUTO_TIERS, MOBILE_ANISOTROPY, VIEW_DISTANCE, loadAutoTier, loadGraphic
 import { AutoQuality } from './AutoQuality';
 import { humanoidView } from '../targets/Humanoid';
 import { skipHiddenMatrices } from './VisibleMatrices';
+import { CharacterBounds } from './CharacterBounds';
 import { setTextureAnisotropy } from '../fx/Textures';
 import { DustMotes } from '../fx/DustMotes';
 import { Ambience } from '../audio/Ambience';
@@ -111,6 +112,8 @@ export interface FrameDirector {
  */
 export class Game {
   readonly renderer: THREE.WebGLRenderer;
+  /** Characters' frustum bounds and room culling (render only; stats for the A/B). */
+  charBounds!: CharacterBounds;
   readonly scene = new THREE.Scene();
   readonly mobile: boolean;
   readonly debugDraw = new DebugDraw();
@@ -460,6 +463,8 @@ export class Game {
     // Hidden subtrees (the weapons not in hand, pooled squads) skip the per-frame matrix pass.
     skipHiddenMatrices(this.scene);
     skipHiddenMatrices(this.weapons.viewmodel.scene);
+    // Characters: frustum spheres from their bones, and no draw in rooms out of sight (render only).
+    this.charBounds = new CharacterBounds(this.scene, this.renderer, this.arena instanceof Site9 ? this.arena : null);
     this.status = new StatusHUD(ui);
     this.initBlackDivision();
     if (this.arena instanceof Site9) {
