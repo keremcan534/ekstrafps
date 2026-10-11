@@ -78,6 +78,7 @@ export class TouchControls {
   private slotBtns: HTMLDivElement[] = [];
   private ownedKey = '';
   private lastUse = '';
+  private aiming = false;
 
   constructor(parent: HTMLElement, private input: Input, weaponNames: string[], actions: TouchActions, survival = false) {
     this.root = el(`touch-root${survival ? ' survival' : ''}`, parent);
@@ -158,7 +159,12 @@ export class TouchControls {
   /** Keep ADS / weapon card / slots in sync with gameplay (e.g. ADS dropped on reload). */
   sync(adsActive: boolean, slot: number, owned: number[] | null = null): void {
     this.flushJoy();
-    this.adsBtn.classList.toggle('on', adsActive);
+    if (adsActive !== this.aiming) {
+      this.aiming = adsActive;
+      this.adsBtn.classList.toggle('on', adsActive);
+      // The controls you don't aim with fade back while aimed (touch-hud.css).
+      document.body.classList.toggle('is-aiming', adsActive);
+    }
     const key = `${owned ? owned.join(',') : 'all'}|${slot}`;
     if (key !== this.ownedKey) {
       this.ownedKey = key;

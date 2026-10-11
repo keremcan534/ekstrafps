@@ -13,7 +13,8 @@ body.is-touch :is(.flash-btn, .squad-btn, .build-btn) {
   display: flex; align-items: center; justify-content: center;
   border-radius: 50%; padding: 0;
   font: 700 11px/1 system-ui, sans-serif; letter-spacing: 0.06em;
-  opacity: calc(var(--hud-alpha, 1) * var(--o, 1));
+  opacity: calc(var(--hud-alpha, 1) * var(--o, 1) * var(--aim, 1));
+  transition: opacity 150ms;
 }
 body.is-touch .touch-root .btn svg { display: block; pointer-events: none; }
 body.is-touch .touch-root .btn.pressed { background: rgba(255, 255, 255, 0.26); transform: scale(0.94); }
@@ -36,17 +37,17 @@ body.is-touch .btn-jump, body.is-touch .btn-crouch { width: 64px; height: 64px; 
 body.is-touch .btn-lean-l, body.is-touch .btn-lean-r { width: 46px; height: 46px; border-radius: 12px; }
 body.is-touch .touch-root .btn-small { width: 44px; height: 44px; border-radius: 12px; }
 body.is-touch .touch-root .btn-use { width: auto; height: auto; min-width: 120px; padding: 8px 14px; border-radius: 12px; flex-direction: column; gap: 2px;
-  border-color: rgba(224, 165, 28, 0.85) !important; color: #ffd25a; font-size: 12px; }
+  border-color: rgba(224, 165, 28, 0.85) !important; color: #ffd25a; font-size: 15px; }
 
 /* Squad orders / flashlight / build (Site-9): small icons in a column beside the minimap. */
-body.is-touch .flash-btn, body.is-touch .squad-btn, body.is-touch .build-btn { width: 44px; min-width: 0; height: 44px; padding: 0; border-radius: 12px; font-size: 8px; }
+body.is-touch .flash-btn, body.is-touch .squad-btn, body.is-touch .build-btn { width: 44px; min-width: 0; height: 44px; padding: 0; border-radius: 12px; font-size: 10px; white-space: nowrap; }
 body.is-touch .flash-btn svg { width: 20px; height: 20px; }
 
 /* Move stick: rests where the layout puts it, floats under the thumb when touched. */
 body.is-touch .joy-base { width: 150px; height: 150px; margin: -75px 0 0 -75px; border: 1.5px solid rgba(255, 255, 255, 0.24); background: rgba(255, 255, 255, 0.04);
   -webkit-backdrop-filter: none; backdrop-filter: none; box-shadow: none; }
 body.is-touch .joy-base.idle { transform: translate(var(--jx, calc((14vw + env(safe-area-inset-left)) / var(--ui-zoom, 1))), var(--jy, calc(70vh / var(--ui-zoom, 1))));
-  opacity: calc(0.6 * var(--hud-alpha, 1) * var(--o, 1)); }
+  opacity: calc(0.6 * var(--hud-alpha, 1) * var(--o, 1) * var(--aim, 1)); transition: opacity 150ms; }
 body.is-touch .joy-knob { width: 58px; height: 58px; background: rgba(255, 255, 255, 0.5); box-shadow: none; }
 
 /* Weapon + ammo: one compact strip (name · mode chip · count / spare). Tap: swap; chip: fire mode. */
@@ -58,12 +59,12 @@ body.is-touch .touch-root .ammo {
   opacity: calc(var(--hud-alpha, 1) * var(--o, 1));
 }
 body.is-touch .touch-root .ammo.pressed { background: rgba(255, 255, 255, 0.16); }
-body.is-touch .touch-root .ammo-weapon { font: 700 12px/1 system-ui, sans-serif; letter-spacing: 0.08em; text-transform: uppercase; color: #e8e8e8; }
+body.is-touch .touch-root .ammo-weapon { font: 700 16px/1 system-ui, sans-serif; letter-spacing: 0.08em; text-transform: uppercase; color: #e8e8e8; }
 body.is-touch .touch-root .ammo.can-swap .ammo-weapon::after { content: ' ⇄'; color: rgba(255, 255, 255, 0.5); }
-body.is-touch .touch-root .ammo-mode { margin: 0; padding: 4px 8px; font: 700 10px/1 ui-monospace, Consolas, monospace; letter-spacing: 0.12em; border-radius: 6px; }
+body.is-touch .touch-root .ammo-mode { margin: 0; padding: 4px 8px; font: 700 13px/1 ui-monospace, Consolas, monospace; letter-spacing: 0.12em; border-radius: 6px; }
 body.is-touch .touch-root .ammo-row { margin: 0; }
 body.is-touch .touch-root .ammo-count { font: 800 24px/1 system-ui, sans-serif; text-shadow: none; }
-body.is-touch .touch-root .ammo-mag { font-size: 13px; margin-left: 3px; }
+body.is-touch .touch-root .ammo-mag { font-size: 16px; margin-left: 3px; }
 body.is-touch .touch-root .reload-bar { position: absolute; left: 10px; right: 10px; bottom: 2px; width: auto; margin: 0; }
 
 /* Top left: compact health, cash and squad. */
@@ -73,6 +74,10 @@ body.is-touch .hp-bar { width: 96px; height: 5px; }
 body.is-touch .sv-points { font-size: 15px; padding: 3px 8px; }
 body.is-touch .squad-panel { transform: scale(0.8); opacity: var(--o, 1); }
 body.is-touch .minimap { opacity: var(--o, 1); }
+
+/* Aimed (body.is-aiming): the controls you don't aim or fire with fade back, still where the thumb
+   expects them, and the view round the sights comes forward. */
+body.is-touch.is-aiming :is(.btn-jump, .btn-crouch, .btn-reload, .btn-lean-l, .btn-lean-r, .flash-btn, .squad-btn, .build-btn, .joy-base.idle) { --aim: 0.35; }
 
 /* Nothing over the middle of the screen, where an enemy is a few pixels across: no hit marker or
    kill ring (hits are heard, kills felt and counted). */

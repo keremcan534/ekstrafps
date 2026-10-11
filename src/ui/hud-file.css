@@ -91,6 +91,7 @@
 .ui-layer .sb-chip.lead { background: linear-gradient(0deg, rgba(200, 50, 31, 0.28), rgba(5, 6, 8, 0.58) 70%); }
 .ui-layer .sb-note { top: 52px; font: 700 11px var(--g-mono); letter-spacing: 0.26em; color: var(--h-ink); text-shadow: var(--h-shadow); }
 .ui-layer .squad-line { right: 28px; padding: 0; background: none; font: 700 11px var(--g-mono); letter-spacing: 0.16em; }
+.has-minimap .ui-layer .squad-line { right: 230px; }
 .ui-layer .killfeed { gap: 2px; }
 .ui-layer .kf-line {
   position: relative; padding: 4px 12px 4px 26px; background: linear-gradient(270deg, rgba(5, 6, 8, 0.62), transparent);
@@ -132,6 +133,28 @@
 .is-touch .ui-layer .ammo-count { font-size: 36px; }
 .is-touch .ui-layer .hp { min-width: 170px; padding: 6px 22px 6px 4px; }
 .is-touch .ui-layer .hp-text { font-size: 30px; }
+/* The left thumb owns the bottom left (the move stick): health, cash and the squad list stack top
+   left. Top only: with the desktop's bottom as well the health panel stretched down the screen,
+   its bar left halfway. The squad line sits left of the pause button. */
+.is-touch .ui-layer .hp { top: 52px; bottom: auto; left: calc(16px + env(safe-area-inset-left) / var(--ui-zoom, 1)); }
+.is-touch .ui-layer .sv-points { top: 116px; bottom: auto; left: calc(18px + env(safe-area-inset-left) / var(--ui-zoom, 1)); }
+.is-touch .ui-layer .squad-panel { top: 150px; bottom: auto; left: calc(16px + env(safe-area-inset-left) / var(--ui-zoom, 1)); transform-origin: 0 0; }
+.is-touch .ui-layer .sv-popups { top: 112px; bottom: auto; left: calc(96px + env(safe-area-inset-left) / var(--ui-zoom, 1)); }
+/* The threat count and what's hunting sit right of the health (the scoreboard has the top centre). */
+.is-touch .ui-layer :is(.sv-round, .sv-remain) { left: calc(236px + env(safe-area-inset-left) / var(--ui-zoom, 1)); right: auto; transform: none; text-align: left; }
+.is-touch .ui-layer .sv-round { top: 16px; font-size: 40px; }
+.is-touch .ui-layer .sv-round::before { font-size: 13px; }
+.is-touch .ui-layer .sv-remain { top: 82px; font-size: 13px; }
+.is-touch .ui-layer .squad-line { right: 214px; top: 28px; font-size: 15px; letter-spacing: 0.12em; }
+/* The HUD is zoomed to the screen (~0.6 on a phone held sideways): its small print is set larger
+   here, no label under ~8.5 dp. */
+.is-touch .ui-layer .hp-text::after { font-size: 14px; letter-spacing: 0.24em; }
+.is-touch .ui-layer .sq-row { font-size: 17px; }
+.is-touch .ui-layer .sq-row u { font-size: 13px; }
+.is-touch .ui-layer .kf-line { font-size: 17px; }
+.is-touch .ui-layer .toast { font-size: 21px; }
+.is-touch .ui-layer .sb-chip { font-size: 18px; }
+.is-touch .ui-layer :is(.sb-chip b, .sb-note, .revive-bar) { font-size: 14px; }
 
 /* ---------- full map (M) ---------- */
 .map-full { -webkit-backdrop-filter: none; backdrop-filter: none; background: rgba(5, 6, 8, 0.9); }
