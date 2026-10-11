@@ -40,4 +40,9 @@ export interface GameMap {
    * core/LightClip). False outside any room, or on a map without rooms.
    */
   lightRoom?(x: number, z: number, out: THREE.Vector4): boolean;
+  /**
+   * Add `obj` to the map, drawn only while one of `rooms` is (portal culling). Maps
+   * without rooms just add it.
+   */
+  shareVisibility?(obj: THREE.Object3D, rooms: string[]): void;
 }

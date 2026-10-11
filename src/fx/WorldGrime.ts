@@ -145,9 +145,17 @@ export function applyGrime(mat: THREE.Material, lite = false): void {
         // Ceilings: water stains (the stain channel, browner).
         float gCeil = smoothstep(0.6, 0.9, -gN.y);
         dirt = clamp(dirt * grimeAmount, 0.0, 1.0);
+        // A fold host (world/MaterialFold) draws grimed and clean materials in one call:
+        // its clean ones get dirt and wetness x 0, which leaves them exactly as they were.
+        #ifdef GRIME_GATE
+          dirt *= GRIME_GATE;
+        #endif
         diffuseColor.rgb *= mix(vec3(1.0), mix(vec3(0.6, 0.57, 0.52), vec3(0.55, 0.47, 0.36), gCeil), dirt);
         // Wet patches on floors: darker, and glossy below.
         float gWetK = grimeWet * smoothstep(0.6, 0.9, gN.y) * smoothstep(0.84, 0.95, gBig.g) * 0.7;
+        #ifdef GRIME_GATE
+          gWetK *= GRIME_GATE;
+        #endif
         diffuseColor.rgb *= 1.0 - 0.45 * gWetK;`,
       )
       .replace(

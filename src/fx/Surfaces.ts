@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { applyGrime } from './WorldGrime';
+import { foldEnabled, setLumaHook, swapOnce } from '../world/MaterialFold';
 
 /**
  * Real surfaces: CC0 PBR texture sets from Poly Haven (polyhaven.com), converted to WebP
@@ -100,6 +101,41 @@ const lumOf = (c: THREE.Color) => c.r * 0.2126 + c.g * 0.7152 + c.b * 0.0722;
 /** Rough PBR sets drink more light than the old flat paint did: give some of it back. */
 const BRIGHT = 1.3;
 
+/**
+ * The luma map stage. The fold engine (world/MaterialFold) knows it by this exact text and
+ * swaps it whole for one that reads each folded material's own normaliser.
+ */
+const LUMA_MAP = `#ifdef USE_MAP
+            vec4 sampledDiffuseColor = texture2D(map, vMapUv);
+            float lumaD = dot(sampledDiffuseColor.rgb, vec3(0.2126, 0.7152, 0.0722)) * lumaNorm;
+            diffuseColor.rgb *= mix(1.0, clamp(lumaD, 0.15, 2.2), 0.85);
+          #endif`;
+setLumaHook(LUMA_MAP);
+
+/**
+ * One ARM fetch per pixel. The set's ARM map is the aoMap, the roughnessMap and the
+ * metalnessMap at once, and three samples it three times at the very same UV (same texture,
+ * same sampler, identical UV expressions): read it once and take R, G and B from that texel.
+ * The same texel, so the same picture; two fetches and two texture units fewer per pixel.
+ * Roughness and metalness maps come off the material (USE_AOMAP stays, the fetch uses its UV).
+ */
+function armOnce(m: THREE.MeshStandardMaterial): void {
+  m.roughnessMap = null;
+  m.metalnessMap = null;
+  m.userData.arm1 = true;
+  const prev = m.onBeforeCompile;
+  const key = m.customProgramCacheKey;
+  m.onBeforeCompile = (shader, renderer) => {
+    prev.call(m, shader, renderer);
+    let fs = shader.fragmentShader;
+    fs = swapOnce(fs, '#include <roughnessmap_fragment>', 'float roughnessFactor = roughness;\nvec4 texelARM = texture2D( aoMap, vAoMapUv );\nroughnessFactor *= texelARM.g;', 'ARM: roughness');
+    fs = swapOnce(fs, '#include <metalnessmap_fragment>', 'float metalnessFactor = metalness;\nmetalnessFactor *= texelARM.b;', 'ARM: metalness');
+    const ao = swapOnce(THREE.ShaderChunk.aomap_fragment, 'texture2D( aoMap, vAoMapUv ).r', 'texelARM.r', 'ARM: occlusion');
+    shader.fragmentShader = swapOnce(fs, '#include <aomap_fragment>', ao, 'ARM: occlusion include');
+  };
+  m.customProgramCacheKey = () => key.call(m) + '|arm1';
+}
+
 /** A lit, grimed material from a PBR set. */
 export function surface(id: SurfaceId, mobile: boolean, o: SurfaceOptions = {}): THREE.MeshStandardMaterial {
   const arm = tex(id, 'arm', mobile);
@@ -128,23 +164,16 @@ export function surface(id: SurfaceId, mobile: boolean, o: SurfaceOptions = {}):
     // (contrast kept within reason: very dark photos would otherwise blow up their noise).
     const grime = m.onBeforeCompile;
     const norm = 1 / mean;
+    m.userData.lumaNorm = norm;
     m.onBeforeCompile = (shader, renderer) => {
       grime.call(m, shader, renderer);
       shader.uniforms.lumaNorm = { value: norm };
-      shader.fragmentShader = shader.fragmentShader
-        .replace('#include <common>', '#include <common>\nuniform float lumaNorm;')
-        .replace(
-          '#include <map_fragment>',
-          `#ifdef USE_MAP
-            vec4 sampledDiffuseColor = texture2D(map, vMapUv);
-            float lumaD = dot(sampledDiffuseColor.rgb, vec3(0.2126, 0.7152, 0.0722)) * lumaNorm;
-            diffuseColor.rgb *= mix(1.0, clamp(lumaD, 0.15, 2.2), 0.85);
-          #endif`,
-        );
+      shader.fragmentShader = shader.fragmentShader.replace('#include <common>', '#include <common>\nuniform float lumaNorm;').replace('#include <map_fragment>', LUMA_MAP);
     };
     const key = m.customProgramCacheKey;
     m.customProgramCacheKey = () => key.call(m) + '|luma';
   }
+  if (foldEnabled()) armOnce(m);
   return m;
 }
 

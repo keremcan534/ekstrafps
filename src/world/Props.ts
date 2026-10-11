@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import { foldEnabled, swapOnce } from './MaterialFold';
 
 /**
  * Real props: CC0 models from Poly Haven (polyhaven.com), packed to GLB by gltf-transform
@@ -105,6 +106,7 @@ export class PropKit {
             // Small see-through double-sided parts (the extinguisher's gauge glass): one pass.
             // three's back-then-front pair is two draws and two shader lookups per room.
             if (mat.transparent && mat.side === THREE.DoubleSide) mat.forceSinglePass = true;
+            if (foldEnabled()) oneMetalRoughFetch(mat);
             list.push({ geo, mat });
           });
           parts.set(id, list);
@@ -130,3 +132,24 @@ export class PropKit {
     }
   }
 }
+
+/**
+ * glTF keeps roughness (G) and metalness (B) in one texture, which three binds as both maps
+ * and samples twice at the same UV (same texture, same transform). Metalness can read the
+ * texel the roughness stage already fetched: the same value, one fetch and one texture unit fewer.
+ */
+function oneMetalRoughFetch(mat: THREE.Material): void {
+  const m = mat as THREE.MeshStandardMaterial;
+  if (!m.isMeshStandardMaterial || !m.roughnessMap || m.roughnessMap !== m.metalnessMap || m.userData.mr1) return;
+  m.metalnessMap = null;
+  m.userData.mr1 = true;
+  const prev = m.onBeforeCompile;
+  const own = m.customProgramCacheKey === THREE.Material.prototype.customProgramCacheKey ? 'std' : m.customProgramCacheKey();
+  m.onBeforeCompile = (shader, renderer) => {
+    prev.call(m, shader, renderer);
+    shader.fragmentShader = swapOnce(shader.fragmentShader, '#include <metalnessmap_fragment>', 'float metalnessFactor = metalness;\nmetalnessFactor *= texelRoughness.b;', 'prop metalness from the roughness texel');
+  };
+  m.customProgramCacheKey = () => own + '|mr1';
+  m.needsUpdate = true;
+}
+

@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import type { HitReceiver, Physics } from '../core/Physics';
 import { MeshBuilder } from './MeshBuilder';
+import { buildFolds, type FoldRegistry, type RoomFold } from './MaterialFold';
 
 export type Rect = [x0: number, z0: number, x1: number, z1: number];
 
@@ -91,6 +92,8 @@ export interface BuiltRoom {
   /** Ceiling-mounted pieces (no shadow casting). */
   ceil: MeshBuilder;
   lamps: THREE.Vector3[];
+  /** The room's fold draws (world/MaterialFold), one per material class in use. */
+  folds: RoomFold[];
 }
 
 const T = 0.3;
@@ -122,7 +125,17 @@ export class LayoutBuilder {
     defs: RoomDef[],
     private links: LinkDef[],
     private styles: Record<string, RoomStyle>,
-    private shared: { ao: THREE.Material; pool: (color: number) => THREE.Material; skyFrame: THREE.Material; skyGlass: THREE.Material; trim: THREE.Material; merge?: THREE.MeshStandardMaterial; lampDead?: THREE.Material },
+    private shared: {
+      ao: THREE.Material;
+      pool: (color: number) => THREE.Material;
+      skyFrame: THREE.Material;
+      skyGlass: THREE.Material;
+      trim: THREE.Material;
+      merge?: THREE.MeshStandardMaterial;
+      lampDead?: THREE.Material;
+      /** Fold each room's same-class materials into one draw (null: one draw per material, as before). */
+      fold?: FoldRegistry | null;
+    },
     private wallReceiver?: HitReceiver,
   ) {
     this.defs = defs;
@@ -140,7 +153,7 @@ export class LayoutBuilder {
     defs.forEach((d, i) => {
       for (let z = d.rect[1]; z < d.rect[3]; z++) for (let x = d.rect[0]; x < d.rect[2]; x++) this.grid[this.idx(x, z)] = i;
       this.rooms.set(d.id, {
-        def: d, group: new THREE.Group(), b: new MeshBuilder(true), clear: new MeshBuilder(false), ceil: new MeshBuilder(true), lamps: [],
+        def: d, group: new THREE.Group(), b: new MeshBuilder(true), clear: new MeshBuilder(false), ceil: new MeshBuilder(true), lamps: [], folds: [],
       });
     });
   }
@@ -191,7 +204,18 @@ export class LayoutBuilder {
     for (const room of this.rooms.values()) {
       this.buildRoomShell(room);
     }
+    const { merge, fold } = this.shared;
     for (const room of this.rooms.values()) {
+      if (fold && merge) {
+        // One draw per material class (world/MaterialFold); what no class takes is built as before.
+        room.b.foldPlain(merge);
+        room.ceil.foldPlain(merge);
+        room.folds = buildFolds(room.group, fold, [
+          { src: 'b', parts: room.b.pieces, castShadow: true, receiveShadow: true },
+          { src: 'ceil', parts: room.ceil.pieces, castShadow: false, receiveShadow: true },
+          { src: 'clear', parts: room.clear.pieces, castShadow: false, receiveShadow: false },
+        ], true);
+      }
       // Plain-coloured props of a room fold into one vertex-coloured material (fewer draw calls).
       room.b.build(room.group, { merge: this.shared.merge });
       room.ceil.build(room.group, { castShadow: false, receiveShadow: true, merge: this.shared.merge });

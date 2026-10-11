@@ -9,6 +9,8 @@ import type { RobotOptions } from '../targets/RobotTarget';
 import type { GameMap, SquadSpawn, Station } from './GameMap';
 import { LayoutBuilder, type BuiltRoom, type DoorSlot, type LinkDef, type Portal, type RoomDef, type RoomStyle, type Rect } from './LayoutBuilder';
 import type { MeshBuilder } from './MeshBuilder';
+import { FoldRegistry, TieFinder, eachTriangle, foldEnabled, foldStaticEnabled, materialId, withOwnRandom, type FoldMode, type FoldPiece, type RoomFold } from './MaterialFold';
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { Site9Atlas } from './Site9Atlas';
 import { Site9Dressing } from './Site9Dressing';
 
@@ -296,9 +298,18 @@ export class Site9 implements GameMap {
   private kit!: PropKit;
   /** Resolves once the prop models are in (never rejects). */
   loaded: Promise<void> = Promise.resolve();
+  /** Same-class materials of a room drawn in one call (world/MaterialFold); null with ?nofold. */
+  private fold: FoldRegistry | null;
+  /** A shadow map renders (the sun casts): fold draws split by cast / receive, see setShadowMode. */
+  private shadowMode = false;
+  /** Fold meshes that draw only without (1) or only with (2) a shadow map. */
+  private modal: { mesh: THREE.Object3D; mode: 1 | 2 }[] = [];
+  /** Survival / Utilities pieces drawn by their room's fold while no shadow map renders (foldStatic). */
+  private foldedOriginals: THREE.Object3D[] = [];
 
   constructor(private physics: Physics, mobile: boolean) {
     this.mobile = mobile;
+    this.fold = foldEnabled() ? new FoldRegistry() : null;
     const std = (o: THREE.MeshStandardMaterialParameters) => new THREE.MeshStandardMaterial(o);
     // Panel grids: one per colour. Phones: one neutral 256² grid tinted per surface
     // (line / accent colours follow the base), no roughness map.
@@ -388,18 +399,29 @@ export class Site9 implements GameMap {
       barracks: { floor: S('garage_floor', '#5d625c'), wall: S('peeling_painted_wall', '#7a7f78', { metalness: 0 }), ceiling: ceil.grey, lamp: m.lampWarm, lampSpacing: 6, glow: 0xffd8a8 },
     };
 
+    const ao = new THREE.MeshBasicMaterial({ map: aoTexture(), color: 0x000000, transparent: true, depthWrite: false, opacity: 0.55 });
+    const skyGlass = std({ color: 0xdff0ff, transparent: true, opacity: 0.12, roughness: 0.05, depthWrite: false });
+    const lampDead = std({ color: 0x1b1c1e, emissive: 0x9fb4d0, emissiveIntensity: 0.03, roughness: 0.5 });
+    const merge = std({ vertexColors: true, roughness: 0.62, metalness: 0.25 });
+    applyGrime(merge, mobile);
+    if (this.fold) {
+      // Each class draws in its host's place in three's material-id order. The merge
+      // material (created after every lamp, before every sign and plate) hosts the plain and
+      // glowing solids; the wood and the corrugated iron sets are hosted by their first
+      // material, below the merge. dev/foldOrderCheck proves no coplanar tie changes hands.
+      this.fold.add('solid', merge, true, ['b', 'ceil', 'obj']);
+      this.fold.add('wood', m.wood as THREE.MeshStandardMaterial, false, ['b', 'ceil']);
+      this.fold.add('rusty', m.contGreen as THREE.MeshStandardMaterial, false, ['b', 'ceil']);
+    }
     this.layout = new LayoutBuilder(physics, ROOMS, LINKS, styles, {
-      ao: new THREE.MeshBasicMaterial({ map: aoTexture(), color: 0x000000, transparent: true, depthWrite: false, opacity: 0.55 }),
+      ao,
       pool: (c) => this.pool(c),
       skyFrame: m.steel,
-      skyGlass: std({ color: 0xdff0ff, transparent: true, opacity: 0.12, roughness: 0.05, depthWrite: false }),
+      skyGlass,
       trim: m.gunmetal,
-      lampDead: std({ color: 0x1b1c1e, emissive: 0x9fb4d0, emissiveIntensity: 0.03, roughness: 0.5 }),
-      merge: (() => {
-        const mm = std({ vertexColors: true, roughness: 0.62, metalness: 0.25 });
-        applyGrime(mm, mobile);
-        return mm;
-      })(),
+      lampDead,
+      merge,
+      fold: this.fold,
     }, METAL);
     this.navBounds = [...this.layout.bounds] as [number, number, number, number];
     this.doors = this.layout.doors;
@@ -425,8 +447,12 @@ export class Site9 implements GameMap {
     this.buildServices();
     this.buildClutter();
     this.buildSigns();
-    this.layout.build(this.group);
-    this.shareLeaks();
+    // The meshes come out fewer with the fold: their UUIDs stay off the game's random stream.
+    withOwnRandom(() => {
+      this.layout.build(this.group);
+      this.installFolds();
+      this.shareLeaks();
+    });
     // Ceiling lamps (the practical lights near you come from these).
     for (const room of this.layout.rooms.values()) {
       const glow = styles[room.def.style]?.glow || 0xfff1e0;
@@ -490,7 +516,10 @@ export class Site9 implements GameMap {
    * runs before the random fixture and clutter passes, which then keep off it.
    */
   private buildStories(): void {
-    const atlas = (this.printAtlas = new Site9Atlas(this.mobile, ROOMS));
+    const atlas = (this.printAtlas = new Site9Atlas(this.mobile, ROOMS, !!this.fold));
+    // Signs, plates, status panels and exit signs (one texture): one draw per room. The host
+    // is made right after them, so it draws where they did.
+    if (atlas.host) this.fold?.add('atlas', atlas.host, false, ['clear']);
     const doorPts = new Map<string, [number, number, number][]>();
     const doorsOf = (R: string) => {
       let d = doorPts.get(R);
@@ -2033,11 +2062,179 @@ export class Site9 implements GameMap {
     const seen = (camera && this.portalRooms(camera, x, z, isOpen)) || this.linkedRooms(here.id, x, z, isOpen);
     this.visibleRooms = seen;
     for (const [id, room] of this.layout.rooms) room.group.visible = seen.has(id);
-    for (const s of this.shared) s.mesh.visible = s.rooms.some((r) => seen.has(r));
+    for (const s of this.shared) s.mesh.visible = this.sharedShown(s);
   }
 
-  /** Pieces of a room that reach into another's space (see shareLeaks), drawn while any of those rooms is. */
-  private shared: { mesh: THREE.Mesh; rooms: string[] }[] = [];
+  /**
+   * Pieces drawn while any of their rooms is: parts of a room that reach into another's
+   * space (see shareLeaks), and Survival's shutters (shareVisibility). `mode` as FoldMode.
+   */
+  private shared: { mesh: THREE.Object3D; rooms: string[]; mode: FoldMode }[] = [];
+
+  private sharedShown(s: { rooms: string[]; mode: FoldMode }): boolean {
+    if (s.mode !== 0 && (s.mode === 2) !== this.shadowMode) return false;
+    for (const r of s.rooms) if (this.visibleRooms.has(r)) return true;
+    return false;
+  }
+
+  /**
+   * Draw `obj` (added to the map) only while one of `rooms` is drawn. For things on a
+   * boundary, like Survival's shutters: any of one on screen is seen from one of its two
+   * rooms, which portal culling then draws. ?nofold: drawn wherever the frustum allows, as before.
+   */
+  shareVisibility(obj: THREE.Object3D, rooms: string[]): void {
+    this.group.add(obj);
+    if (!this.fold) return;
+    const s = { mesh: obj, rooms, mode: 0 as const };
+    obj.visible = this.sharedShown(s);
+    this.shared.push(s);
+  }
+
+  /** The shared pieces and the shadow state, for dev/foldOrderCheck. */
+  get foldView(): { shared: readonly { mesh: THREE.Object3D; rooms: string[]; mode: FoldMode }[]; shadowMode: boolean; folding: boolean } {
+    return { shared: this.shared, shadowMode: this.shadowMode, folding: !!this.fold };
+  }
+
+  /** After the rooms are built: patch the fold hosts, and start in the shadow-less state. */
+  private installFolds(): void {
+    const fold = this.fold;
+    if (!fold) return;
+    fold.install();
+    for (const room of this.layout.rooms.values()) for (const f of room.folds) for (const m of f.meshes) if (m.mode) this.modal.push({ mesh: m.mesh, mode: m.mode });
+    for (const f of this.modal) f.mesh.visible = (f.mode === 2) === this.shadowMode;
+    // A host's program expects the fold's vertex data: no other mesh may use one.
+    this.group.traverse((o) => {
+      const mesh = o as THREE.Mesh;
+      if (mesh.isMesh && !mesh.userData.fold && fold.isHost(mesh.material as THREE.Material)) {
+        const msg = `Site9: a fold host material is drawn outside its fold (${(mesh.material as THREE.Material).type} ${(mesh.material as THREE.Material).uuid})`;
+        if (import.meta.env?.DEV) throw new Error(msg);
+        console.error(msg);
+      }
+    });
+  }
+
+  /**
+   * With a shadow map rendering, each class draws one mesh per (cast, receive) pair, as
+   * the builders made them, and folded Survival pieces their own meshes; without one, the
+   * whole class in one draw (casting doesn't matter then, and receiving only samples a map).
+   */
+  private setShadowMode(on: boolean): void {
+    this.shadowMode = on;
+    for (const f of this.modal) f.mesh.visible = (f.mode === 2) === on;
+    for (const o of this.foldedOriginals) o.visible = on;
+    for (const s of this.shared) if (s.mode !== 0) s.mesh.visible = this.sharedShown(s);
+  }
+
+  /**
+   * Survival's and Utilities' static pieces (marked userData.foldable where they are made)
+   * join their room's solid fold, drawn by it while no shadow map renders; with one, their
+   * own meshes draw again (as they are: shadows unchanged). Pieces marked mergeSame (the
+   * hazard tape, one textured material) merge per material and parent instead. Once, after
+   * both are built and before the shader compile. Unlike the map's own geometry (built in
+   * world space), these are baked out of their object transforms here: a vertex can land a
+   * float32 ulp away from where the GPU put it.
+   */
+  foldStatic(): void {
+    const fold = this.fold;
+    if (!fold || !foldStaticEnabled()) return;
+    withOwnRandom(() => this.foldPieces(fold));
+    this.setShadowMode(this.shadowMode);
+  }
+
+  private foldPieces(fold: FoldRegistry): void {
+    const solid = fold.classes.find((c) => c.key === 'solid');
+    if (!solid) return;
+    const host = materialId(solid.host);
+    for (const [id, room] of this.layout.rooms) {
+      const target = room.folds.find((f) => f.cls === solid && f.all);
+      const cands: { mesh: THREE.Mesh; piece: FoldPiece; lo: number; hi: number }[] = [];
+      const same = new Map<THREE.Object3D, Map<THREE.Material, THREE.Mesh[]>>();
+      const opaque: THREE.Mesh[] = [];
+      room.group.updateMatrixWorld(true);
+      room.group.traverse((o) => {
+        const mesh = o as THREE.Mesh;
+        if (!mesh.isMesh || Array.isArray(mesh.material) || (mesh as THREE.InstancedMesh).isInstancedMesh) return;
+        if (!(mesh.material as THREE.Material).transparent) opaque.push(mesh);
+        if (mesh.userData.fold) return;
+        for (let p: THREE.Object3D | null = mesh; p && p !== room.group; p = p.parent) if (!p.visible) return;
+        const mat = mesh.material as THREE.MeshStandardMaterial;
+        if (mesh.userData.mergeSame && mesh.parent) {
+          let byMat = same.get(mesh.parent);
+          if (!byMat) same.set(mesh.parent, (byMat = new Map()));
+          byMat.set(mat, [...(byMat.get(mat) ?? []), mesh]);
+          return;
+        }
+        if (!target || !mesh.userData.foldable || !solid.accepts(mat, 'obj')) return;
+        const g = (mesh.geometry.index ? mesh.geometry.toNonIndexed() : mesh.geometry.clone()).applyMatrix4(mesh.matrixWorld);
+        const pos = g.getAttribute('position');
+        const nor = g.getAttribute('normal');
+        const col = g.getAttribute('color');
+        if (!(pos?.array instanceof Float32Array) || !(nor?.array instanceof Float32Array)) return;
+        if (mat.vertexColors && (!(col?.array instanceof Float32Array) || col.itemSize !== 3)) return;
+        const own = materialId(mat);
+        cands.push({
+          mesh,
+          lo: Math.min(own, host),
+          hi: Math.max(own, host),
+          piece: {
+            mat,
+            src: `obj:${mesh.id}`,
+            castShadow: mesh.castShadow,
+            receiveShadow: mesh.receiveShadow,
+            position: pos.array,
+            normal: nor.array,
+            color: mat.vertexColors ? (col.array as Float32Array) : null,
+          },
+        });
+      });
+      // Folded, a piece draws in the host's place instead of its own: it must not tie with
+      // anything drawn in between (a wall-buy board laid exactly over a lore plate would swap
+      // which one shows). Those keep their own draw.
+      const ties = new TieFinder();
+      cands.forEach((c, i) => eachTriangle(c.mesh, (a, b, d) => ties.add(a, b, d, i)));
+      const tied = new Set<number>();
+      const hit = new Set<number>();
+      const others = [...opaque];
+      for (const s of this.shared) if (s.rooms.includes(id)) s.mesh.traverse((o) => (o as THREE.Mesh).isMesh && !((o as THREE.Mesh).material as THREE.Material).transparent && others.push(o as THREE.Mesh));
+      for (const m of others) {
+        const x = materialId(m.material as THREE.Material);
+        if (!cands.some((c) => x > c.lo && x < c.hi)) continue;
+        m.updateMatrixWorld(true);
+        if (!ties.near(m)) continue;
+        eachTriangle(m, (a, b, d) => {
+          hit.clear();
+          ties.test(a, b, d, hit);
+          for (const i of hit) if (x > cands[i].lo && x < cands[i].hi) tied.add(i);
+        });
+      }
+      const pieces: FoldPiece[] = [];
+      cands.forEach((c, i) => {
+        // (Asked again: the table may have filled up with this room's earlier pieces.)
+        if (tied.has(i) || !solid.accepts(c.piece.mat, 'obj')) return;
+        solid.entry(c.piece.mat);
+        pieces.push(c.piece);
+        c.mesh.userData.folded = true;
+        this.foldedOriginals.push(c.mesh);
+      });
+      target?.append(pieces);
+      for (const [parent, byMat] of same) {
+        for (const [mat, list] of byMat) {
+          if (list.length < 2) continue;
+          const merged = mergeGeometries(list.map((m) => m.geometry.clone().applyMatrix4(m.matrix)), false);
+          if (!merged) continue;
+          merged.computeBoundingSphere();
+          const one = new THREE.Mesh(merged, mat);
+          one.castShadow = list[0].castShadow;
+          one.receiveShadow = list[0].receiveShadow;
+          one.userData.foldMode = 1;
+          parent.add(one);
+          this.modal.push({ mesh: one, mode: 1 });
+          for (const m of list) m.userData.folded = true;
+          this.foldedOriginals.push(...list);
+        }
+      }
+    }
+  }
 
   /**
    * A room's geometry that reaches past its walls into another room's space (a floor stain
@@ -2060,18 +2257,24 @@ export class Site9 implements GameMap {
         mesh.updateMatrixWorld(true);
         const keep: number[] = [];
         const moved = new Map<string, number[]>();
+        // Allocation-free for the (nearly all) triangles that stay: the fold's meshes are big.
+        const touched: string[] = [];
         for (let t = 0, n = (index ? index.count : pos.count) / 3; t < n; t++) {
-          const touched = new Set<string>();
+          touched.length = 0;
           for (let k = 0; k < 3; k++) {
             v.fromBufferAttribute(pos, corner(t, k)).applyMatrix4(mesh.matrixWorld);
             // Past this room's wall skins (0.15 m) into another room, below its ceiling.
             if (v.x > x0 - 0.16 && v.x < x1 + 0.16 && v.z > z0 - 0.16 && v.z < z1 + 0.16) continue;
             const other = this.layout.roomAt(v.x, v.z);
             if (!other || other.id === id || (!other.sky && !other.skylight && v.y > other.h + 0.05)) continue;
-            touched.add(other.id);
+            if (!touched.includes(other.id)) touched.push(other.id);
           }
-          const list = touched.size ? moved.get([id, ...[...touched].sort()].join('|')) ?? [] : keep;
-          if (touched.size) moved.set([id, ...[...touched].sort()].join('|'), list);
+          let list = keep;
+          if (touched.length) {
+            const key = [id, ...touched.sort()].join('|');
+            list = moved.get(key) ?? [];
+            moved.set(key, list);
+          }
           list.push(corner(t, 0), corner(t, 1), corner(t, 2));
         }
         if (!moved.size) continue;
@@ -2089,8 +2292,19 @@ export class Site9 implements GameMap {
           m.receiveShadow = mesh.receiveShadow;
           m.renderOrder = mesh.renderOrder;
           m.frustumCulled = mesh.frustumCulled;
+          m.visible = mesh.visible;
+          // A fold's piece: the same buffers, the same table sync, drawn in the same shadow state.
+          const fold = mesh.userData.fold as RoomFold | undefined;
+          const mode: FoldMode = mesh.userData.foldMode ?? 0;
+          if (fold) {
+            m.onBeforeRender = mesh.onBeforeRender;
+            m.userData.fold = fold;
+            m.userData.foldMode = mode;
+            m.userData.leak = key;
+            fold.leaks.push(m);
+          }
           this.group.add(m);
-          this.shared.push({ mesh: m, rooms: key.split('|') });
+          this.shared.push({ mesh: m, rooms: key.split('|'), mode });
         }
       }
     }
@@ -2276,6 +2490,8 @@ export class Site9 implements GameMap {
       this.openBoost += (target - this.openBoost) * Math.min(1, dt * 1.2);
     }
     if (this.mobile && this.sun.castShadow !== !!this.sun.parent) this.syncSun();
+    const shadows = this.sun.castShadow && !!this.sun.parent;
+    if (this.fold && shadows !== this.shadowMode) this.setShadowMode(shadows);
     // Shadow camera follows the player (texel-snapped so shadows don't swim).
     if (focus) {
       const r = this.mobile ? 26 : 38;

@@ -462,7 +462,15 @@ export class Game {
     skipHiddenMatrices(this.weapons.viewmodel.scene);
     this.status = new StatusHUD(ui);
     this.initBlackDivision();
-    if (this.arena instanceof Site9) this.initSurvival(ui, this.arena);
+    if (this.arena instanceof Site9) {
+      this.initSurvival(ui, this.arena);
+      // Survival's and Utilities' static pieces into their rooms' draws (before the compile below).
+      this.arena.foldStatic();
+      if (import.meta.env.DEV && new URLSearchParams(location.search).has('foldcheck')) {
+        const site = this.arena;
+        void import('../dev/foldOrderCheck').then((m) => m.logFoldOrder(site));
+      }
+    }
     // ?nohud (bisecting): no interface at all.
     if (new URLSearchParams(location.search).has('nohud')) ui.style.display = 'none';
     this.applyGraphics(this.gfx);

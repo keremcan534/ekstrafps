@@ -1,5 +1,6 @@
 import type * as THREE from 'three';
 import { clipVersion } from './LightClip';
+import { foldTableVersion } from '../world/MaterialFold';
 
 type Setter = { setValue(gl: WebGL2RenderingContext, v: unknown, textures?: unknown): void };
 
@@ -31,6 +32,20 @@ export function cacheUniforms(renderer: THREE.WebGLRenderer): void {
         const now = clipVersion();
         if (held === now) return;
         held = now;
+        send.call(this, gl, v, textures);
+      };
+    }
+    // A fold's material table (world/MaterialFold): by its version (it changes when a lamp dims or flickers).
+    const fold = map.foldTab;
+    if (fold) {
+      const send = fold.setValue;
+      let held = -1;
+      let heldTab: unknown = null;
+      fold.setValue = function (gl, v, textures) {
+        const now = foldTableVersion(v);
+        if (held === now && heldTab === v && now >= 0) return;
+        held = now;
+        heldTab = v;
         send.call(this, gl, v, textures);
       };
     }

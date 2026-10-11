@@ -139,11 +139,13 @@ export class Utilities {
     return g;
   }
 
-  private mesh(g: THREE.Object3D, mat: THREE.Material, size: [number, number, number], pos: [number, number, number]): THREE.Mesh {
+  /** @param foldable a static piece: it joins its room's draw (Site9.foldStatic). */
+  private mesh(g: THREE.Object3D, mat: THREE.Material, size: [number, number, number], pos: [number, number, number], foldable = false): THREE.Mesh {
     const m = new THREE.Mesh(new THREE.BoxGeometry(...size), mat);
     m.position.set(...pos);
     m.castShadow = true;
     m.receiveShadow = true;
+    m.userData.foldable = foldable;
     g.add(m);
     return m;
   }
@@ -158,10 +160,10 @@ export class Utilities {
 
   private buildMed(s: WallSpot): void {
     const g = this.group(s, 0.12);
-    this.mesh(g, this.mats.white, [0.75, 0.95, 0.24], [0, 1.45, 0]);
-    this.mesh(g, this.mats.green, [0.34, 0.1, 0.02], [0, 1.6, 0.13]);
-    this.mesh(g, this.mats.green, [0.1, 0.34, 0.02], [0, 1.6, 0.13]);
-    this.mesh(g, this.mats.dark, [0.5, 0.18, 0.02], [0, 1.18, 0.13]);
+    this.mesh(g, this.mats.white, [0.75, 0.95, 0.24], [0, 1.45, 0], true);
+    this.mesh(g, this.mats.green, [0.34, 0.1, 0.02], [0, 1.6, 0.13], true);
+    this.mesh(g, this.mats.green, [0.1, 0.34, 0.02], [0, 1.6, 0.13], true);
+    this.mesh(g, this.mats.dark, [0.5, 0.18, 0.02], [0, 1.18, 0.13], true);
     this.sign(g, `MEDICAL $${PRICES.med}`, '#2bdc6a', [0, 2.1, 0.02]);
     const st: Station = { kind: 'med', spot: s, at: this.front(s, 1.1), cost: PRICES.med };
     this.stations.push(st);
@@ -185,10 +187,10 @@ export class Utilities {
 
   private buildArmor(s: WallSpot): void {
     const g = this.group(s, 0.3);
-    this.mesh(g, this.mats.steel, [0.9, 2.0, 0.5], [0, 1.0, 0]);
-    this.mesh(g, this.mats.dark, [0.02, 1.8, 0.02], [0, 1.0, 0.26]);
-    this.mesh(g, this.mats.dark, [0.6, 0.45, 0.06], [0, 1.35, 0.27]); // the plate on display
-    this.mesh(g, this.mats.stripe, [0.9, 0.08, 0.52], [0, 0.04, 0]);
+    this.mesh(g, this.mats.steel, [0.9, 2.0, 0.5], [0, 1.0, 0], true);
+    this.mesh(g, this.mats.dark, [0.02, 1.8, 0.02], [0, 1.0, 0.26], true);
+    this.mesh(g, this.mats.dark, [0.6, 0.45, 0.06], [0, 1.35, 0.27], true); // the plate on display
+    this.mesh(g, this.mats.stripe, [0.9, 0.08, 0.52], [0, 0.04, 0], true);
     this.sign(g, `ARMOR $${PRICES.armor}`, '#9fc4ff', [0, 2.2, 0.26]);
     this.deps.physics.addStaticBox(this.front(s, 0.3, 1.0), new THREE.Vector3(0.45, 1.0, 0.25), new THREE.Quaternion().setFromEuler(new THREE.Euler(0, s.yaw, 0)));
     this.sv.carveNav(this.front(s, 0.3), 1.2);
@@ -214,15 +216,16 @@ export class Utilities {
   private buildBreaker(s: WallSpot): void {
     const lighting = this.deps.lighting!;
     const g = this.group(s, 0.08);
-    this.mesh(g, this.mats.steel, [0.7, 0.9, 0.16], [0, 1.45, 0]);
-    this.mesh(g, this.mats.stripe, [0.72, 0.06, 0.17], [0, 1.93, 0]);
-    this.mesh(g, this.mats.stripe, [0.72, 0.06, 0.17], [0, 0.97, 0]);
+    this.mesh(g, this.mats.steel, [0.7, 0.9, 0.16], [0, 1.45, 0], true);
+    this.mesh(g, this.mats.stripe, [0.72, 0.06, 0.17], [0, 1.93, 0], true);
+    this.mesh(g, this.mats.stripe, [0.72, 0.06, 0.17], [0, 0.97, 0], true);
     const pivot = new THREE.Group();
     pivot.position.set(0.12, 1.45, 0.1);
     g.add(pivot);
     this.mesh(pivot, this.mats.red, [0.06, 0.32, 0.06], [0, 0.14, 0.03]);
     const lamp = new THREE.MeshStandardMaterial({ color: 0x0a0a0a, emissive: 0x2bdc6a, emissiveIntensity: 1.5 });
-    this.mesh(g, lamp, [0.08, 0.08, 0.04], [-0.18, 1.7, 0.09]);
+    // Its colour changes with the power, the mesh never moves: folds too (the table follows the material).
+    this.mesh(g, lamp, [0.08, 0.08, 0.04], [-0.18, 1.7, 0.09], true);
     this.sign(g, 'POWER', '#ffd25a', [0, 2.15, 0.02], 0.6);
     this.breakerLevers.push(pivot);
     this.breakerLamps.push(lamp);
@@ -343,13 +346,14 @@ export class Utilities {
     return this.turrets.filter((t) => t.temp && t.team === team && t.time > 0).length;
   }
 
-  private turretRig(g: THREE.Group): { head: THREE.Group; lamp: THREE.MeshStandardMaterial } {
+  /** @param fixed a wall-spot sentry (its stand never moves; a deployed one is packed away later). */
+  private turretRig(g: THREE.Group, fixed = false): { head: THREE.Group; lamp: THREE.MeshStandardMaterial } {
     for (let i = 0; i < 3; i++) {
       const a = (i / 3) * Math.PI * 2;
-      const leg = this.mesh(g, this.mats.dark, [0.05, 0.9, 0.05], [Math.sin(a) * 0.22, 0.42, Math.cos(a) * 0.22]);
+      const leg = this.mesh(g, this.mats.dark, [0.05, 0.9, 0.05], [Math.sin(a) * 0.22, 0.42, Math.cos(a) * 0.22], fixed);
       leg.rotation.set(Math.cos(a) * 0.35, 0, -Math.sin(a) * 0.35);
     }
-    this.mesh(g, this.mats.steel, [0.18, 0.2, 0.18], [0, 0.9, 0]);
+    this.mesh(g, this.mats.steel, [0.18, 0.2, 0.18], [0, 0.9, 0], fixed);
     const head = new THREE.Group();
     head.position.set(0, 1.12, 0);
     g.add(head);
@@ -366,7 +370,7 @@ export class Utilities {
 
   private buildTurret(s: WallSpot): void {
     const g = this.group(s, 1.0);
-    const { head, lamp } = this.turretRig(g);
+    const { head, lamp } = this.turretRig(g, true);
     this.sign(g, `SENTRY $${PRICES.turret}`, '#ff8a5c', [0, 1.7, 0], 0.8);
     // Collider stops below the head: the sight ray starts inside the head, and a ray
     // that starts inside a solid collider always reports a hit (the sentry went blind).

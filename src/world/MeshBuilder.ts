@@ -51,34 +51,42 @@ export class MeshBuilder {
     return out;
   }
 
+  /** The collected geometry per material, as it stands (the fold engine takes what it draws out of it). */
+  get pieces(): Map<THREE.Material, THREE.BufferGeometry[]> {
+    return this.parts;
+  }
+
   /**
-   * @param opts.merge a vertex-coloured material: every plain (untextured, opaque,
-   *   non-emissive) standard material is folded into it as vertex colours, so a
-   *   multi-material model costs one draw call (+ one per remaining material).
+   * Every plain (untextured, opaque, non-emissive) standard material goes into `merge`
+   * (a vertex-coloured material) as vertex colours, so a multi-material model costs one
+   * draw call (+ one per remaining material).
    */
+  foldPlain(merge: THREE.MeshStandardMaterial): void {
+    const plain: THREE.BufferGeometry[] = [];
+    for (const [material, geos] of [...this.parts]) {
+      const m = material as THREE.MeshStandardMaterial;
+      const emissive = m.emissive && (m.emissive.r + m.emissive.g + m.emissive.b) * (m.emissiveIntensity ?? 1) > 0.001;
+      if (!m.isMeshStandardMaterial || m.map || m.transparent || emissive) continue;
+      for (const g of geos) {
+        const n = g.getAttribute('position').count;
+        const col = new Float32Array(n * 3);
+        for (let i = 0; i < n; i++) {
+          col[i * 3] = m.color.r;
+          col[i * 3 + 1] = m.color.g;
+          col[i * 3 + 2] = m.color.b;
+        }
+        g.setAttribute('color', new THREE.BufferAttribute(col, 3));
+        plain.push(g);
+      }
+      this.parts.delete(material);
+    }
+    if (plain.length) this.parts.set(merge, plain);
+  }
+
+  /** @param opts.merge fold the plain materials into this one first (see foldPlain). */
   build(parent: THREE.Object3D, opts: { castShadow?: boolean; receiveShadow?: boolean; merge?: THREE.MeshStandardMaterial } = {}): THREE.Mesh[] {
     const meshes: THREE.Mesh[] = [];
-    if (opts.merge) {
-      const plain: THREE.BufferGeometry[] = [];
-      for (const [material, geos] of [...this.parts]) {
-        const m = material as THREE.MeshStandardMaterial;
-        const emissive = m.emissive && (m.emissive.r + m.emissive.g + m.emissive.b) * (m.emissiveIntensity ?? 1) > 0.001;
-        if (!m.isMeshStandardMaterial || m.map || m.transparent || emissive) continue;
-        for (const g of geos) {
-          const n = g.getAttribute('position').count;
-          const col = new Float32Array(n * 3);
-          for (let i = 0; i < n; i++) {
-            col[i * 3] = m.color.r;
-            col[i * 3 + 1] = m.color.g;
-            col[i * 3 + 2] = m.color.b;
-          }
-          g.setAttribute('color', new THREE.BufferAttribute(col, 3));
-          plain.push(g);
-        }
-        this.parts.delete(material);
-      }
-      if (plain.length) this.parts.set(opts.merge, plain);
-    }
+    if (opts.merge) this.foldPlain(opts.merge);
     for (const [material, geos] of this.parts) {
       const merged = mergeGeometries(geos, false);
       if (!merged) continue;

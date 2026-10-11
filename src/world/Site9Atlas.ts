@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { withOwnRandom } from './MaterialFold';
 import { MOBILE_ANISOTROPY } from '../config/Graphics';
 
 /**
@@ -1275,9 +1276,14 @@ export interface AtlasMaterials {
 export class Site9Atlas {
   readonly texture: THREE.CanvasTexture;
   readonly mats: AtlasMaterials;
+  /**
+   * Draws sign, plate, lit and exit in one call per room (world/MaterialFold); made right
+   * after them, so its place in three's material-id order is theirs. Null when not folding.
+   */
+  readonly host: THREE.MeshStandardMaterial | null;
   private rects = new Map<string, [number, number, number, number]>();
 
-  constructor(mobile: boolean, rooms: { id: string; rect: [number, number, number, number]; name?: string; zone?: string }[]) {
+  constructor(mobile: boolean, rooms: { id: string; rect: [number, number, number, number]; name?: string; zone?: string }[], fold = false) {
     const k = mobile ? 0.5 : 1;
     const c = document.createElement('canvas');
     c.width = SHEET * k;
@@ -1339,6 +1345,8 @@ export class Site9Atlas {
       wet: decal({ color: 0x0e1114, roughness: 0.04, metalness: 0.4, opacity: 0.85 }),
       frost: decal({ roughness: 0.35, color: 0xdfeefc }),
     };
+    // Its own colour, roughness and so on are never read: each piece reads its material's.
+    this.host = fold ? withOwnRandom(() => new THREE.MeshStandardMaterial({ map: t, emissiveMap: t })) : null;
   }
 
   has(id: string): boolean {

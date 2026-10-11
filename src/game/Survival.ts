@@ -256,6 +256,9 @@ export class Survival {
   private tmp = new THREE.Vector3();
   private eye = new THREE.Vector3();
   private probe = new THREE.Vector3();
+  /** Shared by every wall-buy board and every ammo cache (made on first use). */
+  private boardMat?: THREE.MeshStandardMaterial;
+  private ammoMats?: [THREE.MeshStandardMaterial, THREE.MeshStandardMaterial];
 
   constructor(private deps: SurvivalDeps) {
     const { map, physics, scene, nav, mobile } = deps;
@@ -419,7 +422,12 @@ export class Survival {
     const front = new THREE.PlaneGeometry(1.6, 0.5).translate(0, sy, 0.08);
     const back = new THREE.PlaneGeometry(1.6, 0.5).rotateY(Math.PI).translate(0, sy, -0.08);
     shutter.add(new THREE.Mesh(mergeGeometries([front, back])!, printedSign(priceTexture(link.cost ?? 0), 0.4)));
-    map.group.add(shutter);
+    // Drawn only while one of its two rooms is: it stands on their boundary, so any of it on
+    // screen is seen from one of them (it closes its own portal). The holder keeps the
+    // shutter's own visibility free for the roll-up below.
+    const holder = new THREE.Group();
+    holder.add(shutter);
+    map.shareVisibility(holder, [link.a, link.b]);
     const half = slot.alongX ? new THREE.Vector3(w / 2, h / 2, 0.12) : new THREE.Vector3(0.12, h / 2, w / 2);
     const collider = physics.addStaticBox(this.tmp.copy(slot.center).setY(h / 2), half);
     const door: Door = {
@@ -507,10 +515,13 @@ export class Survival {
     if (idx < 0) return;
     const data = weapons.weapons[idx].data;
     const n = new THREE.Vector3(Math.sin(wb.yaw), 0, Math.cos(wb.yaw));
-    // Board + label + the actual weapon model hung on it.
-    const board = new THREE.Mesh(new THREE.PlaneGeometry(1.5, 0.75), new THREE.MeshStandardMaterial({ color: 0x1b1d20, roughness: 0.8 }));
+    // Board + label + the actual weapon model hung on it. Boards and model are static: they
+    // join the room's draw (Site9.foldStatic), every board on one material.
+    this.boardMat ??= new THREE.MeshStandardMaterial({ color: 0x1b1d20, roughness: 0.8 });
+    const board = new THREE.Mesh(new THREE.PlaneGeometry(1.5, 0.75), this.boardMat);
     board.position.copy(wb.pos).addScaledVector(n, 0.02);
     board.rotation.y = wb.yaw;
+    board.userData.foldable = true;
     const label = new THREE.Mesh(new THREE.PlaneGeometry(1.5, 0.28), printedSign(buyTexture(data.name, wb.cost), 0.4));
     label.position.copy(wb.pos).addScaledVector(n, 0.025).setY(wb.pos.y - 0.55);
     label.rotation.y = wb.yaw;
@@ -547,6 +558,8 @@ export class Survival {
         rig.leftHand.removeFromParent();
         rig.rightHand.removeFromParent();
         t = rig.root;
+        // Vertex-coloured: these fold into the room's draw (copies keep the mark).
+        t.traverse((o) => (o.userData.foldable = (o as THREE.Mesh).isMesh));
       } else {
         const rig = buildWeaponModel(model, false, true);
         rig.leftHand.visible = false;
@@ -580,8 +593,8 @@ export class Survival {
     const g = new THREE.Group();
     g.position.copy(spot.pos);
     g.rotation.y = spot.yaw;
-    const olive = new THREE.MeshStandardMaterial({ color: 0x4b5532, roughness: 0.8 });
-    const dark = new THREE.MeshStandardMaterial({ color: 0x23251c, roughness: 0.7, metalness: 0.4 });
+    this.ammoMats ??= [new THREE.MeshStandardMaterial({ color: 0x4b5532, roughness: 0.8 }), new THREE.MeshStandardMaterial({ color: 0x23251c, roughness: 0.7, metalness: 0.4 })];
+    const [olive, dark] = this.ammoMats;
     const crate = new THREE.Mesh(new THREE.BoxGeometry(1.1, 0.62, 0.62), olive);
     crate.position.y = 0.31;
     const lid = new THREE.Mesh(new THREE.BoxGeometry(1.14, 0.08, 0.66), dark);
@@ -591,6 +604,7 @@ export class Survival {
     for (const m of [crate, lid]) {
       m.castShadow = true;
       m.receiveShadow = true;
+      m.userData.foldable = true;
     }
     g.add(crate, lid, label);
     map.roomGroupAt(spot.pos.x, spot.pos.z).add(g);
@@ -677,6 +691,7 @@ export class Survival {
     floor.rotation.x = -Math.PI / 2;
     floor.position.y = 0.025;
     floor.receiveShadow = true;
+    floor.userData.foldable = true;
     const glow = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.25, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false });
     const glowPlane = new THREE.Mesh(new THREE.PlaneGeometry(w * 0.95, d * 0.95), glow);
     glowPlane.rotation.x = -Math.PI / 2;
@@ -686,6 +701,7 @@ export class Survival {
     for (const [bw, bd, bx, bz] of [[w, 0.18, 0, -d / 2], [w, 0.18, 0, d / 2], [0.18, d, -w / 2, 0], [0.18, d, w / 2, 0]] as const) {
       const b = new THREE.Mesh(new THREE.BoxGeometry(bw, 0.02, bd), tape);
       b.position.set(bx, 0.03, bz);
+      b.userData.mergeSame = true;
       g.add(b);
     }
     g.add(floor, glowPlane);
