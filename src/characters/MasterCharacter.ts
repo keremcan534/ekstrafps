@@ -494,15 +494,16 @@ export class MasterCharacter implements HumanoidVisual {
     if (this.solved.R || this.solved.L) {
       const chest = this.spine[2].bone.matrixWorld;
       const st = STANCES[hd.stance] ?? STANCES.low;
+      // Fresh: the pass above made every bone current, and the twist pass below redoes the arms.
       if (this.solved.R) {
         this.targets.R.multiplyMatrices(hd.right!.matrixWorld, this.socketInv);
         this.poles.R.fromArray(st.poles.right).applyMatrix4(chest);
-        this.ik.R.solve(this.targets.R, this.poles.R);
+        this.ik.R.solve(this.targets.R, this.poles.R, true);
       }
       if (this.solved.L) {
         this.targets.L.multiplyMatrices(hd.left!.matrixWorld, this.leftShift);
         this.poles.L.fromArray(st.poles.left).applyMatrix4(chest);
-        this.ik.L.solve(this.targets.L, this.poles.L);
+        this.ik.L.solve(this.targets.L, this.poles.L, true);
       }
     }
     if (alive) {
@@ -513,6 +514,7 @@ export class MasterCharacter implements HumanoidVisual {
       this.setFingers('R', data.game.fingers.free, '');
       this.setFingers('L', data.game.fingers.free, '');
     }
+    // (Always after a solve: solving needs `hands`, so not far.)
     if (!far || !this.wasFar) {
       this.twist.update();
       for (const s of SIDES) this.rig.arms[s].upper.updateMatrixWorld(true);

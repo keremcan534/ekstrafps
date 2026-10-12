@@ -85,12 +85,12 @@ export class ThirdPersonArmIK {
    * target, by `clavicle.maxDeg` × smoothstep of the reach (|shoulder → target| / arm length)
    * between `clavicle.start` and `clavicle.full`. Continuous, the same for every character.
    */
-  private reachClavicle(W: THREE.Vector3, scale: number): void {
+  private reachClavicle(W: THREE.Vector3, scale: number, fresh: boolean): void {
     const c = this.cfg.clavicle;
     if (!c || c.maxDeg <= 0) return;
     const t = this.t;
     const cl = this.arm.clavicle;
-    cl.updateWorldMatrix(true, false);
+    if (!fresh) cl.updateWorldMatrix(true, false);
     const C = t.v.setFromMatrixPosition(cl.matrixWorld);
     const S = t.p.copy(this.arm.upper.position).applyMatrix4(cl.matrixWorld);
     const r = S.distanceTo(W) / ((this.a + this.b) * scale);
@@ -116,21 +116,23 @@ export class ThirdPersonArmIK {
    * Put the hand on `target` (world: the Hand bone's frame, its translation the wrist) with the
    * elbow bending toward `polePoint` (world). Writes UpperArm, Forearm and Hand local rotations and
    * updates the arm's world matrices (children included: sockets and what hangs on them).
+   * `fresh`: every matrix above the arm is already current and the caller updates the arm's own
+   * afterwards (MasterCharacter.posed): the walks up the parents and the arm's pass are skipped.
    */
-  solve(target: THREE.Matrix4, polePoint: THREE.Vector3): void {
+  solve(target: THREE.Matrix4, polePoint: THREE.Vector3, fresh = false): void {
     const t = this.t;
     this.stats.clavicleDeg = 0;
     const arm = this.arm;
     const parent = arm.upper.parent!;
     // A body drawn at a uniform scale (the game's height): the bones' world lengths.
-    parent.updateWorldMatrix(true, false);
+    if (!fresh) parent.updateWorldMatrix(true, false);
     const k = t.s.setFromMatrixScale(parent.matrixWorld).x;
     const a = this.a * k;
     const b = this.b * k;
     target.decompose(this.wrist, t.qh, t.s);
     const W = this.wrist;
-    this.reachClavicle(W, k);
-    parent.updateWorldMatrix(true, false);
+    this.reachClavicle(W, k, fresh);
+    if (!fresh) parent.updateWorldMatrix(true, false);
     parent.matrixWorld.decompose(t.v, t.qp, t.s);
     const S = this.shoulder.copy(arm.upper.position).applyMatrix4(parent.matrixWorld);
 
@@ -172,7 +174,7 @@ export class ThirdPersonArmIK {
     arm.upper.quaternion.copy(t.qp).invert().multiply(t.qu);
     arm.fore.quaternion.copy(t.qu).invert().multiply(t.qf);
     arm.hand.quaternion.copy(t.qf).invert().multiply(t.qh);
-    arm.upper.updateMatrixWorld(true);
+    if (!fresh) arm.upper.updateMatrixWorld(true);
 
     const r2d = THREE.MathUtils.radToDeg;
     this.stats.flexDeg = r2d(yu.angleTo(yf));
