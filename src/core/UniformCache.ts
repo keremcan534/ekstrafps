@@ -53,6 +53,34 @@ function colours32(n: Node): void {
 }
 
 /**
+ * Textures many programs read the same one of: three's DFG lookup (every lit material), the
+ * grime texture, the batches' tables and the stand-ins' bone texture. three hands texture units
+ * out per draw from 0 up in its program's sampler order, so the same texture landed on unit 1
+ * for one program and on unit 3 for the next and was bound again and again (the DFG lookup ~18
+ * times a frame). Each now has a unit of its own at the top of the range (three hands out a
+ * dozen at most here), where a draw finds it still bound. Which unit a sampler reads from
+ * changes nothing it reads. Units counted down from the last: index = from the top.
+ */
+const PINNED: Record<string, number> = { dfgLUT: 1, boneTexture: 2, sbTex: 3, rbTex: 4, grimeMap: 5 };
+/** The skinned stand-ins' bone texture (every copy's bones, core/SkinnedBatch): a unit apart from the single skeletons'. */
+const ATLAS = 6;
+
+type Textures = { setTexture2D(t: THREE.Texture, slot: number): void };
+
+function pinTo(unit: number, own: Setter['setValue']): Setter['setValue'] {
+  return function (this: Node, gl, v, textures) {
+    // No texture: three's own (its empty stand-in, on a unit of the draw's).
+    if (!v) return own.call(this, gl, v, textures);
+    const c = this.cache!;
+    if (c[0] !== unit) {
+      gl.uniform1i(this.addr!, unit);
+      c[0] = unit;
+    }
+    (textures as Textures).setTexture2D(v as THREE.Texture, unit);
+  };
+}
+
+/**
  * three compares its single uniforms with what it last sent, but sends arrays every time a
  * material's uniforms go out (each switch of material, the lights with each switch of
  * program). Here that was the light probe's nine vectors (flattened into a scratch array
@@ -123,6 +151,12 @@ export function cacheUniforms(renderer: THREE.WebGLRenderer): void {
     for (const n of (p.getUniforms() as unknown as { seq: Node[] }).seq) {
       if (LIGHT_STRUCTS.has(String(n.id))) colours32(n);
       else if (n.id === 'ambientLightColor' && n.cache) n.setValue = setColour32 as Setter['setValue'];
+    }
+    // Shared textures on units of their own.
+    const top = renderer.capabilities.maxTextures;
+    for (const [name, k] of Object.entries(PINNED)) {
+      const u = map[name] as Node | undefined;
+      if (u && u.cache && !u.seq) u.setValue = pinTo(top - (name === 'boneTexture' && map.sbTex ? ATLAS : k), u.setValue);
     }
   }
 }
