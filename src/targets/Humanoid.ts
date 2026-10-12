@@ -76,8 +76,10 @@ export interface HumanoidVisual {
   /**
    * The parts were just posed (alive: before the hitboxes read them, so it may turn the arm parts
    * to match what it draws) or moved by the ragdoll (dead). `far`: the far geometry is up.
+   * Returns true when it brought every part's matrices up to date (root.updateMatrixWorld) and
+   * afterwards turned nothing but the arm parts.
    */
-  posed(dt: number, far: boolean): void;
+  posed(dt: number, far: boolean): boolean;
 }
 
 /** Triangle wave in -1..1 on the same phase as sin: a constant-rate sweep. */
@@ -1171,8 +1173,8 @@ export class Humanoid implements HitSet {
     }
     this.lodDt = 0;
     this.updatePose(dt, pose);
-    this.visual?.posed(dt, this.lodFar);
-    this.updateHitboxes(dt);
+    const current = this.visual?.posed(dt, this.lodFar) === true;
+    this.updateHitboxes(dt, current);
     this.lastRootPos.copy(this.root.position);
     this.lastRootQuat.copy(this.root.quaternion);
   }
@@ -1374,9 +1376,13 @@ export class Humanoid implements HitSet {
   }
   private ik = { target: new THREE.Vector3(), dir: new THREE.Vector3(), perp: new THREE.Vector3(), elbow: new THREE.Vector3(), a: new THREE.Vector3(), b: new THREE.Vector3() };
 
-  /** The hitboxes follow the animated pose (the hit test reads them); velocities for the ragdoll; the capsule follows. */
-  private updateHitboxes(dt: number): void {
-    this.root.updateMatrixWorld(true);
+  /**
+   * The hitboxes follow the animated pose (the hit test reads them); velocities for the ragdoll; the capsule follows.
+   * `current`: the visual's posed() already ran the rig's matrix pass and then turned only the arm parts.
+   */
+  private updateHitboxes(dt: number, current = false): void {
+    if (current) for (const l of this.limbs!) l.upper.updateMatrixWorld(true);
+    else this.root.updateMatrixWorld(true);
     for (const part of this.parts) {
       // The pass above made every matrixWorld current: read it, don't walk the parents again.
       part.group.matrixWorld.decompose(part.worldPos, part.worldQuat, this.tmpScale);

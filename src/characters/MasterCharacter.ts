@@ -388,7 +388,7 @@ export class MasterCharacter implements HumanoidVisual {
     this.fingers[s].apply(libraryPose(pose), trigger ? libraryPose(trigger) : undefined, INDEX_KEYS, masterCorrection(pose));
   }
 
-  posed(dt: number, far: boolean): void {
+  posed(dt: number, far: boolean): boolean {
     const b = this.body;
     const alive = b.alive;
     // Not drawn (a room out of sight): nothing to pose. The game sets visibility before the
@@ -396,7 +396,7 @@ export class MasterCharacter implements HumanoidVisual {
     // anyway: once it settles nothing would pose it again.)
     if (alive && !b.root.visible) {
       this.wasHidden = true;
-      return;
+      return false;
     }
     const t = this.t;
     const P = this.parts;
@@ -526,6 +526,8 @@ export class MasterCharacter implements HumanoidVisual {
       t.wFore.multiply(L.fore.cInv);
       fore.group.quaternion.copy(t.wUpper).invert().multiply(t.wFore);
     }
+    // Alive, the parts' pass above ran and only the arm parts turned since (the Humanoid redoes just those).
+    return alive;
   }
 
   /**
