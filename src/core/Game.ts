@@ -66,7 +66,7 @@ import { CharacterBounds } from './CharacterBounds';
 import { setTextureAnisotropy } from '../fx/Textures';
 import { DustMotes } from '../fx/DustMotes';
 import { Ambience } from '../audio/Ambience';
-import { PerfBench, benchFlagsFromUrl, glInfo, type BenchFlags } from './PerfBench';
+import { PerfBench, benchFlagsFromUrl, glInfo, type BenchFlags, type Step } from './PerfBench';
 import { enterLandscape } from './Landscape';
 import { installLightClip, syncLightClip, clearLightClip } from './LightClip';
 import { cacheUniforms } from './UniformCache';
@@ -1393,6 +1393,7 @@ export class Game {
       },
       audio: this.audio.ctx,
       details: () => this.perfDetails(),
+      extraSteps: this.benchSteps(),
       timed: [
         ['Render (draw calls)', this.renderer, 'render'],
         ['Physics', this.physics, 'step'],
@@ -1404,6 +1405,44 @@ export class Game {
         ['Minimap', this.mapOverlay ?? {}, 'update'],
       ],
     });
+  }
+
+  /** The benchmark's finer steps: the HUD's parts one by one, the CSS vignette, the shadow map pass. */
+  private benchSteps(): Step[] {
+    const ui = () => this.container.querySelector<HTMLElement>('.ui-layer');
+    const hide = (els: () => (Element | null)[]): Pick<Step, 'on' | 'off'> => {
+      let was: [HTMLElement, string][] = [];
+      return {
+        on: () => {
+          was = [];
+          for (const e of els()) if (e instanceof HTMLElement) {
+            was.push([e, e.style.visibility]);
+            e.style.visibility = 'hidden';
+          }
+        },
+        off: () => {
+          for (const [e, v] of was) e.style.visibility = v;
+          was = [];
+        },
+      };
+    };
+    const mo = this.mapOverlay;
+    let miniWas = false;
+    return [
+      { name: 'touch', label: '  · touch controls', ...hide(() => [this.container.querySelector('.touch-root')]) },
+      {
+        name: 'mini',
+        label: '  · minimap',
+        on: () => {
+          miniWas = (mo as unknown as { miniOn?: boolean } | null)?.miniOn ?? false;
+          mo?.setMinimap(false);
+        },
+        off: () => mo?.setMinimap(miniWas),
+      },
+      { name: 'hudrest', label: '  · the rest of the HUD', ...hide(() => [...(ui()?.children ?? [])].filter((e) => !e.classList.contains('touch-root') && !e.classList.contains('minimap'))) },
+      { name: 'vignette', label: 'CSS vignette', ...hide(() => [this.container.querySelector('.post-vignette')]) },
+      { name: 'shadow', label: 'Shadow map pass', on: () => (this.renderer.shadowMap.autoUpdate = false), off: () => (this.renderer.shadowMap.autoUpdate = true) },
+    ];
   }
 
   /** What the main-menu unit showcase builds its lineups from. */
@@ -2336,6 +2375,7 @@ export class Game {
    */
   private perfDetails(): string[] {
     const r = this.renderer;
+    const gs = this.gfx;
     const gl = glInfo(r);
     const flags = ['no-glass', 'perf-lite'].filter((c) => document.body.classList.contains(c));
     if (this.dyn.lite) flags.push('compositor-bound');
@@ -2344,6 +2384,7 @@ export class Game {
     return [
       `${this.mobile ? 'MOBILE' : 'DESKTOP'}${this.autoQ ? ` · AUTO ${this.autoQ.tier + 1}/${AUTO_TIERS}` : ''} · dpr ${devicePixelRatio.toFixed(2)} · px ${pr} · ${gl.webgl2 ? 'WebGL2' : 'WebGL1'} · AA ${gl.aa ? 'on' : 'off'}`,
       gpu,
+      `${gs.preset} · res ${gs.resolution} · shadows ${gs.shadows} · lighting ${gs.lighting} · view ${gs.viewDistance} · postFx ${gs.postFx ? 'on' : 'off'}`,
       `${r.info.render.calls} calls · ${(r.info.render.triangles / 1000).toFixed(0)}k tris${flags.length ? ` · ${flags.join(' ')}` : ''}`,
     ];
   }

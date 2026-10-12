@@ -51,9 +51,11 @@ export interface BenchHost {
   timed: [string, object, string][];
   /** Readout lines (mode, resolution, draw calls, body classes), taken at the end of the baseline. */
   details(): string[];
+  /** More things to switch off one at a time, measured right after the HUD (its parts, the vignette, shadows...). */
+  extraSteps?: Step[];
 }
 
-interface Step {
+export interface Step {
   name: string;
   label: string;
   on(): void;
@@ -130,6 +132,7 @@ export class PerfBench {
     this.steps = [
       { name: 'base', label: 'As you play', on: () => this.timeCpu(), off: () => this.untime() },
       { name: 'ui', label: 'HUD / interface', on: () => ui()?.style.setProperty('visibility', 'hidden'), off: () => ui()?.style.removeProperty('visibility') },
+      ...(host.extraSteps ?? []),
       { name: 'res', label: 'Half resolution', on: () => (host.pixelRatio = pr * 0.5), off: () => (host.pixelRatio = pr) },
       flag('world', '3D world render', 'noWorld'),
       // Nothing drawn at all, only a clear: what's left is the page itself (compositor, HUD, canvas copy).
