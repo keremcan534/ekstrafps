@@ -1,4 +1,4 @@
-import type * as THREE from 'three';
+import * as THREE from 'three';
 import { clipVersion } from './LightClip';
 import { foldTableVersion } from '../world/MaterialFold';
 
@@ -66,8 +66,58 @@ const PINNED: Record<string, number> = { dfgLUT: 1, boneTexture: 2, sbTex: 3, rb
 const ATLAS = 6;
 
 type Textures = { setTexture2D(t: THREE.Texture, slot: number): void };
+type TexProps = { __webglTexture?: WebGLTexture; __version?: number };
 
-function pinTo(unit: number, own: Setter['setValue']): Setter['setValue'] {
+/** What a data texture was last uploaded as (three's upload, then ours): its size and sampling. */
+interface Shape {
+  w: number;
+  h: number;
+  wrapS: number;
+  wrapT: number;
+  mag: number;
+  min: number;
+  flipY: boolean;
+  pma: boolean;
+  align: number;
+}
+const uploaded = new WeakMap<THREE.Texture, Shape>();
+const sameShape = (t: THREE.DataTexture, s: Shape | undefined): boolean =>
+  !!s && s.w === t.image.width && s.h === t.image.height && s.wrapS === t.wrapS && s.wrapT === t.wrapT && s.mag === t.magFilter && s.min === t.minFilter && s.flipY === t.flipY && s.pma === t.premultiplyAlpha && s.align === t.unpackAlignment;
+const floatTable = (t: THREE.Texture): t is THREE.DataTexture => {
+  const d = t as THREE.DataTexture;
+  return !!d.isDataTexture && d.format === THREE.RGBAFormat && d.type === THREE.FloatType && !d.mipmaps.length && !d.generateMipmaps;
+};
+
+/**
+ * The float tables re-sent every frame (the batches' rows, bone textures): three's upload of a
+ * changed texture re-sets its four sampling parameters and walks its general path each time.
+ * A float data texture three has already allocated and uploaded, unchanged in size and sampling
+ * since: its data goes up whole, as three would send it, with the parameters it already has.
+ * Anything else (first upload, resized, mipmapped, partial updates): three's own.
+ */
+function uploadData(renderer: THREE.WebGLRenderer, t: THREE.Texture, unit: number): boolean {
+  if (!floatTable(t) || t.updateRanges.length) return false;
+  const d = t;
+  const p = renderer.properties.get(d) as TexProps;
+  if (!p.__webglTexture || p.__version === undefined || p.__version === d.version) return false;
+  if (!sameShape(d, uploaded.get(d))) return false;
+  const gl = renderer.getContext() as WebGL2RenderingContext;
+  const st = renderer.state as unknown as { bindTexture(target: number, tex: WebGLTexture, slot: number): void; activeTexture(slot: number): void; pixelStorei(name: number, value: number | boolean): void };
+  // texSubImage2D writes to the active unit's texture: bound there and that unit active (a bind
+  // already in place leaves the active unit as it was), as three's upload does.
+  st.bindTexture(gl.TEXTURE_2D, p.__webglTexture, gl.TEXTURE0 + unit);
+  st.activeTexture(gl.TEXTURE0 + unit);
+  st.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, d.flipY);
+  st.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, d.premultiplyAlpha);
+  st.pixelStorei(gl.UNPACK_COLORSPACE_CONVERSION_WEBGL, gl.NONE);
+  st.pixelStorei(gl.UNPACK_ALIGNMENT, d.unpackAlignment);
+  gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, d.image.width, d.image.height, gl.RGBA, gl.FLOAT, d.image.data as Float32Array);
+  (renderer.properties.get(d.source) as TexProps).__version = d.source.version;
+  p.__version = d.version;
+  return true;
+}
+
+function pinTo(renderer: THREE.WebGLRenderer, unit: number, own: Setter['setValue']): Setter['setValue'] {
   return function (this: Node, gl, v, textures) {
     // No texture: three's own (its empty stand-in, on a unit of the draw's).
     if (!v) return own.call(this, gl, v, textures);
@@ -76,7 +126,13 @@ function pinTo(unit: number, own: Setter['setValue']): Setter['setValue'] {
       gl.uniform1i(this.addr!, unit);
       c[0] = unit;
     }
-    (textures as Textures).setTexture2D(v as THREE.Texture, unit);
+    const t = v as THREE.Texture;
+    if (uploadData(renderer, t, unit)) return;
+    (textures as Textures).setTexture2D(t, unit);
+    // Just uploaded by three (or current): remember what as, for the next frame's update.
+    if (floatTable(t) && !sameShape(t, uploaded.get(t)) && (renderer.properties.get(t) as TexProps).__version === t.version) {
+      uploaded.set(t, { w: t.image.width, h: t.image.height, wrapS: t.wrapS, wrapT: t.wrapT, mag: t.magFilter, min: t.minFilter, flipY: t.flipY, pma: t.premultiplyAlpha, align: t.unpackAlignment });
+    }
   };
 }
 
@@ -156,7 +212,7 @@ export function cacheUniforms(renderer: THREE.WebGLRenderer): void {
     const top = renderer.capabilities.maxTextures;
     for (const [name, k] of Object.entries(PINNED)) {
       const u = map[name] as Node | undefined;
-      if (u && u.cache && !u.seq) u.setValue = pinTo(top - (name === 'boneTexture' && map.sbTex ? ATLAS : k), u.setValue);
+      if (u && u.cache && !u.seq) u.setValue = pinTo(renderer, top - (name === 'boneTexture' && map.sbTex ? ATLAS : k), u.setValue);
     }
   }
 }
