@@ -123,6 +123,29 @@ function hideBareBones(o: THREE.Object3D): boolean {
   return drawn;
 }
 
+const BASE_PASS = THREE.Object3D.prototype.updateMatrixWorld;
+
+/**
+ * three's updateMatrixWorld(true) over `o` and everything under it, but for `a` and `b` and what
+ * hangs under them (left as they are). A node of a class with a pass of its own gets that pass,
+ * whole.
+ */
+function passWithout(o: THREE.Object3D, a: THREE.Object3D | null, b: THREE.Object3D | null): void {
+  if (o === a || o === b) return;
+  if (Object.getPrototypeOf(o).updateMatrixWorld !== BASE_PASS) {
+    o.updateMatrixWorld(true);
+    return;
+  }
+  if (o.matrixAutoUpdate) o.updateMatrix();
+  if (o.matrixWorldAutoUpdate) {
+    if (o.parent === null) o.matrixWorld.copy(o.matrix);
+    else o.matrixWorld.multiplyMatrices(o.parent.matrixWorld, o.matrix);
+  }
+  o.matrixWorldNeedsUpdate = false;
+  const ch = o.children;
+  for (let i = 0, n = ch.length; i < n; i++) passWithout(ch[i], a, b);
+}
+
 /** A MasterRig over a clone of the template's bones (the template's rest data, shared). */
 function cloneRig(template: MasterRig, model: THREE.Object3D): MasterRig {
   const bones = new Map<string, THREE.Bone>();
@@ -491,8 +514,11 @@ export class MasterCharacter implements HumanoidVisual {
       t.wFoot.setFromRotationMatrix(b.footBones[s === 'R' ? 1 : 0].matrixWorld).multiply(L.foot.c);
       L.foot.bone.quaternion.copy(t.wCalf).invert().multiply(t.wFoot);
     }
-    // Every bone (and the gear) under the body's node, once: the passes outside skip it.
-    for (const c of this.model.children) c.updateMatrixWorld(true);
+    // Every bone (and the gear) under the body's node, once: the passes outside skip it. An arm
+    // solved below is left out: the pass after its solve and twist brings it up to date.
+    const skipR = hands && hd.right ? this.rig.arms.R.upper : null;
+    const skipL = hands && hd.left ? this.rig.arms.L.upper : null;
+    for (const c of this.model.children) passWithout(c, skipR, skipL);
 
     // The hold: near and alive only.
     this.solved.R = hands && !!hd.right;
@@ -500,7 +526,7 @@ export class MasterCharacter implements HumanoidVisual {
     if (this.solved.R || this.solved.L) {
       const chest = this.spine[2].bone.matrixWorld;
       const st = STANCES[hd.stance] ?? STANCES.low;
-      // Fresh: the pass above made every bone current, and the twist pass below redoes the arms.
+      // Fresh: the pass above made every bone above the arms current, and the twist pass below redoes the arms.
       if (this.solved.R) {
         this.targets.R.multiplyMatrices(hd.right!.matrixWorld, this.socketInv);
         this.poles.R.fromArray(st.poles.right).applyMatrix4(chest);

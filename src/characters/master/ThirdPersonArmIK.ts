@@ -108,7 +108,9 @@ export class ThirdPersonArmIK {
     cl.matrixWorld.decompose(t.xu, t.qu, t.s);
     t.q.setFromAxisAngle(axis, ang).multiply(t.qu);
     cl.quaternion.copy(t.qp).invert().multiply(t.q);
-    cl.updateMatrixWorld(true);
+    // Fresh: the arm below is brought up to date after the solve; the clavicle's own matrices do here.
+    if (fresh) cl.updateWorldMatrix(false, false);
+    else cl.updateMatrixWorld(true);
     this.stats.clavicleDeg = THREE.MathUtils.radToDeg(ang);
   }
 
@@ -117,7 +119,8 @@ export class ThirdPersonArmIK {
    * elbow bending toward `polePoint` (world). Writes UpperArm, Forearm and Hand local rotations and
    * updates the arm's world matrices (children included: sockets and what hangs on them).
    * `fresh`: every matrix above the arm is already current and the caller updates the arm's own
-   * afterwards (MasterCharacter.posed): the walks up the parents and the arm's pass are skipped.
+   * afterwards, the clavicle's subtree included (MasterCharacter.posed): the walks up the parents
+   * and the passes over the arm are skipped.
    */
   solve(target: THREE.Matrix4, polePoint: THREE.Vector3, fresh = false): void {
     const t = this.t;
