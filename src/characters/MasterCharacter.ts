@@ -366,8 +366,9 @@ export class MasterCharacter implements HumanoidVisual {
       o.traverse((m) => {
         if (!(m as THREE.Mesh).isMesh) return;
         this.dress(m as THREE.Mesh, g);
-        // The same helmet or radio on every character of a look: drawn together (core/RigidBatch).
-        rigidBatch.add(m as THREE.Mesh);
+        // The same helmet or radio on every character of a look: drawn together (core/RigidBatch),
+        // in whichever of its LOD geometries it has.
+        rigidBatch.add(m as THREE.Mesh, [g.lod, g.far]);
       });
       return;
     }

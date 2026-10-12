@@ -25,8 +25,14 @@ import * as THREE from 'three';
 const ROW = 11;
 /** The layer the batched copies sit on during the main render (cameras don't see it; shadow cameras do). */
 export const BATCHED_LAYER = 30;
-/** A copy detached this many renders running is forgotten (re-armed soldiers leave their old guns behind). */
+/**
+ * A copy off stage this many renders running goes dormant: out of the per-render walk (re-armed
+ * soldiers leave their old guns behind, pooled bodies wait hidden), looked at only every
+ * WAKE_EVERY renders, and back in its group once it is on stage again (the gun taken up again,
+ * the body brought back into play).
+ */
 const FORGET = 1800;
+const WAKE_EVERY = 30;
 
 interface Member {
   mesh: THREE.Mesh;
@@ -38,6 +44,8 @@ interface Member {
 
 interface Group {
   members: Member[];
+  /** The members' geometry (a copy whose mesh swaps to another one, a LOD, moves to that one's group). */
+  geometry: THREE.BufferGeometry;
   /** Instances of the members' geometry under the stand-in material. */
   proxy: THREE.Mesh<THREE.InstancedBufferGeometry, THREE.Material>;
   base: { value: number };
@@ -57,6 +65,11 @@ export class RigidBatch {
   private readonly tex = { value: this.texture() };
   private live = false;
   private filled = false;
+  private readonly dormant: Member[] = [];
+  /** Copies whose mesh has a geometry that can't be batched for now. */
+  private readonly loose: Member[] = [];
+  private readonly moved: Member[] = [];
+  private renders = 0;
   private readonly frustum = new THREE.Frustum();
   private readonly proj = new THREE.Matrix4();
   private readonly mv = new THREE.Matrix4();
@@ -68,21 +81,34 @@ export class RigidBatch {
 
   /**
    * A rigid piece that may be drawn with its copies. Only what can be batched exactly is taken:
-   * one opaque lit material without its own per-object hooks, plain geometry.
+   * one opaque lit material without its own per-object hooks, plain geometry. `lods`: the other
+   * geometries its mesh may be given (LOD bands): their stand-ins are made now, so the boot's
+   * shader compile sees them too.
    */
-  add(mesh: THREE.Mesh): void {
+  add(mesh: THREE.Mesh, lods: readonly (THREE.BufferGeometry | null | undefined)[] = []): void {
     if (off || this.known.has(mesh)) return;
     const m = mesh.material as THREE.MeshStandardMaterial & { transmission?: number };
     const g = mesh.geometry;
     if (!mesh.isMesh || (mesh as THREE.SkinnedMesh).isSkinnedMesh || (mesh as THREE.InstancedMesh).isInstancedMesh || (mesh as unknown as { isBatchedMesh?: boolean }).isBatchedMesh) return;
     if (Array.isArray(m) || !m.isMeshStandardMaterial || m.transparent || m.normalMapType === THREE.ObjectSpaceNormalMap || (m.transmission ?? 0) > 0) return;
     if (m.onBeforeRender !== THREE.Material.prototype.onBeforeRender || mesh.onBeforeRender !== THREE.Object3D.prototype.onBeforeRender) return;
-    if ((g as THREE.InstancedBufferGeometry).isInstancedBufferGeometry || g.groups.length || Object.keys(g.morphAttributes).length) return;
+    if (!plain(g)) return;
     this.known.add(mesh);
-    const key = `${g.id}|${(m as unknown as { id: number }).id}|${mesh.receiveShadow}|${mesh.renderOrder}`;
+    for (const lod of lods) if (lod && plain(lod)) this.groupFor(lod, m, mesh);
+    this.join({ mesh, mask: mesh.layers.mask, away: 0 });
+  }
+
+  /** Into the group of the geometry its mesh has now (one that can't be batched: drawn as itself, looked at again now and then). */
+  private join(m: Member): void {
+    if (plain(m.mesh.geometry)) this.groupFor(m.mesh.geometry, m.mesh.material as THREE.Material, m.mesh).members.push(m);
+    else this.loose.push(m);
+  }
+
+  private groupFor(geometry: THREE.BufferGeometry, material: THREE.Material, mesh: THREE.Mesh): Group {
+    const key = `${geometry.id}|${(material as unknown as { id: number }).id}|${mesh.receiveShadow}|${mesh.renderOrder}`;
     let group = this.groups.get(key);
-    if (!group) this.groups.set(key, (group = this.makeGroup(mesh)));
-    group.members.push({ mesh, mask: mesh.layers.mask, away: 0 });
+    if (!group) this.groups.set(key, (group = this.makeGroup(geometry, material, mesh)));
+    return group;
   }
 
   /** The world scene: stand-ins live there from the start (so the boot's shader compile sees them). */
@@ -99,23 +125,40 @@ export class RigidBatch {
     if (off) return;
     this.attach(scene);
     for (const l of lights) if (l.castShadow && (l as THREE.DirectionalLight).shadow) (l as THREE.DirectionalLight).shadow.camera.layers.enable(BATCHED_LAYER);
-    for (const [key, g] of this.groups) {
+    if (++this.renders % WAKE_EVERY === 0) {
+      for (let i = this.dormant.length - 1; i >= 0; i--) {
+        const m = this.dormant[i];
+        if (!onStage(m.mesh, scene)) continue;
+        this.dormant.splice(i, 1);
+        m.away = 0;
+        this.join(m);
+      }
+      for (let i = this.loose.length - 1; i >= 0; i--) {
+        const m = this.loose[i];
+        if (!plain(m.mesh.geometry)) continue;
+        this.loose.splice(i, 1);
+        this.join(m);
+      }
+    }
+    const moved = this.moved;
+    for (const g of this.groups.values()) {
       g.shown.length = 0;
       for (let i = g.members.length - 1; i >= 0; i--) {
         const m = g.members[i];
-        if (onStage(m.mesh, scene)) {
+        if (m.mesh.geometry !== g.geometry) {
+          // Its geometry was swapped (a LOD band): drawn as itself this render, with its new geometry's copies from the next.
+          g.members.splice(i, 1);
+          moved.push(m);
+        } else if (onStage(m.mesh, scene)) {
           m.away = 0;
           // A mirrored copy is drawn with its faces wound the other way (three flips them per object): not batched.
           if (m.mesh.layers.test(camera.layers) && m.mesh.matrixWorld.determinant() > 0) g.shown.push(m);
-        } else if (++m.away > FORGET) g.members.splice(i, 1);
+        } else if (++m.away > FORGET) {
+          g.members.splice(i, 1);
+          this.dormant.push(m);
+        }
       }
-      if (!g.members.length) {
-        g.proxy.removeFromParent();
-        g.proxy.geometry.dispose();
-        g.proxy.material.dispose();
-        this.groups.delete(key);
-        continue;
-      }
+      // An empty group stays (its stand-in's program with it) for the copies that come back.
       const batch = g.shown.length >= 2;
       g.proxy.visible = batch;
       if (!batch) g.shown.length = 0;
@@ -124,6 +167,8 @@ export class RigidBatch {
         m.mesh.layers.mask = 1 << BATCHED_LAYER;
       }
     }
+    for (const m of moved) this.join(m);
+    moved.length = 0;
     this.live = true;
     this.filled = false;
   }
@@ -138,13 +183,11 @@ export class RigidBatch {
     }
   }
 
-  private makeGroup(mesh: THREE.Mesh): Group {
-    const src = mesh.geometry;
+  private makeGroup(src: THREE.BufferGeometry, m: THREE.Material, mesh: THREE.Mesh): Group {
     const geo = new THREE.InstancedBufferGeometry();
     geo.index = src.index;
     for (const name of Object.keys(src.attributes)) geo.setAttribute(name, src.getAttribute(name));
     geo.instanceCount = 0;
-    const m = mesh.material as THREE.Material;
     const mat = m.clone();
     const base = { value: 0 };
     const tex = this.tex;
@@ -164,7 +207,7 @@ export class RigidBatch {
     proxy.renderOrder = mesh.renderOrder;
     proxy.visible = false;
     proxy.matrixAutoUpdate = false;
-    const group: Group = { members: [], proxy, base, shown: [] };
+    const group: Group = { members: [], geometry: src, proxy, base, shown: [] };
     // Every stand-in's rows are written by the first one drawn (the texture goes up once).
     proxy.onBeforeRender = (_r, _s, camera) => {
       if (this.live && !this.filled) this.fill(camera);
@@ -224,6 +267,11 @@ export class RigidBatch {
     t.generateMipmaps = false;
     return t;
   }
+}
+
+/** A geometry the stand-ins can draw as is: no groups, no morphs, not instanced already. */
+function plain(g: THREE.BufferGeometry): boolean {
+  return !(g as THREE.InstancedBufferGeometry).isInstancedBufferGeometry && !g.groups.length && !Object.keys(g.morphAttributes).length;
 }
 
 /** Shown: the mesh and every parent visible, all the way up to `root` (what the render draws). */
