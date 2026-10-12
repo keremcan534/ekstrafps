@@ -14,11 +14,12 @@ import './ui/subtitles.css';
 
 const app = document.getElementById('app')!;
 
-declare const __BUILD_TAG__: string;
+declare const __BUILD_TAG__: string | undefined;
 // Which push this page was built from (scripts/build-tag.mjs): bottom right, over everything, never in the way.
+// A server with a Vite config of its own (no `define`) has no tag: 'dev', as the dev server says.
 const buildTag = document.createElement('div');
 buildTag.className = 'build-tag';
-buildTag.textContent = __BUILD_TAG__;
+buildTag.textContent = typeof __BUILD_TAG__ === 'string' ? __BUILD_TAG__ : 'dev';
 document.body.appendChild(buildTag);
 // The worn print texture (spoken lines, dossier): relative to the page, like every public
 // file the desktop and Android builds load from a file / app origin.
