@@ -71,6 +71,7 @@ import { enterLandscape } from './Landscape';
 import { installLightClip, syncLightClip, clearLightClip } from './LightClip';
 import { cacheUniforms } from './UniformCache';
 import { batchOpaqueSort, rigidBatch, shadowsSeeBatched } from './RigidBatch';
+import { skinnedBatch } from './SkinnedBatch';
 import { sceneLights } from './SceneLights';
 import { raid } from '../game/Progress';
 import { Inhabitants } from '../game/Inhabitants';
@@ -570,6 +571,7 @@ export class Game {
       this.scene.add(warm);
     }
     rigidBatch.attach(this.scene);
+    skinnedBatch.attach(this.scene);
     // Batched copies drawn where three would draw them (three's own sort, stand-ins as their sources).
     this.renderer.setOpaqueSort(batchOpaqueSort as unknown as (a: unknown, b: unknown) => number);
     shadowsSeeBatched(this.renderer);
@@ -1682,9 +1684,13 @@ export class Game {
     // Each lamp lights its own room only (the flashlight casts a real shadow instead).
     const room = this.arena.lightRoom?.bind(this.arena);
     if (room) syncLightClip(this.scene, room, this.lighting?.flashlightLight);
-    // The same rigid piece on many characters (guns, helmets): one instanced draw each.
-    rigidBatch.begin(this.scene, this.camera.camera, sceneLights(this.scene).all);
+    // The same rigid piece on many characters (guns, helmets) and the same skinned one (bodies,
+    // vests): one instanced draw each.
+    const lights = sceneLights(this.scene).all;
+    rigidBatch.begin(this.scene, this.camera.camera, lights);
+    skinnedBatch.begin(this.scene, this.camera.camera, lights);
     this.renderer.render(this.scene, this.camera.camera);
+    skinnedBatch.end();
     rigidBatch.end();
     clearLightClip();
   }

@@ -9,6 +9,7 @@ import { INDEX_KEYS, MasterFingers, libraryPose, masterCorrection } from './mast
 import type { MasterAssets, MasterPerson } from './MasterAssets';
 import data from './master/masterRig.json';
 import { rigidBatch } from '../core/RigidBatch';
+import { skinnedBatch } from '../core/SkinnedBatch';
 
 /**
  * One character on the master humanoid in the game: the canonical skinned body (its own copy of
@@ -355,6 +356,8 @@ export class MasterCharacter implements HumanoidVisual {
     this.setFingers('R', data.game.fingers.free, '');
     this.setFingers('L', data.game.fingers.free, '');
     hideBareBones(this.model);
+    // The same body of a look on many characters: drawn together, in whichever LOD (core/SkinnedBatch).
+    skinnedBatch.add(this.mesh, [this.near, this.mid, this.far]);
   }
 
   /**
@@ -415,6 +418,8 @@ export class MasterCharacter implements HumanoidVisual {
       sm.bind(skel, sm.bindMatrix);
       sm.boundingSphere = new THREE.Sphere(new THREE.Vector3(0, 1 / this.scale, 0), 3.5 / this.scale);
       this.dress(sm, g);
+      // The same vest or pouches on many characters: drawn together (core/SkinnedBatch).
+      skinnedBatch.add(sm, [g.lod, g.far]);
     });
     // The gear's own copy of the skeleton drives nothing now.
     for (const b of own) if (b.parent && !(b.parent as THREE.Bone).isBone) b.removeFromParent();
