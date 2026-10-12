@@ -171,6 +171,8 @@ export function dressGunMaterial(material: THREE.Material, grain: THREE.Vector3)
   if (!m.isMeshStandardMaterial || m.userData.gunSurface) return;
   m.userData.gunSurface = true;
   const g = grain.clone().normalize();
+  // Read back by ViewMerge: only materials with the same grain share its draw.
+  m.userData.gunGrain = g;
   m.onBeforeCompile = (shader) => {
     shader.uniforms.uGunGrain = { value: g };
     shader.vertexShader = shader.vertexShader.replace('#include <common>', `#include <common>\nvarying vec3 vGunPos;\nvarying vec3 vGunNrm;`).replace('#include <begin_vertex>', VERTEX);

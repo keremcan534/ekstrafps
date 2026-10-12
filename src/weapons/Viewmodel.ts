@@ -6,6 +6,7 @@ import { feel } from '../config/Feel';
 import { MuzzleFlash } from '../fx/MuzzleFlash';
 import { buildWeaponModel, compactViewRig, type WeaponRig } from './WeaponModels';
 import { buildProfiledRig, type ProfiledView } from './ProfiledRig';
+import { mergeViewRig } from './ViewMerge';
 import { FirstPersonArms } from './FirstPersonHands';
 import { attachHands, layoutHands } from './HandGrips';
 import type { AnyWeaponHands } from './hands/HandProfile';
@@ -274,6 +275,8 @@ export class Viewmodel {
       (r.view ? this.proceduralRoot : this.mirror).add(r.root);
       this.rigs.set(w.id, r);
     }
+    // Each gun's pieces in as few draws as three's order allows (weapons/ViewMerge): once every gun is in the scene.
+    for (const r of this.rigs.values()) mergeViewRig(r);
     this.side.reset(1);
     this.animator.onEvent = (e) => this.reloadEvent(e);
     // Lighting tuned to roughly match the arena.
