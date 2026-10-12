@@ -407,6 +407,12 @@ export class MasterCharacter implements HumanoidVisual {
     this.fingers[s].apply(libraryPose(pose), trigger ? libraryPose(trigger) : undefined, INDEX_KEYS, masterCorrection(pose));
   }
 
+  /** posed()'s own test, ahead of it: alive, drawn, near, and that hand holding something. */
+  solvesArm(i: number, far: boolean): boolean {
+    const b = this.body;
+    return b.alive && b.root.visible && !far && !!(i === 1 ? this.hold.right : this.hold.left);
+  }
+
   posed(dt: number, far: boolean): boolean {
     const b = this.body;
     const alive = b.alive;

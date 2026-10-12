@@ -80,6 +80,11 @@ export interface HumanoidVisual {
    * afterwards turned nothing but the arm parts.
    */
   posed(dt: number, far: boolean): boolean;
+  /**
+   * Will this frame's posed() solve arm `i` (0 left, 1 right) on its grip itself and give the
+   * arm parts its turns (whatever the Humanoid set)? `far` as posed() will get it.
+   */
+  solvesArm(i: number, far: boolean): boolean;
 }
 
 /** Triangle wave in -1..1 on the same phase as sin: a constant-rate sweep. */
@@ -1316,8 +1321,11 @@ export class Humanoid implements HitSet {
     // Leaning into the run; a slight forward lean over the gun when standing to shoot.
     torso.rotation.set(spineX + pose.spineX + pose.crouch * 0.18 + stride * (machine ? 0.03 : 0.1) + clunk * 0.04 + stance * 0.05, spineY + pose.spineY - pelvis.rotation.y, spineZ - roll * 0.6 + (pose.lean ?? 0) * LEAN_ROLL);
     this.part('head').group.rotation.set(headX + pose.headX, headY + pose.headY, headZ + (pose.headRoll ?? 0));
+    // An arm the visual solves itself (its posed() overwrites the parts' turns) isn't solved here.
+    const own0 = !!pose.gripL && !this.visual?.solvesArm(0, this.lodFar);
+    const own1 = !!pose.gripR && !this.visual?.solvesArm(1, this.lodFar);
     // Grip targets are read in torso space: one matrix pass serves both arms.
-    if (pose.gripL || pose.gripR) torso.updateMatrixWorld(true);
+    if (own0 || own1) torso.updateMatrixWorld(true);
 
     for (let i = 0; i < 2; i++) {
       const side = this.sideSign[i];
@@ -1328,10 +1336,12 @@ export class Humanoid implements HitSet {
       const fore = limbs[i].fore;
       const grip = i === 1 ? pose.gripR : pose.gripL;
       if (grip) {
-        this.solveArm(upper, fore, grip, side);
-        // Reactions knock the hand off the weapon for a moment.
-        upper.quaternion.multiply(this.qa.setFromEuler(this.euler.set(ax * 0.6, 0, az * 0.6)));
-        fore.quaternion.multiply(this.qa.setFromEuler(this.euler.set(-Math.max(0, el) * 0.5, 0, 0)));
+        if (i === 1 ? own1 : own0) {
+          this.solveArm(upper, fore, grip, side);
+          // Reactions knock the hand off the weapon for a moment.
+          upper.quaternion.multiply(this.qa.setFromEuler(this.euler.set(ax * 0.6, 0, az * 0.6)));
+          fore.quaternion.multiply(this.qa.setFromEuler(this.euler.set(-Math.max(0, el) * 0.5, 0, 0)));
+        }
       } else {
         // Walking arms swing opposite the legs (this arm forward with the other leg),
         // elbows bending more as the pace picks up.
