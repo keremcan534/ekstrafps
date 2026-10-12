@@ -2,7 +2,7 @@ import * as THREE from 'three';
 
 /**
  * The same rigid character piece on many characters, in one draw: every soldier's gun of a
- * model, every PMC's helmet, radio and NVGs. Each is a mesh of its own (a draw call apiece, the
+ * model, every PMC's helmet, radio and NVGs (and the map's loose crates and barrels). Each is a mesh of its own (a draw call apiece, the
  * phone's dearest cost), yet they share geometry and material: here the copies in sight go out
  * as instances of one draw.
  *
@@ -140,6 +140,10 @@ export class RigidBatch {
         this.join(m);
       }
     }
+    // Who goes in a batch: copies in sight by their last matrices (the draw tests them anew with
+    // this render's; a stand-in kept for copies all out of sight would cost a draw's setup for nothing).
+    this.proj.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
+    this.frustum.setFromProjectionMatrix(this.proj, THREE.WebGLCoordinateSystem, (camera as THREE.PerspectiveCamera & { reversedDepth?: boolean }).reversedDepth ?? false);
     const moved = this.moved;
     for (const g of this.groups.values()) {
       g.shown.length = 0;
@@ -152,7 +156,7 @@ export class RigidBatch {
         } else if (onStage(m.mesh, scene)) {
           m.away = 0;
           // A mirrored copy is drawn with its faces wound the other way (three flips them per object): not batched.
-          if (m.mesh.layers.test(camera.layers) && m.mesh.matrixWorld.determinant() > 0) g.shown.push(m);
+          if (m.mesh.layers.test(camera.layers) && m.mesh.matrixWorld.determinant() > 0 && (!m.mesh.frustumCulled || this.frustum.intersectsObject(m.mesh))) g.shown.push(m);
         } else if (++m.away > FORGET) {
           g.members.splice(i, 1);
           this.dormant.push(m);
@@ -269,9 +273,12 @@ export class RigidBatch {
   }
 }
 
-/** A geometry the stand-ins can draw as is: no groups, no morphs, not instanced already. */
+/**
+ * A geometry the stand-ins can draw as is: not instanced already, no morphs, all of it drawn. (Its
+ * groups don't matter: under its one material three draws it whole, as the stand-in does.)
+ */
 function plain(g: THREE.BufferGeometry): boolean {
-  return !(g as THREE.InstancedBufferGeometry).isInstancedBufferGeometry && !g.groups.length && !Object.keys(g.morphAttributes).length;
+  return !(g as THREE.InstancedBufferGeometry).isInstancedBufferGeometry && !Object.keys(g.morphAttributes).length && g.drawRange.start === 0 && g.drawRange.count === Infinity;
 }
 
 /** Shown: the mesh and every parent visible, all the way up to `root` (what the render draws). */

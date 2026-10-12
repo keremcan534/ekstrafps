@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { RAPIER, GROUPS, type Physics, type SurfaceType } from '../core/Physics';
+import { rigidBatch } from '../core/RigidBatch';
 
 const mats = {
   crate: new THREE.MeshStandardMaterial({ color: 0x8d949e, metalness: 0.1, roughness: 0.75 }),
@@ -50,6 +51,8 @@ export class PhysicsProps {
     mesh.quaternion.set(r.x, r.y, r.z, r.w);
     this.group.add(mesh);
     this.physics.addSynced(body, mesh);
+    // The same crate or barrel in sight more than once: drawn together (core/RigidBatch).
+    rigidBatch.add(mesh);
   }
 
   cube(pos: THREE.Vector3, size: number, rotY = 0, dark = false): void {
