@@ -8,6 +8,7 @@ import { MeshBuilder } from '../world/MeshBuilder';
 import { skinDetail } from '../enemies/SoldierSkin';
 import { Damageable } from './Damageable';
 import { trackBody } from '../core/CharacterBounds';
+import { skinnedBatch } from '../core/SkinnedBatch';
 
 export type PartName = 'pelvis' | 'torso' | 'head' | 'upperArmL' | 'upperArmR' | 'foreArmL' | 'foreArmR' | 'thighL' | 'thighR' | 'shinL' | 'shinR';
 export type HitZone = 'head' | 'thorax' | 'stomach' | 'arm' | 'leg';
@@ -1095,6 +1096,16 @@ export class Humanoid implements HitSet {
       if (!this.lodFar) this.mesh.geometry = geometry;
     }
     this.mesh.material = materials;
+  }
+
+  /**
+   * A model body wearing its own copy of the skin's one material (its own hit flash and glow):
+   * drawn with the other bodies' copies in one draw, each its own colour and emissive
+   * (core/SkinnedBatch), near and far geometry alike.
+   */
+  batchCopies(): void {
+    const src = this.skin.body?.materials;
+    if (src?.length === 1) skinnedBatch.add(this.mesh, [this.nearGeo, this.farGeo], src[0]);
   }
 
   setCastShadow(cast: boolean): void {

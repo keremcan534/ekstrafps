@@ -38,6 +38,8 @@ export type RobotVariant = keyof typeof VISORS;
 const servo = (from: number, to: number, rate: number, dt: number): number => from + clamp(to - from, -rate * dt, rate * dt);
 /** The robot's control loop: joint goals are re-read this often (Hz), so motion steps and holds. */
 const CONTROL_HZ = 8;
+/** The servoed joints (each moves on its own: the order is the goal's own). */
+const JOINTS = ['armL', 'armR', 'elbows', 'headX', 'headY', 'spineX', 'spineY'] as const;
 
 /**
  * Rogue production robot (the "zombie" of Site-9). Either a powered-down
@@ -118,6 +120,8 @@ export class RogueRobot {
     if (skin.body) {
       this.looks = skin.body.materials.map((m) => (m as THREE.MeshStandardMaterial).clone());
       this.body.setBodyLook(null, this.looks);
+      // The robots in sight in one draw, each still flashing and glowing on its own.
+      this.body.batchCopies();
     }
     this.body.setActive(false);
   }
@@ -222,17 +226,20 @@ export class RogueRobot {
   private chew: Obstacle | null = null;
 
   /**
-   * Run the servos: `latch` sets the goals (on the control loop's tick, or this frame when
-   * `now`), then every joint moves to its goal at `rate` and the pose takes the result.
+   * The control loop's clock: true when the goals are latched this frame (on its tick, or now
+   * when `now`); the caller then sets them, before servo().
    */
-  private drive(dt: number, rate: number, latch: (g: RogueRobot['joint']['goal']) => void, now = false): void {
+  private latch(dt: number, now: boolean): boolean {
     this.control -= dt;
-    if (now || this.control <= 0) {
-      this.control = now ? 1 / CONTROL_HZ : Math.max(this.control + 1 / CONTROL_HZ, 0.25 / CONTROL_HZ);
-      latch(this.joint.goal);
-    }
+    if (!now && this.control > 0) return false;
+    this.control = now ? 1 / CONTROL_HZ : Math.max(this.control + 1 / CONTROL_HZ, 0.25 / CONTROL_HZ);
+    return true;
+  }
+
+  /** Every joint moves to its goal at `rate`, and the pose takes the result. */
+  private servo(dt: number, rate: number): void {
     const { goal, at } = this.joint;
-    for (const k of Object.keys(goal) as (keyof typeof goal)[]) at[k] = servo(at[k], goal[k], rate, dt);
+    for (const k of JOINTS) at[k] = servo(at[k], goal[k], rate, dt);
     const p = this.pose;
     p.armL = at.armL;
     p.armR = at.armR;
@@ -335,14 +342,16 @@ export class RogueRobot {
       const kHead = stage >= 1 ? 0 : 1;
       const kSpine = stage >= 2 ? 0 : 1;
       const kArms = stage >= 3 ? 0 : 1;
-      this.drive(dt, stage > 0 ? 7 : 9, (g) => {
+      if (this.latch(dt, stage > 0)) {
+        const g = this.joint.goal;
         g.spineX = 0.55 * kSpine + 0.06 * (1 - kSpine);
         g.headX = 0.6 * kHead;
         g.headY = this.twitch > 0 ? this.twitchHead : 0;
         g.armL = g.armR = 0.1 * kArms - 0.55 * (1 - kArms);
         g.elbows = 0.1 + 0.8 * (1 - kArms);
         g.spineY = 0;
-      }, stage > 0);
+      }
+      this.servo(dt, stage > 0 ? 7 : 9);
       p.stridePhase = this.stride;
       p.strideAmount = shuffle * k;
       p.crouch = 0.15 * kSpine;
@@ -464,7 +473,9 @@ export class RogueRobot {
     const lean = Math.min(0.12, this.speed * 0.03);
     // The blow drives down far faster than anything else moves.
     const striking = t >= 0.38 && t < 0.5;
-    this.drive(dt, striking ? 32 : 9, (g) => {
+    // Each phase of a swing starts at once.
+    if (this.latch(dt, raw >= 0 && (this.attackTime === 0 || (this.attackTime < 0.38 && raw >= 0.38) || raw >= 0.7))) {
+      const g = this.joint.goal;
       g.headX = 0;
       g.headY = Math.round(clamp(look, -0.7, 0.7) / 0.15) * 0.15;
       g.spineX = 0.06 + lean;
@@ -482,7 +493,8 @@ export class RogueRobot {
         g.spineX = 0.18 + lean;
         g.elbows = 0.5;
       }
-    }, raw >= 0 && (this.attackTime === 0 || (this.attackTime < 0.38 && raw >= 0.38) || raw >= 0.7)); // each phase of a swing starts at once
+    }
+    this.servo(dt, striking ? 32 : 9);
     if (t >= 0.46 && t < 0.62) {
       // Hard stop: the arm chatters as the servo holds against the blow.
       const k = 1 - (t - 0.46) / 0.16;
