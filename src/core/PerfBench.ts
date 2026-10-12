@@ -62,36 +62,45 @@ export interface Step {
   off(): void;
 }
 
-const SETTLE = 0.6;
-const MEASURE = 2.6;
-/** The first step settles longer: a raid's first seconds are heavier than the rest (squads planning, first path searches, code warming up). */
+const SETTLE = 0.5;
+const MEASURE = 1.2;
+/** The first window settles longer: a raid's first seconds are heavier than the rest (squads planning, first path searches, code warming up). */
 const WARMUP = 2.5;
 
+/** A measuring window: as you play (step null) or with one thing switched off. */
+interface Window {
+  step: Step | null;
+}
+
 /**
- * On-device benchmark (Settings → Graphics → RUN BENCHMARK). Measures the frame
- * rate as you play, then switches one thing off at a time (HUD, half resolution,
- * the 3D world, all drawing, the AI/simulation, physics, transparent effects,
- * characters, audio), then measures as you play again. A thing's cost is what its
- * step saves against the baseline at that moment: the line between the first and
- * the last measurement, so a phone speeding up or heating during the run doesn't
- * read as savings. Also times the main CPU systems during the first baseline.
- * Shows a bar chart and a COPY button (plain text to paste into a message).
+ * On-device benchmark (Settings → Graphics → RUN BENCHMARK). Switches one thing off at
+ * a time (the HUD and its parts, half resolution, the 3D world, all drawing, the
+ * AI/simulation, physics, transparent effects, characters, audio), each between two
+ * windows measured as you play: A S1 A S2 A ... A. A thing's cost is what its window
+ * saves against the mean of the two around it, so a phone speeding up, heating or the
+ * raid getting busier during the run cancels out (to first order) instead of reading as
+ * savings. Also times the main CPU systems over all the as-you-play windows. Shows a
+ * bar chart and a COPY button (plain text to paste into a message).
  */
 export class PerfBench {
   private el: HTMLDivElement;
   private steps: Step[];
+  private windows: Window[];
   private i = -1;
   private t = 0;
-  /** Seconds since the benchmark started (each measurement is placed on the baseline line by it). */
+  /** Seconds since the benchmark started. */
   private clock = 0;
   private frames: number[] = [];
   /** CPU time per frame (ms): a 120 Hz screen shows frames in 8.3 ms steps, so frame times alone flip between 60 and 120 fps. */
   private works: number[] = [];
   /** Shortest frame seen (s): the screen's refresh. */
   private minFrame = Infinity;
+  /** One per window, in order. */
   private results: { name: string; label: string; fps: number; ms: number; cpu: number; at: number; step: number }[] = [];
   private cpu = new Map<string, number>();
   private cpuFrames = 0;
+  /** The systems' timers add up only while an as-you-play window is measuring. */
+  private recording = false;
   private restore: (() => void)[] = [];
   private hidden: THREE.Object3D[] = [];
   private details: string[] = [];
@@ -130,7 +139,6 @@ export class PerfBench {
       };
     };
     this.steps = [
-      { name: 'base', label: 'As you play', on: () => this.timeCpu(), off: () => this.untime() },
       { name: 'ui', label: 'HUD / interface', on: () => ui()?.style.setProperty('visibility', 'hidden'), off: () => ui()?.style.removeProperty('visibility') },
       ...(host.extraSteps ?? []),
       { name: 'res', label: 'Half resolution', on: () => (host.pixelRatio = pr * 0.5), off: () => (host.pixelRatio = pr) },
@@ -142,8 +150,9 @@ export class PerfBench {
       { name: 'fx', label: 'Transparent effects', on: () => this.hide((m) => !!(m as THREE.Mesh).material && ((m as THREE.Mesh).material as THREE.Material).transparent), off: () => this.unhide() },
       { name: 'chars', label: 'Characters', on: () => this.hide((m) => (m as THREE.SkinnedMesh).isSkinnedMesh === true), off: () => this.unhide() },
       { name: 'audio', label: 'Audio', on: () => void host.audio?.suspend(), off: () => void host.audio?.resume() },
-      { name: 'end', label: 'As you play (again)', on: () => {}, off: () => {} },
     ];
+    this.windows = [{ step: null }];
+    for (const s of this.steps) this.windows.push({ step: s }, { step: null });
   }
 
   private hide(pick: (o: THREE.Object3D) => boolean): void {
@@ -170,7 +179,7 @@ export class PerfBench {
         try {
           return orig.apply(obj, a);
         } finally {
-          this.cpu.set(label, (this.cpu.get(label) ?? 0) + performance.now() - s);
+          if (this.recording) this.cpu.set(label, (this.cpu.get(label) ?? 0) + performance.now() - s);
         }
       };
       this.restore.push(() => (o[fn] = orig));
@@ -228,6 +237,7 @@ export class PerfBench {
   frame(rawDt: number, workMs: number): void {
     if (this.done) return;
     if (this.i < 0) {
+      this.timeCpu();
       this.next();
       return;
     }
@@ -235,26 +245,27 @@ export class PerfBench {
     this.t += rawDt;
     this.clock += rawDt;
     const settle = this.i === 0 ? WARMUP : SETTLE;
+    const step = this.windows[this.i].step;
     if (this.t > settle) {
       this.frames.push(rawDt);
       this.works.push(workMs);
       if (rawDt > 0.002) this.minFrame = Math.min(this.minFrame, rawDt);
-      if (this.i === 0) {
-        // The systems' times count from here: the settle's frames aren't in cpuFrames either.
-        if (this.cpuFrames === 0) this.cpu.clear();
+      // The systems' times: as-you-play windows only, their settle left out (cpuFrames likewise).
+      if (!step) {
+        this.recording = true;
         this.cpuFrames++;
       }
     }
-    const step = this.steps[this.i];
-    const last = this.i === this.steps.length - 1;
-    this.el.innerHTML = `<b>BENCHMARK</b><span>${this.i + 1}/${this.steps.length} · ${this.i === 0 || last ? '' : 'without: '}${step.label}</span><i style="--p:${(((this.i + Math.min(1, this.t / (settle + MEASURE))) / this.steps.length) * 100).toFixed(0)}%"></i>`;
+    const n = this.windows.length;
+    this.el.innerHTML = `<b>BENCHMARK</b><span>${this.i + 1}/${n} · ${step ? `without: ${step.label.trim().replace(/^· /, '')}` : 'as you play'}</span><i style="--p:${(((this.i + Math.min(1, this.t / (settle + MEASURE))) / n) * 100).toFixed(0)}%"></i>`;
     if (this.t >= settle + MEASURE) {
+      this.recording = false;
       const sorted = [...this.frames].sort((a, b) => a - b);
       const median = sorted[sorted.length >> 1] ?? 0.1;
       const work = [...this.works].sort((a, b) => a - b);
-      this.results.push({ name: step.name, label: step.label, fps: 1 / median, ms: median * 1000, cpu: work[work.length >> 1] ?? 0, at: this.clock - MEASURE / 2, step: this.i });
+      this.results.push({ name: step?.name ?? 'base', label: step?.label ?? 'As you play', fps: 1 / median, ms: median * 1000, cpu: work[work.length >> 1] ?? 0, at: this.clock - MEASURE / 2, step: this.i });
       if (this.i === 0) this.details = this.host.details();
-      step.off();
+      step?.off();
       this.next();
     }
   }
@@ -264,25 +275,32 @@ export class PerfBench {
     this.t = 0;
     this.frames = [];
     this.works = [];
-    if (this.i >= this.steps.length) {
+    // The systems' times are taken before the frame's work (Game calls frame() first): none of a
+    // window's last frame after it closes.
+    this.recording = false;
+    if (this.i >= this.windows.length) {
+      this.untime();
       this.done = true;
       this.report();
       return;
     }
-    this.steps[this.i].on();
+    this.windows[this.i].step?.on();
   }
 
   private report(): void {
     const first = this.results[0];
     const end = this.results[this.results.length - 1];
-    // The baseline at a moment: the line from the first to the last measurement as you play.
-    const baseAt = (at: number) => (end.at > first.at ? first.cpu + ((end.cpu - first.cpu) * (at - first.at)) / (end.at - first.at) : first.cpu);
-    const base = { cpu: (first.cpu + end.cpu) / 2, fps: (first.fps + end.fps) / 2 };
-    // Costs in CPU time (what each thing adds to the frame's work); the fps shown move in the screen's steps.
-    const rows = this.results.slice(1, -1).map((r) => ({ ...r, gainMs: baseAt(r.at) - r.cpu }));
+    const bases = this.results.filter((_, k) => !this.windows[k].step);
+    const base = { cpu: bases.reduce((a, r) => a + r.cpu, 0) / bases.length, fps: bases.reduce((a, r) => a + r.fps, 0) / bases.length };
+    // Costs in CPU time (what each thing adds to the frame's work), each against the mean of the
+    // as-you-play windows on either side of it; the fps shown move in the screen's steps.
+    const rows = this.results
+      .map((r, k) => ({ r, k }))
+      .filter(({ k }) => !!this.windows[k].step)
+      .map(({ r, k }) => ({ ...r, gainMs: (this.results[k - 1].cpu + this.results[k + 1].cpu) / 2 - r.cpu }));
     const hz = Math.round(1 / this.minFrame / 10) * 10;
     const budget = hz > 0 && Number.isFinite(hz) ? 1000 / hz : 0;
-    const drift = `As you play: ${first.cpu.toFixed(1)} ms at the start, ${end.cpu.toFixed(1)} ms at the end (costs are measured against the line between)`;
+    const drift = `As you play: ${first.cpu.toFixed(1)} ms at the start, ${end.cpu.toFixed(1)} ms at the end (each cost is measured against the windows just before and after it)`;
     // A step light enough for the screen's rate, still shown slower: the browser held the page
     // there (phones often run the screen slower while nobody touches it).
     const light = rows.filter((r) => budget && r.cpu < budget * 0.85).sort((a, b) => a.cpu - b.cpu);
