@@ -61,6 +61,12 @@ export interface BoundsReport {
 
 /** A layer no camera of ours looks at. */
 const HIDDEN = 1 << 30;
+
+/**
+ * The meshes culled for the render under way (between the scene's onBeforeRender and
+ * onAfterRender): the batchers (RigidBatch, SkinnedBatch) leave them out as three does.
+ */
+export const culledMeshes = new Set<THREE.Object3D>();
 /** Float rounding: the radius grows by this share, plus PAD of the fixed radius (≈ 1 cm). */
 const SLACK = 1e-5;
 const PAD = 0.003;
@@ -503,6 +509,7 @@ export class CharacterBounds {
       const m = this.cand[i];
       this.masks[i] = m.layers.mask;
       m.layers.mask = HIDDEN;
+      culledMeshes.add(m);
     }
     return true;
   }
@@ -547,6 +554,7 @@ export class CharacterBounds {
       if (m.layers.mask === HIDDEN) m.layers.mask = this.masks[i];
     }
     this.nCand = 0;
+    culledMeshes.clear();
   }
 
   /**

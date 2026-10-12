@@ -70,7 +70,7 @@ import { PerfBench, benchFlagsFromUrl, glInfo, type BenchFlags } from './PerfBen
 import { enterLandscape } from './Landscape';
 import { installLightClip, syncLightClip, clearLightClip } from './LightClip';
 import { cacheUniforms } from './UniformCache';
-import { rigidBatch } from './RigidBatch';
+import { batchOpaqueSort, rigidBatch, shadowsSeeBatched } from './RigidBatch';
 import { sceneLights } from './SceneLights';
 import { raid } from '../game/Progress';
 import { Inhabitants } from '../game/Inhabitants';
@@ -570,6 +570,9 @@ export class Game {
       this.scene.add(warm);
     }
     rigidBatch.attach(this.scene);
+    // Batched copies drawn where three would draw them (three's own sort, stand-ins as their sources).
+    this.renderer.setOpaqueSort(batchOpaqueSort as unknown as (a: unknown, b: unknown) => number);
+    shadowsSeeBatched(this.renderer);
     // compile() skips invisible objects: pooled robots, muzzle flashes and culled
     // rooms would otherwise compile on first sight (a visible hitch mid-fight).
     const hidden: THREE.Object3D[] = [];

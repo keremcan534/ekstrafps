@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { culledMeshes } from './CharacterBounds';
 
 /**
  * The same rigid character piece on many characters, in one draw: every soldier's gun of a
@@ -54,6 +55,59 @@ interface Group {
 }
 
 const off = new URLSearchParams(location.search).has('nobatch');
+
+/** Render-list entries as three makes them (the fields its opaque sort reads). */
+interface SortItem {
+  id: number;
+  groupOrder: number;
+  renderOrder: number;
+  material: THREE.Material & { id: number; batchOf?: number };
+  materialVariant: number;
+  z: number;
+}
+
+/**
+ * three's opaque sort (painterSortStable, r186) with one change: a stand-in's material sorts as
+ * the material it stands in for (`batchOf`), so the copies are drawn just where three would draw
+ * them, between the same neighbours: two surfaces at the same depth (a strap on a vest, a sign on
+ * its board) settle their tie as without the batch. For every other entry it is three's own sort.
+ */
+export function batchOpaqueSort(a: SortItem, b: SortItem): number {
+  if (a.groupOrder !== b.groupOrder) return a.groupOrder - b.groupOrder;
+  if (a.renderOrder !== b.renderOrder) return a.renderOrder - b.renderOrder;
+  const ma = a.material.batchOf ?? a.material.id;
+  const mb = b.material.batchOf ?? b.material.id;
+  if (ma !== mb) return ma - mb;
+  if (a.materialVariant !== b.materialVariant) return a.materialVariant - b.materialVariant;
+  if (a.z !== b.z) return a.z - b.z;
+  return a.id - b.id;
+}
+
+/**
+ * three's shadow pass tests a caster's layers against the main camera's, not the shadow camera's:
+ * copies batched for the main render (and characters CharacterBounds hides from it) sit on
+ * BATCHED_LAYER, which the main camera doesn't see, and so cast no shadow. For the shadow pass
+ * alone the camera sees that layer too: they cast their shadows as without the batch.
+ */
+export function shadowsSeeBatched(renderer: THREE.WebGLRenderer): void {
+  type Render = (lights: THREE.Light[], scene: THREE.Object3D, camera: THREE.Camera) => void;
+  const sm = renderer.shadowMap as unknown as { render: Render };
+  const render = sm.render;
+  sm.render = function (this: unknown, lights, scene, camera) {
+    const had = camera.layers.isEnabled(BATCHED_LAYER);
+    camera.layers.enable(BATCHED_LAYER);
+    try {
+      render.call(this, lights, scene, camera);
+    } finally {
+      if (!had) camera.layers.disable(BATCHED_LAYER);
+    }
+  };
+}
+
+/** A stand-in's material sorts as its source's (see batchOpaqueSort). */
+export function sortAsSource(proxy: THREE.Material, source: THREE.Material): void {
+  (proxy as THREE.Material & { batchOf?: number }).batchOf = (source as unknown as { id: number }).id;
+}
 
 export class RigidBatch {
   /** The stand-ins (in the world scene; shown only during the main render). */
@@ -204,6 +258,7 @@ export class RigidBatch {
       shader.vertexShader = shader.vertexShader.replace(main, VERTEX);
     };
     mat.customProgramCacheKey = () => `${m.customProgramCacheKey()}|rigidBatch`;
+    sortAsSource(mat, m);
     const proxy = new THREE.Mesh(geo, mat);
     proxy.frustumCulled = false;
     proxy.castShadow = false;
@@ -235,7 +290,8 @@ export class RigidBatch {
       let n = 0;
       for (const m of g.shown) {
         const mesh = m.mesh;
-        if (mesh.frustumCulled && !this.frustum.intersectsObject(mesh)) continue;
+        // As three culls: out of the frustum, or hidden for this render by CharacterBounds.
+        if (culledMeshes.has(mesh) || (mesh.frustumCulled && !this.frustum.intersectsObject(mesh))) continue;
         this.mv.multiplyMatrices(camera.matrixWorldInverse, mesh.matrixWorld);
         this.nm.getNormalMatrix(this.mv);
         const o = (row + n) * ROW * 4;
