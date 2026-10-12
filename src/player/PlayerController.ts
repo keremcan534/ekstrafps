@@ -9,6 +9,13 @@ export const LEAN_ANGLE = 16 * DEG;
 
 /** Start a few cm above the floor; gravity settles the capsule onto the controller skin. */
 const SPAWN_LIFT = 0.05;
+/** The gap the controller keeps from what it touches (its offset); kept from the living's capsules too. */
+const SKIN = 0.02;
+/** Fastest a living body pushes the player aside (m/s): one put right into you comes out over a few steps. */
+const PUSH_SPEED = 7;
+/** ?bodyquery: the living's capsules in the controller's query, as before (keepOutOfBodies explains why not). */
+const BODY_QUERY = new URLSearchParams(location.search).has('bodyquery');
+const MOVE_GROUPS = BODY_QUERY ? GROUPS.playerQuery : GROUPS.playerMove;
 
 /**
  * Kinematic first-person character. Arcade feel: snappy acceleration,
@@ -74,7 +81,7 @@ export class PlayerController {
       this.body,
     );
 
-    this.controller = world.createCharacterController(0.02);
+    this.controller = world.createCharacterController(SKIN);
     this.controller.enableAutostep(cfg.stepHeight, 0.15, false);
     this.controller.enableSnapToGround(0.35);
     this.controller.setMaxSlopeClimbAngle(cfg.maxSlopeDeg * DEG);
@@ -201,7 +208,8 @@ export class PlayerController {
 
     // --- Collide & slide ---
     const desired = this.tmp.copy(v).multiplyScalar(dt);
-    this.controller.computeColliderMovement(this.collider, desired, RAPIER.QueryFilterFlags.EXCLUDE_SENSORS, GROUPS.playerQuery);
+    if (!BODY_QUERY) this.keepOutOfBodies(desired, v, dt);
+    this.controller.computeColliderMovement(this.collider, desired, RAPIER.QueryFilterFlags.EXCLUDE_SENSORS, MOVE_GROUPS);
     let move = this.controller.computedMovement();
     // Rapier sometimes reports the floor itself as a blocking contact when the capsule
     // dips a millimetre into its skin, cancelling a whole step of movement (a visible
@@ -209,9 +217,10 @@ export class PlayerController {
     const wantH = Math.hypot(desired.x, desired.z);
     if (wantH > 1e-4 && Math.hypot(move.x, move.z) < wantH * 0.5 && this.onlyFloorContacts()) {
       desired.y = Math.max(desired.y, 0) + 0.004;
-      this.controller.computeColliderMovement(this.collider, desired, RAPIER.QueryFilterFlags.EXCLUDE_SENSORS, GROUPS.playerQuery);
+      this.controller.computeColliderMovement(this.collider, desired, RAPIER.QueryFilterFlags.EXCLUDE_SENSORS, MOVE_GROUPS);
       move = this.controller.computedMovement();
     }
+    if (!BODY_QUERY) this.noDeeperIntoBodies(move);
     const wasGrounded = this.grounded;
     const fallSpeed = -v.y;
     this.grounded = this.controller.computedGrounded() && v.y <= 0.01;
@@ -299,6 +308,89 @@ export class PlayerController {
     this.upRay.dir = { x: 0, y: 1, z: 0 };
     if (!hit) return 1;
     return clamp((hit.timeOfImpact - 0.18) / (reach - 0.18), 0, 1);
+  }
+
+  /**
+   * The living's capsules (Humanoid blockers), on the floor plane, where the coming physics step
+   * puts them. They are not in the controller's query: touching one that moved (they follow the
+   * hips, so a body standing beside you moves too), the controller carried the player along with
+   * it like a moving platform and spent its whole iteration budget doing so, every step (up to
+   * ~0.7 ms a frame on a desktop with the squad round you). Here a body that has come into the
+   * player's room moves the player aside, and a move stops where it would touch one and slides
+   * round it, its velocity into the body dropped (as against a wall). Above or below one, it
+   * doesn't count (nobody stands on heads any more).
+   */
+  private keepOutOfBodies(d: THREE.Vector3, v: THREE.Vector3, dt: number): void {
+    const px = this.feet.x;
+    const pz = this.feet.z;
+    const bottom = this.feet.y;
+    const top = bottom + this.height;
+    for (const c of this.physics.capsules) {
+      const reach = cfg.radius + c.radius + SKIN;
+      const wx = px - c.at.x;
+      const wz = pz - c.at.z;
+      const w2 = wx * wx + wz * wz;
+      const m2 = d.x * d.x + d.z * d.z;
+      const dist = Math.sqrt(w2);
+      if (dist - reach > Math.sqrt(m2) || c.at.y - c.half - c.radius > top || c.at.y + c.half + c.radius < bottom) continue;
+      if (dist < reach) {
+        // In the player's room (it walked in, or was put there): no further in, and out along the
+        // line between the two.
+        const nx = dist > 1e-5 ? wx / dist : Math.sin(this.yaw);
+        const nz = dist > 1e-5 ? wz / dist : Math.cos(this.yaw);
+        const out = Math.max(0, Math.min(reach - dist, PUSH_SPEED * dt) - (d.x * nx + d.z * nz));
+        d.x += nx * out;
+        d.z += nz * out;
+        const vn = v.x * nx + v.z * nz;
+        if (vn < 0) {
+          v.x -= nx * vn;
+          v.z -= nz * vn;
+        }
+        continue;
+      }
+      // Moving into it: stop where the two would touch and slide round it.
+      const wm = wx * d.x + wz * d.z;
+      if (wm >= 0) continue;
+      const disc = wm * wm - m2 * (w2 - reach * reach);
+      if (disc < 0) continue;
+      const t = Math.max(0, (-wm - Math.sqrt(disc)) / m2);
+      if (t > 1) continue;
+      const nx = (wx + d.x * t) / reach;
+      const nz = (wz + d.z * t) / reach;
+      const rn = (d.x * nx + d.z * nz) * (1 - t);
+      d.x -= nx * rn;
+      d.z -= nz * rn;
+      const vn = v.x * nx + v.z * nz;
+      if (vn < 0) {
+        v.x -= nx * vn;
+        v.z -= nz * vn;
+      }
+    }
+  }
+
+  /** After the controller: a slide along a wall must not carry the player deeper into a living body than it was. */
+  private noDeeperIntoBodies(m: { x: number; z: number }): void {
+    const px = this.feet.x;
+    const pz = this.feet.z;
+    const bottom = this.feet.y;
+    const top = bottom + this.height;
+    for (const c of this.physics.capsules) {
+      const reach = cfg.radius + c.radius + SKIN;
+      const wx = px - c.at.x;
+      const wz = pz - c.at.z;
+      const w2 = wx * wx + wz * wz;
+      const ex = wx + m.x;
+      const ez = wz + m.z;
+      const e2 = ex * ex + ez * ez;
+      if (e2 >= reach * reach || e2 >= w2 || c.at.y - c.half - c.radius > top || c.at.y + c.half + c.radius < bottom) continue;
+      // Came in from outside: stop at the touch. Already in: stay.
+      const m2 = m.x * m.x + m.z * m.z;
+      const wm = wx * m.x + wz * m.z;
+      const disc = wm * wm - m2 * (w2 - reach * reach);
+      const t = w2 > reach * reach && disc > 0 ? Math.max(0, (-wm - Math.sqrt(disc)) / m2) : 0;
+      m.x *= t;
+      m.z *= t;
+    }
   }
 
   private onlyFloorContacts(): boolean {

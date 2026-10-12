@@ -39,7 +39,20 @@ export const GROUPS = {
   sight: groups(G.RAY, G.WORLD | G.PROP),
   /** Query groups for the character controller. */
   playerQuery: groups(G.PLAYER, G.WORLD | G.PROP | G.BLOCKER),
+  /** The player's movement query: the living's capsules are the player's own business (Physics.capsules). */
+  playerMove: groups(G.PLAYER, G.WORLD | G.PROP),
 } as const;
+
+/**
+ * A living body's capsule (a Humanoid's blocker) as the player's movement sees it: `at` is its
+ * centre once the coming physics step has moved it there (the blocker's next kinematic
+ * translation), `half` half its straight part.
+ */
+export interface BodyCapsule {
+  readonly at: THREE.Vector3;
+  readonly radius: number;
+  readonly half: number;
+}
 
 export type SurfaceType = 'concrete' | 'metal' | 'robot' | 'robotWeak' | 'flesh' | 'armor' | 'helmet' | 'player';
 
@@ -123,6 +136,8 @@ const STATIC_RECEIVER: HitReceiver = { surface: 'concrete', allowDecals: true };
 export class Physics {
   readonly world: RAPIER.World;
   readonly receivers = new Map<number, HitReceiver>();
+  /** The living's capsules, while their blockers exist (the player's movement keeps out of them). */
+  readonly capsules = new Set<BodyCapsule>();
   private synced: { body: RAPIER.RigidBody; object: THREE.Object3D }[] = [];
   private hitSets: HitSet[] = [];
   private setHit: SetHit = { distance: 0, normal: new THREE.Vector3(), receiver: undefined };

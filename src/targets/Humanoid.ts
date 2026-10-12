@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { RAPIER, GROUPS, type BulletHit, type HitReceiver, type HitResult, type HitSet, type Physics, type SetHit, type SurfaceType } from '../core/Physics';
+import { RAPIER, GROUPS, type BodyCapsule, type BulletHit, type HitReceiver, type HitResult, type HitSet, type Physics, type SetHit, type SurfaceType } from '../core/Physics';
 import { Spring, Spring3 } from '../core/Spring';
 import { clamp, DEG } from '../core/math';
 import { feel } from '../config/Feel';
@@ -590,6 +590,8 @@ export class Humanoid implements HitSet {
   private hitsOn = false;
   private blocker: RAPIER.RigidBody | null = null;
   private blockerAt = new THREE.Vector3();
+  /** The blocker as the player's movement sees it (in Physics.capsules while the blocker exists). */
+  private capsule: BodyCapsule | null = null;
   /** The blocker capsule: radius, half the straight part, centre height above the root. */
   private capRadius = 0.3;
   private capHalf = 0.55;
@@ -629,11 +631,15 @@ export class Humanoid implements HitSet {
     if (!on) {
       world.removeRigidBody(this.blocker!);
       this.blocker = null;
+      this.physics.capsules.delete(this.capsule!);
       return;
     }
     const at = this.blockerPos();
     this.blocker = world.createRigidBody(RAPIER.RigidBodyDesc.kinematicPositionBased().setTranslation(at.x, at.y, at.z));
     world.createCollider(RAPIER.ColliderDesc.capsule(this.capHalf, this.capRadius).setCollisionGroups(GROUPS.blocker), this.blocker);
+    // blockerAt is where every later blockerPos() sends the body: the capsule follows it.
+    this.capsule = { at: this.blockerAt, radius: this.capRadius, half: this.capHalf };
+    this.physics.capsules.add(this.capsule);
   }
 
   private blockerPos(): THREE.Vector3 {
