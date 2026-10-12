@@ -13,6 +13,13 @@ import './ui/hud-file.css';
 import './ui/subtitles.css';
 
 const app = document.getElementById('app')!;
+
+declare const __BUILD_TAG__: string;
+// Which push this page was built from (scripts/build-tag.mjs): bottom right, over everything, never in the way.
+const buildTag = document.createElement('div');
+buildTag.className = 'build-tag';
+buildTag.textContent = __BUILD_TAG__;
+document.body.appendChild(buildTag);
 // The worn print texture (spoken lines, dossier): relative to the page, like every public
 // file the desktop and Android builds load from a file / app origin.
 document.documentElement.style.setProperty('--dirt', 'url(ui/dirt.webp)');

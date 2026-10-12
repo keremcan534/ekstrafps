@@ -2,6 +2,8 @@ import { defineConfig, type Plugin } from 'vite';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+// @ts-expect-error a plain .mjs build script, no types
+import { buildTag, headSha } from './scripts/build-tag.mjs';
 
 const root = path.dirname(fileURLToPath(import.meta.url));
 
@@ -108,6 +110,8 @@ export default defineConfig(({ command }) => ({
   // Relative asset paths in builds, so the game works under any sub-path
   // (GitHub Pages serves it at /ekstrafps/).
   base: command === 'build' ? './' : '/',
+  // The push a build comes from, in the corner (scripts/build-tag.mjs); the dev server says 'dev'.
+  define: { __BUILD_TAG__: JSON.stringify(command === 'build' ? buildTag(headSha()) : 'dev') },
   plugins: [tuningSavePlugin(), trailerFramesPlugin()],
   server: {
     host: true, // expose on LAN so phones on the same Wi-Fi can open the lab
