@@ -2645,6 +2645,10 @@ export class Site9 implements GameMap {
       const here = this.layout.roomAt(focus.x, focus.z);
       const target = here?.skylight ? 1 : here?.sky ? 0.5 : 0;
       this.openBoost += (target - this.openBoost) * Math.min(1, dt * 1.2);
+      // The ease never quite lands: for half a minute the fill, sun and probe moved by less than a
+      // hundredth of a shade (a 1e-4 boost is 2e-5 of fill) and every lit program was sent its
+      // lights again each frame. Within 1e-4 of the target, it lands.
+      if (Math.abs(target - this.openBoost) < 1e-4) this.openBoost = target;
     }
     if (this.mobile && this.sun.castShadow !== !!this.sun.parent) this.syncSun();
     const shadows = this.sun.castShadow && !!this.sun.parent;
