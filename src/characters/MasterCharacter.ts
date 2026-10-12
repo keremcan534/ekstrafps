@@ -106,6 +106,23 @@ class MasterBodyNode extends THREE.Group {
   override updateMatrixWorld(): void {}
 }
 
+/**
+ * Bones with nothing that could be drawn below them (fingers, twist and helper bones: most of the
+ * 69) hidden, so the renderer's per-frame scene walk (and the shadow pass's) skips them. Hiding
+ * changes nothing else: skinning reads their matrices, which posed() keeps current through
+ * three's own passes (those don't look at visibility), and the visible-only matrix pass never
+ * enters the body's node. Returns whether `o` is or holds something drawable (worn gear keeps its
+ * bones shown).
+ */
+function hideBareBones(o: THREE.Object3D): boolean {
+  let drawn = false;
+  for (const c of o.children) if (hideBareBones(c)) drawn = true;
+  const x = o as THREE.Mesh & THREE.Line & THREE.Points & THREE.Sprite & THREE.Light & THREE.LOD;
+  if (x.isMesh || x.isLine || x.isPoints || x.isSprite || x.isLight || x.isLOD) return true;
+  if ((o as THREE.Bone).isBone && !drawn) o.visible = false;
+  return drawn;
+}
+
 /** A MasterRig over a clone of the template's bones (the template's rest data, shared). */
 function cloneRig(template: MasterRig, model: THREE.Object3D): MasterRig {
   const bones = new Map<string, THREE.Bone>();
@@ -314,6 +331,7 @@ export class MasterCharacter implements HumanoidVisual {
     for (const g of person.gear) this.wear(g);
     this.setFingers('R', data.game.fingers.free, '');
     this.setFingers('L', data.game.fingers.free, '');
+    hideBareBones(this.model);
   }
 
   /**
