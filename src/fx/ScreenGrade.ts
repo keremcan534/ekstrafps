@@ -80,6 +80,11 @@ export class ScreenGrade {
     this.mat.uniforms.texel.value.set(1 / size.x, 1 / size.y);
   }
 
+  /** The pass's own shader, compiled now (not on its first frame). */
+  compile(): void {
+    this.renderer.compile(this.scene, this.camera);
+  }
+
   /** Point rendering at the HDR target (call before drawing the frame). */
   begin(): void {
     this.renderer.setRenderTarget(this.target);

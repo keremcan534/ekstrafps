@@ -21,6 +21,8 @@ export class AutoQuality {
   private ceiling = AUTO_TIERS - 1;
   /** Good windows in a row at the ceiling: after ~80 s the tier above gets another try (a firefight or a hot phone has passed). */
   private calm = 0;
+  /** The game holds part of the last step until a break (its shaders): no climbing on top of it meanwhile. */
+  climbHeld = false;
 
   constructor(
     public tier: number,
@@ -46,7 +48,7 @@ export class AutoQuality {
       if (this.tier > 0) this.set(this.tier - 1);
       return;
     }
-    if (fps < target * 0.95 || spikes > 0.03 || dynScale < 0.99) {
+    if (fps < target * 0.95 || spikes > 0.03 || dynScale < 0.99 || this.climbHeld) {
       this.good = this.calm = 0;
       return;
     }

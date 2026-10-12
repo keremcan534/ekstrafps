@@ -153,6 +153,12 @@ export class Game {
   private frozenDraw = 0;
   /** Graphics preset AUTO on phones. */
   private autoQ: AutoQuality | null = null;
+  /**
+   * AUTO moved mid-fight to a tier with other lighting, post effects or shadows: those stay
+   * as they are (each change recompiles nearly every shader: seconds on a phone) until a
+   * break (pause, death, match over). Resolution and view distance follow the tier at once.
+   */
+  private heldGfx: Pick<GraphicsSettings, 'lighting' | 'postFx' | 'shadows'> | null = null;
   health = new PlayerHealth();
   status!: StatusHUD;
   nav!: NavGrid;
@@ -586,17 +592,29 @@ export class Game {
       }
     });
     // Async: with parallel shader compile the page stays responsive (status text paints).
-    await this.renderer.compileAsync(this.scene, this.camera.camera);
+    // With post effects the frame is drawn into their target: shaders made for that (no tone
+    // mapping there). Set only while compile() runs (the menu draws meanwhile).
+    const target = this.grade?.target ?? null;
+    this.renderer.setRenderTarget(target);
+    const compiled = this.renderer.compileAsync(this.scene, this.camera.camera);
+    this.renderer.setRenderTarget(null);
+    await compiled;
     // compile() doesn't build the shadow-map (depth) programs or the final lit
     // variants with shadows: one real render while everything is visible does.
     this.camera.camera.updateMatrixWorld();
+    this.renderer.setRenderTarget(target);
     this.renderer.render(this.scene, this.camera.camera);
+    this.renderer.setRenderTarget(null);
     // The master characters' textures too: squads that spawn later (SABLE, the Warden at a raid)
     // would otherwise upload dozens of them the moment they come into view.
     for (const t of masterTextures()) this.renderer.initTexture(t);
     for (const o of hidden) o.visible = false;
     if (warm) this.scene.remove(warm);
-    await this.renderer.compileAsync(this.weapons.viewmodel.scene, this.weapons.viewmodel.camera);
+    this.renderer.setRenderTarget(target);
+    const gunCompiled = this.renderer.compileAsync(this.weapons.viewmodel.scene, this.weapons.viewmodel.camera);
+    this.renderer.setRenderTarget(null);
+    this.grade?.compile();
+    await gunCompiled;
     (window as unknown as { __lab: Game }).__lab = this;
   }
 
@@ -1625,7 +1643,7 @@ export class Game {
    */
   applyGraphics(s: GraphicsSettings): void {
     // AUTO: the fields come from the current tier (the menu may hold an older copy).
-    if (s.preset === 'auto') s = { ...presetSettings('auto', this.mobile), fpsCap: s.fpsCap, showFps: s.showFps };
+    if (s.preset === 'auto') s = { ...presetSettings('auto', this.mobile), fpsCap: s.fpsCap, showFps: s.showFps, ...this.heldGfx };
     if (s.preset === 'auto' && this.mobile) this.autoQ ??= new AutoQuality(loadAutoTier(), () => this.autoTierChanged());
     else this.autoQ = null;
     this.gfx = s;
@@ -1703,7 +1721,51 @@ export class Game {
     d.strikes = 0;
     d.floorT = 0;
     d.cooldown = 2;
+    const next = presetSettings('auto', this.mobile);
+    const g = this.gfx;
+    const same = next.lighting === g.lighting && next.postFx === g.postFx && next.shadows === g.shadows;
+    const now = this.atBreak;
+    this.heldGfx = same || now ? null : { lighting: g.lighting, postFx: g.postFx, shadows: g.shadows };
+    // Not climbing further on what isn't drawn yet.
+    if (this.autoQ) this.autoQ.climbHeld = !!this.heldGfx;
     this.applyGraphics(this.gfx);
+    if (now && !same) this.warmShaders();
+  }
+
+  /** Nobody is playing this moment: paused, dead, the match over (or not started). */
+  private get atBreak(): boolean {
+    return !this.started || this.frozen || this.health.dead || this.ended;
+  }
+
+  /** A break: the held lighting / post effects / shadows change lands, its shaders compiled all at once. */
+  private releaseHeldGfx(): void {
+    this.heldGfx = null;
+    if (this.autoQ) this.autoQ.climbHeld = false;
+    this.applyGraphics(this.gfx);
+    this.warmShaders();
+  }
+
+  /**
+   * Every shader the scene can need under the current settings, compiled now: hidden things
+   * too (pooled robots, muzzle flashes, rooms out of view), else each would compile on first
+   * sight, a hitch mid-fight. Where the browser can, the compiles finish in the background.
+   */
+  private warmShaders(): void {
+    // (Not the light probe: it's out of the lights on purpose while image-based lighting is on.)
+    const hidden: THREE.Object3D[] = [];
+    this.scene.traverse((o) => {
+      if (!o.visible && o !== this.probe) {
+        hidden.push(o);
+        o.visible = true;
+      }
+    });
+    // With post effects the frame is drawn into their target: shaders made for that (no tone mapping there).
+    this.renderer.setRenderTarget(this.grade?.target ?? null);
+    void this.renderer.compileAsync(this.scene, this.camera.camera);
+    for (const o of hidden) o.visible = false;
+    void this.renderer.compileAsync(this.weapons.viewmodel.scene, this.weapons.viewmodel.camera);
+    this.renderer.setRenderTarget(null);
+    this.grade?.compile();
   }
 
   /**
@@ -1887,11 +1949,16 @@ export class Game {
   private frame(now: number): void {
     const rawDt = (now - this.lastTime) / 1000;
     this.lastTime = now;
+    if (this.heldGfx && this.atBreak) this.releaseHeldGfx();
     if (this.frozen) {
       if ((this.frozenDraw -= rawDt) <= 0) {
         this.frozenDraw = 0.5;
+        // Through the post effects when they're on: the view under the menu looks as it did in
+        // play, with the shaders play uses (no second set compiled for the screen).
+        this.grade?.begin();
         this.renderer.clear();
         this.renderer.render(this.scene, this.camera.camera);
+        this.grade?.end();
       }
       return;
     }
